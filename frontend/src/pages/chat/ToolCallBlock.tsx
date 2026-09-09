@@ -8,6 +8,29 @@ import { forToolName } from '../../plugins/slot-registry'
 import { ToolRendererSlot } from '../../plugins/slot-consumers'
 import { generateEditDiff, parseEditArgs, parseWriteArgs, langFromPath } from './toolUtils'
 
+function truncateSummary(value: string, max = 96): string {
+  const compact = value.replace(/\s+/g, ' ').trim()
+  return compact.length > max ? `${compact.slice(0, max - 1)}…` : compact
+}
+
+function summarizeToolArgs(args?: string): string {
+  if (!args) return ''
+  try {
+    const parsed: unknown = JSON.parse(args)
+    if (parsed && typeof parsed === 'object') {
+      const object = parsed as Record<string, unknown>
+      for (const key of ['path', 'command', 'query', 'url', 'pattern', 'cwd']) {
+        if (typeof object[key] === 'string' && object[key].trim()) return truncateSummary(object[key])
+      }
+    }
+  } catch { /* keep a compact raw preview for non-JSON tool arguments */ }
+  return truncateSummary(args)
+}
+
+function summarizeToolResult(result?: string): string {
+  return result ? truncateSummary(result.split('\n')[0]) : ''
+}
+
 /** Expandable tool call block with args and result — shows diff view for edit tool, code preview for write */
 export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { content: string; meta?: Record<string, unknown>; onFileOpen?: (path: string) => void; slotKey?: string }) {
   const toolName = (meta?.toolName as string) || content.replace('🔧 ', '')
@@ -28,7 +51,10 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
     : undefined
   const isError = meta?.isError as boolean | undefined
   const isRunning = !result && !isError
-  const hasDetails = !!(args || result)
+  const hasDetails = !!(args || result || partialText || partialDetails)
+  const argsSummary = summarizeToolArgs(args)
+  const resultSummary = summarizeToolResult(result || partialText)
+  const summaryText = argsSummary || resultSummary
 
   const handleDownload = (e: React.MouseEvent, path: string) => {
     e.stopPropagation()
@@ -89,8 +115,9 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
     return (
       <div className="msg-content bg-transparent border border-border/30 md:bg-card md:border-border rounded-md animate-scale-in">
         <button
-          className="w-full flex items-center gap-2 px-3 py-2.5 text-[13px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
+          className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
           onClick={() => setEditExpanded(!editExpanded)}
+          aria-expanded={editExpanded}
         >
           <span className={`text-[11px] transition-transform ${editExpanded ? 'rotate-90' : ''}`}>▶</span>
           <span className="shrink-0">✏️ edit</span>
@@ -123,8 +150,9 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
       return (
         <div className="msg-content bg-transparent border border-border/30 md:bg-card md:border-border rounded-md animate-scale-in">
           <button
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-[13px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
+            className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
             onClick={() => setReadExpanded(!readExpanded)}
+            aria-expanded={readExpanded}
           >
             <span className={`text-[11px] transition-transform ${readExpanded ? 'rotate-90' : ''}`}>▶</span>
             <span className="shrink-0">🖼️ read</span>
@@ -146,8 +174,9 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
     return (
       <div className="msg-content bg-transparent border border-border/30 md:bg-card md:border-border rounded-md animate-scale-in">
         <button
-          className="w-full flex items-center gap-2 px-3 py-2.5 text-[13px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
+          className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
           onClick={() => setReadExpanded(!readExpanded)}
+          aria-expanded={readExpanded}
         >
           <span className={`text-[11px] transition-transform ${readExpanded ? 'rotate-90' : ''}`}>▶</span>
           <span className="shrink-0">📖 read</span>
@@ -179,8 +208,9 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
     return (
       <div className="msg-content bg-transparent border border-border/30 md:bg-card md:border-border rounded-md animate-scale-in">
         <button
-          className="w-full flex items-center gap-2 px-3 py-2.5 text-[13px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
+          className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
           onClick={() => setWriteExpanded(!writeExpanded)}
+          aria-expanded={writeExpanded}
         >
           <span className={`text-[11px] transition-transform ${writeExpanded ? 'rotate-90' : ''}`}>▶</span>
           <span className="shrink-0">📝 write</span>
@@ -216,14 +246,20 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
   return (
     <div className={`pidash-tool-card msg-content bg-transparent border border-border/30 md:bg-card md:border-border rounded-md animate-scale-in ${hasDetails ? 'cursor-pointer' : ''}`} data-pidash-tool-name={toolName} data-pidash-tool-status={isError ? 'error' : result ? 'ok' : 'running'}>
       <button
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-[13px] text-muted font-mono bg-transparent border-none text-left hover:text-text transition-colors"
+        className="w-full min-w-0 flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted font-mono bg-transparent border-none text-left hover:text-text transition-colors"
         onClick={() => hasDetails && setExpanded(!expanded)}
         disabled={!hasDetails}
+        aria-expanded={hasDetails ? expanded : undefined}
+        title={summaryText || toolName}
       >
-        {hasDetails && <span className={`text-[11px] transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>}
+        {hasDetails && <span className={`shrink-0 text-[10px] transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>}
         <span className="shrink-0">🔧 {toolName}</span>
-        {isError && <span className="text-danger text-[12px]">✗ error</span>}
-        {result && !isError && <span className="text-ok text-[12px]">✓</span>}
+        {summaryText && <span className="min-w-0 truncate text-[11px] font-normal text-text/60">{summaryText}</span>}
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {isError && <span className="text-danger text-[11px]">✗</span>}
+          {result && !isError && <span className="text-ok text-[11px]">✓</span>}
+          {isRunning && <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" aria-label="running" />}
+        </span>
       </button>
       {expanded && (
         <div className="px-3 pb-3 border-t border-border space-y-2">

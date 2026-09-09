@@ -4,17 +4,23 @@
  */
 import { spawn, execSync, ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
-import { writeFileSync, mkdirSync } from 'fs'
-import { join } from 'path'
+import { writeFileSync, mkdirSync, existsSync, realpathSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import os from 'os'
 import { extractText, summarizeProviderError, ChatMessage } from './session-store.js'
 import type { PiSession, PiTransport, ImagePayload, ToolApprovalDecision } from './pi-session.js'
 import { PiSdkSession } from './pi-sdk-session.js'
 import { resolveDefaultThinkingLevel } from './thinking-level.js'
+import { extensionBridgeRegistry } from './extension-bridge/registry.js'
+import { rpcExtensionBridgeServer } from './extension-bridge/rpc-server.js'
 
 // Resolve pi binary path at startup (avoids ENOENT in launchd)
 // Resolve pi script path at startup (avoids ENOENT in launchd)
 const PI_SCRIPT = (() => {
+  if (process.env.PI_SCRIPT?.trim()) return process.env.PI_SCRIPT.trim()
+  const bundledPi = join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', '.bin', 'pi')
+  if (existsSync(bundledPi)) return realpathSync(bundledPi)
   try { return execSync('which pi', { encoding: 'utf-8' }).trim() } catch {}
   const candidates = ['/opt/homebrew/bin/pi', '/usr/local/bin/pi']
   for (const c of candidates) {
@@ -52,6 +58,7 @@ interface PiProcessOptions {
   tags?: string[]
   transport?: PiTransport | null
   toolApproval?: boolean
+  runtime?: 'dashboard' | 'live'
 }
 
 // Resolve a slot's transport backend: per-slot override wins, then the
@@ -170,6 +177,7 @@ export class PiRpcSession extends EventEmitter implements PiSession {
   // `tool_call` hook, so RPC slots never gate. Kept as a field only so the flag
   // round-trips through save/restore and the FE can show the toggle disabled.
   toolApproval: boolean
+  runtime: 'dashboard' | 'live'
   // Counts user-initiated prompts that pi-dashboard has issued but for
   // which we have not yet seen agent_end. Gates followUp streamingBehavior
   // so we only queue when *we* know we have an outstanding turn — never
@@ -219,6 +227,7 @@ export class PiRpcSession extends EventEmitter implements PiSession {
     this._stopping = false
     this._pendingApproval = false
     this.toolApproval = opts.toolApproval || false
+    this.runtime = opts.runtime || 'dashboard'
     this._outstandingPrompts = 0
     this._toolsRunning = 0
     this._streamIdx = -1  // index where partial streaming messages start
@@ -263,9 +272,10 @@ export class PiRpcSession extends EventEmitter implements PiSession {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        PI_RUNTIME: 'dashboard',
+        PI_RUNTIME: this.runtime,
         PI_DASH_PORT: String(process.env.PI_DASH_PORT || 7777),
         PI_SLOT_KEY: this.slotKey,
+        ...rpcExtensionBridgeServer.environmentForSlot(this.slotKey),
         NODE_OPTIONS: [process.env.NODE_OPTIONS?.replace(/--no-wasm-tier-up/g, '').trim(), '--max-old-space-size=4096'].filter(Boolean).join(' '),
         // If AWS_PROFILE isn't set, fall back to PI_BEDROCK_PROFILE so bedrock sessions work
         ...((!process.env.AWS_PROFILE && process.env.PI_BEDROCK_PROFILE) ? { AWS_PROFILE: process.env.PI_BEDROCK_PROFILE } : {}),
@@ -1113,6 +1123,8 @@ export class PiManager {
     const pi = this.slots.get(key)
     if (pi) {
       this.slots.delete(key)
+      extensionBridgeRegistry.detachSlot(key)
+      rpcExtensionBridgeServer.revokeSlot(key)
       this._save()
       // Graceful shutdown in background — lets pi-memory consolidate
       pi.gracefulShutdown().catch(() => {})

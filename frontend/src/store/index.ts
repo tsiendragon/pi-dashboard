@@ -3,12 +3,16 @@ import { useDispatch, useSelector } from 'react-redux'
 import dashboardReducer from './dashboardSlice'
 import notificationsReducer from './notificationsSlice'
 import chatReducer from './chatSlice'
+import integrationsReducer from './integrationsSlice'
+import liveSessionsReducer from './liveSessionsSlice'
 
 export const store = configureStore({
   reducer: {
     dashboard: dashboardReducer,
     notifications: notificationsReducer,
     chat: chatReducer,
+    integrations: integrationsReducer,
+    liveSessions: liveSessionsReducer,
   },
 })
 

@@ -48,7 +48,7 @@ const ToolGroup = memo(function ToolGroup({ tools, renderTool }: ToolGroupProps)
   return (
     <div className="animate-scale-in">
       <button
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-muted font-body bg-card border border-border rounded-md hover:text-text hover:border-border-strong transition-all cursor-pointer mb-0.5"
+        className="w-full min-w-0 flex items-center gap-1.5 px-2 py-1 text-[11px] text-muted font-body bg-card border border-border rounded-md hover:text-text hover:border-border-strong transition-all cursor-pointer mb-0.5"
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
         aria-label={expanded ? 'Collapse tool calls' : 'Expand tool calls'}

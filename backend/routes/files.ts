@@ -9,14 +9,14 @@ import os from 'os'
 import { execFile } from 'child_process'
 import type { RouteDeps } from './types.js'
 
-const expandHome = (p: string | undefined): string | undefined => p && p.startsWith('~/') ? join(os.homedir(), p.slice(2)) : p
+const expandHome = (p: string | undefined): string | undefined => p === '~' ? os.homedir() : p?.startsWith('~/') ? join(os.homedir(), p.slice(2)) : p
 
 export function registerFileRoutes(deps: RouteDeps): void {
   const { app, versionStore, recentWrites, createVersion } = deps
 
   // Browse directory contents (for file tree picker)
   app.get('/api/browse', (req: Request, res: Response) => {
-    const target = (req.query.path as string) || os.homedir()
+    const target = expandHome(req.query.path as string) || os.homedir()
     try {
       const showHidden = req.query.hidden === 'true'
       const showFiles = req.query.files === 'true'
@@ -63,6 +63,47 @@ export function registerFileRoutes(deps: RouteDeps): void {
     } catch {
       res.json({ dir: '', prefix: '', entries: [] })
     }
+  })
+
+  // File mention search — returns files whose basename matches the query (`@` reference).
+  app.get('/api/file-search', (req: Request, res: Response) => {
+    const q = String(req.query.q || '').trim()
+    const cwd = (req.query.cwd as string) || process.cwd()
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 30, 1), 100)
+    const needles = q.toLowerCase().split(/\s+/).filter(Boolean)
+    const roots: string[] = []
+    for (const r of q ? [cwd, os.homedir()] : [cwd]) {
+      if (r && !roots.includes(r)) roots.push(r)
+    }
+    const SKIP = new Set(['node_modules', '.git', '.venv', '__pycache__', '.next', 'dist', 'build', '.cache', '.idea', 'vendor'])
+    const out: { name: string; path: string; isDir: boolean }[] = []
+    const seen = new Set<string>()
+    const stack = [...roots]
+    let dirs = 0
+    while (stack.length && out.length < limit && dirs < 400) {
+      const dir = stack.pop()!
+      if (seen.has(dir)) continue
+      seen.add(dir)
+      let entries: import('fs').Dirent[]
+      try { entries = readdirSync(dir, { withFileTypes: true }) } catch { continue }
+      dirs++
+      const subdirs: string[] = []
+      for (const e of entries) {
+        if (out.length >= limit) break
+        const full = join(dir, e.name)
+        if (e.isDirectory()) {
+          if (!SKIP.has(e.name) && !e.name.startsWith('.')) subdirs.push(full)
+        } else if (e.isFile()) {
+          const lname = e.name.toLowerCase()
+          if (needles.length === 0 || needles.every(n => lname.includes(n))) {
+            out.push({ name: e.name, path: full, isDir: false })
+          }
+        }
+      }
+      for (let i = subdirs.length - 1; i >= 0; i--) stack.push(subdirs[i])
+    }
+    out.sort((a, b) => a.name.localeCompare(b.name))
+    res.json({ entries: out })
   })
 
   // File read — supports ?tail=<bytes> to return only the last N bytes

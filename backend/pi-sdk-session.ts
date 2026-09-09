@@ -46,6 +46,7 @@ import { extractText, summarizeProviderError, ChatMessage } from './session-stor
 import type { PiSession, PiTransport, ImagePayload, ToolApprovalDecision } from './pi-session.js'
 import { deriveStatsFrames } from './pi-session.js'
 import { resolveDefaultThinkingLevel } from './thinking-level.js'
+import { installSdkExtensionBridge } from './extension-bridge/sdk-host.js'
 import { randomUUID } from 'crypto'
 import {
   createAgentSessionServices,
@@ -179,6 +180,8 @@ export class PiSdkSession extends EventEmitter implements PiSession {
   _initPromise: Promise<void> | null
   /** Set once dispose/kill has run so `alive` reports dead. */
   _disposed: boolean
+  /** Removes the slot-scoped SDK extension bridge capability and adapters. */
+  _bridgeCleanup: (() => void) | null
 
   constructor(slotKey: string, opts: PiSdkSessionOptions = {}) {
     super()
@@ -214,6 +217,7 @@ export class PiSdkSession extends EventEmitter implements PiSession {
     this._uiContext = null
     this._initPromise = null
     this._disposed = false
+    this._bridgeCleanup = null
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -232,6 +236,8 @@ export class PiSdkSession extends EventEmitter implements PiSession {
     this._disposed = false
     this._initPromise = this._init().catch(err => {
       this.ready = false
+      this._bridgeCleanup?.()
+      this._bridgeCleanup = null
       this.emit('startup_error', { code: 1, slotKey: this.slotKey, stderr: String(err?.stack || err) })
       this.emit('error', err)
     })
@@ -246,6 +252,8 @@ export class PiSdkSession extends EventEmitter implements PiSession {
     const sessionManager = this.sessionFile
       ? SessionManager.open(this.sessionFile)
       : SessionManager.create(cwd)
+    this._bridgeCleanup?.()
+    this._bridgeCleanup = installSdkExtensionBridge(sessionManager, this.slotKey)
 
     // Own ONE AgentSessionRuntime per slot (design §3/§4). The runtime holds the
     // cwd-bound services (per-slot, NOT shared — pi's per-slot model/thinking
@@ -306,6 +314,12 @@ export class PiSdkSession extends EventEmitter implements PiSession {
           }],
         },
       })
+      for (const diagnostic of services.diagnostics || []) {
+        const level = diagnostic.type === 'error' ? 'error' : 'warn'
+        const message = `Slot ${this.slotKey}: extension resource ${diagnostic.type}: ${diagnostic.message}`
+        this.emit('log', { level, msg: message })
+        if (diagnostic.type === 'error') console.error(`[pi-sdk] ${message}`)
+      }
       const model =
         this.modelProvider && this.modelId
           ? services.modelRuntime.getModel(this.modelProvider, this.modelId)
@@ -419,6 +433,8 @@ export class PiSdkSession extends EventEmitter implements PiSession {
       try { pending.resolve({ decision: 'deny', reason: 'session disposed' }) } catch { /* ignore */ }
     }
     this._pendingToolApproval.clear()
+    this._bridgeCleanup?.()
+    this._bridgeCleanup = null
     try { this._session?.dispose() } catch { /* ignore */ }
     this._session = null
     try { void this.runtime?.dispose() } catch { /* ignore */ }
