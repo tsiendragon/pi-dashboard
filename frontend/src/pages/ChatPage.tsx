@@ -15,10 +15,12 @@ import TypewriterText from '../components/TypewriterText'
 const DocumentPanel = lazy(() => import('../components/DocumentPanel'))
 import FileBrowser from '../components/FileBrowser'
 import ReferencedFiles from '../components/ReferencedFiles'
+import DocumentPreviewModal from '../components/DocumentPreviewModal'
 import { useReferencedFiles } from '../hooks/useReferencedFiles'
 import WelcomeView from '../components/WelcomeView'
 import SlashCommandMenu from '../components/SlashCommandMenu'
 import PathCompleteMenu from '../components/PathCompleteMenu'
+import FileMentionMenu from '../components/FileMentionMenu'
 import { usePanelState, detectFileType } from '../hooks/usePanelState'
 import { resolvePath } from '../utils/resolvePath'
 import { WsContext } from '../App'
@@ -37,6 +39,9 @@ import SplitPane from './chat/SplitPane'
 import MemoryFlash from './chat/MemoryFlash'
 import ExtensionUiModal from '../components/ExtensionUiModal'
 import ToolApprovalModal from '../components/ToolApprovalModal'
+import WorkbenchPanel from '../features/workbench/WorkbenchPanel'
+import BtwDrawer from '../features/btw/BtwDrawer'
+import BackgroundCommandsDock from '../features/background-commands/BackgroundCommandsDock'
 import { StatusBarSlot } from '../plugins'
 import type { ChatMessage } from '../types'
 
@@ -173,6 +178,8 @@ export default function ChatPage() {
   }, [handleVoiceInput])
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [showWorkbench, setShowWorkbench] = useState(false)
+  const [showBtw, setShowBtw] = useState(false)
   const [splitSlot, setSplitSlot] = useState<string | null>(null)
   const [showSplitPicker, setShowSplitPicker] = useState(false)
 
@@ -289,6 +296,7 @@ export default function ChatPage() {
   const isMac = useAppSelector(s => s.dashboard.status?.platform) === 'darwin'
 
   const panel = usePanelState()
+  const [documentPreview, setDocumentPreview] = useState<{ filePath: string; content: string; loading: boolean; error: string | null } | null>(null)
   const { subscribeFileChange, wsRef } = useContext(WsContext)
 
   // Register file change callback (mirrors LogsPage subscribeLogs pattern)
@@ -353,6 +361,31 @@ export default function ChatPage() {
         .catch(() => {})
     } catch { panel.openPanel(filePath, '_Error reading file_') }
   }, [panel.openPanel]) // eslint-disable-line react-hooks/exhaustive-deps -- panel.openPanel is stable
+
+  const handleDocumentLink = useCallback(async (rawPath: string) => {
+    const filePath = resolvePath(rawPath, slotCwdRef.current)
+    // Keep binary and HTML artifacts on the existing full document panel path.
+    if (detectFileType(filePath) !== 'text') {
+      setDocumentPreview(null)
+      void handleFileOpen(rawPath)
+      return
+    }
+
+    setDocumentPreview({ filePath, content: '', loading: true, error: null })
+    try {
+      const res = await fetch('/api/file-read?path=' + encodeURIComponent(filePath))
+      if (!res.ok) throw new Error(`Unable to read file (${res.status})`)
+      const content = await res.text()
+      setDocumentPreview(current => current?.filePath === filePath
+        ? { filePath, content, loading: false, error: null }
+        : current)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to read file'
+      setDocumentPreview(current => current?.filePath === filePath
+        ? { filePath, content: '', loading: false, error: message }
+        : current)
+    }
+  }, [handleFileOpen])
 
   const handleContentChange = useCallback((c: string) => { panel.setContent(c); panel.setDirty(true) }, [panel.setContent, panel.setDirty])
 
@@ -762,6 +795,19 @@ export default function ChatPage() {
     setPendingFiles(prev => prev.filter((_, i) => i !== idx))
   }, [])
 
+  const handleMentionPick = useCallback((entry: { name: string; path: string }, token: { start: number; end: number }) => {
+    setInput(prev => prev.slice(0, token.start) + prev.slice(token.end))
+    setPendingFiles(prev => prev.some(f => f.path === entry.path) ? prev : [...prev, { name: entry.name, path: entry.path }])
+    const pos = token.start
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus()
+        inputRef.current.selectionStart = inputRef.current.selectionEnd = pos
+        setCursorPos(pos)
+      }
+    }, 0)
+  }, [setInput])
+
   const send = useCallback(async (optionText?: string) => {
     const filePaths = pendingFiles.map(f => f.path)
     const filePrefix = filePaths.length ? filePaths.join('\n') + '\n\n' : ''
@@ -783,6 +829,13 @@ export default function ChatPage() {
       const result = await dispatch(createSlot({ model: pendingModel || undefined, cwd: pendingCwd || undefined })).unwrap()
       if (pendingCwd) recordDirUsage(pendingCwd)
       slot = result.key
+    }
+    const localCommand = txt.split(/\s+/, 1)[0]
+    if (localCommand === '/subagent-workbench' || localCommand === '/btw') {
+      if (!optionText) setInput('')
+      if (localCommand === '/subagent-workbench') setShowWorkbench(true)
+      else setShowBtw(true)
+      return
     }
     if (!optionText) setInput('')
     setPendingImages([])
@@ -922,7 +975,7 @@ export default function ChatPage() {
   const renderMessage = useCallback((i: number, m: ChatMessage) => {
     const key = m.ts ? `${m.role}-${m.ts}` : `${m.role}-${i}`
     if (m.role === 'thinking') return <ThinkingBlock key={key} content={m.content} />
-    if (m.role === 'tool') return <ToolCallBlock key={key} content={m.content} meta={m.meta} onFileOpen={handleFileOpen} slotKey={activeSlot ?? undefined} />
+    if (m.role === 'tool') return <ToolCallBlock key={key} content={m.content} meta={m.meta} onFileOpen={handleDocumentLink} slotKey={activeSlot ?? undefined} />
     if (m.role === 'queued') return null // rendered as pills above the input, not inline
     if (m.role === 'error') return <div key={key} className="bg-danger-subtle text-danger text-[13px] px-3 py-2 rounded-md border border-danger/15 self-center animate-scale-in">{m.content}</div>
     if (m.role === 'system') return <SystemMessage key={key} content={m.content} meta={m.meta} />
@@ -978,7 +1031,7 @@ export default function ChatPage() {
               })}
             </div>
           ) : (
-            <AssistantMessage content={m.content} isStreaming={isStreaming} slotRunning={slotRunning} onOption={send} onFileOpen={handleFileOpen} planTaskId={planTaskId} turnCost={m.turnCost} turnInputTokens={m.turnInputTokens} turnOutputTokens={m.turnOutputTokens} onApplyPlan={async (steps: any[]) => {
+            <AssistantMessage content={m.content} isStreaming={isStreaming} slotRunning={slotRunning} onOption={send} onFileOpen={handleDocumentLink} planTaskId={planTaskId} turnCost={m.turnCost} turnInputTokens={m.turnInputTokens} turnOutputTokens={m.turnOutputTokens} onApplyPlan={async (steps: any[]) => {
               const r = await api.planFromChat(steps, planTaskId)
               if (r.ok) navigate('/tasks?applied=' + (r.task_id || planTaskId))
               else alert(r.error || 'Failed to apply plan')
@@ -991,7 +1044,7 @@ export default function ChatPage() {
         </div>
       </div>
     )
-  }, [messages, pendingApproval, slotRunning, approve, send, handleFileOpen, chatConfig, navigate, planTaskId, activeSlot])
+  }, [messages, pendingApproval, slotRunning, approve, send, handleFileOpen, handleDocumentLink, chatConfig, navigate, planTaskId, activeSlot])
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('mc-chat-sidebar') === '1')
 
@@ -1337,6 +1390,9 @@ export default function ChatPage() {
             {tokenStats && <StatChipRail stats={tokenStats} contextUsage={contextUsage} />}
             <StatusLine slot={currentSlot} modelDisplay={modelDisplay} running={slotRunning} />
             <SubagentDock />
+            {activeSlot && <BackgroundCommandsDock slot={activeSlot} />}
+            {activeSlot && showBtw && <BtwDrawer slot={activeSlot} onClose={() => setShowBtw(false)} onCopy={(text) => { setInput(text); setShowBtw(false); requestAnimationFrame(() => inputRef.current?.focus()) }} />}
+            {activeSlot && showWorkbench && <WorkbenchPanel slot={activeSlot} onClose={() => setShowWorkbench(false)} />}
             {prefillHint && (
               <div className="flex items-center gap-2 px-5 py-2 bg-accent/10 border-t border-accent/30">
                 <span className="text-accent text-[13px]">📋 Plan pre-filled below — add your context then press Send</span>
@@ -1423,6 +1479,7 @@ export default function ChatPage() {
               </button>
               <SlashCommandMenu input={input} anchorRef={inputRef as React.RefObject<HTMLElement>} open={slashMenuOpen} onSelect={cmd => { setInput(cmd); setSlashMenuOpen(false) }} onClose={() => setSlashMenuOpen(false)} />
               {pathMenuOpen && <PathCompleteMenu input={input} cursorPos={cursorPos} anchorRef={inputRef as React.RefObject<HTMLElement>} onComplete={(before, completed, after) => { const val = before + completed + after; setInput(val); setPathMenuOpen(true); setTimeout(() => { if (inputRef.current) { const pos = before.length + completed.length; inputRef.current.selectionStart = inputRef.current.selectionEnd = pos; setCursorPos(pos) } }, 0) }} onClose={() => setPathMenuOpen(false)} />}
+              <FileMentionMenu input={input} cursorPos={cursorPos} cwd={currentSlot?.cwd} anchorRef={inputRef as React.RefObject<HTMLElement>} onPick={handleMentionPick} onClose={() => {}} />
               <div className="flex-1 flex flex-col gap-1.5">
                 <MemoryFlash slotKey={activeSlot} />
                 {pendingImages.length > 0 && (
@@ -1491,6 +1548,15 @@ export default function ChatPage() {
         <Suspense fallback={<div className="flex-[0_0_40%] border-l border-border bg-bg flex items-center justify-center"><span className="text-muted text-sm">Loading…</span></div>}>
           <DocumentPanel filePath={panel.filePath} content={panel.content} onContentChange={handleContentChange} onSave={handleFileSave} onClose={panel.closePanel} dirty={panel.dirty} versions={panel.versions} selectedVersion={panel.selectedVersion} conflictContent={panel.conflictContent} onSelectVersion={panel.selectVersion} onResolveConflict={panel.resolveConflict} diffMode={panel.diffMode} onToggleDiff={panel.toggleDiffMode} comments={panel.comments} onAddComment={handleAddComment} onEditComment={handleEditComment} onDeleteComment={handleDeleteComment} onReviewComments={handleReviewComments} />
         </Suspense>
+      )}
+      {documentPreview && (
+        <DocumentPreviewModal
+          filePath={documentPreview.filePath}
+          content={documentPreview.content}
+          loading={documentPreview.loading}
+          error={documentPreview.error}
+          onClose={() => setDocumentPreview(null)}
+        />
       )}
       <ExtensionUiModal />
       <ToolApprovalModal />

@@ -25,7 +25,27 @@ import {
   registerSystemRoutes,
   registerSessionRoutes,
   registerJobsRoutes,
+  registerIntegrationRoutes,
+  createLiveSessionRoutes,
+  registerUsageRoutes,
+  type LiveSessionRoutes,
 } from './routes/index.js'
+import { extensionBridgeRegistry } from './extension-bridge/registry.js'
+import { rpcExtensionBridgeServer } from './extension-bridge/rpc-server.js'
+import { getDashConfig } from './pi-env.js'
+import { parseLiveSessionConfig } from './live-sessions/config.js'
+import { LiveSessionBrowserAuth } from './live-sessions/auth.js'
+import { LiveSessionBroker } from './live-sessions/broker.js'
+import { liveSessionRegistry } from './live-sessions/registry.js'
+import { LivePiLauncher } from './live-sessions/launcher.js'
+import { UsageLedger } from './usage-ledger.js'
+
+process.env.PI_RUNTIME = 'dashboard'
+if (!process.env.VITEST) {
+  void rpcExtensionBridgeServer.start().catch(error => {
+    console.error('[extension-bridge] Failed to start RPC bridge:', error)
+  })
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = parseInt(process.env.PI_DASH_PORT || '7777', 10)
@@ -38,6 +58,16 @@ const app = express()
 const server = createServer(app)
 const wss = new WebSocketServer({ noServer: true })
 const manager = new PiManager()
+const liveSessionConfig = parseLiveSessionConfig((getDashConfig() as Record<string, unknown>).liveSessions)
+const liveSessionAuth = new LiveSessionBrowserAuth()
+const liveSessionBroker = liveSessionConfig.enabled
+  ? new LiveSessionBroker({ registry: liveSessionRegistry, roots: liveSessionConfig.roots })
+  : undefined
+const livePiManager = liveSessionConfig.enabled ? new PiManager() : undefined
+const livePiLauncher = livePiManager ? new LivePiLauncher(livePiManager, liveSessionConfig.roots) : undefined
+const usageLedger = new UsageLedger()
+void usageLedger.start().catch(error => console.error('[usage] Failed to load ledger:', error))
+let liveSessionRoutes: LiveSessionRoutes | undefined
 
 // ─── Notifications ───────────────────────────────────────────
 const notifications: Notification[] = []
@@ -84,6 +114,16 @@ for (const s of savedSlots) {
     if (s.midTurn) _resumeMidTurnKeys.push(s.key)
   }
 }
+for (const slot of savedSlots) {
+  if (slot.sessionFile) {
+    void usageLedger.ingestSessionFile(slot.sessionFile, {
+      sessionFile: slot.sessionFile,
+      slotKey: slot.key,
+      label: slot.title,
+      cwd: slot.cwd || undefined,
+    }).catch(error => console.error(`[usage] Failed to ingest ${slot.sessionFile}:`, error))
+  }
+}
 if (savedSlots.length > 0) console.log(`   Restored ${savedSlots.length} chat slot(s)`)
 if (_resumeMidTurnKeys.length > 0) {
   console.warn(`   ⚠ ${_resumeMidTurnKeys.length} slot(s) were mid-turn at last shutdown (interrupted): ${_resumeMidTurnKeys.join(', ')} — offering resume`)
@@ -106,6 +146,46 @@ const wsClients: Set<WebSocket> = new Set()
 
 // ─── Middleware ──────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }))
+
+liveSessionRegistry.on('attached', (detail: any) => {
+  void usageLedger.ingestSessionFile(detail.summary?.sessionFile, {
+    sessionId: detail.summary?.sessionId,
+    sessionFile: detail.summary?.sessionFile,
+    processInstanceId: detail.summary?.processInstanceId,
+    label: detail.summary?.sessionName || detail.summary?.canonicalCwd,
+    cwd: detail.summary?.canonicalCwd,
+  }).catch(error => console.error('[usage] Failed to ingest live session:', error))
+})
+liveSessionRegistry.on('snapshot', (detail: any) => {
+  void usageLedger.ingestSessionFile(detail.summary?.sessionFile, {
+    sessionId: detail.summary?.sessionId,
+    sessionFile: detail.summary?.sessionFile,
+    processInstanceId: detail.summary?.processInstanceId,
+    label: detail.summary?.sessionName || detail.summary?.canonicalCwd,
+    cwd: detail.summary?.canonicalCwd,
+  }).catch(error => console.error('[usage] Failed to refresh live session:', error))
+})
+liveSessionRegistry.on('event', (message: any) => {
+  if (message?.event?.type !== 'message_end') return
+  const summary = liveSessionRegistry.getSummaryForUsage(message.processInstanceId)
+  void usageLedger.recordLiveEvent(message, summary).catch(error => console.error('[usage] Failed to record live usage:', error))
+})
+
+if (liveSessionConfig.enabled && !process.env.VITEST) {
+  liveSessionRoutes = createLiveSessionRoutes({
+    app,
+    registry: liveSessionRegistry,
+    auth: liveSessionAuth,
+    disconnectGraceMs: liveSessionConfig.disconnectGraceMs,
+    launcher: livePiLauncher,
+  })
+  void Promise.all([liveSessionRoutes.start(), liveSessionBroker!.start()]).then(() => {
+    console.log(`[live-sessions] Broker ready at ${liveSessionBroker!.socketPath}`)
+    console.log(`[live-sessions] Browser control token: ${liveSessionAuth.tokenPath}`)
+  }).catch(error => {
+    console.error('[live-sessions] Failed to start:', error)
+  })
+}
 
 // Shared origin-match: true when the request originates from the dashboard's own
 // host, or is header-less (native app / non-browser client). A sandboxed,
@@ -432,6 +512,14 @@ function _wireSlotEvents(pi: PiSession, slotKey: string): void {
   })
 
   pi.on('agent_end', () => {
+    if (pi.sessionFile) {
+      void usageLedger.ingestSessionFile(pi.sessionFile, {
+        sessionFile: pi.sessionFile,
+        slotKey,
+        label: pi._title || slotKey,
+        cwd: pi.cwd || undefined,
+      }).catch(error => console.error(`[usage] Failed to refresh ${pi.sessionFile}:`, error))
+    }
     const dur = agentStartTime ? Date.now() - agentStartTime : 0
     console.log(`[server] agent_end slot=${slotKey} duration=${dur}ms midTurn=${midTurn} chars=${_turnChars} tools=${_turnTools} thinking=${_turnThinking}`)
     // Empty/truncated turn detection. If the turn produced no tool calls,
@@ -690,7 +778,17 @@ function _wireSlotEvents(pi: PiSession, slotKey: string): void {
     })
   })
 
-  pi.on('session_file', () => persistSlots())
+  pi.on('session_file', () => {
+    persistSlots()
+    if (pi.sessionFile) {
+      void usageLedger.ingestSessionFile(pi.sessionFile, {
+        sessionFile: pi.sessionFile,
+        slotKey,
+        label: pi._title || slotKey,
+        cwd: pi.cwd || undefined,
+      }).catch(error => console.error(`[usage] Failed to ingest ${pi.sessionFile}:`, error))
+    }
+  })
 
   pi.on('model_change', () => {
     persistSlots()
@@ -777,6 +875,13 @@ registerFileRoutes(routeDeps)
 registerSystemRoutes(routeDeps)
 registerSessionRoutes(routeDeps)
 registerJobsRoutes(routeDeps)
+registerIntegrationRoutes(routeDeps)
+registerUsageRoutes({ app, ledger: usageLedger })
+
+extensionBridgeRegistry.on('attached', snapshot => broadcast('extension_feature_attached', snapshot))
+extensionBridgeRegistry.on('snapshot', snapshot => broadcast('extension_feature_snapshot', snapshot))
+extensionBridgeRegistry.on('detached', snapshot => broadcast('extension_feature_detached', snapshot))
+extensionBridgeRegistry.on('error', error => broadcast('extension_feature_error', error))
 
 // ─── Static files ────────────────────────────────────────────
 app.use(express.static(DIST_DIR))
@@ -788,6 +893,7 @@ app.get('*', (_req: Request, res: Response) => {
 server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
   console.log('  WS upgrade:', req.url)
 
+  if (liveSessionRoutes?.handleUpgrade(req, socket, head)) return
   const wsPath = (req.url || '').split('?')[0]
   if (wsPath === '/api/ws') {
     // Same origin guard as the HTTP mutation routes: a sandboxed, opaque-origin
@@ -814,6 +920,11 @@ wss.on('connection', (ws: WebSocket) => {
   console.log(`[ws] Client #${(ws as any)._id} connected (total: ${wsClients.size})`)
   ws.send(JSON.stringify({ type: 'dashboard', data: manager.status() }))
   ws.send(JSON.stringify({ type: 'slots', data: manager.listSlots() }))
+  for (const slot of manager.listSlots()) {
+    for (const snapshot of extensionBridgeRegistry.list(slot.key)) {
+      ws.send(JSON.stringify({ type: 'extension_feature_snapshot', data: snapshot }))
+    }
+  }
 
   ws.on('message', (raw) => {
     try {
@@ -853,14 +964,31 @@ if (!process.env.VITEST) server.listen(PORT, BIND_HOST, () => {
   console.log()
 })
 
+async function stopLiveSessions(): Promise<void> {
+  await liveSessionRoutes?.stop()
+  await liveSessionBroker?.stop()
+  await liveSessionRegistry.stop()
+  await liveSessionAuth.stop()
+}
+
 process.on('SIGINT', () => {
   saveSlotStateSync(manager.slots as any)
-  manager.gracefulShutdown(55000).finally(() => { process.exit(0) })
+  Promise.allSettled([
+    manager.gracefulShutdown(55000),
+    extensionBridgeRegistry.dispose(),
+    rpcExtensionBridgeServer.stop(),
+    stopLiveSessions(),
+  ]).finally(() => { process.exit(0) })
   setTimeout(() => { process.exit(0) }, 60000).unref()
 })
 process.on('SIGTERM', () => {
   saveSlotStateSync(manager.slots as any)
-  manager.gracefulShutdown(55000).finally(() => { process.exit(0) })
+  Promise.allSettled([
+    manager.gracefulShutdown(55000),
+    extensionBridgeRegistry.dispose(),
+    rpcExtensionBridgeServer.stop(),
+    stopLiveSessions(),
+  ]).finally(() => { process.exit(0) })
   setTimeout(() => { process.exit(0) }, 60000).unref()
 })
 process.on('uncaughtException', (err: any) => {
