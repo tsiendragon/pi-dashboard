@@ -4,18 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
   <link rel="icon" href="/logo.svg" type="image/svg+xml" />
-  <link rel="manifest" href="/manifest.json" />
+  <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
   <meta name="theme-color" content="#0d0f12" />
   <link rel="apple-touch-icon" href="/icon-192.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.rel='stylesheet'" />
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" /></noscript>
   <style>
+    @font-face {
+      font-family: 'JetBrains Mono';
+      src: url('/fonts/JetBrainsMonoNerdFontMono-Regular.ttf') format('truetype');
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
     @font-face {
       font-family: 'JetBrainsMono Nerd Font';
       src: url('/fonts/JetBrainsMonoNerdFontMono-Regular.ttf') format('truetype');
-      font-weight: normal;
+      font-weight: 400 700;
       font-style: normal;
       font-display: swap;
     }

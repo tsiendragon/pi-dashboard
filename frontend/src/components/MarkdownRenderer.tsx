@@ -49,6 +49,11 @@ hljs.registerLanguage('markdown', markdown)
 hljs.registerLanguage('md', markdown)
 
 const PATH_RE = /^~?(?:\.{0,2}\/)?[\w.@~/ -]*\/[\w.@~ -]*[\w.]$/
+const VIEWABLE_FILE_RE = /\.(?:md|markdown|json|ya?ml|txt|toml|ini|conf|log|tsx?|jsx?|py|sh|sql|xml|css|html?)$/i
+
+function isOpenablePath(value: string): boolean {
+  return PATH_RE.test(value) || VIEWABLE_FILE_RE.test(value)
+}
 
 function setSanitizedHTML(el: Element, html: string): void {
   const clean = DOMPurify.sanitize(html)
@@ -74,7 +79,7 @@ function HighlightedCode({ code, lang, className }: { code: string; lang: string
     setSanitizedHTML(ref.current, highlighted)
   }, [code, lang])
 
-  return <code ref={ref} className={`hljs text-[13px] font-mono leading-relaxed ${className}`} />
+  return <code ref={ref} className={`hljs text-[12px] font-mono leading-4 ${className}`} />
 }
 
 const COLLAPSE_LINE_THRESHOLD = 20
@@ -89,18 +94,18 @@ const CodeBlock = memo(function CodeBlock({ code, lang, complete }: { code: stri
     : code
 
   return (
-    <div className="relative group my-2">
-      <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-3 py-1.5">
-        <span className="text-muted text-[12px] font-mono uppercase">{lang || 'code'}{lineCount > 1 && <span className="text-muted/50 ml-1.5">{lineCount} lines</span>}</span>
-        <button className="text-muted text-[12px] opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(code)}>Copy</button>
+    <div className="relative group my-1">
+      <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-2 py-1">
+        <span className="text-muted text-[10px] font-mono uppercase">{lang || 'code'}{lineCount > 1 && <span className="text-muted/50 ml-1">{lineCount} lines</span>}</span>
+        <button className="text-muted text-[10px] opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(code)}>Copy</button>
       </div>
-      <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-3 overflow-x-auto">
+      <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-2 overflow-x-auto">
         <HighlightedCode code={displayCode} lang={lang} className={lang ? `language-${lang}` : ''} />
         {!complete && <span className="text-muted text-[12px] italic animate-pulse ml-2">generating…</span>}
       </pre>
       {shouldCollapse && (
         <button
-          className="w-full py-1.5 text-[12px] text-accent font-medium cursor-pointer bg-bg-elevated border border-t-0 border-border rounded-b-md -mt-[1px] hover:bg-bg-hover transition-colors"
+          className="w-full py-1 text-[11px] text-accent font-medium cursor-pointer bg-bg-elevated border border-t-0 border-border rounded-b-md -mt-[1px] hover:bg-bg-hover transition-colors"
           onClick={() => setCollapsed(c => !c)}
         >
           {collapsed ? `Show all ${lineCount} lines` : 'Collapse'}
@@ -119,19 +124,19 @@ const MD_COMPONENTS: Record<string, React.ComponentType<any>> = {
     if (lang === 'mermaid') return <ResizableMermaid code={codeStr} />
 
     if (!className) {
-      if (PATH_RE.test(codeStr)) {
+      if (isOpenablePath(codeStr)) {
         return <code className="bg-bg-elevated px-1.5 py-0.5 rounded text-accent text-sm font-mono cursor-pointer hover:underline" title="Click to open / Shift+click to reveal in Finder" {...props}>{children}</code>
       }
       return <code className="bg-bg-elevated px-1.5 py-0.5 rounded text-accent text-sm font-mono" {...props}>{children}</code>
     }
 
     return (
-      <div className="relative group my-2">
-        <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-3 py-1.5">
-          <span className="text-muted text-[12px] font-mono uppercase">{lang || 'code'}</span>
-          <button className="text-muted text-[12px] opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(codeStr)}>Copy</button>
+      <div className="relative group my-1">
+        <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-2 py-1">
+          <span className="text-muted text-[10px] font-mono uppercase">{lang || 'code'}</span>
+          <button className="text-muted text-[10px] opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(codeStr)}>Copy</button>
         </div>
-        <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-3 overflow-x-auto">
+        <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-2 overflow-x-auto">
           <HighlightedCode code={codeStr} lang={lang} className={className || ''} />
         </pre>
       </div>
@@ -196,10 +201,18 @@ export default memo(function MarkdownRenderer({ content, streaming = false, onFi
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const el = e.target as HTMLElement
-    if (el.tagName === 'CODE' && PATH_RE.test(el.textContent || '')) {
+    if (el.tagName === 'CODE' && isOpenablePath(el.textContent || '')) {
       e.preventDefault()
       if (onFileOpen && !e.shiftKey) onFileOpen(el.textContent!.trim())
       else api.revealPath(el.textContent!.trim())
+      return
+    }
+    const anchor = el.closest('a')
+    const href = anchor?.getAttribute('href') || ''
+    if (href && !/^(?:https?:|mailto:|#)/i.test(href) && isOpenablePath(href)) {
+      e.preventDefault()
+      if (onFileOpen && !e.shiftKey) onFileOpen(decodeURIComponent(href))
+      else api.revealPath(decodeURIComponent(href))
     }
   }, [onFileOpen])
 

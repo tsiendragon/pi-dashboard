@@ -85,6 +85,7 @@ export const api = {
   workspaces: () => get('/api/workspaces').then(j),
   browse: (path?: string) => afetch('/api/browse' + (path ? '?path=' + encodeURIComponent(path) : '')).then(j) as Promise<{ path: string; parent: string; entries: { name: string; path: string; isDir: boolean }[] }>,
   pathComplete: (input: string) => afetch('/api/path-complete?input=' + encodeURIComponent(input)).then(j) as Promise<{ dir: string; prefix: string; entries: { name: string; path: string; isDir: boolean }[] }>,
+  fileSearch: (q: string, cwd?: string) => afetch('/api/file-search?q=' + encodeURIComponent(q) + (cwd ? '&cwd=' + encodeURIComponent(cwd) : '')).then(j) as Promise<{ entries: { name: string; path: string; isDir: boolean }[] }>,
   models: () => get('/api/models').then(j),
   setSlotModel: (slot: string, provider: string, modelId: string) =>
     post('/api/chat/slots/' + encodeURIComponent(slot) + '/model', { provider, modelId }).then(j),
@@ -149,6 +150,9 @@ export const api = {
   deleteChatSlot: (slot: string) => del('/api/chat/slots/' + encodeURIComponent(slot)).then(j),
   stopChatSlot: (slot: string) => post('/api/chat/slots/' + encodeURIComponent(slot) + '/stop').then(j),
   conductorDetach: (slot: string) => post('/api/chat/slots/' + encodeURIComponent(slot) + '/conductor-detach').then(j),
+  integrations: (slot: string) => get('/api/chat/slots/' + encodeURIComponent(slot) + '/integrations').then(j).then((r: any) => r.integrations || []),
+  integration: (slot: string, feature: string) => get('/api/chat/slots/' + encodeURIComponent(slot) + '/integrations/' + encodeURIComponent(feature)).then(j),
+  integrationCommand: (slot: string, feature: string, command: object) => post('/api/chat/slots/' + encodeURIComponent(slot) + '/integrations/' + encodeURIComponent(feature) + '/commands', { command }).then(j),
   extensionUiResponse: (slot: string, body: { id: string; cancelled?: boolean; value?: string | boolean }) => post('/api/chat/slots/' + encodeURIComponent(slot) + '/extension-ui-response', body).then(j),
   // Permission gating (slice 11, SDK-only)
   setSlotToolApproval: (slot: string, enabled: boolean) => post('/api/chat/slots/' + encodeURIComponent(slot) + '/tool-approval', { enabled }).then(j),

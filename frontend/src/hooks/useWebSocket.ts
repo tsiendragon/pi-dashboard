@@ -5,6 +5,7 @@ import { store } from '../store'
 import { sseStatus, sseConnected, sseDisconnected, sseSlots, sseSlotTitle, triggerRefresh, fetchSlots, markSlotUnread, addSlotError } from '../store/dashboardSlice'
 import { addNotification, ackNotificationByTs } from '../store/notificationsSlice'
 import { fetchHistory, sseChatMessage, refreshSlot, setContextUsage, setTokenStats, setExtensionStatus, setExtensionWidget, setExtensionUiRequest, setToolApprovalRequest } from '../store/chatSlice'
+import { featureAttached, featureSnapshot, featureDetached, fetchIntegrations } from '../store/integrationsSlice'
 import type { StatusData, ChatSlot, Notification } from '../types'
 
 type LogCallback = ((data: { level: string; msg: string }) => void) | null
@@ -54,7 +55,10 @@ export function useWebSocket() {
         dispatch(fetchSlots())
         // Re-fetch active slot messages to recover from missed chunks
         const active = store.getState().chat.activeSlot
-        if (active) dispatch(refreshSlot(active))
+        if (active) {
+          dispatch(refreshSlot(active))
+          dispatch(fetchIntegrations(active))
+        }
         return
       }
       wasConnectedRef.current = true
@@ -187,6 +191,18 @@ export function useWebSocket() {
             }
             // Also add to slot errors for the global indicator
             dispatch(addSlotError({ slot: data.slot, error: data.message?.content || 'Pi process crashed at startup' }))
+            break
+          case 'extension_feature_attached':
+            dispatch(featureAttached(data))
+            break
+          case 'extension_feature_snapshot':
+            dispatch(featureSnapshot(data))
+            break
+          case 'extension_feature_detached':
+            dispatch(featureDetached(data))
+            break
+          case 'extension_feature_error':
+            console.error('[extension feature]', data)
             break
           case 'extension_status':
             dispatch(setExtensionStatus({ slot: data.slot, key: data.key, text: data.text }))
