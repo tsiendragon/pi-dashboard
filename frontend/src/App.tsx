@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, createContext } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAppSelector, useAppDispatch } from './store'
-import { fetchSlots, sseStatus, clearSlotErrors } from './store/dashboardSlice'
+import { fetchSlots, sseStatus } from './store/dashboardSlice'
 import { fetchNotifications } from './store/notificationsSlice'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useTheme } from './hooks/useTheme'
@@ -16,6 +16,9 @@ import SystemPage from './pages/SystemPage'
 import LogsPage from './pages/LogsPage'
 import JobsPage from './pages/JobsPage'
 import SettingsPage from './pages/SettingsPage'
+import LiveSessionPage from './features/live-sessions/LiveSessionPage'
+import LiveSessionGalleryPage from './features/live-sessions/LiveSessionGalleryPage'
+import UsagePage from './pages/UsagePage'
 import CommandPalette from './components/CommandPalette'
 import SessionPicker from './components/SessionPicker'
 import { PluginContextProvider, CommandRouteSlot } from './plugins'
@@ -33,6 +36,9 @@ export const WsContext = createContext<{
 
 const NAV_ITEMS = [
   { path: '/chat', id: 'chat', label: 'Chat', group: 'Main', icon: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /> },
+  { path: '/live-sessions', id: 'live-sessions', label: 'Live Pi', group: 'Main', icon: <><path d="M5 12h2l2-5 4 10 2-5h4" /><circle cx="12" cy="12" r="10" /></> },
+  { path: '/live-sessions/gallery', id: 'live-gallery', label: 'Session Gallery', group: 'Main', icon: <><rect x="3" y="4" width="7" height="7" rx="1" /><rect x="14" y="4" width="7" height="7" rx="1" /><rect x="3" y="13" width="7" height="7" rx="1" /><rect x="14" y="13" width="7" height="7" rx="1" /></> },
+  { path: '/usage', id: 'usage', label: 'Token Cost', group: 'Main', icon: <><path d="M4 19V5" /><path d="M4 19h17" /><path d="m7 15 3-4 3 2 5-7" /></> },
   { path: '/system', id: 'system', label: 'System', group: 'Main', icon: <><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></> },
   { path: '/logs', id: 'logs', label: 'Logs', group: 'Tools', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></> },
   { path: '/jobs', id: 'jobs', label: 'Jobs', group: 'Tools', icon: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></> },
@@ -54,7 +60,6 @@ function PluginCommandPage() {
 
 export default function App() {
   const dispatch = useAppDispatch()
-  const { connected } = useAppSelector(s => s.dashboard)
   const updateAvailable = useAppSelector(s => s.dashboard.status?.update_available)
   const version = useAppSelector(s => s.dashboard.status?.version) || '—'
 
@@ -69,8 +74,6 @@ export default function App() {
   const [autoUpdate, setAutoUpdate] = useState(true)
   const [fullChangelog, setFullChangelog] = useState('')
   const [showFull, setShowFull] = useState(false)
-  const slotErrors = useAppSelector(s => s.dashboard.slotErrors)
-  const [showErrors, setShowErrors] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
@@ -160,7 +163,8 @@ export default function App() {
   }, [navigate, location.pathname])
 
   const activePath = location.pathname
-  const isChat = activePath === '/chat' || activePath === '/'
+  const isChat = activePath === '/chat' || activePath === '/' || activePath.startsWith('/live-sessions')
+  const isNavActive = (path: string) => activePath === path || (path === '/live-sessions' && activePath.startsWith('/live-sessions/'))
   const groups = [...new Set(NAV_ITEMS.map(n => n.group))]
   const pluginRegistry = useMemo(() => {
     const registry = createSlotRegistry()
@@ -178,66 +182,8 @@ export default function App() {
     <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} onToggleSidebar={toggleNav} />
     <SessionPicker open={sessionPickerOpen} onOpenChange={setSessionPickerOpen} />
     <ConnectionOverlay />
-    <div className={`pidash-root relative z-[1] h-[100dvh] grid ${isNativeApp ? 'grid-rows-[0px_1fr_auto]' : 'grid-rows-[52px_1fr_auto]'} md:grid-rows-[52px_1fr] grid-cols-[1fr] animate-rise overflow-hidden transition-[grid-template-columns] duration-[350ms] ease-in-out ${navCollapsed ? 'md:grid-cols-[56px_minmax(0,1fr)]' : 'md:grid-cols-[220px_minmax(0,1fr)]'}`}>
+    <div className={`pidash-root relative z-[1] h-[100dvh] grid grid-rows-[0px_1fr_auto] md:grid-rows-[1fr] grid-cols-[1fr] animate-rise overflow-hidden transition-[grid-template-columns] duration-[350ms] ease-in-out ${navCollapsed ? 'md:grid-cols-[56px_minmax(0,1fr)]' : 'md:grid-cols-[220px_minmax(0,1fr)]'}`}>
 
-      {/* Topbar */}
-      <header className={`pidash-topbar topbar-glass flex justify-between items-center px-3 md:px-5 pl-[max(0.75rem,env(safe-area-inset-left,0.75rem))] md:pl-[max(1.25rem,env(safe-area-inset-left,1.25rem))] z-40 standalone-pad md:col-span-2 ${isNativeApp ? 'h-0 overflow-hidden' : ''}`}>
-        <div className="flex items-center gap-3">
-          {/* Logo — hidden on mobile iOS to save space */}
-          <div className={`flex items-center gap-2.5 opacity-100 w-40 transition-all duration-300 ease-in-out ${isNativeApp ? 'hidden md:flex' : ''}`}>
-            <span className="text-xl">🥧</span>
-            <span className="text-sm font-bold tracking-[.08em] text-text-strong whitespace-nowrap">PI DASH</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-[5px] rounded-full text-[13px] font-medium bg-card border border-border hover:border-border-strong transition-colors">
-            <span className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${connected ? 'bg-ok shadow-[0_0_8px_rgba(34,197,94,.4)] animate-dot-breathe' : 'bg-danger'}`} />
-            <span className={isNativeApp ? 'hidden md:inline' : ''}>Health</span>
-            <span className={`font-mono text-[13px] ${isNativeApp ? 'hidden md:inline' : ''}`}>{connected ? 'OK' : 'Offline'}</span>
-          </div>
-          {/* Mobile nav menu — PiDash-iOS only (bottom nav hidden) */}
-          {/* Slot errors indicator */}
-          {slotErrors.length > 0 && (
-            <div className="relative">
-              <button
-                className="inline-flex items-center gap-1.5 px-2.5 py-[5px] rounded-full text-[13px] font-medium bg-danger-subtle border border-danger/30 text-danger cursor-pointer hover:border-danger hover:bg-danger/20 transition-all animate-scale-in"
-                onClick={() => setShowErrors(v => !v)}
-                title={`${slotErrors.length} error(s)`}
-              >
-                <span className="text-[14px]">⚠</span>
-                <span>{slotErrors.length} error{slotErrors.length > 1 ? 's' : ''}</span>
-              </button>
-              {showErrors && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowErrors(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-lg p-3 min-w-[320px] max-w-[480px] max-h-[60vh] overflow-y-auto">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-[13px] font-semibold text-text-strong">Session Errors</span>
-                      <button className="text-[12px] text-muted hover:text-danger cursor-pointer bg-transparent border-none" onClick={() => { dispatch(clearSlotErrors()); setShowErrors(false) }}>Clear all</button>
-                    </div>
-                    {slotErrors.map((e, i) => (
-                      <div key={i} className="mb-2 p-2 bg-danger-subtle rounded-md border border-danger/20">
-                        <div className="text-[11px] text-muted font-mono mb-1">{new Date(e.ts).toLocaleTimeString()} — {e.slot}</div>
-                        <pre className="text-[12px] text-danger font-mono whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto">{e.error}</pre>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          <button className="hidden md:inline-flex bg-card border border-border rounded-full w-7 h-7 text-[13px] cursor-pointer text-muted font-body hover:border-border-strong hover:text-text hover:scale-105 active:scale-95 transition-all items-center justify-center" onClick={() => { dispatch(fetchSlots()); dispatch(fetchNotifications()); api.status().then(s => dispatch(sseStatus(s))).catch(() => {}) }} title="Refresh">
-            🔄
-          </button>
-          <button className="hidden md:inline-flex bg-card border border-border rounded-full w-7 h-7 text-[13px] cursor-pointer text-muted font-body hover:border-danger hover:text-danger hover:scale-105 active:scale-95 transition-all items-center justify-center" onClick={() => { if (confirm('Restart the server? Sessions will be preserved.')) api.restartSessions().catch(() => {}) }} title="Restart server">
-            ⏻
-          </button>
-          <button className="hidden md:inline-flex bg-card border border-border rounded-full w-7 h-7 text-[13px] cursor-pointer text-muted font-body hover:border-border-strong hover:text-text hover:scale-105 active:scale-95 transition-all items-center justify-center" onClick={() => setShowShortcuts(s => !s)} title="Keyboard shortcuts (/)">
-            ?
-          </button>
-        </div>
-      </header>
 
       {/* Keyboard shortcuts modal — driven by registry */}
       {showShortcuts && (() => {
@@ -348,10 +294,10 @@ export default function App() {
             <div className={`flex items-center gap-2 px-2.5 py-1.5 text-[13px] font-medium text-muted transition-all duration-200 ease-in-out ${navCollapsed ? 'opacity-0 h-0 p-0 m-0 overflow-hidden' : ''}`}>{group}</div>
             {NAV_ITEMS.filter(n => n.group === group).map(n => (
               <div key={n.id}
-                className={`relative flex items-center rounded-md cursor-pointer text-sm font-medium whitespace-nowrap transition-all duration-200 ease-in-out ${navCollapsed ? 'justify-center py-2.5 gap-0' : 'gap-2.5 py-2 px-2.5'} ${activePath === n.path ? 'text-text-strong bg-accent-subtle' : 'text-muted hover:text-text hover:bg-bg-hover'}`}
+                className={`relative flex items-center rounded-md cursor-pointer text-sm font-medium whitespace-nowrap transition-all duration-200 ease-in-out ${navCollapsed ? 'justify-center py-2.5 gap-0' : 'gap-2.5 py-2 px-2.5'} ${isNavActive(n.path) ? 'text-text-strong bg-accent-subtle' : 'text-muted hover:text-text hover:bg-bg-hover'}`}
                 onClick={() => navigate(n.path)} title={navCollapsed ? n.label : undefined}>
 
-                <span className={`w-4 h-4 flex items-center justify-center shrink-0 transition-opacity ${activePath === n.path ? 'opacity-100 text-accent' : 'opacity-70'}`}>
+                <span className={`w-4 h-4 flex items-center justify-center shrink-0 transition-opacity ${isNavActive(n.path) ? 'opacity-100 text-accent' : 'opacity-70'}`}>
                   <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-current fill-none" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">{n.icon}</svg>
                 </span>
                 <span className={`transition-all duration-200 ease-in-out whitespace-nowrap overflow-hidden ${navCollapsed ? 'opacity-0 w-0' : ''}`}>
@@ -376,6 +322,10 @@ export default function App() {
         <ErrorBoundary>
           <Routes>
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/live-sessions" element={<LiveSessionPage />} />
+            <Route path="/live-sessions/gallery" element={<LiveSessionGalleryPage />} />
+            <Route path="/live-sessions/:processInstanceId" element={<LiveSessionPage />} />
+            <Route path="/usage" element={<UsagePage />} />
             <Route path="/system" element={<SystemPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
@@ -391,7 +341,7 @@ export default function App() {
         {NAV_ITEMS.map(n => (
           <button
             key={n.id}
-            className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full min-h-[44px] bg-transparent border-none cursor-pointer transition-colors ${activePath === n.path ? 'text-accent' : 'text-muted'}`}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full min-h-[44px] bg-transparent border-none cursor-pointer transition-colors ${isNavActive(n.path) ? 'text-accent' : 'text-muted'}`}
             onClick={() => navigate(n.path)}
           >
             <span className="relative">

@@ -23,6 +23,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return
   const url = new URL(e.request.url)
+  // Leave cross-origin requests under the browser's normal CORS handling.
+  if (url.origin !== self.location.origin) return
   // Skip API, WebSocket, and dynamic requests from caching
   if (url.pathname.startsWith('/api')) return
   if (url.pathname.startsWith('/ws')) return
@@ -32,10 +34,19 @@ self.addEventListener('fetch', e => {
   e.respondWith(
     fetch(e.request)
       .then(r => {
-        const clone = r.clone()
-        caches.open(CACHE).then(c => c.put(e.request, clone))
+        if (r.ok) {
+          const clone = r.clone()
+          caches.open(CACHE).then(c => c.put(e.request, clone))
+        }
         return r
       })
-      .catch(() => caches.match(e.request))
+      .catch(async () => {
+        const cached = await caches.match(e.request)
+        if (cached) return cached
+        if (e.request.mode === 'navigate') {
+          return (await caches.match('/index.html')) || (await caches.match('/')) || Response.error()
+        }
+        return Response.error()
+      })
   )
 })

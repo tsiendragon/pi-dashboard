@@ -23,16 +23,22 @@ export default function DirTree({ value, onChange, workspaces }: DirTreeProps) {
   const [parent, setParent] = useState('')
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
+  const [pathInput, setPathInput] = useState(value)
+  const [error, setError] = useState('')
   const [freqDirs, setFreqDirs] = useState(() => getFrequentDirs())
 
   const load = useCallback(async (path?: string) => {
     setLoading(true)
+    setError('')
     try {
-      const d = await api.browse(path)
+      const d = await api.browse(path?.trim() || undefined)
       setCwd(d.path)
+      setPathInput(d.path)
       setParent(d.parent)
       setEntries(d.entries || [])
-    } catch {}
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Directory is unavailable')
+    }
     setLoading(false)
   }, [])
 
@@ -90,12 +96,23 @@ export default function DirTree({ value, onChange, workspaces }: DirTreeProps) {
         ))}
       </div>
 
-      {/* Current path + nav */}
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border text-[12px] font-mono text-muted">
-        <button type="button" className="hover:text-accent transition-colors shrink-0" onClick={() => load(parent)} disabled={cwd === parent}>⬆</button>
-        <span className="truncate flex-1" title={cwd}>{cwd}</span>
-        <button type="button" className="text-accent font-semibold hover:underline shrink-0" onClick={() => select(cwd)}>Use this</button>
-        <button type="button" className="text-muted hover:text-text shrink-0 ml-1" onClick={() => setOpen(false)}>✕</button>
+      {/* Arbitrary path + current directory controls */}
+      <div className="px-2 py-1.5 border-b border-border text-[12px] font-mono text-muted">
+        <div className="flex items-center gap-1">
+          <button type="button" className="hover:text-accent transition-colors shrink-0" onClick={() => void load(parent)} disabled={cwd === parent}>⬆</button>
+          <input
+            aria-label="Directory path"
+            value={pathInput}
+            onChange={event => setPathInput(event.target.value)}
+            onKeyDown={event => { if (event.key === 'Enter') void load(pathInput) }}
+            placeholder="/absolute/path or ~/path"
+            className="min-w-0 flex-1 rounded border border-border bg-bg px-2 py-1 text-text font-mono outline-none focus:border-accent"
+          />
+          <button type="button" className="text-accent font-semibold hover:underline shrink-0" onClick={() => void load(pathInput)}>Go</button>
+          <button type="button" className="text-accent font-semibold hover:underline shrink-0" onClick={() => select(cwd)} disabled={!cwd}>Use this</button>
+          <button type="button" className="text-muted hover:text-text shrink-0 ml-1" onClick={() => setOpen(false)}>✕</button>
+        </div>
+        {error && <div className="mt-1 text-danger whitespace-normal break-words">路径不可用：{error}</div>}
       </div>
 
       {/* Directory listing */}

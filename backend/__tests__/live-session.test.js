@@ -1,0 +1,301 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'fs/promises'
+import { createConnection } from 'net'
+import express from 'express'
+import WebSocket from 'ws'
+import os from 'os'
+import path from 'path'
+import { parseLiveSessionConfig } from '../live-sessions/config.js'
+import { LiveSessionPathPolicy, isPathWithinRoot } from '../live-sessions/path-policy.js'
+import { LiveSessionRegistry } from '../live-sessions/registry.js'
+import { validateLiveSessionCommand } from '../live-sessions/protocol.js'
+import { LiveSessionBroker } from '../live-sessions/broker.js'
+import { LiveSessionBrowserAuth } from '../live-sessions/auth.js'
+import { createLiveSessionRoutes } from '../routes/live-sessions.js'
+
+const cleanups = []
+afterEach(async () => {
+  await Promise.allSettled(cleanups.splice(0).map(cleanup => cleanup()))
+})
+
+function summary(overrides = {}) {
+  return {
+    processInstanceId: 'process-a', sessionId: 'session-a', pid: 4242,
+    cwd: '/tmp/root/task', canonicalCwd: '/tmp/root/task', mode: 'tui',
+    status: 'idle', claim: { state: 'unclaimed' }, startedAt: 1,
+    lastActivityAt: 2, revision: 1, eventSequence: 0,
+    ...overrides,
+  }
+}
+
+function hello(overrides = {}) {
+  return {
+    type: 'hello', protocolVersion: 2, brokerToken: 'token',
+    processInstanceId: 'process-a', pid: 4242, cwd: '/tmp/root/task',
+    mode: 'tui', sessionId: 'session-a', ...overrides,
+  }
+}
+
+describe('LiveSession prompt channel tagging', () => {
+  it('accepts known channels and preserves them on the command', () => {
+    const command = validateLiveSessionCommand({
+      type: 'prompt', text: 'hi', channel: 'terminal', expandPromptTemplates: false,
+    })
+    expect(command).toMatchObject({ type: 'prompt', channel: 'terminal' })
+  })
+
+  it('requires a known channel and rejects legacy lease fields', () => {
+    expect(() => validateLiveSessionCommand({ type: 'prompt', text: 'hi', channel: 'carrier-pigeon' })).toThrow()
+    expect(() => validateLiveSessionCommand({ type: 'prompt', text: 'hi', expandPromptTemplates: false })).toThrow()
+    expect(() => validateLiveSessionCommand({ type: 'prompt', leaseId: 'lease-1', text: 'hi', channel: 'web' })).toThrow()
+  })
+})
+
+describe('LiveSession path/config policy', () => {
+  it('accepts canonical children and rejects prefix and symlink escapes', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pi-live-path-'))
+    cleanups.push(() => rm(base, { recursive: true, force: true }))
+    const root = path.join(base, 'worktree')
+    const child = path.join(root, 'task-a')
+    const outside = path.join(base, 'worktree-evil')
+    await Promise.all([mkdir(child, { recursive: true }), mkdir(outside)])
+    expect(isPathWithinRoot(root, child)).toBe(true)
+    expect(isPathWithinRoot(root, outside)).toBe(false)
+    const policy = new LiveSessionPathPolicy([root])
+    await policy.start()
+    expect((await policy.authorize(child)).allowed).toBe(true)
+    expect((await policy.authorize(outside)).code).toBe('out_of_scope')
+    await policy.stop()
+  })
+
+  it('defaults to the requested worktree root and fails closed for invalid config', () => {
+    expect(parseLiveSessionConfig(undefined)).toMatchObject({
+      enabled: true,
+      roots: ['/mnt/workspace/lilong/repos/worktree'],
+      claimMode: 'on-first-input',
+    })
+    expect(parseLiveSessionConfig({ roots: ['relative/path'] })).toMatchObject({ enabled: false, roots: [] })
+  })
+})
+
+describe('LiveSessionRegistry', () => {
+  it('projects status events and makes same-browser claim idempotent', async () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const commands = []
+    const transport = {
+      send(envelope) {
+        if (envelope.type !== 'command') return
+        commands.push(envelope.command)
+        const result = envelope.command.type === 'claim'
+          ? { state: 'claimed', leaseId: 'lease-a', expiresAt: Date.now() + 30_000 }
+          : envelope.command.type === 'renew'
+            ? { state: 'claimed', leaseId: 'lease-a', expiresAt: Date.now() + 30_000 }
+            : { released: true }
+        queueMicrotask(() => registry.handleCommandResult({ type: 'command_result', requestId: envelope.requestId, ok: true, result }, transport))
+      },
+    }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary(), entries: [] }, transport, '/tmp/root/task')
+    const first = await registry.claim('process-a', 'browser-a', 30_000)
+    const second = await registry.claim('process-a', 'browser-a', 30_000)
+    expect(first.leaseId).toBe('lease-a')
+    expect(second).toMatchObject({ leaseId: 'lease-a', alreadyClaimed: true })
+    expect(commands.filter(command => command.type === 'claim')).toHaveLength(1)
+
+    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'prompt', text: 'shared prompt', channel: 'web' })
+    expect(commands.at(-1)).toEqual({ type: 'prompt', text: 'shared prompt', channel: 'web', expandPromptTemplates: false })
+
+    registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 1, event: { type: 'agent_start', data: {} } }, transport)
+    expect(registry.get('process-a').summary.status).toBe('running')
+    registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 2, event: { type: 'agent_settled', data: {} } }, transport)
+    expect(registry.get('process-a').summary.status).toBe('idle')
+  })
+
+  it('exposes every attached Pi process, including multiple sessions in one worktree', () => {
+    const registry = new LiveSessionRegistry()
+    cleanups.push(() => registry.stop())
+    const olderTransport = { send: vi.fn() }
+    const newerTransport = { send: vi.fn() }
+    registry.connect(hello(), '/tmp/root/task', olderTransport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary({ startedAt: 10 }), entries: [] }, olderTransport, '/tmp/root/task')
+    registry.connect(hello({ processInstanceId: 'process-b', sessionId: 'session-b', pid: 5252 }), '/tmp/root/task', newerTransport)
+    registry.applySnapshot({
+      type: 'snapshot', processInstanceId: 'process-b', revision: 1, sequence: 0,
+      summary: summary({ processInstanceId: 'process-b', sessionId: 'session-b', pid: 5252, startedAt: 20 }), entries: [],
+    }, newerTransport, '/tmp/root/task')
+
+    expect(registry.list().map(item => item.processInstanceId)).toEqual(['process-a', 'process-b'])
+    expect(registry.get('process-a')?.summary.sessionId).toBe('session-a')
+    expect(registry.get('process-b')?.summary.sessionId).toBe('session-b')
+  })
+
+  it('coalesces streaming message updates into one final timeline entry', () => {
+    const registry = new LiveSessionRegistry()
+    cleanups.push(() => registry.stop())
+    const transport = { send: vi.fn() }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary(), entries: [] }, transport, '/tmp/root/task')
+    for (let sequence = 1; sequence <= 50; sequence++) {
+      registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence, event: {
+        type: 'message_update', data: { message: { role: 'assistant', content: `partial-${sequence}` } },
+      } }, transport)
+    }
+    registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 51, event: {
+      type: 'message_end', data: { message: { role: 'assistant', content: 'final' } },
+    } }, transport)
+
+    expect(registry.get('process-a').entries).toEqual([expect.objectContaining({ type: 'message_end' })])
+  })
+
+  it('requests a resync on an event sequence gap', () => {
+    const registry = new LiveSessionRegistry()
+    cleanups.push(() => registry.stop())
+    const send = vi.fn()
+    const transport = { send }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 4, summary: summary({ eventSequence: 4 }), entries: [] }, transport, '/tmp/root/task')
+    expect(registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 6, event: { type: 'agent_start', data: {} } }, transport)).toBe(false)
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ command: { type: 'resync' } }))
+  })
+})
+
+describe('LiveSession browser routes', () => {
+  it('accepts canonical proxy hosts and constrains DSW gateway origins by port', () => {
+    const auth = new LiveSessionBrowserAuth({ tokenPath: '/unused' })
+    expect(auth.isOriginAllowed({ headers: {
+      origin: 'https://dashboard.example.test', host: '127.0.0.1:7777',
+      'x-forwarded-host': 'dashboard.example.test, internal-proxy:7777',
+    } }, true)).toBe(true)
+    expect(auth.isOriginAllowed({ headers: {
+      origin: 'https://forwarded.example.test', host: '127.0.0.1:7777',
+      forwarded: 'for=192.0.2.1;proto=https;host="forwarded.example.test"',
+    } }, true)).toBe(true)
+    expect(auth.isOriginAllowed({ headers: {
+      origin: 'https://375-proxy-7777.dsw-gateway-cn-hongkong.data.aliyuncs.com',
+      host: 'dsw-worker.internal:7777',
+    } }, true)).toBe(true)
+    expect(auth.isOriginAllowed({ headers: {
+      origin: 'https://375-proxy-9999.dsw-gateway-cn-hongkong.data.aliyuncs.com',
+      host: 'dsw-worker.internal:7777',
+    } }, true)).toBe(false)
+    const strippedOriginRequest = { headers: {
+      referer: 'https://375-proxy-7777.dsw-gateway-cn-hongkong.data.aliyuncs.com/live-sessions',
+      host: '375-proxy-7777.dsw-gateway-cn-hongkong.data.aliyuncs.com',
+      'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors', 'x-forwarded-proto': 'http',
+    } }
+    expect(auth.isOriginAllowed(strippedOriginRequest, true)).toBe(true)
+    expect(auth.isSecure(strippedOriginRequest)).toBe(true)
+    expect(auth.isOriginAllowed({ headers: {
+      ...strippedOriginRequest.headers, 'sec-fetch-site': 'cross-site',
+    } }, true)).toBe(false)
+    expect(auth.isOriginAllowed({ headers: {
+      referer: 'https://attacker.example.test/live-sessions',
+      host: '375-proxy-7777.dsw-gateway-cn-hongkong.data.aliyuncs.com',
+      'sec-fetch-site': 'same-origin',
+    } }, true)).toBe(false)
+  })
+
+  it('accepts an authenticated DSW WebSocket upgrade when the gateway strips origin headers', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pi-live-auth-dsw-'))
+    const tokenPath = path.join(base, 'live-control-token')
+    const auth = new LiveSessionBrowserAuth({ tokenPath })
+    cleanups.push(async () => { await auth.stop(); await rm(base, { recursive: true, force: true }) })
+    await auth.start()
+    const token = (await readFile(tokenPath, 'utf8')).trim()
+    const result = await auth.authenticate(token, true)
+    const cookie = result.setCookie.split(';', 1)[0]
+    const headers = {
+      host: '375-proxy-7777.dsw-gateway-cn-hongkong.data.aliyuncs.com',
+      cookie,
+      'x-forwarded-proto': 'http',
+    }
+    expect(auth.isOriginAllowed({ headers }, true)).toBe(true)
+    expect(auth.isOriginAllowed({ headers: { ...headers, cookie: undefined } }, true)).toBe(false)
+  })
+
+  it('rejects a symlinked browser control token', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pi-live-auth-link-'))
+    cleanups.push(() => rm(base, { recursive: true, force: true }))
+    const target = path.join(base, 'target')
+    const tokenPath = path.join(base, 'live-control-token')
+    await writeFile(target, `${'a'.repeat(64)}\n`)
+    await symlink(target, tokenPath)
+    const auth = new LiveSessionBrowserAuth({ tokenPath })
+    await expect(auth.start()).rejects.toThrow(/regular single-link file/)
+  })
+
+  it('does not expose session metadata before token authentication', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pi-live-routes-'))
+    const registry = new LiveSessionRegistry()
+    const auth = new LiveSessionBrowserAuth({ tokenPath: path.join(base, 'live-control-token') })
+    const app = express()
+    app.use(express.json())
+    const routes = createLiveSessionRoutes({ app, registry, auth })
+    await routes.start()
+    const server = app.listen(0, '127.0.0.1')
+    server.on('upgrade', (request, socket, head) => {
+      if (!routes.handleUpgrade(request, socket, head)) socket.destroy()
+    })
+    cleanups.push(async () => {
+      await routes.stop(); await auth.stop(); await registry.stop()
+      await new Promise(resolve => server.close(resolve))
+      await rm(base, { recursive: true, force: true })
+    })
+    await new Promise(resolve => server.once('listening', resolve))
+    const address = server.address()
+    const origin = `http://127.0.0.1:${address.port}`
+    expect((await fetch(`${origin}/api/live-sessions`)).status).toBe(401)
+    const token = (await readFile(auth.tokenPath, 'utf8')).trim()
+    const login = await fetch(`${origin}/api/live-sessions/auth`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ token }),
+    })
+    expect(login.status).toBe(200)
+    const cookie = login.headers.get('set-cookie')?.split(';')[0]
+    expect(cookie).toContain('pi_live_session=')
+    const list = await fetch(`${origin}/api/live-sessions`, { headers: { cookie } })
+    expect(list.status).toBe(200)
+    await expect(list.json()).resolves.toMatchObject({ sessions: [], browserClientId: expect.any(String) })
+    const socket = new WebSocket(origin.replace('http:', 'ws:') + '/api/live-sessions/ws', {
+      headers: { cookie, origin },
+    })
+    const firstFrame = await new Promise((resolve, reject) => {
+      socket.once('message', data => resolve(JSON.parse(String(data))))
+      socket.once('error', reject)
+    })
+    expect(firstFrame).toEqual({ type: 'live_session_attached', data: { sessions: [] } })
+    socket.close()
+  })
+})
+
+describe('LiveSessionBroker', () => {
+  it('authenticates a real Unix socket client and cleans owned runtime files', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pi-live-broker-'))
+    const root = path.join(base, 'worktree')
+    const cwd = path.join(root, 'task-a')
+    const runDirectory = path.join(base, 'run')
+    await mkdir(cwd, { recursive: true })
+    const registry = new LiveSessionRegistry()
+    const broker = new LiveSessionBroker({ registry, roots: [root], runDirectory, heartbeatMs: 1_000 })
+    cleanups.push(async () => { await broker.stop(); await registry.stop(); await rm(base, { recursive: true, force: true }) })
+    await broker.start()
+    expect((await stat(runDirectory)).mode & 0o777).toBe(0o700)
+    expect((await stat(broker.socketPath)).mode & 0o777).toBe(0o600)
+    const token = (await readFile(broker.brokerTokenPath, 'utf8')).trim()
+    const socket = createConnection(broker.socketPath)
+    socket.setEncoding('utf8')
+    let received = ''
+    socket.on('data', chunk => { received += chunk })
+    await new Promise(resolve => socket.once('connect', resolve))
+    socket.write(`${JSON.stringify(hello({ brokerToken: token, cwd }))}\n`)
+    await vi.waitFor(() => expect(received).toContain('"type":"welcome"'))
+    socket.write(`${JSON.stringify({
+      type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0,
+      summary: summary({ cwd, canonicalCwd: cwd }), entries: [],
+    })}\n`)
+    await vi.waitFor(() => expect(registry.list()).toHaveLength(1))
+    socket.destroy()
+    await broker.stop()
+    await expect(stat(broker.socketPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
