@@ -14,6 +14,7 @@ import { recordDirUsage, migratePinnedDirs } from '../store/dirFrequency'
 import TypewriterText from '../components/TypewriterText'
 const DocumentPanel = lazy(() => import('../components/DocumentPanel'))
 import FileBrowser from '../components/FileBrowser'
+import TerminalPanel from '../features/terminal/TerminalPanel'
 import ReferencedFiles from '../components/ReferencedFiles'
 import DocumentPreviewModal from '../components/DocumentPreviewModal'
 import ErrorBoundary from '../components/ErrorBoundary'
@@ -109,6 +110,7 @@ export default function ChatPage() {
   const [showTree, setShowTree] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
   const [showRefs, setShowRefs] = useState(false)
+  const [showTerminal, setShowTerminal] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const isNativeIOS = navigator.userAgent.includes('PiDash-iOS')
   const isNativeAndroid = navigator.userAgent.includes('PiDash-Android')
@@ -178,6 +180,8 @@ export default function ChatPage() {
     }
   }, [handleVoiceInput])
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
+  const [showQuickModelMenu, setShowQuickModelMenu] = useState(false)
+  const [quickAction, setQuickAction] = useState<'compact' | 'clear' | 'model' | undefined>()
   const [showSearch, setShowSearch] = useState(false)
   const [showWorkbench, setShowWorkbench] = useState(false)
   const [showBtw, setShowBtw] = useState(false)
@@ -889,6 +893,25 @@ export default function ChatPage() {
   // Keep sendRef current so the pi-native event handler always calls the latest send
   useEffect(() => { sendRef.current = send }, [send])
 
+  const runQuickCommand = useCallback(async (kind: 'compact' | 'clear', command: string): Promise<void> => {
+    if (quickAction) return
+    // Compact can't run mid-generation; clear may — it abandons the current turn.
+    if (kind === 'compact' && slotRunning) return
+    if (kind === 'clear' && !window.confirm('开始新的 Pi session？当前对话不会删除，但当前页面会切换到新的空 session。')) return
+    setQuickAction(kind)
+    try { await send(command) } finally { setQuickAction(undefined) }
+  }, [quickAction, send, slotRunning])
+
+  const selectQuickModel = useCallback(async (model: ModelLike & { contextWindow?: number }): Promise<void> => {
+    const id = modelFullId(model)
+    setShowQuickModelMenu(false)
+    setQuickAction('model')
+    try {
+      if (activeSlot) await api.setSlotModel(activeSlot, model.provider, model.id)
+      else setPendingModel(id)
+    } finally { setQuickAction(undefined) }
+  }, [activeSlot])
+
   const approve = useCallback(async (action: string) => {
     ;(window as any).webkit?.messageHandlers?.piHaptic?.postMessage({ style: 'medium' })
     if (activeSlot) await api.approveChatSlot(activeSlot, action)
@@ -976,7 +999,7 @@ export default function ChatPage() {
   const renderMessage = useCallback((i: number, m: ChatMessage) => {
     const key = m.ts ? `${m.role}-${m.ts}` : `${m.role}-${i}`
     if (m.role === 'thinking') return <ThinkingBlock key={key} content={m.content} />
-    if (m.role === 'tool') return <ToolCallBlock key={key} content={m.content} meta={m.meta} onFileOpen={handleDocumentLink} slotKey={activeSlot ?? undefined} />
+    if (m.role === 'tool') return <ToolCallBlock key={key} content={m.content} meta={m.meta} onFileOpen={handleFileOpen} slotKey={activeSlot ?? undefined} />
     if (m.role === 'queued') return null // rendered as pills above the input, not inline
     if (m.role === 'error') return <div key={key} className="bg-danger-subtle text-danger text-[13px] px-3 py-2 rounded-md border border-danger/15 self-center animate-scale-in">{m.content}</div>
     if (m.role === 'system') return <SystemMessage key={key} content={m.content} meta={m.meta} />
@@ -1118,11 +1141,11 @@ export default function ChatPage() {
                 {/* Panels dropdown — groups Tree, Refs, Files, Terminal */}
                 <div className="relative">
                   <button
-                    className={`bg-transparent border rounded-md px-3 py-[5px] text-[13px] font-medium cursor-pointer transition-all font-body ${showTree || showRefs || showFiles ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong hover:bg-bg-hover'}`}
+                    className={`bg-transparent border rounded-md px-3 py-[5px] text-[13px] font-medium cursor-pointer transition-all font-body ${showTree || showRefs || showFiles || showTerminal ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong hover:bg-bg-hover'}`}
                     onClick={() => setShowOverflowMenu(v => !v)}
                     aria-label="Toggle panels"
                   >
-                    ☰ Panels{(showTree || showRefs || showFiles) ? ' ·' : ''}
+                    ☰ Panels{(showTree || showRefs || showFiles || showTerminal) ? ' ·' : ''}
                   </button>
                   {showOverflowMenu && (
                     <>
@@ -1131,6 +1154,7 @@ export default function ChatPage() {
                         <button className={`w-full text-left px-3 py-2 text-[13px] hover:bg-bg-hover flex items-center gap-2 ${showTree ? 'text-accent' : 'text-text'}`} onClick={() => { setShowTree(t => !t); setShowOverflowMenu(false) }}>🌳 Tree{showTree ? ' ✓' : ''}</button>
                         <button className={`w-full text-left px-3 py-2 text-[13px] hover:bg-bg-hover flex items-center gap-2 ${showRefs ? 'text-accent' : 'text-text'}`} onClick={() => { setShowRefs(t => !t); setShowOverflowMenu(false) }}>📎 Refs{referencedFiles.length > 0 ? ` (${referencedFiles.length})` : ''}{showRefs ? ' ✓' : ''}</button>
                         <button className={`w-full text-left px-3 py-2 text-[13px] hover:bg-bg-hover flex items-center gap-2 ${showFiles ? 'text-accent' : 'text-text'}`} onClick={() => { setShowFiles(t => !t); setShowOverflowMenu(false) }}>📄 Files{showFiles ? ' ✓' : ''}</button>
+                        <button className={`w-full text-left px-3 py-2 text-[13px] hover:bg-bg-hover flex items-center gap-2 ${showTerminal ? 'text-accent' : 'text-text'}`} onClick={() => { setShowTerminal(t => !t); setShowOverflowMenu(false) }}>🖥️ Terminal{showTerminal ? ' ✓' : ''}</button>
                       </div>
                     </>
                   )}
@@ -1273,6 +1297,11 @@ export default function ChatPage() {
               {showFiles && (
                 <div className="fixed inset-0 z-30 bg-bg-elevated overflow-hidden flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] md:relative md:inset-auto md:z-auto md:w-[320px] md:shrink-0 md:border-r md:border-border md:pt-0 md:pb-0">
                   <FileBrowser onFileOpen={handleFileOpen} onClose={() => setShowFiles(false)} startPath={currentSlot?.cwd || undefined} />
+                </div>
+              )}
+              {showTerminal && (
+                <div className="fixed inset-0 z-30 bg-bg-elevated overflow-hidden flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] md:relative md:inset-auto md:z-auto md:w-[640px] md:shrink-0 md:border-r md:border-border md:pt-0 md:pb-0">
+                  <TerminalPanel onClose={() => setShowTerminal(false)} />
                 </div>
               )}
               <div className="flex-1 min-h-0 flex flex-col relative">
@@ -1525,6 +1554,23 @@ export default function ChatPage() {
                 onCompositionEnd={() => { (inputRef.current as any).__composing = true; setTimeout(() => { if (inputRef.current) (inputRef.current as any).__composing = false }, 50) }}
                 onKeyDown={e => { if (e.key === 'Tab' && !e.shiftKey && !input.startsWith('/')) { e.preventDefault(); setPathMenuOpen(true); setCursorPos(inputRef.current?.selectionStart ?? 0) } else if (e.key === 'Enter' && !e.shiftKey && !e.defaultPrevented && !e.nativeEvent.isComposing && !(inputRef.current as any)?.__composing) { e.preventDefault(); send() } }}
                 onInput={e => { const t = e.target as HTMLTextAreaElement; const cap = prefillHint ? 320 : 140; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, cap) + 'px' }} />
+              </div>
+              <button type="button" onClick={() => { void runQuickCommand('compact', '/compact') }} disabled={!activeSlot || slotRunning || !!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-border bg-bg-elevated px-2.5 text-[11px] text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="压缩当前 session context">{quickAction === 'compact' ? '压缩中…' : 'Compact'}</button>
+              <button type="button" onClick={() => { void runQuickCommand('clear', '/clear') }} disabled={!!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-danger/40 bg-danger-subtle px-2.5 text-[11px] text-danger hover:border-danger disabled:opacity-40" title="开始新的 session">{quickAction === 'clear' ? '清理中…' : 'Clear'}</button>
+              <div className="relative hidden md:block">
+                <button type="button" onClick={() => setShowQuickModelMenu(value => !value)} disabled={!!quickAction || slotStopping} className="h-[44px] max-w-[180px] truncate rounded-lg border border-border bg-bg-elevated px-2.5 text-[11px] text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="切换当前模型">{currentSlot?.model ? `Model · ${modelDisplay}` : 'Model'}</button>
+                {showQuickModelMenu && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-72 w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-lg border border-border bg-card p-2 shadow-xl">
+                  <div className="mb-1 px-1 text-[10px] font-semibold text-muted">当前 Dashboard 可用模型</div>
+                  {availableModels.length === 0 && <div className="px-2 py-3 text-xs text-muted">当前没有可用模型。</div>}
+                  {availableModels.map(model => {
+                    const id = modelFullId(model)
+                    const selected = currentSlot?.model === id
+                    return <button key={id} type="button" onClick={() => { void selectQuickModel(model) }} className={`flex w-full items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-bg-hover ${selected ? 'bg-accent-subtle' : ''}`}>
+                      <span className={`mt-0.5 text-xs ${selected ? 'text-accent' : 'text-muted'}`}>{selected ? '✓' : '○'}</span>
+                      <span className="min-w-0 flex-1"><span className="block truncate font-mono text-[10px] text-text-strong">{id}</span><span className="block truncate text-[10px] text-muted">{modelLabel(model)}{model.contextWindow ? ` · context ${model.contextWindow.toLocaleString()}` : ''}</span></span>
+                    </button>
+                  })}
+                </div>}
               </div>
               {slotRunning
                 ? <button
