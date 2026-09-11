@@ -4,17 +4,6 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 }
 
-function contentText(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (!Array.isArray(value)) return ''
-  return value.map(part => {
-    const item = record(part)
-    if (!item) return ''
-    if (item.type === 'text' && typeof item.text === 'string') return item.text
-    return ''
-  }).filter(Boolean).join(' ')
-}
-
 function clipTitle(value: string): string {
   const cleaned = value
     .replace(/```[\s\S]*?```/g, ' ')
@@ -39,26 +28,17 @@ function messageOf(entry: Record<string, unknown>): Record<string, unknown> | un
   return undefined
 }
 
-function latestUserTitle(detail: LiveSessionDetail | undefined): string {
-  const entries = messageEntries(detail)
-  for (let index = entries.length - 1; index >= 0; index--) {
-    const message = messageOf(entries[index])
-    if (!message || message.role !== 'user') continue
-    const title = clipTitle(contentText(message.content))
-    if (title) return title
-  }
-  return ''
+/** Normalize an explicit session name (agent `set_session_title` or web
+ *  rename). Both are already capped at 80 chars upstream; only strip breaks. */
+function cleanName(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-function latestAssistantTitle(detail: LiveSessionDetail | undefined): string {
-  const entries = messageEntries(detail)
-  for (let index = entries.length - 1; index >= 0; index--) {
-    const message = messageOf(entries[index])
-    if (!message || message.role !== 'assistant') continue
-    const title = clipTitle(contentText(message.content))
-    if (title) return title
-  }
-  return ''
+/** Fallback title from the workspace: git branch first, then directory name. */
+function workspaceTitle(session: LiveSessionSummary): string {
+  if (session.git?.branch) return session.git.branch
+  const cwd = (session.canonicalCwd || session.cwd || '').replace(/\/+$/, '')
+  return cwd.split('/').pop() || cwd || ''
 }
 
 function parentToolTitle(parent: LiveSessionDetail | undefined, toolCallId?: string): string {
@@ -124,11 +104,9 @@ export function buildSessionTitles(
   for (const detail of Object.values(details)) bySessionId.set(detail.summary.sessionId, detail)
   const titles: Record<string, string> = {}
   for (const session of Object.values(sessions)) {
-    const detail = details[session.processInstanceId]
-    const explicit = clipTitle(session.sessionName || '')
-    const own = latestUserTitle(detail) || latestAssistantTitle(detail)
+    const explicit = cleanName(session.sessionName || '')
     const parent = session.parentSessionId ? bySessionId.get(session.parentSessionId) : undefined
-    const title = explicit || own || parentToolTitle(parent, session.parentToolCallId) || (session.role === 'subagent' ? '子 Agent' : '等待输入')
+    const title = explicit || parentToolTitle(parent, session.parentToolCallId) || workspaceTitle(session) || (session.role === 'subagent' ? '子 Agent' : '等待输入')
     if (title) titles[session.processInstanceId] = title
   }
   return titles
