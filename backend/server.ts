@@ -28,6 +28,7 @@ import {
   registerIntegrationRoutes,
   createLiveSessionRoutes,
   registerUsageRoutes,
+  registerPtyRoutes,
   type LiveSessionRoutes,
 } from './routes/index.js'
 import { extensionBridgeRegistry } from './extension-bridge/registry.js'
@@ -39,6 +40,7 @@ import { LiveSessionBroker } from './live-sessions/broker.js'
 import { liveSessionRegistry } from './live-sessions/registry.js'
 import { LivePiLauncher } from './live-sessions/launcher.js'
 import { UsageLedger } from './usage-ledger.js'
+import { handlePtyConnection, shutdownPtyClients } from './pty-manager.js'
 
 process.env.PI_RUNTIME = 'dashboard'
 if (!process.env.VITEST) {
@@ -57,6 +59,7 @@ const DIST_DIR = join(__dirname, '..', 'frontend', 'dist')
 const app = express()
 const server = createServer(app)
 const wss = new WebSocketServer({ noServer: true })
+const ptyWss = new WebSocketServer({ noServer: true })
 const manager = new PiManager()
 const liveSessionConfig = parseLiveSessionConfig((getDashConfig() as Record<string, unknown>).liveSessions)
 const liveSessionAuth = new LiveSessionBrowserAuth()
@@ -100,6 +103,7 @@ for (const s of savedSlots) {
       cwd: s.cwd,
       sessionFile: s.sessionFile || null,
       tags: s.tags,
+      pinned: s.pinned,
       transport: s.transport,
       toolApproval: s.toolApproval,
     })
@@ -406,11 +410,13 @@ function _wireSlotEvents(pi: PiSession, slotKey: string): void {
   }
 
   // Slot-title application — shared by the RPC getState()->sessionName poll
-  // (below, in agent_end) and the SDK `session_info_changed` mapping. A user's
-  // manual rename always wins.
+  // (below, in agent_end) and the SDK `session_info_changed` mapping. The first
+  // title may come from pi, but once displayed it is locked just like a manual
+  // rename so later user messages cannot silently replace it.
   function _applyTitle(name: string | undefined | null): void {
     if (name && name !== pi._title && !pi._userRenamed) {
       pi._title = name
+      pi._userRenamed = true
       broadcast('slot_title', { key: slotKey, title: name })
       broadcastSlots()
       persistSlots()
@@ -877,6 +883,10 @@ registerSessionRoutes(routeDeps)
 registerJobsRoutes(routeDeps)
 registerIntegrationRoutes(routeDeps)
 registerUsageRoutes({ app, ledger: usageLedger })
+registerPtyRoutes({ app, auth: liveSessionAuth })
+void liveSessionAuth.start().then(() => {
+  console.log(`[pty] Terminal control token: ${liveSessionAuth.tokenPath}`)
+}).catch(error => console.error('[pty] Failed to init terminal auth:', error))
 
 extensionBridgeRegistry.on('attached', snapshot => broadcast('extension_feature_attached', snapshot))
 extensionBridgeRegistry.on('snapshot', snapshot => broadcast('extension_feature_snapshot', snapshot))
@@ -891,10 +901,20 @@ app.get('*', (_req: Request, res: Response) => {
 
 // ─── WebSocket ───────────────────────────────────────────────
 server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-  console.log('  WS upgrade:', req.url)
+  const wsPath = (req.url || '').split('?')[0]
+  console.log('  WS upgrade:', wsPath)
 
   if (liveSessionRoutes?.handleUpgrade(req, socket, head)) return
-  const wsPath = (req.url || '').split('?')[0]
+  if (wsPath === '/api/pty') {
+    const ptyIdentity = liveSessionAuth.getIdentity(req)
+    if (!ptyIdentity || !liveSessionAuth.isOriginAllowed(req, true, ptyIdentity)) {
+      console.warn('  WS upgrade rejected: unauthenticated /api/pty', req.headers.origin)
+      socket.destroy()
+      return
+    }
+    ptyWss.handleUpgrade(req, socket, head, (ws) => handlePtyConnection(ws, req))
+    return
+  }
   if (wsPath === '/api/ws') {
     // Same origin guard as the HTTP mutation routes: a sandboxed, opaque-origin
     // artifact iframe sends Origin: null on its WS handshake. Without this it
@@ -973,6 +993,7 @@ async function stopLiveSessions(): Promise<void> {
 
 process.on('SIGINT', () => {
   saveSlotStateSync(manager.slots as any)
+  shutdownPtyClients()
   Promise.allSettled([
     manager.gracefulShutdown(55000),
     extensionBridgeRegistry.dispose(),
@@ -983,6 +1004,7 @@ process.on('SIGINT', () => {
 })
 process.on('SIGTERM', () => {
   saveSlotStateSync(manager.slots as any)
+  shutdownPtyClients()
   Promise.allSettled([
     manager.gracefulShutdown(55000),
     extensionBridgeRegistry.dispose(),
