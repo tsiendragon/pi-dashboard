@@ -16,6 +16,7 @@ const DocumentPanel = lazy(() => import('../components/DocumentPanel'))
 import FileBrowser from '../components/FileBrowser'
 import ReferencedFiles from '../components/ReferencedFiles'
 import DocumentPreviewModal from '../components/DocumentPreviewModal'
+import ErrorBoundary from '../components/ErrorBoundary'
 import { useReferencedFiles } from '../hooks/useReferencedFiles'
 import WelcomeView from '../components/WelcomeView'
 import SlashCommandMenu from '../components/SlashCommandMenu'
@@ -1545,18 +1546,22 @@ export default function ChatPage() {
         <SplitPane slotKey={splitSlot} onClose={() => setSplitSlot(null)} onFileOpen={handleFileOpen} />
       )}
       {panel.isOpen && (
-        <Suspense fallback={<div className="flex-[0_0_40%] border-l border-border bg-bg flex items-center justify-center"><span className="text-muted text-sm">Loading…</span></div>}>
-          <DocumentPanel filePath={panel.filePath} content={panel.content} onContentChange={handleContentChange} onSave={handleFileSave} onClose={panel.closePanel} dirty={panel.dirty} versions={panel.versions} selectedVersion={panel.selectedVersion} conflictContent={panel.conflictContent} onSelectVersion={panel.selectVersion} onResolveConflict={panel.resolveConflict} diffMode={panel.diffMode} onToggleDiff={panel.toggleDiffMode} comments={panel.comments} onAddComment={handleAddComment} onEditComment={handleEditComment} onDeleteComment={handleDeleteComment} onReviewComments={handleReviewComments} />
-        </Suspense>
+        <ErrorBoundary key={`panel:${panel.filePath}`}>
+          <Suspense fallback={<div className="flex-[0_0_40%] border-l border-border bg-bg flex items-center justify-center"><span className="text-muted text-sm">Loading…</span></div>}>
+            <DocumentPanel filePath={panel.filePath} content={panel.content} onContentChange={handleContentChange} onSave={handleFileSave} onClose={panel.closePanel} dirty={panel.dirty} versions={panel.versions} selectedVersion={panel.selectedVersion} conflictContent={panel.conflictContent} onSelectVersion={panel.selectVersion} onResolveConflict={panel.resolveConflict} diffMode={panel.diffMode} onToggleDiff={panel.toggleDiffMode} comments={panel.comments} onAddComment={handleAddComment} onEditComment={handleEditComment} onDeleteComment={handleDeleteComment} onReviewComments={handleReviewComments} />
+          </Suspense>
+        </ErrorBoundary>
       )}
       {documentPreview && (
-        <DocumentPreviewModal
-          filePath={documentPreview.filePath}
-          content={documentPreview.content}
-          loading={documentPreview.loading}
-          error={documentPreview.error}
-          onClose={() => setDocumentPreview(null)}
-        />
+        <ErrorBoundary key={`preview:${documentPreview.filePath}`}>
+          <DocumentPreviewModal
+            filePath={documentPreview.filePath}
+            content={documentPreview.content}
+            loading={documentPreview.loading}
+            error={documentPreview.error}
+            onClose={() => setDocumentPreview(null)}
+          />
+        </ErrorBoundary>
       )}
       <ExtensionUiModal />
       <ToolApprovalModal />
