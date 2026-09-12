@@ -1,7 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import type { LiveSessionSummary } from '@shared/live-sessions'
+import type { LiveSessionImage, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
+import DocumentPreviewModal from '../../components/DocumentPreviewModal'
+import ErrorBoundary from '../../components/ErrorBoundary'
+import ToolCallBlock from '../../pages/chat/ToolCallBlock'
+import { ToolSummaryLine, type ToolSummaryStatus } from '../../components/ToolSummary'
 import { detectFileType, usePanelState } from '../../hooks/usePanelState'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { resolvePath } from '../../utils/resolvePath'
@@ -18,6 +22,9 @@ import {
 import { liveSessionApi, LiveSessionApiError } from './api'
 import LiveSessionComposer from './LiveSessionComposer'
 import LiveSessionFeatures from './LiveSessionFeatures'
+import LiveSubagentPanel from './LiveSubagentPanel'
+import LiveWorkflowPanel from './LiveWorkflowPanel'
+import LiveWorkflowProgressCard, { type WorkflowRecord } from './LiveWorkflowProgressCard'
 import { buildSessionTitles, buildSubagentStatuses } from './sessionTitle'
 import { displayWorktreePath } from '../../utils/displayPath'
 import LiveSessionsList from './LiveSessionsList'
@@ -138,7 +145,7 @@ function collectLiveFeatures(entries: unknown[]): Record<string, unknown> {
   return features
 }
 
-function CollapsibleMarkdown({ content, onFileOpen }: { content: string; onFileOpen: (path: string) => void }) {
+function CollapsibleMarkdown({ content, onFileOpen, showRaw = true }: { content: string; onFileOpen: (path: string) => void; showRaw?: boolean }) {
   const lines = content.split('\n')
   const previewLines = 12
   const previewChars = 1_600
@@ -148,7 +155,7 @@ function CollapsibleMarkdown({ content, onFileOpen }: { content: string; onFileO
   return (
     <div>
       <div className={`text-[13px] leading-5 [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:text-base [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-sm [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_li]:text-[13px] [&_li]:leading-5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1 ${collapsed ? 'relative max-h-[220px] overflow-hidden' : ''}`}>
-        <MarkdownRenderer content={visible} onFileOpen={onFileOpen} />
+        <MarkdownRenderer content={visible} onFileOpen={onFileOpen} showRaw={showRaw} />
         {collapsed && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent" />}
       </div>
       {long && (
@@ -166,28 +173,215 @@ function contentParts(content: unknown): Array<Record<string, unknown>> {
   return content.filter((part): part is Record<string, unknown> => !!part && typeof part === 'object' && !Array.isArray(part))
 }
 
-function ToolResultCard({ text, toolName, toolCallId, isError, timestamp }: { text: string; toolName?: string; toolCallId?: string; isError?: boolean; timestamp?: string }) {
+export function mergeThinkingParts(parts: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const merged: Array<Record<string, unknown>> = []
+  for (const part of parts) {
+    if (part.type !== 'thinking') {
+      merged.push(part)
+      continue
+    }
+    const text = typeof part.thinking === 'string' ? part.thinking : ''
+    const isEmpty = text.trim().length === 0
+    const previous = merged[merged.length - 1]
+    if (previous?.type === 'thinking') {
+      const previousText = typeof previous.thinking === 'string' ? previous.thinking : ''
+      const emptyCount = (typeof previous.emptyThinkingCount === 'number' ? previous.emptyThinkingCount : 0) + (isEmpty ? 1 : 0)
+      merged[merged.length - 1] = {
+        ...previous,
+        thinking: previousText && text ? `${previousText}\n${text}` : previousText + text,
+        ...(emptyCount > 0 ? { emptyThinkingCount: emptyCount } : {}),
+      }
+    } else {
+      merged.push({ ...part, thinking: text, ...(isEmpty ? { emptyThinkingCount: 1 } : {}) })
+    }
+  }
+  return merged
+}
+
+export function emptyThinkingLabel(count: number): string {
+  const normalized = Math.max(1, Math.floor(count))
+  const visible = Math.min(6, normalized)
+  return `${'🤔'.repeat(visible)}${normalized > visible ? ` ×${normalized}` : ''}`
+}
+
+type LiveToolItem = {
+  key: string
+  index: number
+  entry: unknown
+  toolName: string
+  toolCallId?: string
+  argsText?: string
+  detail?: string
+  resultText?: string
+  isError?: boolean
+  timestamp?: string
+  source: 'call' | 'result'
+  batchId?: string
+  batch?: boolean
+}
+
+type LiveTimelineItem =
+  | { type: 'entry'; index: number; entry: unknown }
+  | { type: 'toolGroup'; items: LiveToolItem[]; thinking: { index: number; entry: unknown }[] }
+
+function toolCallDetail(part: Record<string, unknown>): string | undefined {
+  const args = part.arguments
+  if (typeof args === 'string') return compactCommand(args)
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return undefined
+  const record = args as Record<string, unknown>
+  if (typeof record.path === 'string') return compactCommand(record.path)
+  if (typeof record.command === 'string') return compactCommand(record.command)
+  if (typeof record.query === 'string') return compactCommand(record.query)
+  return undefined
+}
+
+function liveToolItems(index: number, entry: unknown): LiveToolItem[] {
+  const message = messageFromEntry(entry)
+  if (message?.role === 'toolResult') {
+    return [{
+      key: `result:${message.toolCallId || index}`,
+      index,
+      entry,
+      toolName: message.toolName || 'tool',
+      toolCallId: message.toolCallId,
+      resultText: message.text,
+      isError: message.isError,
+      timestamp: entryTimestamp(entry),
+      detail: message.text.split('\\n')[0],
+      source: 'result',
+    }]
+  }
+  if (message?.role !== 'assistant') return []
+  const parts = contentParts(message.content).filter(value => value.type === 'toolCall')
+  if (parts.length === 0) return []
+  const record = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : undefined
+  const batchId = typeof record?.id === 'string' ? record.id : `entry:${index}`
+  const isBatch = parts.length > 1
+  return parts.map((part, partIndex) => ({
+    key: `call:${typeof part.id === 'string' ? part.id : `${index}:${partIndex}`}`,
+    index,
+    entry,
+    toolName: typeof part.name === 'string' ? part.name : 'tool',
+    toolCallId: typeof part.id === 'string' ? part.id : undefined,
+    argsText: typeof part.arguments === 'string'
+      ? part.arguments
+      : part.arguments && typeof part.arguments === 'object'
+        ? JSON.stringify(part.arguments, null, 2)
+        : undefined,
+    detail: toolCallDetail(part),
+    timestamp: entryTimestamp(entry),
+    source: 'call' as const,
+    batchId,
+    batch: isBatch,
+  }))
+}
+
+function thinkingText(entry: unknown): string | undefined {
+  const message = messageFromEntry(entry)
+  if (message?.role !== 'assistant') return undefined
+  const parts = contentParts(message.content)
+  if (parts.length === 0 || !parts.every(part => part.type === 'thinking')) return undefined
+  return parts.map(part => typeof part.thinking === 'string' ? part.thinking : '').join('\\n')
+}
+
+export function groupLiveToolEntries(entries: unknown[]): LiveTimelineItem[] {
+  const result: LiveTimelineItem[] = []
+  let current: LiveToolItem[] = []
+  let currentBatch = false
+  let pendingThinking: { index: number; entry: unknown }[] = []
+
+  const addTool = (item: LiveToolItem): void => {
+    const existingIndex = item.toolCallId
+      ? current.findIndex(existing => existing.toolCallId === item.toolCallId)
+      : -1
+    if (existingIndex >= 0) {
+      const existing = current[existingIndex]
+      current[existingIndex] = {
+        ...existing,
+        ...item,
+        key: existing.key,
+        argsText: item.argsText || existing.argsText,
+        detail: item.detail || existing.detail,
+        source: existing.source,
+        batchId: existing.batchId,
+        batch: existing.batch,
+      }
+      return
+    }
+    current.push(item)
+  }
+
+  const flush = (): void => {
+    if (currentBatch && current.length > 1) {
+      result.push({ type: 'toolGroup', items: current, thinking: pendingThinking })
+    } else {
+      for (const item of current) result.push({ type: 'entry', index: item.index, entry: item.entry })
+      for (const thinking of pendingThinking) result.push({ type: 'entry', ...thinking })
+    }
+    current = []
+    currentBatch = false
+    pendingThinking = []
+  }
+
+  entries.forEach((entry, index) => {
+    const tools = liveToolItems(index, entry)
+    if (tools.length > 0) {
+      const calls = tools.filter(item => item.source === 'call')
+      if (calls.length > 0) {
+        // A new assistant message starts a new tool boundary. Only multiple
+        // calls emitted in that same message are eligible for a tool group.
+        if (current.length > 0 || pendingThinking.length > 0) flush()
+        current = []
+        currentBatch = calls.length > 1 || calls.some(item => item.batch === true)
+        for (const item of calls) addTool(item)
+      } else if (current.length === 0) {
+        current = tools
+      } else if (currentBatch || tools.some(item => item.toolCallId && current.some(existing => existing.toolCallId === item.toolCallId))) {
+        for (const item of tools) addTool(item)
+      } else {
+        flush()
+        current = tools
+      }
+      return
+    }
+
+    const thinking = thinkingText(entry)
+    if (currentBatch && current.length > 0 && thinking !== undefined) {
+      if (thinking.trim()) pendingThinking.push({ index, entry })
+      return
+    }
+    if (current.length > 0 || pendingThinking.length > 0) flush()
+    if (thinking === undefined || thinking.trim()) result.push({ type: 'entry', index, entry })
+  })
+
+  if (current.length > 0 || pendingThinking.length > 0) flush()
+  return result
+}
+
+function ToolResultCard({ text, toolName, toolCallId, command, isError, timestamp, revealOnMount = false }: { text: string; toolName?: string; toolCallId?: string; command?: string; isError?: boolean; timestamp?: string; revealOnMount?: boolean }) {
   const lines = text.split('\n')
-  const previewLines = 6
-  const previewChars = 900
-  const long = lines.length > previewLines || text.length > previewChars
-  const [expanded, setExpanded] = useState(!long)
-  const visible = expanded || !long ? text : lines.slice(0, previewLines).join('\n').slice(0, previewChars)
+  const [expanded, setExpanded] = useState(revealOnMount)
+  const statusTone = isError ? 'border-danger/45 bg-danger-subtle/15' : 'border-ok/35 bg-ok-subtle/10'
   return (
-    <article className="w-fit max-w-full overflow-hidden rounded-md border border-border bg-card">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-bg-elevated px-2 py-1">
-        <span className={`min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide ${isError ? 'text-danger' : 'text-muted'}`}>
-          Tool result{toolName ? ` · ${toolName}` : ''} {shortToolId(toolCallId)}{isError ? ' · error' : ''}
+    <article className={`w-full max-w-full overflow-hidden rounded-md border bg-card ${statusTone}`}>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded(value => !value)}
+        className="flex w-full min-w-0 items-center gap-2 border-none bg-bg-elevated px-2 py-1.5 text-left hover:bg-bg-hover"
+      >
+        <ToolSummaryLine toolName={toolName || 'tool'} command={command} timestamp={timestamp} status={isError ? 'error' : 'success'} className="flex-1" />
+        <span className="flex shrink-0 items-center gap-2 text-[10px] text-muted">
+          <span>{lines.length} 行</span>
+          <span className="text-accent">{expanded ? '收起' : '展开'}</span>
         </span>
-        <span className="flex shrink-0 items-center gap-2 text-[10px] text-muted"><time>{timestamp || '—'}</time><span>{lines.length} 行</span></span>
-      </div>
-      <div className={expanded ? 'max-h-[320px] overflow-auto' : 'relative max-h-[170px] overflow-hidden'}>
-        <pre className="m-0 whitespace-pre-wrap break-words px-2 py-1.5 font-mono text-[10px] leading-4 text-text">{visible}</pre>
-        {!expanded && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-card to-transparent" />}
-      </div>
-      {long && <button type="button" onClick={() => setExpanded(value => !value)} className="border-t border-border bg-transparent px-2 py-1 text-[10px] text-accent hover:underline">
-        {expanded ? '收起' : `展开（${lines.length} 行）`}
-      </button>}
+      </button>
+      {expanded && (
+        <div className="max-h-[320px] overflow-auto border-t border-border px-2 py-1.5">
+          {toolCallId && <div className="mb-1 text-[10px] text-muted">tool call {shortToolId(toolCallId)}</div>}
+          <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-text">{text}</pre>
+        </div>
+      )}
     </article>
   )
 }
@@ -357,21 +551,31 @@ function TuiLikeStatus({ summary }: { summary: LiveSessionSummary }) {
   </span>
 }
 
-function ToolCallCard({ name, toolCallId, argsText, state }: { name: string; toolCallId?: string; argsText: string; state?: ToolState }) {
+function ToolCallCard({ name, toolCallId, argsText, timestamp, state }: { name: string; toolCallId?: string; argsText: string; timestamp?: string; state?: ToolState }) {
   const result = state?.result
+  const status: ToolSummaryStatus = result?.isError ? 'error' : result || state?.ended ? 'success' : state?.started || state?.partialText ? 'running' : 'pending'
+  const statusTone = status === 'error'
+    ? 'border-danger/45 bg-danger-subtle/15'
+    : status === 'success'
+      ? 'border-ok/35 bg-ok-subtle/10'
+      : status === 'running'
+        ? 'border-accent/35 bg-accent-subtle/10'
+        : 'border-border'
   return (
-    <article className="w-fit max-w-full overflow-hidden rounded-md border border-border bg-bg-elevated">
+    <article className={`w-full max-w-full overflow-hidden rounded-md border bg-bg-elevated ${statusTone}`}>
       <details>
-        <summary className="flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 text-[11px] font-semibold text-text-strong">
-          <span className="truncate">调用工具：{name} {shortToolId(toolCallId)}</span>
-          <span className={`shrink-0 text-[10px] font-normal ${result?.isError ? 'text-danger' : result ? 'text-ok' : state?.partialText ? 'text-accent' : 'text-muted'}`}>
-            {result?.isError ? '失败' : result ? '完成' : state?.ended ? '处理中' : state?.started || state?.partialText ? '运行中' : '等待执行'}
-          </span>
+        <summary className="flex min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left hover:bg-bg-hover">
+          <ToolSummaryLine toolName={name} args={argsText} timestamp={result?.timestamp || timestamp} status={status} className="flex-1" />
         </summary>
-        {argsText && <pre className="m-0 max-h-[12rem] max-w-full overflow-auto whitespace-pre-wrap break-words border-t border-border px-2 py-1.5 font-mono text-[10px] leading-4 text-muted">{argsText.slice(0, 100_000)}</pre>}
+        <div className="space-y-2 border-t border-border px-3 pb-3">
+          {toolCallId && <div className="pt-2 text-[10px] text-muted">tool call {shortToolId(toolCallId)}</div>}
+          {argsText && <pre className="m-0 max-h-[12rem] max-w-full overflow-auto whitespace-pre-wrap break-words rounded bg-bg-hover px-2 py-1.5 font-mono text-[10px] leading-4 text-muted">{argsText.slice(0, 100_000)}</pre>}
+          {!result && state?.partialText && (
+            <pre className="m-0 max-h-[150px] overflow-auto whitespace-pre-wrap break-words rounded bg-bg-hover px-2 py-1.5 font-mono text-[11px] leading-4 text-text">{state.partialText}</pre>
+          )}
+          {result && <ToolResultCard text={result.text} toolName={result.toolName || name} toolCallId={toolCallId} command={state?.command} isError={result.isError} timestamp={result.timestamp} revealOnMount />}
+        </div>
       </details>
-      {!result && state?.partialText && <div className="border-t border-border px-2.5 py-2"><div className="mb-1 text-[10px] text-accent">实时输出</div><pre className="m-0 max-h-[150px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-4 text-text">{state.partialText}</pre></div>}
-      {result && <ToolResultCard text={result.text} toolName={result.toolName || name} toolCallId={toolCallId} isError={result.isError} timestamp={result.timestamp} />}
     </article>
   )
 }
@@ -452,8 +656,8 @@ function LiveCommandBar({ toolStates, features }: { toolStates: ToolStateMap; fe
   </>
 }
 
-function MessageContent({ content, onFileOpen, toolStates }: { content: unknown; onFileOpen: (path: string) => void; toolStates?: ToolStateMap }) {
-  const parts = contentParts(content)
+function MessageContent({ content, onFileOpen, toolStates, timestamp, showRaw = true }: { content: unknown; onFileOpen: (path: string) => void; toolStates?: ToolStateMap; timestamp?: string; showRaw?: boolean }) {
+  const parts = mergeThinkingParts(contentParts(content))
   if (parts.length === 0) return null
   return (
     <div className="space-y-1 text-[13px] leading-5 [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:text-base [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-sm [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_li]:text-[13px] [&_li]:leading-5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
@@ -461,6 +665,11 @@ function MessageContent({ content, onFileOpen, toolStates }: { content: unknown;
         switch (part.type) {
           case 'thinking': {
             const thinking = typeof part.thinking === 'string' ? part.thinking : ''
+            const hasContent = thinking.trim().length > 0
+            const emptyCount = typeof part.emptyThinkingCount === 'number' ? part.emptyThinkingCount : 1
+            if (!hasContent) {
+              return <div key={index} className="px-1 py-0.5 text-sm leading-none" title={`连续收到 ${emptyCount} 个空思考片段`} role="status" aria-label={`连续收到 ${emptyCount} 个空思考片段`}>{emptyThinkingLabel(emptyCount)}</div>
+            }
             return (
               <details key={index} className="rounded-md border border-border border-l-[3px] border-l-[#a78bfa] bg-bg-elevated">
                 <summary className="px-2 py-1 cursor-pointer text-[11px] text-muted font-mono hover:text-text">思考过程（{thinking.length.toLocaleString()} chars）</summary>
@@ -470,7 +679,7 @@ function MessageContent({ content, onFileOpen, toolStates }: { content: unknown;
           }
           case 'text': {
             const text = typeof part.text === 'string' ? part.text : ''
-            return text ? <CollapsibleMarkdown key={index} content={text} onFileOpen={onFileOpen} /> : null
+            return text ? <CollapsibleMarkdown key={index} content={text} onFileOpen={onFileOpen} showRaw={showRaw} /> : null
           }
           case 'toolCall': {
             const name = typeof part.name === 'string' ? part.name : 'tool'
@@ -479,10 +688,24 @@ function MessageContent({ content, onFileOpen, toolStates }: { content: unknown;
             if (typeof toolArgs === 'string') argsText = toolArgs
             else if (toolArgs !== undefined && toolArgs !== null) { try { argsText = JSON.stringify(toolArgs, null, 2) } catch { argsText = String(toolArgs) } }
             const toolCallId = typeof part.id === 'string' ? part.id : undefined
-            return <ToolCallCard key={index} name={name} toolCallId={toolCallId} argsText={argsText} state={toolCallId ? toolStates?.get(toolCallId) : undefined} />
+            const state = toolCallId ? toolStates?.get(toolCallId) : undefined
+            if (name === 'edit' || name === 'write' || name === 'read') {
+              return <ToolCallBlock
+                key={index}
+                content={`🔧 ${name}`}
+                meta={{ toolName: name, toolCallId, args: argsText, result: state?.result?.text, isError: state?.result?.isError, timestamp: state?.result?.timestamp || timestamp }}
+                onFileOpen={onFileOpen}
+              />
+            }
+            return <ToolCallCard key={index} name={name} toolCallId={toolCallId} argsText={argsText} timestamp={timestamp} state={state} />
           }
-          case 'image':
-            return <div key={index} className="text-xs text-muted italic">[image]</div>
+          case 'image': {
+            const data = typeof part.data === 'string' ? part.data : ''
+            const mimeType = typeof part.mimeType === 'string' ? part.mimeType : ''
+            return data && mimeType.startsWith('image/')
+              ? <img key={index} src={`data:${mimeType};base64,${data}`} alt="用户发送的图片" className="my-1 max-h-[420px] max-w-full rounded-md border border-border object-contain" />
+              : <div key={index} className="text-xs text-muted italic">[图片不可预览]</div>
+          }
           default:
             return null
         }
@@ -510,7 +733,7 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
   if (message) {
     if (message.role === 'toolResult') {
       if (message.toolCallId && toolStates.get(message.toolCallId)?.called) return null
-      return <ToolResultCard text={message.text} toolName={message.toolName} toolCallId={message.toolCallId} isError={message.isError} timestamp={timestamp} />
+      return <ToolResultCard text={message.text} toolName={message.toolName} toolCallId={message.toolCallId} command={message.toolCallId ? toolStates.get(message.toolCallId)?.command : undefined} isError={message.isError} timestamp={timestamp} />
     }
     const assistant = message.role === 'assistant'
     const user = message.role === 'user'
@@ -525,8 +748,8 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
         </div>
         <div className="rounded-md border border-[#dbeafe] bg-white px-2 py-1.5 text-slate-900 [&_h1]:text-slate-900 [&_h2]:text-slate-900 [&_h3]:text-slate-900 [&_p]:text-slate-900 [&_strong]:text-slate-900">
           {assistant
-            ? <MessageContent content={message.content} onFileOpen={onFileOpen} toolStates={toolStates} />
-            : <CollapsibleMarkdown content={message.text} onFileOpen={onFileOpen} />}
+            ? <MessageContent content={message.content} onFileOpen={onFileOpen} toolStates={toolStates} timestamp={timestamp} />
+            : <MessageContent content={message.content} onFileOpen={onFileOpen} toolStates={toolStates} timestamp={timestamp} showRaw={false} />}
         </div>
       </article>
     )
@@ -540,7 +763,7 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
     const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
     if (toolCallId && toolStates.get(toolCallId)?.called) return null
     const text = partialText(data.partialResult)
-    return text ? <ToolResultCard text={text} toolName={typeof data.toolName === 'string' ? data.toolName : 'tool'} toolCallId={toolCallId} timestamp={timestamp} /> : null
+    return text ? <ToolResultCard text={text} toolName={typeof data.toolName === 'string' ? data.toolName : 'tool'} toolCallId={toolCallId} command={typeof data.command === 'string' ? data.command : undefined} timestamp={timestamp} /> : null
   }
   if (type.startsWith('tool_execution_')) {
     const data = record.data && typeof record.data === 'object' ? record.data as Record<string, unknown> : record
@@ -550,9 +773,14 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
     if (type === 'tool_execution_end') {
       if (toolCallId && toolStates.get(toolCallId)?.result) return null
       const isError = data.isError === true || data.isError === 'true'
-      return <div className={`flex items-center gap-2 border-l-2 px-2 py-1 text-[11px] ${isError ? 'border-danger text-danger' : 'border-ok text-muted'}`}>
-        <span>{isError ? '✕' : '✓'}</span><span>{toolName}</span><span className="font-mono text-muted">{shortToolId(toolCallId)}</span><span>{isError ? '失败' : '完成'}</span>
-      </div>
+      return (
+        <details className="w-full rounded-md border border-border bg-bg-elevated">
+          <summary className="flex min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left hover:bg-bg-hover">
+            <ToolSummaryLine toolName={toolName} command={typeof data.command === 'string' ? data.command : undefined} timestamp={timestamp} status={isError ? 'error' : 'success'} className="flex-1" />
+          </summary>
+          {toolCallId && <div className="border-t border-border px-2.5 py-2 text-[10px] text-muted">tool call {shortToolId(toolCallId)}</div>}
+        </details>
+      )
     }
     const payload = data.input ?? data.args ?? data.command ?? data
     const payloadRecord = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : undefined
@@ -560,9 +788,9 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
     const text = command ?? (typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2))
     const language = command || /^(?:bash|shell)$/i.test(toolName) ? 'bash' : 'json'
     return (
-      <details className="rounded-lg border border-border bg-bg-elevated">
-        <summary className="px-2.5 py-1.5 cursor-pointer text-[11px] font-semibold text-text-strong">
-          调用工具：{toolName} {shortToolId(toolCallId)}
+      <details className="w-full rounded-md border border-border bg-bg-elevated">
+        <summary className="flex min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left hover:bg-bg-hover">
+          <ToolSummaryLine toolName={toolName} command={command} timestamp={timestamp} status="running" className="flex-1" />
         </summary>
         <div className="px-2.5 pb-2.5 max-h-[20rem] overflow-auto">
           <MarkdownRenderer content={`\`\`\`${language}\n${text.slice(0, 100_000)}\n\`\`\``} onFileOpen={onFileOpen} />
@@ -574,6 +802,71 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
     return <details className="rounded-lg border border-border bg-card"><summary className="px-3 py-2 cursor-pointer text-xs text-text">custom message</summary><pre className="p-3 pt-1 text-xs text-text whitespace-pre-wrap">{JSON.stringify(record.data, null, 2).slice(0, 100_000)}</pre></details>
   }
   return <div className="text-[11px] text-muted border-l-2 border-border pl-3 py-1">{type.split('_').join(' ')}</div>
+}
+
+function LiveToolGroup({ items, thinking, onFileOpen, toolStates }: { items: LiveToolItem[]; thinking: { index: number; entry: unknown }[]; onFileOpen: (path: string) => void; toolStates: ToolStateMap }) {
+  const [expanded, setExpanded] = useState(false)
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const done = items.filter(item => item.resultText !== undefined || item.isError).length
+  const errors = items.filter(item => item.isError).length
+  const names = new Map<string, number>()
+  for (const item of items) names.set(item.toolName, (names.get(item.toolName) || 0) + 1)
+  const nameSummary = [...names.entries()].map(([name, count]) => count > 1 ? `${name}×${count}` : name).join(', ')
+  const progress = errors > 0 ? `${done} done · ${errors} failed` : done === items.length ? `${done} done` : `${done} done · ${items.length - done} running`
+  const tone = errors > 0 ? 'border-danger/40 bg-danger-subtle/10' : done === items.length ? 'border-ok/35 bg-ok-subtle/10' : 'border-accent/35 bg-accent-subtle/10'
+
+  return (
+    <section className="font-mono">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => { setExpanded(value => !value); setSelectedKey(null) }}
+        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-left text-[11px] transition-all hover:border-border-strong ${tone}`}
+      >
+        <span className={`h-2 w-2 shrink-0 rounded-full ${errors > 0 ? 'bg-danger' : done === items.length ? 'bg-ok' : 'bg-accent'}`} />
+        <span className="shrink-0 font-semibold text-text-strong">Multiple Tools: {progress}</span>
+        <span className="shrink-0 text-muted/60">•</span>
+        <span className="min-w-0 flex-1 truncate text-muted">{nameSummary}</span>
+        <span className="shrink-0 text-muted/50">• 点击展开</span>
+      </button>
+      {expanded && (
+        <div className="mt-1 ml-1 border-l border-border/70 pl-2">
+          <div className="space-y-0.5">
+            {items.map(item => {
+              const active = selectedKey === item.key
+              const status: ToolSummaryStatus = item.isError ? 'error' : item.resultText !== undefined ? 'success' : 'running'
+              return (
+                <div key={item.key}>
+                  <button
+                    type="button"
+                    aria-expanded={active}
+                    onClick={() => setSelectedKey(active ? null : item.key)}
+                    className={`flex w-full min-w-0 rounded px-1 py-0.5 text-left text-[11px] transition-colors hover:bg-bg-hover ${active ? 'bg-bg-hover' : ''}`}
+                  >
+                    <ToolSummaryLine toolName={item.toolName} args={item.argsText} command={item.argsText ? undefined : item.detail} timestamp={item.timestamp} status={status} className="flex-1" />
+                  </button>
+                  {active && (
+                    <div className="ml-4 mt-0.5 mb-1">
+                      {item.argsText
+                        ? <ToolCallBlock content={`🔧 ${item.toolName}`} meta={{ toolName: item.toolName, toolCallId: item.toolCallId, args: item.argsText, result: item.resultText, isError: item.isError, timestamp: item.timestamp }} onFileOpen={onFileOpen} />
+                        : item.resultText !== undefined
+                          ? <ToolResultCard text={item.resultText} toolName={item.toolName} toolCallId={item.toolCallId} command={item.detail} isError={item.isError} timestamp={item.timestamp} revealOnMount />
+                          : <TimelineEntry entry={item.entry} onFileOpen={onFileOpen} toolStates={toolStates} />}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {thinking.length > 0 && (
+            <div className="mt-2 space-y-1 border-t border-border/50 pt-1">
+              {thinking.map(item => <TimelineEntry key={item.index} entry={item.entry} onFileOpen={onFileOpen} toolStates={toolStates} />)}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  )
 }
 
 export function AuthPanel({ onAuthenticated }: { onAuthenticated: (browserClientId: string) => void }) {
@@ -609,7 +902,7 @@ export default function LiveSessionPage() {
   const dispatch = useAppDispatch()
   const { refresh } = useLiveSessionsRuntime()
   const state = useAppSelector(root => root.liveSessions)
-  const sessions = useMemo(() => Object.values(state.sessions).sort((a, b) => b.lastActivityAt - a.lastActivityAt), [state.sessions])
+  const sessions = useMemo(() => Object.values(state.sessions), [state.sessions])
   const sessionTitles = useMemo(() => buildSessionTitles(state.sessions, state.details), [state.sessions, state.details])
   const subagentStatuses = useMemo(() => buildSubagentStatuses(state.details), [state.details])
   const activeId = processInstanceId || state.activeId
@@ -618,11 +911,31 @@ export default function LiveSessionPage() {
   const ownedLeaseId = activeId ? state.ownedLeases[activeId] : undefined
   const features = useMemo(() => collectLiveFeatures(detail?.entries || []), [detail?.entries])
   const toolStates = useMemo(() => collectToolStates(detail?.entries || []), [detail?.entries])
+  const timelineItems = useMemo(() => groupLiveToolEntries(detail?.entries || []), [detail?.entries])
   const agentState = useMemo(() => deriveAgentState(summary?.status, detail?.entries || [], toolStates), [summary?.status, detail?.entries, toolStates])
   const [busy, setBusy] = useState(false)
+  const [commandNotice, setCommandNotice] = useState<string>()
   const [sessionSidebarVisible, setSessionSidebarVisible] = useState(() => typeof window === 'undefined' || localStorage.getItem('live-session-sidebar') !== 'hidden')
   const timelineEnd = useRef<HTMLDivElement>(null)
   const panel = usePanelState()
+  const [documentPreview, setDocumentPreview] = useState<{ filePath: string; content: string; loading: boolean; error: string | null } | null>(null)
+  const [focusedSubagentId, setFocusedSubagentId] = useState<string>()
+  const [focusedWorkflow, setFocusedWorkflow] = useState<WorkflowRecord>()
+  const [subagentLoading, setSubagentLoading] = useState(false)
+  const [availableModels, setAvailableModels] = useState<LiveSessionModelOption[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const focusedSubagent = useMemo(() => sessions.find(session => session.processInstanceId === focusedSubagentId), [focusedSubagentId, sessions])
+  const focusedSubagentDetail = focusedSubagentId ? state.details[focusedSubagentId] : undefined
+  const workflowItems = useMemo(() => {
+    const feature = features['subagent-workflow']
+    if (!feature || typeof feature !== 'object' || Array.isArray(feature)) return []
+    const workflows = (feature as Record<string, unknown>).workflows
+    if (!workflows || typeof workflows !== 'object' || Array.isArray(workflows)) return []
+    const items = (workflows as Record<string, unknown>).items
+    return Array.isArray(items) ? items.filter(item => item && typeof item === 'object' && !Array.isArray(item)) as WorkflowRecord[] : []
+  }, [features])
+  const childSessions = useMemo(() => summary ? sessions.filter(session => session.parentSessionId === summary.sessionId) : [], [sessions, summary])
+  const parentSession = useMemo(() => summary?.parentSessionId ? sessions.find(session => session.sessionId === summary.parentSessionId) : undefined, [sessions, summary])
 
   const handleFileOpen = useCallback(async (rawPath: string) => {
     const filePath = resolvePath(rawPath, summary?.canonicalCwd)
@@ -639,6 +952,30 @@ export default function LiveSessionPage() {
     }
   }, [panel.openPanel, summary?.canonicalCwd])
 
+  const handleDocumentLink = useCallback(async (rawPath: string) => {
+    const filePath = resolvePath(rawPath, summary?.canonicalCwd)
+    if (detectFileType(filePath) !== 'text') {
+      setDocumentPreview(null)
+      void handleFileOpen(rawPath)
+      return
+    }
+
+    setDocumentPreview({ filePath, content: '', loading: true, error: null })
+    try {
+      const response = await fetch('/api/file-read?path=' + encodeURIComponent(filePath))
+      if (!response.ok) throw new Error(`Unable to read file (${response.status})`)
+      const content = await response.text()
+      setDocumentPreview(current => current?.filePath === filePath
+        ? { filePath, content, loading: false, error: null }
+        : current)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to read file'
+      setDocumentPreview(current => current?.filePath === filePath
+        ? { filePath, content: '', loading: false, error: message }
+        : current)
+    }
+  }, [handleFileOpen, summary?.canonicalCwd])
+
   const handleFileSave = useCallback(async (filePath: string, content: string) => {
     const response = await fetch('/api/file-write', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -653,12 +990,35 @@ export default function LiveSessionPage() {
     else if (sessions[0]) navigate(`/live-sessions/${encodeURIComponent(sessions[0].processInstanceId)}`, { replace: true })
   }, [activeId, dispatch, navigate, sessions])
 
-  useEffect(() => {
-    if (!activeId || detail || state.auth !== 'authenticated') return
-    liveSessionApi.detail(activeId).then(value => dispatch(liveSessionSnapshot(value))).catch(error => dispatch(setLiveSessionError(errorMessage(error))))
-  }, [activeId, detail, dispatch, state.auth])
-
   useEffect(() => { timelineEnd.current?.scrollIntoView({ block: 'end' }) }, [detail?.entries.length])
+
+  useEffect(() => {
+    if (!focusedSubagentId || state.auth !== 'authenticated') return
+    if (focusedSubagentDetail) {
+      setSubagentLoading(false)
+      return
+    }
+    let cancelled = false
+    setSubagentLoading(true)
+    liveSessionApi.detail(focusedSubagentId).then(value => {
+      if (!cancelled) dispatch(liveSessionSnapshot(value))
+    }).catch(error => {
+      if (!cancelled) dispatch(setLiveSessionError(errorMessage(error)))
+    }).finally(() => {
+      if (!cancelled) setSubagentLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [dispatch, focusedSubagentDetail, focusedSubagentId, state.auth])
+
+  useEffect(() => {
+    if (focusedSubagentId && !focusedSubagent) setFocusedSubagentId(undefined)
+  }, [focusedSubagent, focusedSubagentId])
+
+  useEffect(() => {
+    setFocusedSubagentId(undefined)
+    setFocusedWorkflow(undefined)
+    setAvailableModels([])
+  }, [activeId])
 
   useEffect(() => {
     if (!activeId || !ownedLeaseId) return
@@ -683,7 +1043,7 @@ export default function LiveSessionPage() {
   }
 
   const perform = async (operation: () => Promise<void>): Promise<void> => {
-    setBusy(true); dispatch(setLiveSessionError(undefined))
+    setBusy(true); setCommandNotice(undefined); dispatch(setLiveSessionError(undefined))
     try { await operation() } catch (error) { dispatch(setLiveSessionError(errorMessage(error))); throw error }
     finally { setBusy(false) }
   }
@@ -693,10 +1053,33 @@ export default function LiveSessionPage() {
     await liveSessionApi.release(activeId, ownedLeaseId)
     dispatch(liveSessionReleased(activeId))
   })
+  const loadModels = () => perform(async () => {
+    if (!activeId) return
+    setModelsLoading(true)
+    try { setAvailableModels(await liveSessionApi.models(activeId)) }
+    finally { setModelsLoading(false) }
+  })
+  const selectModel = (model: LiveSessionModelOption) => perform(async () => {
+    if (!activeId) return
+    await liveSessionApi.command(activeId, { type: 'input', text: `/model ${model.provider}/${model.id}`, channel: 'web' })
+  })
+  const compact = () => perform(async () => {
+    if (!activeId) return
+    await liveSessionApi.command(activeId, { type: 'input', text: '/compact', channel: 'web' })
+  })
+  const clearSession = () => perform(async () => {
+    if (!activeId) return
+    await liveSessionApi.command(activeId, { type: 'input', text: '/clear', channel: 'web' })
+    setAvailableModels([])
+  })
   const abort = () => perform(async () => {
     if (!activeId) return
     const leaseId = await claim()
     await liveSessionApi.command(activeId, { type: 'abort', leaseId })
+  })
+  const reload = () => perform(async () => {
+    if (!activeId) return
+    await liveSessionApi.command(activeId, { type: 'input', text: '/reload', channel: 'web' })
   })
   const controlBtw = (type: 'open' | 'close') => perform(async () => {
     if (!activeId) return
@@ -704,13 +1087,13 @@ export default function LiveSessionPage() {
     await liveSessionApi.command(activeId, { type: 'feature_command', leaseId, feature: 'btw', command: { type } })
   })
 
-  const submit = (text: string, deliverAs?: 'steer' | 'followUp') => perform(async () => {
+  const submit = (text: string, deliverAs?: 'steer' | 'followUp', images?: LiveSessionImage[]) => perform(async () => {
     if (!activeId) return
     const processInstanceId = activeId
     const localId = `dashboard-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    dispatch(liveSessionUserMessageAdded({ processInstanceId, localId, text }))
+    dispatch(liveSessionUserMessageAdded({ processInstanceId, localId, text, ...(images?.length ? { images } : {}) }))
     try {
-      await liveSessionApi.command(processInstanceId, { type: 'prompt', text, channel: 'web', ...(deliverAs ? { deliverAs } : {}), expandPromptTemplates: false })
+      await liveSessionApi.command(processInstanceId, { type: 'input', text, channel: 'web', ...(images?.length ? { images } : {}), ...(deliverAs ? { deliverAs } : {}) })
     } catch (error) {
       dispatch(liveSessionUserMessageRemoved({ processInstanceId, localId }))
       throw error
@@ -734,6 +1117,7 @@ export default function LiveSessionPage() {
       <main className="min-w-0 flex-1 flex flex-col bg-bg">
         <div className="flex h-8 min-w-0 items-center justify-between gap-2 border-b border-border bg-card/60 px-2 text-[10px] text-muted">
           <div className="flex min-w-0 flex-1 items-center gap-2">
+            {summary?.parentSessionId && <button type="button" onClick={() => parentSession ? navigate(`/live-sessions/${encodeURIComponent(parentSession.processInstanceId)}`) : navigate('/live-sessions/gallery')} className="shrink-0 rounded border border-accent/40 bg-accent-subtle px-2 py-0.5 text-[10px] text-accent hover:border-accent">← 返回主 Agent</button>}
             <button type="button" onClick={toggleSessionSidebar} className="shrink-0 rounded border border-border bg-bg px-2 py-0.5 text-[10px] text-muted hover:border-accent hover:text-accent" title={sessionSidebarVisible ? '隐藏 Session 列表' : '显示 Session 列表'}>
               {sessionSidebarVisible ? '隐藏列表' : '显示列表'}
             </button>
@@ -757,7 +1141,21 @@ export default function LiveSessionPage() {
             <button type="button" onClick={() => void refresh()} className="rounded border border-border bg-bg px-2 py-0.5 text-[10px] text-muted hover:border-accent hover:text-accent">刷新</button>
           </div>
         </div>
+        {childSessions.length > 0 && <div className="shrink-0 border-b border-border bg-card/30 px-3 py-2">
+          <div className="mb-1 text-[10px] font-medium text-muted">子 Agent · {childSessions.length}</div>
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+            {childSessions.map(child => {
+              const title = sessionTitles[child.processInstanceId] || child.sessionName || `子 Agent · PID ${child.pid}`
+              const focused = focusedSubagentId === child.processInstanceId
+              return <button key={child.processInstanceId} type="button" onClick={() => setFocusedSubagentId(child.processInstanceId)} className={`min-w-[150px] max-w-[220px] rounded border px-2 py-1.5 text-left transition-colors ${focused ? 'border-accent bg-accent-subtle' : 'border-border bg-card hover:border-accent/60'}`} title={`打开子 Agent：${title}`}>
+                <div className="flex items-center gap-1.5"><span className="shrink-0 text-[12px] leading-none" aria-label={`Session 状态：${child.status === 'running' ? '工作中' : child.status === 'reconnecting' ? '重连中' : '等待输入'}`}>{child.status === 'running' ? '🔨' : child.status === 'reconnecting' ? '🔄' : '💤'}</span><span className="min-w-0 flex-1 truncate text-[11px] font-medium text-text-strong">{title}</span><span className="text-[9px] text-muted">{child.status === 'running' ? '工作中' : child.status === 'reconnecting' ? '重连中' : '等待'}</span></div>
+                <div className="mt-0.5 truncate font-mono text-[9px] text-muted">sid {child.sessionId.slice(0, 8)}… · PID {child.pid}</div>
+              </button>
+            })}
+          </div>
+        </div>}
         {state.error && <div className="px-4 py-2 bg-danger-subtle text-danger text-xs border-b border-danger/20">{state.error}</div>}
+        {commandNotice && !state.error && <div className="px-4 py-2 bg-accent-subtle text-accent text-xs border-b border-accent/20">{commandNotice}</div>}
         {!summary || !detail ? (
           <div className="flex-1 flex items-center justify-center text-sm text-muted">选择一个正在运行的 Pi session。</div>
         ) : (
@@ -765,49 +1163,105 @@ export default function LiveSessionPage() {
             <div className="flex min-h-0 flex-1">
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex flex-1 flex-col overflow-y-auto p-3 space-y-2">
-                  {detail.entries.length === 0 && <div className="text-sm text-muted text-center py-10">该 session 暂无可显示消息。</div>}
-                  {detail.entries.map((entry, index) => <TimelineEntry key={`${index}-${typeof entry === 'object' && entry ? String((entry as Record<string, unknown>).type || '') : ''}`} entry={entry} onFileOpen={path => { void handleFileOpen(path) }} toolStates={toolStates} />)}
+                  {workflowItems.map(workflow => <LiveWorkflowProgressCard key={String(workflow.id)} workflow={workflow} sessions={sessions} onOpen={workflowValue => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflowValue) }} />)}
+                  {detail.entries.length === 0 && workflowItems.length === 0 && <div className="text-sm text-muted text-center py-10">该 session 暂无可显示消息。</div>}
+                  {timelineItems.map(item => item.type === 'toolGroup'
+                    ? <LiveToolGroup key={`tool-group-${item.items[0]?.index ?? 0}`} items={item.items} thinking={item.thinking} onFileOpen={path => { void handleDocumentLink(path) }} toolStates={toolStates} />
+                    : <TimelineEntry key={`${item.index}-${typeof item.entry === 'object' && item.entry ? String((item.entry as Record<string, unknown>).type || '') : ''}`} entry={item.entry} onFileOpen={path => { void handleDocumentLink(path) }} toolStates={toolStates} />
+                  )}
                   <div ref={timelineEnd} />
                 </div>
                 <LiveCommandBar toolStates={toolStates} features={features} />
                 <LiveSessionComposer
                   status={summary.status}
+                  activity={agentState}
                   disabled={busy || summary.status === 'reconnecting'}
+                  models={availableModels}
+                  currentModel={summary.model}
+                  modelsLoading={modelsLoading}
+                  onLoadModels={loadModels}
+                  onSelectModel={selectModel}
                   onSubmit={submit}
                 />
               </div>
               <LiveSessionFeatures
                 features={features}
                 busy={busy}
+                cwd={summary.canonicalCwd}
+                status={summary.status}
+                onFileOpen={path => { void handleFileOpen(path) }}
                 onOpenBtw={() => { void controlBtw('open').catch(() => {}) }}
                 onCloseBtw={() => { void controlBtw('close').catch(() => {}) }}
+                onOpenWorkflow={workflow => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflow) }}
+                onCompact={() => { void compact().catch(() => {}) }}
+                onClear={() => { if (window.confirm('开始新的 Pi session？当前对话不会删除，但当前页面会切换到新的空 session。')) void clearSession().catch(() => {}) }}
+                onReload={() => { void reload().catch(() => {}) }}
+                onAbort={() => { void abort().catch(() => {}) }}
               />
             </div>
           </>
         )}
       </main>
-      {panel.isOpen && (
-        <Suspense fallback={<div className="w-[480px] border-l border-border flex items-center justify-center text-sm text-muted">加载文件…</div>}>
-        <DocumentPanel
-          filePath={panel.filePath}
-          content={panel.content}
-          onContentChange={content => { panel.setContent(content); panel.setDirty(true) }}
-          onSave={handleFileSave}
-          onClose={panel.closePanel}
-          dirty={panel.dirty}
-          versions={panel.versions}
-          selectedVersion={panel.selectedVersion}
-          conflictContent={panel.conflictContent}
-          onSelectVersion={panel.selectVersion}
-          onResolveConflict={panel.resolveConflict}
-          diffMode={panel.diffMode}
-          onToggleDiff={panel.toggleDiffMode}
-          comments={panel.comments}
-          onAddComment={() => {}}
-          onEditComment={() => {}}
-          onDeleteComment={() => {}}
+      {panel.isOpen && <>
+        <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]" aria-hidden="true" />
+        <ErrorBoundary
+          key={`panel:${panel.filePath}`}
+          fallback={<div className="fixed inset-3 z-[60] flex flex-col items-center justify-center gap-3 rounded-xl border border-danger/40 bg-bg p-6 text-center shadow-2xl md:inset-8"><div className="text-sm text-danger">文件渲染失败</div><div className="max-w-full truncate text-xs text-muted" title={panel.filePath}>{panel.filePath}</div><button type="button" onClick={panel.closePanel} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button></div>}
+        >
+          <Suspense fallback={<div className="fixed inset-3 z-50 flex items-center justify-center rounded-xl border border-border bg-bg text-sm text-muted md:inset-8">加载文件…</div>}>
+          <DocumentPanel
+            presentation="modal"
+            filePath={panel.filePath}
+            content={panel.content}
+            onContentChange={content => { panel.setContent(content); panel.setDirty(true) }}
+            onSave={handleFileSave}
+            onClose={panel.closePanel}
+            dirty={panel.dirty}
+            versions={panel.versions}
+            selectedVersion={panel.selectedVersion}
+            conflictContent={panel.conflictContent}
+            onSelectVersion={panel.selectVersion}
+            onResolveConflict={panel.resolveConflict}
+            diffMode={panel.diffMode}
+            onToggleDiff={panel.toggleDiffMode}
+            comments={panel.comments}
+            onAddComment={() => {}}
+            onEditComment={() => {}}
+            onDeleteComment={() => {}}
+          />
+          </Suspense>
+        </ErrorBoundary>
+      </>}
+      {focusedWorkflow && (
+        <LiveWorkflowPanel
+          workflow={focusedWorkflow}
+          sessions={sessions}
+          onClose={() => setFocusedWorkflow(undefined)}
+          onOpenSubagent={processId => {
+            setFocusedWorkflow(undefined)
+            setFocusedSubagentId(processId)
+          }}
         />
-        </Suspense>
+      )}
+      {focusedSubagent && (
+        <LiveSubagentPanel
+          summary={focusedSubagent}
+          detail={focusedSubagentDetail}
+          loading={subagentLoading}
+          onClose={() => setFocusedSubagentId(undefined)}
+          onOpenFull={() => navigate(`/live-sessions/${encodeURIComponent(focusedSubagent.processInstanceId)}`)}
+        />
+      )}
+      {documentPreview && (
+        <ErrorBoundary key={`preview:${documentPreview.filePath}`}>
+          <DocumentPreviewModal
+            filePath={documentPreview.filePath}
+            content={documentPreview.content}
+            loading={documentPreview.loading}
+            error={documentPreview.error}
+            onClose={() => setDocumentPreview(null)}
+          />
+        </ErrorBoundary>
       )}
     </div>
   )
