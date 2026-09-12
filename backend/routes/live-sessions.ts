@@ -5,6 +5,7 @@ import WebSocket, { WebSocketServer } from 'ws'
 import type { LiveSessionBrowserEvent, LiveSessionBrowserEventType } from '../../shared/src/live-sessions.js'
 import { LiveSessionBrowserAuth, type LiveSessionBrowserIdentity } from '../live-sessions/auth.js'
 import { LiveSessionGroupStore } from '../live-sessions/groups.js'
+import { LiveSessionMetaStore } from '../live-sessions/meta.js'
 import { LivePiLauncher } from '../live-sessions/launcher.js'
 import { LiveSessionProtocolError } from '../live-sessions/protocol.js'
 import { LiveSessionRegistry, LiveSessionRegistryError } from '../live-sessions/registry.js'
@@ -15,6 +16,7 @@ export interface LiveSessionRouteOptions {
   auth: LiveSessionBrowserAuth
   disconnectGraceMs?: number
   groupStore?: LiveSessionGroupStore
+  metaStore?: LiveSessionMetaStore
   launcher?: LivePiLauncher
 }
 
@@ -62,6 +64,7 @@ export class LiveSessionRoutes {
   private readonly auth: LiveSessionBrowserAuth
   private readonly disconnectGraceMs: number
   private readonly groupStore: LiveSessionGroupStore
+  private readonly metaStore: LiveSessionMetaStore
   private readonly launcher?: LivePiLauncher
   private readonly wss = new WebSocketServer({ noServer: true })
   private readonly clients = new Map<WebSocket, LiveSessionBrowserIdentity>()
@@ -77,6 +80,7 @@ export class LiveSessionRoutes {
     this.auth = options.auth
     this.disconnectGraceMs = options.disconnectGraceMs ?? 15_000
     this.groupStore = options.groupStore ?? new LiveSessionGroupStore()
+    this.metaStore = options.metaStore ?? new LiveSessionMetaStore()
     this.launcher = options.launcher
   }
 
@@ -89,7 +93,7 @@ export class LiveSessionRoutes {
       this.active = true
       this.subscribeRegistry()
     }
-    if (!this.startPromise) this.startPromise = Promise.all([this.auth.start(), this.groupStore.start()]).then(() => undefined).catch(error => {
+    if (!this.startPromise) this.startPromise = Promise.all([this.auth.start(), this.groupStore.start(), this.metaStore.start()]).then(() => undefined).catch(error => {
       this.active = false
       this.unsubscribeRegistry()
       this.startPromise = undefined
@@ -117,14 +121,15 @@ export class LiveSessionRoutes {
   }
 
   handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): boolean {
-    const pathname = (request.url || '').split('?')[0]
-    if (pathname !== '/api/live-sessions/ws') return false
-    if (!this.active || !this.auth.isOriginAllowed(request, true)) {
+    const url = new URL(request.url || '/', 'http://live-session.local')
+    if (url.pathname !== '/api/live-sessions/ws') return false
+    const ticketIdentity = this.auth.consumeWebSocketTicket(url.searchParams.get('ticket'))
+    if (!this.active || !this.auth.isOriginAllowed(request, true, ticketIdentity)) {
       if (this.active) logRejectedOrigin(request)
       this.rejectUpgrade(socket, 403, 'Forbidden')
       return true
     }
-    const identity = this.auth.getIdentity(request)
+    const identity = ticketIdentity || this.auth.getIdentity(request)
     if (!identity) {
       this.rejectUpgrade(socket, 401, 'Unauthorized')
       return true
@@ -166,6 +171,12 @@ export class LiveSessionRoutes {
       }
       next()
     }
+
+    this.app.post('/api/live-sessions/ws-ticket', requireMutationOrigin, requireAuth, (req: AuthenticatedRequest, res: Response) => {
+      const result = this.auth.issueWebSocketTicket(req)
+      if (!result) return res.status(401).json({ error: 'authentication_required' })
+      res.json({ ok: true, result })
+    })
 
     this.app.post('/api/live-sessions/start', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
       await this.respond(res, async () => {
@@ -216,6 +227,25 @@ export class LiveSessionRoutes {
 
     this.app.delete('/api/live-session-groups/:groupId/members/:sessionId', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
       await this.respond(res, async () => ({ ok: true, groups: await this.groupStore.removeMember(req.params.groupId as string, req.params.sessionId as string) }))
+    })
+
+    // Sidebar tags/pin for live sessions (keyed by pi sessionId, not the
+    // short-lived processInstanceId, so metadata survives a Pi restart).
+    this.app.get('/api/live-session-meta', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+      res.json({ meta: await this.metaStore.list() })
+    })
+
+    this.app.patch('/api/live-sessions/:processInstanceId/meta', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => {
+        const detail = this.registry.get(req.params.processInstanceId as string)
+        if (!detail) throw new LiveSessionRegistryError('live_session_not_found', 'live session is not available')
+        const body = req.body || {}
+        const meta = await this.metaStore.update(detail.summary.sessionId, {
+          ...(Object.prototype.hasOwnProperty.call(body, 'tags') ? { tags: body.tags } : {}),
+          ...(Object.prototype.hasOwnProperty.call(body, 'pinned') ? { pinned: body.pinned } : {}),
+        })
+        return { ok: true, meta, all: await this.metaStore.list() }
+      })
     })
 
     this.app.get('/api/live-sessions/:processInstanceId', requireAuth, (req: Request, res: Response) => {

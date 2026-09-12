@@ -35,4 +35,37 @@ describe('Live Session UI', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('keep this draft', undefined))
     expect(input.value).toBe('keep this draft')
   })
+
+  it('shows a live activity indicator above the composer', () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<LiveSessionComposer
+      status="running"
+      activity={{ label: '思考中', tone: 'accent', thinkingStartedAt: Date.now() - 1_000 }}
+      onSubmit={onSubmit}
+    />)
+    const indicator = screen.getByRole('status', { name: 'Agent 状态：思考中' })
+    expect(indicator).toHaveTextContent('思考中')
+    expect(indicator.querySelector('.typing-dots')).toBeTruthy()
+    expect(indicator.querySelectorAll('.typing-dots > span')).toHaveLength(3)
+  })
+
+  it('does not show the activity indicator while the Agent is idle', () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<LiveSessionComposer status="idle" activity={{ label: '等待输入', tone: 'muted' }} onSubmit={onSubmit} />)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('accepts a pasted image and sends it with an optional prompt', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<LiveSessionComposer status="idle" onSubmit={onSubmit} />)
+    const input = screen.getByPlaceholderText('发送到运行中的 Pi…') as HTMLTextAreaElement
+    const file = new File(['image-bytes'], 'screen.png', { type: 'image/png' })
+    fireEvent.paste(input, { clipboardData: { items: [{ type: 'image/png', getAsFile: () => file }] } })
+    await waitFor(() => expect(screen.getByAltText('待发送图片 1')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(
+      '请分析这张图片。', undefined,
+      [expect.objectContaining({ type: 'image', mimeType: 'image/png' })],
+    ))
+  })
 })

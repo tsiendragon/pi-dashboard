@@ -74,10 +74,33 @@ export function useLiveSessionsRuntime(): { refresh: () => Promise<void> } {
       }
     }
 
-    const connect = (): void => {
+    const scheduleReconnect = (): void => {
+      if (stopped.current || reconnectTimer.current) return
+      const delay = Math.min(10_000, 500 * 2 ** Math.min(retry++, 5))
+      reconnectTimer.current = setTimeout(() => {
+        reconnectTimer.current = undefined
+        void connect()
+      }, delay)
+    }
+
+    const connect = async (): Promise<void> => {
+      if (stopped.current || socket) return
+      let ticket: string
+      try {
+        ticket = (await liveSessionApi.websocketTicket()).ticket
+      } catch (error) {
+        if (stopped.current) return
+        if (error instanceof LiveSessionApiError && error.status === 401) {
+          dispatch(authRequired('Live Session 认证已失效'))
+          return
+        }
+        dispatch(setLiveSessionError(messageOf(error)))
+        scheduleReconnect()
+        return
+      }
       if (stopped.current) return
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      socket = new WebSocket(`${protocol}//${location.host}/api/live-sessions/ws`)
+      socket = new WebSocket(`${protocol}//${location.host}/api/live-sessions/ws?ticket=${encodeURIComponent(ticket)}`)
       socket.onopen = () => {
         retry = 0
         dispatch(setLiveWebSocketConnected(true))
@@ -88,18 +111,18 @@ export function useLiveSessionsRuntime(): { refresh: () => Promise<void> } {
       }
       socket.onerror = () => {}
       socket.onclose = event => {
+        socket = undefined
         dispatch(setLiveWebSocketConnected(false))
         if (event.code === 1008 || event.code === 4401) {
           dispatch(authRequired('Live Session 认证已失效'))
           return
         }
         if (stopped.current) return
-        const delay = Math.min(10_000, 500 * 2 ** Math.min(retry++, 5))
-        reconnectTimer.current = setTimeout(connect, delay)
+        scheduleReconnect()
       }
     }
 
-    connect()
+    void connect()
     return () => {
       stopped.current = true
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current)

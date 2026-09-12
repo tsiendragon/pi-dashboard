@@ -2,6 +2,7 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
 import type {
   LiveSessionDetail,
   LiveSessionEventMessage,
+  LiveSessionImage,
   LiveSessionSummary,
 } from '@shared/live-sessions'
 
@@ -280,13 +281,16 @@ const liveSessionsSlice = createSlice({
       const detail = state.details[id]
       if (detail) detail.summary.claim = { state: 'unclaimed' }
     },
-    liveSessionUserMessageAdded(state, action: PayloadAction<{ processInstanceId: string; localId: string; text: string }>) {
+    liveSessionUserMessageAdded(state, action: PayloadAction<{ processInstanceId: string; localId: string; text: string; images?: LiveSessionImage[] }>) {
       const detail = state.details[action.payload.processInstanceId]
       if (!detail) return
+      const content = action.payload.images?.length
+        ? [{ type: 'text' as const, text: action.payload.text }, ...action.payload.images]
+        : action.payload.text
       detail.entries.push({
         type: 'message',
         dashboardLocalId: action.payload.localId,
-        message: { role: 'user', content: action.payload.text },
+        message: { role: 'user', content },
       })
     },
     liveSessionUserMessageRemoved(state, action: PayloadAction<{ processInstanceId: string; localId: string }>) {

@@ -36,18 +36,25 @@ function hello(overrides = {}) {
   }
 }
 
-describe('LiveSession prompt channel tagging', () => {
+describe('LiveSession input channel tagging', () => {
   it('accepts known channels and preserves them on the command', () => {
-    const command = validateLiveSessionCommand({
-      type: 'prompt', text: 'hi', channel: 'terminal', expandPromptTemplates: false,
-    })
-    expect(command).toMatchObject({ type: 'prompt', channel: 'terminal' })
+    const command = validateLiveSessionCommand({ type: 'input', text: 'hi', channel: 'terminal' })
+    expect(command).toMatchObject({ type: 'input', channel: 'terminal' })
+    expect(validateLiveSessionCommand({ type: 'input', text: 'hi', channel: 'mobile' })).toMatchObject({ type: 'input', channel: 'mobile' })
   })
 
-  it('requires a known channel and rejects legacy lease fields', () => {
-    expect(() => validateLiveSessionCommand({ type: 'prompt', text: 'hi', channel: 'carrier-pigeon' })).toThrow()
-    expect(() => validateLiveSessionCommand({ type: 'prompt', text: 'hi', expandPromptTemplates: false })).toThrow()
-    expect(() => validateLiveSessionCommand({ type: 'prompt', leaseId: 'lease-1', text: 'hi', channel: 'web' })).toThrow()
+  it('accepts image attachments and allows image-only inputs', () => {
+    const image = { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }
+    expect(validateLiveSessionCommand({ type: 'input', text: '', channel: 'web', images: [image] })).toMatchObject({
+      type: 'input', text: '', channel: 'web', images: [image],
+    })
+    expect(() => validateLiveSessionCommand({ type: 'input', text: 'hi', channel: 'web', images: null })).toThrow()
+  })
+
+  it('requires a known channel and rejects unknown fields', () => {
+    expect(() => validateLiveSessionCommand({ type: 'input', text: 'hi', channel: 'carrier-pigeon' })).toThrow()
+    expect(() => validateLiveSessionCommand({ type: 'input', text: 'hi', channel: 'web', expandPromptTemplates: true })).toThrow()
+    expect(() => validateLiveSessionCommand({ type: 'input', leaseId: 'lease-1', text: 'hi', channel: 'web' })).toThrow()
   })
 })
 
@@ -103,8 +110,20 @@ describe('LiveSessionRegistry', () => {
     expect(second).toMatchObject({ leaseId: 'lease-a', alreadyClaimed: true })
     expect(commands.filter(command => command.type === 'claim')).toHaveLength(1)
 
-    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'prompt', text: 'shared prompt', channel: 'web' })
-    expect(commands.at(-1)).toEqual({ type: 'prompt', text: 'shared prompt', channel: 'web', expandPromptTemplates: false })
+    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'input', text: 'shared prompt', channel: 'web' })
+    expect(commands.at(-1)).toEqual({ type: 'input', text: 'shared prompt', channel: 'web' })
+    await registry.sendBrowserCommand('process-a', 'browser-b', {
+      type: 'input', text: 'inspect this', channel: 'web',
+      images: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }],
+    })
+    expect(commands.at(-1)).toEqual({
+      type: 'input', text: 'inspect this', channel: 'web',
+      images: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }],
+    })
+    await registry.sendBrowserCommand('process-a', 'browser-a', { type: 'input', text: '/compact', channel: 'web' })
+    expect(commands.at(-1)).toEqual({ type: 'input', text: '/compact', channel: 'web' })
+    await registry.sendBrowserCommand('process-a', 'browser-a', { type: 'input', text: '/clear', channel: 'web' })
+    expect(commands.at(-1)).toEqual({ type: 'input', text: '/clear', channel: 'web' })
 
     registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 1, event: { type: 'agent_start', data: {} } }, transport)
     expect(registry.get('process-a').summary.status).toBe('running')
@@ -179,6 +198,11 @@ describe('LiveSession browser routes', () => {
       origin: 'https://375-proxy-9999.dsw-gateway-cn-hongkong.data.aliyuncs.com',
       host: 'dsw-worker.internal:7777',
     } }, true)).toBe(false)
+    expect(auth.isOriginAllowed({ headers: {
+      origin: 'http://375-proxy-7777.dsw-gateway-cn-hongkong.data.aliyuncs.com',
+      host: 'dsw-worker.internal:7777',
+      'x-forwarded-proto': 'http',
+    } }, true)).toBe(true)
     const strippedOriginRequest = { headers: {
       referer: 'https://375-proxy-7777.dsw-gateway-cn-hongkong.data.aliyuncs.com/live-sessions',
       host: '375-proxy-7777.dsw-gateway-cn-hongkong.data.aliyuncs.com',
@@ -212,6 +236,10 @@ describe('LiveSession browser routes', () => {
     }
     expect(auth.isOriginAllowed({ headers }, true)).toBe(true)
     expect(auth.isOriginAllowed({ headers: { ...headers, cookie: undefined } }, true)).toBe(false)
+    const ticket = auth.issueWebSocketTicket({ headers: { cookie } })
+    expect(ticket).toMatchObject({ ticket: expect.stringMatching(/^[a-f0-9]{64}$/), expiresAt: expect.any(Number) })
+    expect(auth.consumeWebSocketTicket(ticket?.ticket)?.browserClientId).toBe(result.browserClientId)
+    expect(auth.consumeWebSocketTicket(ticket?.ticket)).toBeUndefined()
   })
 
   it('rejects a symlinked browser control token', async () => {
@@ -256,6 +284,11 @@ describe('LiveSession browser routes', () => {
     const list = await fetch(`${origin}/api/live-sessions`, { headers: { cookie } })
     expect(list.status).toBe(200)
     await expect(list.json()).resolves.toMatchObject({ sessions: [], browserClientId: expect.any(String) })
+    const ticketResponse = await fetch(`${origin}/api/live-sessions/ws-ticket`, {
+      method: 'POST', headers: { cookie, origin, 'content-type': 'application/json' }, body: '{}',
+    })
+    expect(ticketResponse.status).toBe(200)
+    const ticket = (await ticketResponse.json()).result.ticket
     const socket = new WebSocket(origin.replace('http:', 'ws:') + '/api/live-sessions/ws', {
       headers: { cookie, origin },
     })
@@ -265,6 +298,16 @@ describe('LiveSession browser routes', () => {
     })
     expect(firstFrame).toEqual({ type: 'live_session_attached', data: { sessions: [] } })
     socket.close()
+    const proxySocket = new WebSocket(
+      `ws://127.0.0.1:${address.port}/api/live-sessions/ws?ticket=${encodeURIComponent(ticket)}`,
+      { headers: { Host: '375-proxy-7777.dsw-gateway-cn-hongkong.data.aliyuncs.com', 'X-Forwarded-Proto': 'http' } },
+    )
+    const proxyFirstFrame = await new Promise((resolve, reject) => {
+      proxySocket.once('message', data => resolve(JSON.parse(String(data))))
+      proxySocket.once('error', reject)
+    })
+    expect(proxyFirstFrame).toEqual({ type: 'live_session_attached', data: { sessions: [] } })
+    proxySocket.close()
   })
 })
 
