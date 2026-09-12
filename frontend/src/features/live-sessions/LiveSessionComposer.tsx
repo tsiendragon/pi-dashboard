@@ -1,24 +1,126 @@
-import { useState } from 'react'
-import type { LiveSessionStatus } from '@shared/live-sessions'
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import { createPortal } from 'react-dom'
+import { LIVE_SESSION_MAX_IMAGE_BYTES, LIVE_SESSION_MAX_IMAGES, type LiveSessionImage, type LiveSessionModelOption, type LiveSessionStatus } from '@shared/live-sessions'
+import { LIVE_SESSION_SLASH_MENU, LIVE_SESSION_TUI_ONLY, type LiveSessionSlashItem } from './liveSessionCommands'
+
+export interface LiveSessionActivity {
+  label: string
+  tone: 'muted' | 'accent' | 'ok' | 'danger'
+  thinkingStartedAt?: number
+}
 
 interface LiveSessionComposerProps {
   status: LiveSessionStatus
+  activity?: LiveSessionActivity
   disabled?: boolean
-  onSubmit: (text: string, deliverAs?: 'steer' | 'followUp') => Promise<void>
+  models?: LiveSessionModelOption[]
+  currentModel?: { provider: string; id: string }
+  modelsLoading?: boolean
+  onLoadModels?: () => Promise<void>
+  onSelectModel?: (model: LiveSessionModelOption) => Promise<void>
+  onSubmit: (text: string, deliverAs?: 'steer' | 'followUp', images?: LiveSessionImage[]) => Promise<void>
 }
 
-export default function LiveSessionComposer({ status, disabled, onSubmit }: LiveSessionComposerProps) {
+type PendingImage = LiveSessionImage & { preview: string }
+
+function readImage(file: File): Promise<PendingImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('图片读取失败'))
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : ''
+      const comma = dataUrl.indexOf(',')
+      const data = comma >= 0 ? dataUrl.slice(comma + 1) : ''
+      if (!data) { reject(new Error('图片数据为空')); return }
+      resolve({ type: 'image', data, mimeType: file.type, preview: dataUrl })
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+function formatElapsed(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1_000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = String(totalSeconds % 60).padStart(2, '0')
+  return `${minutes}:${seconds}`
+}
+
+function ThinkingElapsed({ startedAt }: { startedAt?: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (startedAt === undefined) return undefined
+    const timer = setInterval(() => setNow(Date.now()), 1_000)
+    return () => clearInterval(timer)
+  }, [startedAt])
+  return startedAt === undefined ? null : <span className="font-mono text-[10px] text-muted">· {formatElapsed(now - startedAt)}</span>
+}
+
+function activityTextClass(tone: LiveSessionActivity['tone']): string {
+  if (tone === 'danger') return 'text-danger'
+  if (tone === 'accent') return 'text-accent'
+  if (tone === 'ok') return 'text-ok'
+  return 'text-muted'
+}
+
+function AgentActivityBar({ activity }: { activity?: LiveSessionActivity }) {
+  if (!activity || activity.label === '等待输入') return null
+  const reconnecting = activity.label === '重连中'
+  return (
+    <div className={`flex min-h-7 items-center gap-2 bg-card/60 px-3 py-1 text-[11px] ${activityTextClass(activity.tone)}`} role="status" aria-live="polite" aria-label={`Agent 状态：${activity.label}`}>
+      {reconnecting
+        ? <span aria-hidden="true">◐</span>
+        : <span className="typing-dots shrink-0" aria-hidden="true"><span /><span /><span /></span>}
+      <span className="min-w-0 truncate">{activity.label}</span>
+      {activity.label === '思考中' && <ThinkingElapsed startedAt={activity.thinkingStartedAt} />}
+    </div>
+  )
+}
+
+export default function LiveSessionComposer({ status, activity, disabled, models = [], currentModel, modelsLoading = false, onLoadModels, onSelectModel, onSubmit }: LiveSessionComposerProps) {
   const [text, setText] = useState('')
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
+  const [imageError, setImageError] = useState<string>()
   const [deliverAs, setDeliverAs] = useState<'steer' | 'followUp'>('followUp')
   const [sending, setSending] = useState(false)
+  const [modelOpen, setModelOpen] = useState(false)
+  const [action, setAction] = useState<'model' | undefined>()
+  const [slashDismissed, setSlashDismissed] = useState(false)
+  const [slashSelected, setSlashSelected] = useState(0)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const files = Array.from(event.clipboardData.items)
+      .filter(item => item.type.startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter((file): file is File => !!file)
+    if (files.length === 0) return
+    event.preventDefault()
+    if (pendingImages.length >= LIVE_SESSION_MAX_IMAGES) {
+      setImageError(`最多同时发送 ${LIVE_SESSION_MAX_IMAGES} 张图片`)
+      return
+    }
+    void Promise.all(files.slice(0, LIVE_SESSION_MAX_IMAGES - pendingImages.length).map(readImage)).then(images => {
+      const oversized = images.find(image => image.data.length > LIVE_SESSION_MAX_IMAGE_BYTES)
+      if (oversized) {
+        setImageError('图片过大，请粘贴较小的图片后重试（单张不超过 3 MiB）')
+        return
+      }
+      setImageError(undefined)
+      setPendingImages(previous => [...previous, ...images].slice(0, LIVE_SESSION_MAX_IMAGES))
+    }).catch(error => setImageError(error instanceof Error ? error.message : '图片读取失败'))
+  }
 
   const submit = async (): Promise<void> => {
-    const value = text.trim()
+    const value = text.trim() || (pendingImages.length > 0 ? '请分析这张图片。' : '')
     if (!value || sending || disabled) return
+    const images = pendingImages.map(({ preview: _preview, ...image }) => image)
     setSending(true)
     try {
-      await onSubmit(value, status === 'running' ? deliverAs : undefined)
+      if (images.length > 0) await onSubmit(value, status === 'running' ? deliverAs : undefined, images)
+      else await onSubmit(value, status === 'running' ? deliverAs : undefined)
       setText('')
+      setPendingImages([])
+      setImageError(undefined)
     } catch {
       // The page keeps the detailed error; preserve the draft for retry.
     } finally {
@@ -26,14 +128,78 @@ export default function LiveSessionComposer({ status, disabled, onSubmit }: Live
     }
   }
 
+  const toggleModels = async (): Promise<void> => {
+    if (action || disabled) return
+    const next = !modelOpen
+    setModelOpen(next)
+    if (next && models.length === 0 && onLoadModels) {
+      setAction('model')
+      try { await onLoadModels() } catch {
+        // The parent operation reports the actionable error in the session banner.
+      } finally { setAction(undefined) }
+    }
+  }
+
+  const slashQuery = useMemo(() => {
+    const match = text.match(/^\/([a-z-]*)$/)
+    return match ? (match[1] ?? '') : null
+  }, [text])
+
+  const slashMatches = useMemo(() => {
+    if (slashQuery === null) return []
+    return LIVE_SESSION_SLASH_MENU.filter(item => item.command.slice(1).startsWith(slashQuery))
+  }, [slashQuery])
+
+  const slashTuiMatches = useMemo(() => {
+    if (slashQuery === null) return []
+    return LIVE_SESSION_TUI_ONLY.filter(item => item.command.slice(1).startsWith(slashQuery))
+  }, [slashQuery])
+
+  const slashVisible = slashQuery !== null && !slashDismissed && (slashMatches.length > 0 || slashTuiMatches.length > 0)
+
+  useEffect(() => { setSlashSelected(0) }, [slashQuery])
+
+  const applySlashSelect = useCallback((item: LiveSessionSlashItem) => {
+    setText(item.insert)
+    setSlashDismissed(true)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) { el.focus(); const end = el.value.length; el.setSelectionRange(end, end) }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!slashVisible) return
+    const onKey = (event: KeyboardEvent) => {
+      if (slashMatches.length > 0) {
+        if (event.key === 'ArrowDown') { event.preventDefault(); setSlashSelected(i => (i + 1) % slashMatches.length); return }
+        if (event.key === 'ArrowUp') { event.preventDefault(); setSlashSelected(i => (i - 1 + slashMatches.length) % slashMatches.length); return }
+        if (event.key === 'Enter' || event.key === 'Tab') { event.preventDefault(); applySlashSelect(slashMatches[slashSelected >= slashMatches.length ? 0 : slashSelected]); return }
+      }
+      if (event.key === 'Escape') { event.preventDefault(); setSlashDismissed(true); inputRef.current?.focus() }
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [slashVisible, slashMatches, slashSelected, applySlashSelect])
+
   return (
-    <div className="border-t border-border bg-card p-2">
-      <div className="flex gap-2 items-end">
+    <>
+      <AgentActivityBar activity={activity} />
+      <div className="border-t border-border bg-card p-2">
+        {pendingImages.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label="待发送图片">
+          {pendingImages.map((image, index) => <div key={`${image.mimeType}-${index}`} className="group relative">
+            <img src={image.preview} alt={`待发送图片 ${index + 1}`} className="h-16 max-w-28 rounded-md border border-border object-cover" />
+            <button type="button" onClick={() => setPendingImages(previous => previous.filter((_, itemIndex) => itemIndex !== index))} className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border-none bg-danger text-[11px] text-white opacity-60 transition-opacity hover:opacity-100" aria-label={`移除第 ${index + 1} 张图片`}>×</button>
+          </div>)}
+        </div>}
+        {imageError && <div className="mb-2 text-[11px] text-danger" role="alert">{imageError}</div>}
+        <div className="flex gap-2 items-end">
         <textarea
+          ref={inputRef}
           value={text}
-          onChange={event => setText(event.target.value)}
+          onChange={event => { setText(event.target.value); setSlashDismissed(false) }}
           onKeyDown={event => {
-            if (event.key === 'Enter' && !event.shiftKey) {
+            if (event.key === 'Enter' && !event.shiftKey && !event.defaultPrevented && !event.nativeEvent.isComposing) {
               event.preventDefault()
               void submit()
             }
@@ -41,7 +207,8 @@ export default function LiveSessionComposer({ status, disabled, onSubmit }: Live
           disabled={disabled}
           maxLength={128 * 1024}
           rows={1}
-          placeholder="发送到运行中的 Pi…"
+          onPaste={handlePaste}
+          placeholder={pendingImages.length > 0 ? '补充图片说明，或直接发送…' : '发送到运行中的 Pi…'}
           className="min-h-9 flex-1 resize-none rounded-md border border-border bg-bg px-2.5 py-1.5 text-sm text-text outline-none focus:border-accent disabled:opacity-50"
         />
         {status === 'running' && (
@@ -50,10 +217,53 @@ export default function LiveSessionComposer({ status, disabled, onSubmit }: Live
             <option value="steer">Steer</option>
           </select>
         )}
-        <button type="button" onClick={() => void submit()} disabled={!text.trim() || sending || disabled} className="h-8 px-3 rounded-md bg-accent text-white border-none text-xs disabled:opacity-50">
+        <div className="relative">
+          <button type="button" onClick={() => { void toggleModels() }} disabled={sending || !!action || disabled} className="h-8 max-w-48 truncate rounded-md border border-border bg-bg px-2 text-[11px] text-muted hover:border-accent hover:text-accent disabled:opacity-50" title="切换当前模型">
+            {currentModel ? `Model · ${currentModel.id}` : 'Model'}
+          </button>
+          {modelOpen && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-72 w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-lg border border-border bg-card p-2 shadow-xl">
+            <div className="mb-1 px-1 text-[10px] font-semibold text-muted">当前 Pi 可用模型</div>
+            {modelsLoading && <div className="px-2 py-3 text-xs text-muted">读取模型列表…</div>}
+            {!modelsLoading && models.length === 0 && <div className="px-2 py-3 text-xs text-muted">当前没有可用模型。</div>}
+            {!modelsLoading && models.map(model => {
+              const selected = currentModel?.provider === model.provider && currentModel.id === model.id
+              return <button key={`${model.provider}/${model.id}`} type="button" onClick={() => { setModelOpen(false); if (onSelectModel) { setAction('model'); void onSelectModel(model).finally(() => setAction(undefined)) } }} className={`flex w-full items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-bg-hover ${selected ? 'bg-accent-subtle' : ''}`}>
+                <span className={`mt-0.5 text-xs ${selected ? 'text-accent' : 'text-muted'}`}>{selected ? '✓' : '○'}</span>
+                <span className="min-w-0 flex-1"><span className="block truncate font-mono text-[10px] text-text-strong">{model.provider}/{model.id}</span><span className="block truncate text-[10px] text-muted">{model.name} · context {model.contextWindow.toLocaleString()}</span></span>
+              </button>
+            })}
+          </div>}
+        </div>
+        <button type="button" onClick={() => void submit()} disabled={(!text.trim() && pendingImages.length === 0) || sending || !!action || disabled} className="h-8 px-3 rounded-md bg-accent text-white border-none text-xs disabled:opacity-50">
           {sending ? '发送中…' : '发送'}
         </button>
+        </div>
       </div>
-    </div>
+      {slashVisible && inputRef.current && createPortal((() => {
+        const rect = inputRef.current!.getBoundingClientRect()
+        const rows = slashMatches.length + slashTuiMatches.length
+        const menuHeight = Math.min(rows * 38 + 8, 400)
+        const top = rect.top - menuHeight - 4 > 0 ? rect.top - menuHeight - 4 : rect.bottom + 4
+        return (
+          <div className="fixed z-[9999] overflow-y-auto rounded-lg border border-border bg-card py-1 shadow-lg animate-slide-up" style={{ top, left: rect.left, width: Math.min(rect.width, 440), maxHeight: 400 }}>
+            {slashMatches.map((item, index) => (
+              <button key={item.command} type="button" onMouseEnter={() => setSlashSelected(index)} onMouseDown={event => { event.preventDefault(); applySlashSelect(item) }} className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${index === slashSelected ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}>
+                <span className="shrink-0 font-mono text-[13px] font-semibold text-accent">{item.command}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-text">{item.description}</span>
+                {item.kind === 'lease' && <span className="shrink-0 rounded-full bg-warn-subtle px-1.5 py-0.5 text-[10px] font-semibold text-warn">需控制</span>}
+              </button>
+            ))}
+            {slashTuiMatches.length > 0 && slashMatches.length > 0 && <div className="my-1 border-t border-border" />}
+            {slashTuiMatches.map(item => (
+              <div key={item.command} className="flex items-center gap-2 px-3 py-1.5 opacity-60">
+                <span className="shrink-0 font-mono text-[13px] font-semibold text-muted">{item.command}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{item.description}</span>
+                <span className="shrink-0 rounded-full bg-bg-elevated px-1.5 py-0.5 text-[10px] font-semibold text-muted">仅 TUI</span>
+              </div>
+            ))}
+          </div>
+        )
+      })(), document.body)}
+    </>
   )
 }

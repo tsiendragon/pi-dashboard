@@ -5,6 +5,7 @@ import os from 'os'
 import path from 'path'
 import {
   LIVE_SESSION_MAX_BUFFER_BYTES,
+  LIVE_SESSION_MAX_COMMAND_BYTES,
   LIVE_SESSION_MAX_EVENT_BYTES,
   LIVE_SESSION_MAX_SNAPSHOT_BYTES,
   LIVE_SESSION_PROTOCOL_VERSION,
@@ -274,7 +275,7 @@ export class LiveSessionBroker {
   private onData(state: ConnectionState, chunk: string): void {
     state.buffer += chunk
     if (Buffer.byteLength(state.buffer, 'utf8') > LIVE_SESSION_MAX_BUFFER_BYTES) {
-      this.reject(state, 'buffer_too_large', 'connection buffer exceeds 4 MiB')
+      this.reject(state, 'buffer_too_large', 'connection buffer exceeds 16 MiB')
       return
     }
     let newline: number
@@ -290,11 +291,11 @@ export class LiveSessionBroker {
   }
 
   private async handleLine(state: ConnectionState, line: string): Promise<void> {
-    if (Buffer.byteLength(line, 'utf8') > LIVE_SESSION_MAX_SNAPSHOT_BYTES) throw new LiveSessionProtocolError('message_too_large', 'message exceeds 2 MiB')
+    if (Buffer.byteLength(line, 'utf8') > LIVE_SESSION_MAX_BUFFER_BYTES) throw new LiveSessionProtocolError('message_too_large', 'message exceeds 16 MiB')
     state.lastSeenAt = Date.now()
     const message = parseJsonLine(line)
     if (!state.processInstanceId) {
-      if (jsonBytes(message) > LIVE_SESSION_MAX_EVENT_BYTES) throw new LiveSessionProtocolError('hello_too_large', 'hello exceeds 1 MiB')
+      if (jsonBytes(message) > LIVE_SESSION_MAX_EVENT_BYTES) throw new LiveSessionProtocolError('hello_too_large', 'hello exceeds 8 MiB')
       const hello = parseHello(message)
       if (!this.tokenMatches(hello.brokerToken)) throw new LiveSessionProtocolError('authentication_failed', 'invalid broker token')
       const decision = await this.pathPolicy.authorize(hello.cwd)
@@ -307,6 +308,7 @@ export class LiveSessionBroker {
 
     switch (message.type) {
       case 'snapshot': {
+        if (jsonBytes(message) > LIVE_SESSION_MAX_SNAPSHOT_BYTES) throw new LiveSessionProtocolError('snapshot_too_large', 'snapshot exceeds 8 MiB')
         const snapshot = parseSnapshot(message)
         this.assertProcess(state, snapshot.processInstanceId)
         const decision = await this.pathPolicy.authorize(snapshot.summary.cwd)
@@ -317,12 +319,12 @@ export class LiveSessionBroker {
         return
       }
       case 'event':
-        if (jsonBytes(message) > LIVE_SESSION_MAX_EVENT_BYTES) throw new LiveSessionProtocolError('event_too_large', 'event exceeds 1 MiB')
+        if (jsonBytes(message) > LIVE_SESSION_MAX_EVENT_BYTES) throw new LiveSessionProtocolError('event_too_large', 'event exceeds 8 MiB')
         this.assertProcess(state, String(message.processInstanceId))
         this.registry.applyEvent(parseEvent(message), state.transport)
         return
       case 'command_result':
-        if (jsonBytes(message) > LIVE_SESSION_MAX_EVENT_BYTES) throw new LiveSessionProtocolError('result_too_large', 'command result exceeds 1 MiB')
+        if (jsonBytes(message) > LIVE_SESSION_MAX_EVENT_BYTES) throw new LiveSessionProtocolError('result_too_large', 'command result exceeds 8 MiB')
         this.registry.handleCommandResult(parseCommandResult(message), state.transport)
         return
       case 'heartbeat': {
@@ -364,7 +366,7 @@ export class LiveSessionBroker {
   private send(socket: Socket, message: LiveSessionServerMessage): void {
     if (socket.destroyed || !socket.writable) throw new LiveSessionBrokerError('connection_closed', 'live session connection is closed')
     const payload = `${JSON.stringify(message)}\n`
-    if (Buffer.byteLength(payload, 'utf8') > 256 * 1024) throw new LiveSessionBrokerError('command_too_large', 'outbound command exceeds 256 KiB')
+    if (Buffer.byteLength(payload, 'utf8') > LIVE_SESSION_MAX_COMMAND_BYTES) throw new LiveSessionBrokerError('command_too_large', 'outbound command exceeds 8 MiB')
     socket.write(payload)
   }
 

@@ -128,9 +128,9 @@ function WordDiffSpans({ oldText, newText, type }: { oldText: string; newText: s
 
 const CTX_COLLAPSE_THRESHOLD = 20
 
-export default memo(function DiffBlock({ code, complete }: { code: string; complete: boolean }) {
+export default memo(function DiffBlock({ code, complete, initialSideBySide = false }: { code: string; complete: boolean; initialSideBySide?: boolean }) {
   const [copied, setCopied] = useState(false)
-  const [sideBySide, setSideBySide] = useState(false)
+  const [sideBySide, setSideBySide] = useState(initialSideBySide)
   const [expandedCtx, setExpandedCtx] = useState<Set<number>>(new Set())
   const lines = useMemo(() => parseDiffLines(code), [code])
   const hasLineNums = lines.some(l => l.oldNum !== undefined || l.newNum !== undefined)

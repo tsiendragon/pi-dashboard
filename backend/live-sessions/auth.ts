@@ -6,6 +6,7 @@ import path from 'path'
 
 export const LIVE_SESSION_COOKIE_NAME = 'pi_live_session'
 const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000
+const WEBSOCKET_TICKET_TTL_MS = 30_000
 
 type HeaderSource = { headers: IncomingHttpHeaders }
 
@@ -17,6 +18,11 @@ export interface LiveSessionBrowserIdentity {
 
 export interface BrowserAuthenticationResult extends LiveSessionBrowserIdentity {
   setCookie: string
+}
+
+export interface BrowserWebSocketTicket {
+  ticket: string
+  expiresAt: number
 }
 
 export interface LiveSessionBrowserAuthOptions {
@@ -61,7 +67,9 @@ function hostPort(value: string | string[] | undefined): string | undefined {
 }
 
 function isDswGatewayOrigin(origin: URL, request: HeaderSource): boolean {
-  if (origin.protocol !== 'https:') return false
+  const forwardedProto = firstHeaderValue(request.headers['x-forwarded-proto'])?.toLowerCase()
+  const expectedProtocol = forwardedProto === 'http' ? 'http:' : 'https:'
+  if (origin.protocol !== expectedProtocol) return false
   const match = origin.hostname.match(/^\d+-proxy-(\d+)\.dsw-gateway-[a-z0-9-]+\.data\.aliyuncs\.com$/i)
   if (!match) return false
   const targetPort = match[1]
@@ -90,6 +98,7 @@ export class LiveSessionBrowserAuth {
   private token?: Buffer
   private startPromise?: Promise<void>
   private readonly sessions = new Map<string, LiveSessionBrowserIdentity>()
+  private readonly websocketTickets = new Map<string, { browserClientId: string; expiresAt: number }>()
   private readonly allowedOrigins: Set<string>
   private readonly now: () => number
 
@@ -107,6 +116,7 @@ export class LiveSessionBrowserAuth {
 
   async stop(): Promise<void> {
     this.sessions.clear()
+    this.websocketTickets.clear()
     this.token = undefined
     this.startPromise = undefined
   }
@@ -149,7 +159,28 @@ export class LiveSessionBrowserAuth {
     if (cookie) this.sessions.delete(cookie)
   }
 
-  isOriginAllowed(request: HeaderSource, requireOrigin = false): boolean {
+  issueWebSocketTicket(request: HeaderSource): BrowserWebSocketTicket | undefined {
+    const identity = this.getIdentity(request)
+    if (!identity) return undefined
+    const ticket = randomBytes(32).toString('hex')
+    const expiresAt = this.now() + WEBSOCKET_TICKET_TTL_MS
+    this.websocketTickets.set(ticket, { browserClientId: identity.browserClientId, expiresAt })
+    return { ticket, expiresAt }
+  }
+
+  consumeWebSocketTicket(value: unknown): LiveSessionBrowserIdentity | undefined {
+    this.prune()
+    if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) return undefined
+    const ticket = this.websocketTickets.get(value)
+    this.websocketTickets.delete(value)
+    if (!ticket || ticket.expiresAt < this.now()) return undefined
+    for (const identity of this.sessions.values()) {
+      if (identity.browserClientId === ticket.browserClientId) return { ...identity }
+    }
+    return undefined
+  }
+
+  isOriginAllowed(request: HeaderSource, requireOrigin = false, authenticatedIdentity?: LiveSessionBrowserIdentity): boolean {
     const origin = firstHeaderValue(request.headers.origin)
     if (origin) {
       if (origin === 'null') return false
@@ -161,9 +192,11 @@ export class LiveSessionBrowserAuth {
     // upgrades. The private HttpOnly control cookie proves authentication, and
     // the encoded gateway host pins the request to this Dashboard port.
     const requestHost = normalizedHost(request.headers.host)
-    if (requestHost && this.getIdentity(request)) {
+    if (requestHost && (authenticatedIdentity || this.getIdentity(request))) {
       try {
-        if (isDswGatewayOrigin(new URL(`https://${requestHost}`), request)) return true
+        const forwardedProto = firstHeaderValue(request.headers['x-forwarded-proto'])?.toLowerCase()
+        const gatewayProtocol = forwardedProto === 'http' ? 'http' : 'https'
+        if (isDswGatewayOrigin(new URL(`${gatewayProtocol}://${requestHost}`), request)) return true
       } catch {}
     }
     if (firstHeaderValue(request.headers['sec-fetch-site'])?.toLowerCase() !== 'same-origin') return false
@@ -208,6 +241,10 @@ export class LiveSessionBrowserAuth {
     const cutoff = this.now() - SESSION_MAX_AGE_MS
     for (const [cookie, identity] of this.sessions) {
       if (identity.lastSeenAt < cutoff) this.sessions.delete(cookie)
+    }
+    const now = this.now()
+    for (const [ticket, value] of this.websocketTickets) {
+      if (value.expiresAt < now) this.websocketTickets.delete(ticket)
     }
   }
 }

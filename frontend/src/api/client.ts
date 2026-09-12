@@ -162,6 +162,7 @@ export const api = {
   chatMode: (mode: string, slot?: string) => post('/api/chat/mode', { mode, slot: slot || '' }).then(j),
   generateTitle: (slot: string) => post('/api/chat/slots/' + encodeURIComponent(slot) + '/generate-title').then(j),
   renameSlot: (slot: string, title: string) => afetch('/api/chat/slots/' + encodeURIComponent(slot) + '/title', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) }).then(j),
+  pinSlot: (slot: string, pinned: boolean) => afetch('/api/chat/slots/' + encodeURIComponent(slot) + '/pin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned }) }).then(j),
   tagSlot: (slot: string, tags: string[]) => afetch('/api/chat/slots/' + encodeURIComponent(slot) + '/tags', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tags }) }).then(j),
   sendChat: (message: string, slot?: string) =>
     afetch('/api/chat?ws=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message, slot }) }),

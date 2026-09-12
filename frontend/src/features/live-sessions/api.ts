@@ -1,4 +1,4 @@
-import type { LiveSessionCommand, LiveSessionDetail, LiveSessionGroup, LiveSessionSummary } from '@shared/live-sessions'
+import type { LiveSessionCommand, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
 
 export class LiveSessionApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -30,10 +30,20 @@ function post<T>(path: string, body: unknown): Promise<T> {
 
 export const liveSessionApi = {
   authenticate: (token: string) => post<{ ok: true; browserClientId: string }>('/api/live-sessions/auth', { token }),
+  websocketTicket: () => post<{ ok: true; result: { ticket: string; expiresAt: number } }>('/api/live-sessions/ws-ticket', {})
+    .then(result => result.result),
   start: (input: { cwd: string; model?: string; thinkingLevel?: string; title?: string }) => post<{ ok: true; result: { slotKey: string; cwd: string; title: string } }>('/api/live-sessions/start', input)
     .then(result => result.result),
+  rename: (processInstanceId: string, name: string) => post<{ ok: true; result: unknown }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'set_session_name', name } },
+  ).then(result => result.result),
   list: () => fetch('/api/live-sessions', { credentials: 'same-origin' })
     .then(json<{ sessions: LiveSessionSummary[]; browserClientId?: string }>),
+  listMeta: () => fetch('/api/live-session-meta', { credentials: 'same-origin' })
+    .then(json<{ meta: Record<string, LiveSessionMeta> }>).then(result => result.meta),
+  patchMeta: (processInstanceId: string, patch: { tags?: string[]; pinned?: boolean }) => fetch(`/api/live-sessions/${encodeURIComponent(processInstanceId)}/meta`, {
+    method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+  }).then(json<{ ok: true; meta: LiveSessionMeta; all: Record<string, LiveSessionMeta> }>).then(result => result.all),
   listGroups: () => fetch('/api/live-session-groups', { credentials: 'same-origin' })
     .then(json<{ groups: LiveSessionGroup[] }>)
     .then(result => result.groups),
@@ -62,7 +72,10 @@ export const liveSessionApi = {
   release: (processInstanceId: string, leaseId: string) => post<{ ok: true; result: unknown }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/release`, { leaseId },
   ),
-  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'prompt' | 'abort' | 'feature_command' }>) => post<{ ok: true; result: unknown }>(
+  models: (processInstanceId: string) => post<{ ok: true; result: { models: LiveSessionModelOption[] } }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'get_models' } },
+  ).then(result => result.result.models),
+  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'input' | 'abort' | 'set_session_name' | 'get_models' | 'feature_command' }>) => post<{ ok: true; result: unknown }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command },
   ),
 }

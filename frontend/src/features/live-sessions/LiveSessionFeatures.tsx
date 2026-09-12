@@ -1,4 +1,7 @@
+import { useState } from 'react'
+import type { LiveSessionStatus } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
+import FileBrowser from '../../components/FileBrowser'
 
 type RecordValue = Record<string, unknown>
 
@@ -12,7 +15,8 @@ function items(value: unknown, key: string): RecordValue[] {
   return (list as unknown[]).map(record).filter((item): item is RecordValue => !!item)
 }
 
-function FeatureIcon({ kind }: { kind: 'btw' | 'schedule' | 'subagent' | 'commands' }) {
+function FeatureIcon({ kind }: { kind: 'btw' | 'schedule' | 'subagent' | 'commands' | 'files' }) {
+  if (kind === 'files') return <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6.5A2 2 0 0 1 5.5 4.5h5l2 2h6A2 2 0 0 1 20.5 8.5v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" /><path d="M3.5 9h17" /></svg>
   if (kind === 'btw') return <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v5a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 4v-4.1A2.5 2.5 0 0 1 5 11.5z" /><path d="M9 8.5h6M9 11h3" /></svg>
   if (kind === 'schedule') return <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3 2M8 3.5l-1.5 1M16 3.5l1.5 1" /></svg>
   if (kind === 'subagent') return <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="7" r="2.5" /><circle cx="18" cy="17" r="2.5" /><path d="m8.3 11 7.4-3M8.3 13l7.4 3" /></svg>
@@ -29,11 +33,25 @@ function Feature({ title, icon, count, children }: { title: string; icon: 'btw' 
   </details>
 }
 
-export default function LiveSessionFeatures({ features, busy, onOpenBtw, onCloseBtw }: {
+function SessionAction({ label, disabled, danger, onClick, title }: { label: string; disabled?: boolean; danger?: boolean; onClick: () => void; title?: string }) {
+  return <button type="button" onClick={onClick} disabled={disabled} title={title || label} aria-label={title || label} className={`flex min-h-11 w-11 shrink-0 items-center justify-center rounded-lg border px-1 py-1.5 text-center text-[10px] font-semibold shadow-sm transition-all disabled:opacity-40 ${danger ? 'border-danger/40 bg-danger-subtle text-danger hover:border-danger' : 'border-border bg-card text-text-strong hover:border-accent/70 hover:bg-accent-subtle'}`}>
+    {label}
+  </button>
+}
+
+export default function LiveSessionFeatures({ features, busy, cwd, status, onFileOpen, onOpenBtw, onCloseBtw, onOpenWorkflow, onCompact, onClear, onReload, onAbort }: {
   features: Record<string, unknown>
   busy?: boolean
+  cwd?: string
+  status: LiveSessionStatus
+  onFileOpen: (path: string) => void
   onOpenBtw: () => void
   onCloseBtw: () => void
+  onOpenWorkflow: (workflow: Record<string, unknown>) => void
+  onCompact: () => void
+  onClear: () => void
+  onReload: () => void
+  onAbort: () => void
 }) {
   const btw = record(features.btw)
   const schedule = record(features.schedule)
@@ -44,8 +62,28 @@ export default function LiveSessionFeatures({ features, busy, onOpenBtw, onClose
   const tasks = Array.isArray(schedule?.tasks) ? schedule.tasks.map(record).filter((task): task is RecordValue => !!task) : []
   const backgroundTasks = Array.isArray(background?.tasks) ? background.tasks.map(record).filter((task): task is RecordValue => !!task) : []
   const conversation = Array.isArray(btw?.conversation) ? btw.conversation.map(record).filter((entry): entry is RecordValue => !!entry) : []
+  const [filesOpen, setFilesOpen] = useState(false)
 
   return <aside className="relative z-30 flex w-14 shrink-0 flex-col items-center gap-2 overflow-visible border-l border-border bg-card/60 px-1.5 py-2">
+    <button type="button" onClick={() => setFilesOpen(value => !value)} className={`group flex min-h-12 w-11 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-center text-[10px] font-semibold shadow-sm transition-all ${filesOpen ? 'border-accent bg-accent-subtle text-accent shadow-accent/10' : 'border-border bg-card text-text-strong hover:-translate-x-0.5 hover:border-accent/70 hover:bg-accent-subtle'}`} title="浏览当前工作目录" aria-label="浏览当前工作目录">
+      <span className={`rounded-md p-1 transition-colors ${filesOpen ? 'bg-accent/15' : 'bg-bg group-hover:bg-accent/10'}`}><FeatureIcon kind="files" /></span>
+      <span>文件</span>
+    </button>
+    {filesOpen && <>
+      <div className="fixed inset-0 z-30 bg-black/10 backdrop-blur-[1px]" onClick={() => setFilesOpen(false)} aria-hidden="true" />
+      <div className="absolute right-full top-2 z-40 mr-3 h-[min(78vh,720px)] w-[min(620px,calc(100vw-3.5rem))] overflow-hidden rounded-xl border border-border/80 bg-card shadow-2xl shadow-black/30 ring-1 ring-white/5">
+        <FileBrowser startPath={cwd} onFileOpen={onFileOpen} onClose={() => setFilesOpen(false)} />
+      </div>
+    </>}
+
+    <div className="flex flex-col items-center gap-1.5">
+      {status === 'running' && <SessionAction label="停止" danger disabled={busy} onClick={onAbort} title="中止当前正在执行的 agent 回答" />}
+      <SessionAction label="压缩" disabled={busy || status !== 'idle'} onClick={onCompact} title="压缩当前会话上下文，释放 token" />
+      <SessionAction label="重载" disabled={busy} onClick={onReload} title="重载扩展 / 技能 / 提示词 / 主题" />
+      <SessionAction label="清空" danger disabled={busy || status !== 'idle'} onClick={onClear} title="开始新的空会话（旧对话保留在文件中）" />
+    </div>
+    <div className="my-1 h-px w-8 bg-border" />
+
     <Feature title="BTW" icon="btw" count={conversation.length}>
       <div className="flex items-center gap-2 mb-2">
         <span className="text-xs text-muted">状态：{String(btw?.status || 'closed')}</span>
@@ -87,7 +125,7 @@ export default function LiveSessionFeatures({ features, busy, onOpenBtw, onClose
 
     <Feature title="Subagent / Workflow" icon="subagent" count={conversations.length + workflows.length}>
       {conversations.length + workflows.length === 0 ? <div className="text-xs text-muted">当前没有 Subagent 或 Workflow 记录。</div> : <div className="space-y-2">
-        {workflows.map(item => <div key={String(item.id)} className="rounded border border-border bg-card p-2 text-xs"><span className="font-mono text-accent">workflow</span> · {String(item.label || item.id)}<span className="float-right text-muted">{String(item.status || '')}</span></div>)}
+        {workflows.map(item => <button type="button" key={String(item.id)} onClick={() => onOpenWorkflow(item)} className="w-full rounded border border-border bg-card p-2 text-left text-xs hover:border-accent"><span className="font-mono text-accent">workflow</span> · {String(item.label || item.id)}<span className="float-right text-muted">{String(item.status || '')}</span></button>)}
         {conversations.map(item => <div key={String(item.id)} className="rounded border border-border bg-card p-2 text-xs"><span className="font-mono text-accent">subagent</span> · {String(item.label || item.id)}<span className="float-right text-muted">{String(item.status || '')}</span></div>)}
       </div>}
     </Feature>

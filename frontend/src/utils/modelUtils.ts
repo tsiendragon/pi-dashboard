@@ -52,10 +52,21 @@ export function normalizeConcreteModelPattern(pattern: string): string | null {
 }
 
 function globToRegExp(glob: string): RegExp {
-  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.')
-  return new RegExp(`^${escaped}$`, 'i')
+  let out = ''
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i]
+    if (c === '*') {
+      if (glob[i + 1] === '*') { out += '.*'; i++ }
+      else out += '[^/]*'
+    } else if (c === '?') {
+      out += '[^/]'
+    } else if (/[.+^${}()|[\]\\]/.test(c)) {
+      out += '\\' + c
+    } else {
+      out += c
+    }
+  }
+  return new RegExp(`^${out}$`, 'i')
 }
 
 export function modelPatternMatches(pattern: string, model: ModelLike): boolean {
@@ -63,15 +74,13 @@ export function modelPatternMatches(pattern: string, model: ModelLike): boolean 
   if (!modelPattern) return false
   const fullId = modelFullId(model)
   const id = model.id
-  const lastSegment = modelPattern.includes('/') ? modelPattern.split('/').pop() || modelPattern : modelPattern
 
-  if (/[\*\?\[]/.test(modelPattern)) {
-    const fullRegex = globToRegExp(modelPattern)
-    const idRegex = globToRegExp(lastSegment)
-    return fullRegex.test(fullId) || idRegex.test(id)
+  if (/[*?]/.test(modelPattern)) {
+    const regex = globToRegExp(modelPattern)
+    return regex.test(fullId) || regex.test(id)
   }
 
-  return modelPattern === fullId || modelPattern === id || lastSegment === id
+  return modelPattern === fullId || modelPattern === id
 }
 
 export function supportedThinkingLevels(model?: ModelLike | null): ThinkingLevel[] {

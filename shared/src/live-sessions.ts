@@ -1,9 +1,12 @@
 export const LIVE_SESSION_PROTOCOL_VERSION = 2 as const
-export const LIVE_SESSION_MAX_EVENT_BYTES = 1024 * 1024
-export const LIVE_SESSION_MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024
-export const LIVE_SESSION_MAX_COMMAND_BYTES = 256 * 1024
-export const LIVE_SESSION_MAX_BUFFER_BYTES = 4 * 1024 * 1024
+export const LIVE_SESSION_MAX_EVENT_BYTES = 8 * 1024 * 1024
+export const LIVE_SESSION_MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
+export const LIVE_SESSION_MAX_COMMAND_BYTES = 8 * 1024 * 1024
+export const LIVE_SESSION_MAX_BUFFER_BYTES = 16 * 1024 * 1024
 export const LIVE_SESSION_MAX_PROMPT_BYTES = 128 * 1024
+export const LIVE_SESSION_MAX_IMAGE_BYTES = 3 * 1024 * 1024
+export const LIVE_SESSION_MAX_IMAGES = 4
+export const LIVE_SESSION_MAX_IMAGE_TOTAL_BYTES = 6 * 1024 * 1024
 
 export type LiveSessionMode = 'tui' | 'rpc'
 export type LiveSessionStatus = 'idle' | 'running' | 'reconnecting'
@@ -13,6 +16,18 @@ export interface LiveSessionGroup {
   name: string
   sessionIds: string[]
   createdAt: string
+  updatedAt: string
+}
+
+/**
+ * Browser-side organization metadata for a live Pi session (sidebar tags +
+ * pin). Persisted server-side keyed by pi `sessionId`; intentionally kept out
+ * of {@link LiveSessionSummary} so the versioned live-session wire protocol is
+ * untouched.
+ */
+export interface LiveSessionMeta {
+  tags: string[]
+  pinned: boolean
   updatedAt: string
 }
 
@@ -112,7 +127,13 @@ export type LiveSessionClientMessage =
   | LiveSessionGoodbye
 
 /** Which input surface/channel a message was sent from; drives queue attribution and (later) per-channel routing. */
-export type LiveSessionInputChannel = 'web' | 'terminal' | 'chatapp'
+export type LiveSessionInputChannel = 'web' | 'terminal' | 'chatapp' | 'mobile'
+
+export interface LiveSessionImage {
+  type: 'image'
+  data: string
+  mimeType: string
+}
 
 export type LiveSessionCommand =
   | { type: 'resync' }
@@ -120,14 +141,16 @@ export type LiveSessionCommand =
   | { type: 'renew'; leaseId: string }
   | { type: 'release'; leaseId: string }
   | {
-      type: 'prompt'
+      type: 'input'
       text: string
+      images?: LiveSessionImage[]
       /** Input origin. Required so the shared queue never guesses attribution. */
       channel: LiveSessionInputChannel
       deliverAs?: 'steer' | 'followUp'
-      expandPromptTemplates?: false
     }
   | { type: 'abort'; leaseId: string }
+  | { type: 'set_session_name'; name: string }
+  | { type: 'get_models' }
   | { type: 'feature_command'; leaseId: string; feature: 'btw'; command: { type: 'open' | 'close' } }
 
 export interface LiveSessionCommandEnvelope {
@@ -145,6 +168,15 @@ export type LiveSessionServerMessage =
 export interface LiveSessionDetail {
   summary: LiveSessionSummary
   entries: unknown[]
+}
+
+export interface LiveSessionModelOption {
+  provider: string
+  id: string
+  name: string
+  reasoning: boolean
+  contextWindow: number
+  thinkingLevels: string[]
 }
 
 export type LiveSessionBrowserEventType =

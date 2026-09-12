@@ -1,5 +1,8 @@
 import {
   LIVE_SESSION_MAX_COMMAND_BYTES,
+  LIVE_SESSION_MAX_IMAGE_BYTES,
+  LIVE_SESSION_MAX_IMAGES,
+  LIVE_SESSION_MAX_IMAGE_TOTAL_BYTES,
   LIVE_SESSION_MAX_PROMPT_BYTES,
   LIVE_SESSION_PROTOCOL_VERSION,
   type LiveSessionCommand,
@@ -7,6 +10,7 @@ import {
   type LiveSessionEventMessage,
   type LiveSessionGoodbye,
   type LiveSessionHeartbeat,
+  type LiveSessionImage,
   type LiveSessionHello,
   type LiveSessionSnapshot,
   type LiveSessionSummary,
@@ -34,6 +38,24 @@ function nonEmptyString(value: unknown, max = 4096): value is string {
 function onlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const allowed = new Set(keys)
   return Object.keys(value).every(key => allowed.has(key))
+}
+
+function parseImages(value: unknown): LiveSessionImage[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length === 0 || value.length > LIVE_SESSION_MAX_IMAGES) return undefined
+  let totalBytes = 0
+  const images: LiveSessionImage[] = []
+  for (const item of value) {
+    if (!record(item) || !onlyKeys(item, ['type', 'data', 'mimeType']) || item.type !== 'image'
+      || !nonEmptyString(item.data, LIVE_SESSION_MAX_IMAGE_BYTES)
+      || typeof item.mimeType !== 'string'
+      || !/^image\/[a-z0-9.+-]+$/i.test(item.mimeType)
+      || Buffer.byteLength(item.data, 'utf8') > LIVE_SESSION_MAX_IMAGE_BYTES) return undefined
+    totalBytes += Buffer.byteLength(item.data, 'utf8')
+    if (totalBytes > LIVE_SESSION_MAX_IMAGE_TOTAL_BYTES) return undefined
+    images.push({ type: 'image', data: item.data, mimeType: item.mimeType })
+  }
+  return images
 }
 
 export function jsonBytes(value: unknown): number {
@@ -126,9 +148,9 @@ export function parseGoodbye(value: unknown): LiveSessionGoodbye {
 
 export function validateLiveSessionCommand(value: unknown, browserOnly = false): LiveSessionCommand {
   if (!record(value) || !nonEmptyString(value.type, 64)) throw new LiveSessionProtocolError('invalid_command', 'command type is required')
-  if (jsonBytes(value) > LIVE_SESSION_MAX_COMMAND_BYTES) throw new LiveSessionProtocolError('command_too_large', 'command exceeds 256 KiB')
-  if (browserOnly && value.type !== 'prompt' && value.type !== 'abort' && value.type !== 'feature_command') {
-    throw new LiveSessionProtocolError('unsupported_command', 'browser command must be prompt, abort, or feature_command')
+  if (jsonBytes(value) > LIVE_SESSION_MAX_COMMAND_BYTES) throw new LiveSessionProtocolError('command_too_large', 'command exceeds 8 MiB')
+  if (browserOnly && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'feature_command') {
+    throw new LiveSessionProtocolError('unsupported_command', 'browser command must be input, abort, set_session_name, get_models, or feature_command')
   }
   switch (value.type) {
     case 'resync':
@@ -142,19 +164,26 @@ export function validateLiveSessionCommand(value: unknown, browserOnly = false):
     case 'abort':
       if (onlyKeys(value, ['type', 'leaseId']) && nonEmptyString(value.leaseId, 512)) return value as unknown as LiveSessionCommand
       break
+    case 'set_session_name':
+      if (onlyKeys(value, ['type', 'name']) && nonEmptyString(value.name, 160)) return value as unknown as LiveSessionCommand
+      break
+    case 'get_models':
+      if (onlyKeys(value, ['type'])) return value as unknown as LiveSessionCommand
+      break
     case 'feature_command': {
       if (!onlyKeys(value, ['type', 'leaseId', 'feature', 'command'])) break
       if (!nonEmptyString(value.leaseId, 512) || value.feature !== 'btw' || !record(value.command)
         || !onlyKeys(value.command, ['type']) || (value.command.type !== 'open' && value.command.type !== 'close')) break
       return value as unknown as LiveSessionCommand
     }
-    case 'prompt': {
-      if (!onlyKeys(value, ['type', 'text', 'channel', 'deliverAs', 'expandPromptTemplates'])) break
-      if (!nonEmptyString(value.text, LIVE_SESSION_MAX_PROMPT_BYTES)) break
+    case 'input': {
+      if (!onlyKeys(value, ['type', 'text', 'channel', 'deliverAs', 'images'])) break
+      const hasImages = Object.hasOwn(value, 'images')
+      const images = parseImages(value.images)
+      if ((hasImages && !images) || typeof value.text !== 'string' || Buffer.byteLength(value.text, 'utf8') > LIVE_SESSION_MAX_PROMPT_BYTES || (!value.text.trim() && !images?.length)) break
       if (value.deliverAs !== undefined && value.deliverAs !== 'steer' && value.deliverAs !== 'followUp') break
-      if (value.expandPromptTemplates !== undefined && value.expandPromptTemplates !== false) break
-      if (value.channel !== 'web' && value.channel !== 'terminal' && value.channel !== 'chatapp') break
-      return { ...value, expandPromptTemplates: false } as LiveSessionCommand
+      if (value.channel !== 'web' && value.channel !== 'terminal' && value.channel !== 'chatapp' && value.channel !== 'mobile') break
+      return { ...value, ...(images ? { images } : {}) } as LiveSessionCommand
     }
   }
   throw new LiveSessionProtocolError('invalid_command', `invalid or unsupported ${String(value.type)} command`)

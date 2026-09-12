@@ -230,7 +230,7 @@ export class LiveSessionRegistry extends EventEmitter {
     return [...this.entries.values()]
       .filter(entry => entry.attached && !!entry.summary)
       .map(entry => ({ ...entry.summary!, claim: { ...entry.summary!.claim } }))
-      .sort((left, right) => right.lastActivityAt - left.lastActivityAt || left.canonicalCwd.localeCompare(right.canonicalCwd) || left.processInstanceId.localeCompare(right.processInstanceId))
+      .sort((left, right) => left.startedAt - right.startedAt || left.processInstanceId.localeCompare(right.processInstanceId))
   }
 
   get(processInstanceId: string): LiveSessionDetail | undefined {
@@ -307,16 +307,10 @@ export class LiveSessionRegistry extends EventEmitter {
 
   async sendBrowserCommand(processInstanceId: string, browserClientId: string, command: unknown): Promise<unknown> {
     const validated = validateLiveSessionCommand(command, true)
-    if (validated.type !== 'prompt' && validated.type !== 'abort' && validated.type !== 'feature_command') {
-      throw new LiveSessionRegistryError('unsupported_command', 'browser command must be prompt, abort, or feature_command')
+    if (validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'feature_command') {
+      throw new LiveSessionRegistryError('unsupported_command', 'browser command is not allowed')
     }
-    if (validated.type === 'prompt') {
-      const entry = this.requireAttached(processInstanceId)
-      if (entry.summary!.status === 'running' && !validated.deliverAs) {
-        throw new LiveSessionRegistryError('deliver_as_required', 'running sessions require steer or followUp')
-      }
-      return this.dispatch(processInstanceId, validated)
-    }
+    if (validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models') return this.dispatch(processInstanceId, validated)
     this.requireLease(processInstanceId, browserClientId, validated.leaseId)
     return this.dispatch(processInstanceId, validated)
   }
