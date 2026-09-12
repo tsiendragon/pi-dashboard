@@ -39,7 +39,7 @@ function SessionAction({ label, disabled, danger, onClick, title }: { label: str
   </button>
 }
 
-export default function LiveSessionFeatures({ features, busy, cwd, status, onFileOpen, onOpenBtw, onCloseBtw, onOpenWorkflow, onCompact, onClear, onReload, onAbort }: {
+export default function LiveSessionFeatures({ features, busy, cwd, status, onFileOpen, onOpenBtw, onCloseBtw, onOpenWorkflow, onGoal, onCompact, onClear, onReload, onAbort }: {
   features: Record<string, unknown>
   busy?: boolean
   cwd?: string
@@ -48,6 +48,7 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, onFil
   onOpenBtw: () => void
   onCloseBtw: () => void
   onOpenWorkflow: (workflow: Record<string, unknown>) => void
+  onGoal: () => void
   onCompact: () => void
   onClear: () => void
   onReload: () => void
@@ -78,6 +79,7 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, onFil
 
     <div className="flex flex-col items-center gap-1.5">
       {status === 'running' && <SessionAction label="停止" danger disabled={busy} onClick={onAbort} title="中止当前正在执行的 agent 回答" />}
+      <SessionAction label="目标" disabled={busy || status !== 'idle'} onClick={onGoal} title="查看/管理当前 session 的 /goal 状态" />
       <SessionAction label="压缩" disabled={busy || status !== 'idle'} onClick={onCompact} title="压缩当前会话上下文，释放 token" />
       <SessionAction label="重载" disabled={busy} onClick={onReload} title="重载扩展 / 技能 / 提示词 / 主题" />
       <SessionAction label="清空" danger disabled={busy || status !== 'idle'} onClick={onClear} title="开始新的空会话（旧对话保留在文件中）" />

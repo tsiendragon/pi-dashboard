@@ -105,7 +105,7 @@ function shortToolId(value?: string): string {
   return value ? `#${value.length > 12 ? value.slice(0, 8) : value}` : ''
 }
 
-const CHANNEL_LABELS: Record<string, string> = { web: 'web', terminal: '终端', chatapp: '聊天' }
+const CHANNEL_LABELS: Record<string, string> = { web: 'web', terminal: '终端', chatapp: '聊天', mobile: '手机' }
 function channelLabel(channel?: string): string {
   return channel ? (CHANNEL_LABELS[channel] || channel) : ''
 }
@@ -1067,6 +1067,10 @@ export default function LiveSessionPage() {
     if (!activeId) return
     await liveSessionApi.command(activeId, { type: 'input', text: '/compact', channel: 'web' })
   })
+  const goal = () => perform(async () => {
+    if (!activeId) return
+    await liveSessionApi.command(activeId, { type: 'input', text: '/goal', channel: 'web' })
+  })
   const clearSession = () => perform(async () => {
     if (!activeId) return
     await liveSessionApi.command(activeId, { type: 'input', text: '/clear', channel: 'web' })
@@ -1193,6 +1197,7 @@ export default function LiveSessionPage() {
                 onOpenBtw={() => { void controlBtw('open').catch(() => {}) }}
                 onCloseBtw={() => { void controlBtw('close').catch(() => {}) }}
                 onOpenWorkflow={workflow => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflow) }}
+                onGoal={() => { void goal().catch(() => {}) }}
                 onCompact={() => { void compact().catch(() => {}) }}
                 onClear={() => { if (window.confirm('开始新的 Pi session？当前对话不会删除，但当前页面会切换到新的空 session。')) void clearSession().catch(() => {}) }}
                 onReload={() => { void reload().catch(() => {}) }}
