@@ -49,10 +49,17 @@ hljs.registerLanguage('markdown', markdown)
 hljs.registerLanguage('md', markdown)
 
 const PATH_RE = /^~?(?:\.{0,2}\/)?[\w.@~/ -]*\/[\w.@~ -]*[\w.]$/
-const VIEWABLE_FILE_RE = /\.(?:md|markdown|json|ya?ml|txt|toml|ini|conf|log|tsx?|jsx?|py|sh|sql|xml|css|html?)$/i
+const VIEWABLE_FILE_RE = /\.(?:md|markdown|json|ya?ml|txt|toml|ini|conf|log|tsx?|jsx?|py|sh|bash|zsh|sql|xml|css|html?)$/i
+
+function normalizeLocalPath(value: string): string {
+  let path = value.trim()
+  try { path = decodeURIComponent(path) } catch { /* keep the original path */ }
+  return path.split(/[?#]/, 1)[0]
+}
 
 function isOpenablePath(value: string): boolean {
-  return PATH_RE.test(value) || VIEWABLE_FILE_RE.test(value)
+  const path = normalizeLocalPath(value)
+  return PATH_RE.test(path) || VIEWABLE_FILE_RE.test(path)
 }
 
 function setSanitizedHTML(el: Element, html: string): void {
@@ -195,31 +202,34 @@ function BlockRenderer({ block }: { block: ContentBlock }) {
   }
 }
 
-export default memo(function MarkdownRenderer({ content, streaming = false, onFileOpen }: { content: string; streaming?: boolean; onFileOpen?: (path: string) => void }) {
+export default memo(function MarkdownRenderer({ content, streaming = false, onFileOpen, showRaw: allowRaw = true }: { content: string; streaming?: boolean; onFileOpen?: (path: string) => void; showRaw?: boolean }) {
   const blocks = useBlockAssembler(content, streaming)
-  const [showRaw, setShowRaw] = useState(false)
+  const [rawVisible, setRawVisible] = useState(false)
+  useEffect(() => { if (!allowRaw) setRawVisible(false) }, [allowRaw])
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const el = e.target as HTMLElement
-    if (el.tagName === 'CODE' && isOpenablePath(el.textContent || '')) {
+    const codePath = normalizeLocalPath(el.textContent || '')
+    if (el.tagName === 'CODE' && isOpenablePath(codePath)) {
       e.preventDefault()
-      if (onFileOpen && !e.shiftKey) onFileOpen(el.textContent!.trim())
-      else api.revealPath(el.textContent!.trim())
+      if (onFileOpen && !e.shiftKey) onFileOpen(codePath)
+      else api.revealPath(codePath)
       return
     }
     const anchor = el.closest('a')
     const href = anchor?.getAttribute('href') || ''
-    if (href && !/^(?:https?:|mailto:|#)/i.test(href) && isOpenablePath(href)) {
+    const localPath = normalizeLocalPath(href)
+    if (href && !/^(?:https?:|mailto:|#)/i.test(href) && isOpenablePath(localPath)) {
       e.preventDefault()
-      if (onFileOpen && !e.shiftKey) onFileOpen(decodeURIComponent(href))
-      else api.revealPath(decodeURIComponent(href))
+      if (onFileOpen && !e.shiftKey) onFileOpen(localPath)
+      else api.revealPath(localPath)
     }
   }, [onFileOpen])
 
-  if (showRaw) {
+  if (rawVisible && allowRaw) {
     return (
       <div>
-        <button className="text-muted text-[12px] hover:text-text mb-1 cursor-pointer" onClick={() => setShowRaw(false)}>← rendered view</button>
+        <button className="text-muted text-[12px] hover:text-text mb-1 cursor-pointer" onClick={() => setRawVisible(false)}>← rendered view</button>
         <pre className="text-[13px] font-mono whitespace-pre-wrap break-words leading-relaxed text-muted">{content}</pre>
       </div>
     )
@@ -228,8 +238,8 @@ export default memo(function MarkdownRenderer({ content, streaming = false, onFi
   return (
     <div className="group" onClick={handleClick}>
       {blocks.map((block, i) => <BlockRenderer key={`${block.type}-${i}`} block={block} />)}
-      {!streaming && content.length > 20 && (
-        <button className="hidden md:inline-block text-muted text-[12px] opacity-30 group-hover:opacity-60 hover:!opacity-100 transition-opacity cursor-pointer mt-1" onClick={() => setShowRaw(true)}>raw</button>
+      {allowRaw && !streaming && content.length > 20 && (
+        <button className="hidden md:inline-block text-muted text-[12px] opacity-30 group-hover:opacity-60 hover:!opacity-100 transition-opacity cursor-pointer mt-1" onClick={() => setRawVisible(true)}>raw</button>
       )}
     </div>
   )
