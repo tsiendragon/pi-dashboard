@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { renderWithProviders, createTestStore } from './helpers'
 import ChatSidebar from '../pages/ChatSidebar'
+import { api } from '../api/client'
 
 // Mock localStorage
 const localStorageMock = {
@@ -38,6 +40,9 @@ vi.mock('../api/client', () => ({
     createChatSlot: vi.fn(),
     resumeChatSlot: vi.fn(),
     deleteSession: vi.fn(),
+    pinSlot: vi.fn().mockResolvedValue({ ok: true }),
+    renameSlot: vi.fn().mockResolvedValue({ ok: true }),
+    tagSlot: vi.fn().mockResolvedValue({ ok: true }),
   },
 }))
 
@@ -111,5 +116,95 @@ describe('ChatSidebar', () => {
     expect(screen.getByText('project-a')).toBeInTheDocument()
     expect(screen.getByText('project-b')).toBeInTheDocument()
     localStorageMock.getItem.mockReturnValue(null)
+  })
+})
+
+describe('ChatSidebar — pin, tags, menu', () => {
+  beforeEach(() => { vi.clearAllMocks(); localStorageMock.getItem.mockReturnValue(null) })
+
+  const slot = (over: any) => ({ key: 'k', title: 't', running: false, ...over })
+
+  it('hoists pinned slots into a leading Pinned group', () => {
+    const props = {
+      activeSlot: null, unreadSlots: [],
+      slots: [
+        slot({ key: 'a', title: 'Fresh unpinned', updated: new Date().toISOString() }),
+        slot({ key: 'b', title: 'Old pinned', pinned: true, updated: new Date(Date.now() - 86400000).toISOString() }),
+      ],
+    }
+    const { container } = renderWithProviders(<ChatSidebar {...(props as any)} />)
+    expect(screen.getByText('Pinned')).toBeInTheDocument()
+    const titles = [...container.querySelectorAll('.pidash-slot-item')].map(el => el.textContent)
+    expect(titles[0]).toContain('Old pinned')
+    expect(titles[1]).toContain('Fresh unpinned')
+  })
+
+  it('pin from the ⋯ menu patches the slot optimistically', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ChatSidebar activeSlot={null} unreadSlots={[]} slots={[slot({ key: 's1', title: 'Pin me' })]} />)
+    await user.click(screen.getAllByLabelText('Session menu')[0])
+    await user.click(await screen.findByText('📌 置顶'))
+    expect(api.pinSlot).toHaveBeenCalledWith('s1', true)
+  })
+
+  it('hides system tags (job namespace) from chips and the filter rail', () => {
+    renderWithProviders(<ChatSidebar activeSlot={null} unreadSlots={[]}
+      slots={[slot({ key: 'j', title: 'Job run', tags: ['job:abc', 'job'] })]} />)
+    expect(screen.queryByText('job:abc')).not.toBeInTheDocument()
+    expect(screen.queryByText('job')).not.toBeInTheDocument()
+  })
+
+  it('filters the list when a tag chip is clicked', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ChatSidebar activeSlot={null} unreadSlots={[]}
+      slots={[
+        slot({ key: '1', title: 'OCR batch', tags: ['ocr'] }),
+        slot({ key: '2', title: 'Router fix', tags: ['router'] }),
+      ]} />)
+    await user.click(screen.getByTitle('#ocr · 1 个会话'))
+    expect(screen.getByText('OCR batch')).toBeInTheDocument()
+    expect(screen.queryByText('Router fix')).not.toBeInTheDocument()
+    await user.click(screen.getByText('全部'))
+    expect(screen.getByText('Router fix')).toBeInTheDocument()
+  })
+
+  it('suggests existing tags when adding one', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ChatSidebar activeSlot={null} unreadSlots={[]}
+      slots={[
+        slot({ key: '1', title: 'Has ocr', tags: ['ocr'] }),
+        slot({ key: '2', title: 'No tags' }),
+      ]} />)
+    const row = screen.getByText('No tags').closest('.pidash-slot-item')!
+    await user.click(within(row as HTMLElement).getByLabelText('Session menu'))
+    await user.click(await screen.findByText('🏷 标签'))
+    await user.type(screen.getByLabelText('Add tag'), 'oc')
+    // DOM order = rail chip, row chip, then the suggestion → last is the suggestion
+    const suggestion = screen.getAllByText('ocr').at(-1)!
+    await user.click(suggestion)
+    expect(api.tagSlot).toHaveBeenCalledWith('2', ['ocr'])
+  })
+
+  it('renames through the ⋯ menu', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ChatSidebar activeSlot={null} unreadSlots={[]} slots={[slot({ key: 's9', title: 'Old name' })]} />)
+    await user.click(screen.getAllByLabelText('Session menu')[0])
+    await user.click(await screen.findByText('✎ 重命名'))
+    const input = screen.getByLabelText('Edit session title')
+    await user.clear(input)
+    await user.type(input, 'New name')
+    await user.keyboard('{Enter}')
+    expect(api.renameSlot).toHaveBeenCalledWith('s9', 'New name')
+  })
+
+  it('requires two clicks to close a session', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ChatSidebar activeSlot={null} unreadSlots={[]} slots={[slot({ key: 's3', title: 'Close me' })]} />)
+    await user.click(screen.getAllByLabelText('Session menu')[0])
+    await user.click(await screen.findByText('✕ 关闭会话'))
+    expect(api.deleteChatSlot).not.toHaveBeenCalled()
+    expect(screen.getByText('Close me')).toBeInTheDocument()
+    await user.click(screen.getByText('再点一次确认关闭'))
+    expect(api.deleteChatSlot).toHaveBeenCalledWith('s3')
   })
 })
