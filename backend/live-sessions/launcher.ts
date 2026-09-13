@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 import { PiManager } from '../pi-manager.js'
+import type { PiSession } from '../pi-session.js'
 import { LiveSessionPathPolicy } from './path-policy.js'
 
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
@@ -17,7 +18,11 @@ export interface LivePiStartOptions {
 export class LivePiLauncher {
   private readonly pathPolicy: LiveSessionPathPolicy
 
-  constructor(private readonly manager: PiManager, roots: readonly string[]) {
+  constructor(
+    private readonly manager: PiManager,
+    roots: readonly string[],
+    private readonly wireInteraction?: (pi: PiSession, slotKey: string) => void,
+  ) {
     this.pathPolicy = new LiveSessionPathPolicy(roots)
   }
 
@@ -42,7 +47,9 @@ export class LivePiLauncher {
       transport: 'rpc',
       runtime: 'live',
     })
-    if (!this.manager.ensureRunning(slot.key)) throw new Error('live_pi_start_failed')
+    const pi = this.manager.ensureRunning(slot.key)
+    if (!pi) throw new Error('live_pi_start_failed')
+    this.wireInteraction?.(pi, slot.key)
     return { slotKey: slot.key, cwd: decision.canonicalCwd, title }
   }
 
