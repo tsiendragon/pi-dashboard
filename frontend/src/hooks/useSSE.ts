@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useAppDispatch } from '../store'
-import { sseStatus, sseConnected, sseDisconnected, sseSlots, sseSlotTitle, sseSlotTags, triggerRefresh } from '../store/dashboardSlice'
+import { sseStatus, sseConnected, sseDisconnected, sseSlots, sseSlotTitle, sseSlotTags, sseSlotPinned, triggerRefresh } from '../store/dashboardSlice'
 import { addNotification } from '../store/notificationsSlice'
 import { fetchHistory, sseChatMessage } from '../store/chatSlice'
 import type { StatusData, ChatSlot, Notification } from '../types'
@@ -28,6 +28,9 @@ export function useSSE() {
     })
     sse.addEventListener('slot_tags', (e) => {
       try { dispatch(sseSlotTags(JSON.parse(e.data))) } catch { /* ignore */ }
+    })
+    sse.addEventListener('slot_pinned', (e) => {
+      try { dispatch(sseSlotPinned(JSON.parse(e.data))) } catch { /* ignore */ }
     })
     sse.addEventListener('refresh', (e) => {
       try {
