@@ -29,6 +29,6 @@
 <body>
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
-  <script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js')</script>
+  <script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })</script>
 </body>
 </html>
