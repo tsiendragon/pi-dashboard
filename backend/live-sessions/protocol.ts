@@ -149,8 +149,8 @@ export function parseGoodbye(value: unknown): LiveSessionGoodbye {
 export function validateLiveSessionCommand(value: unknown, browserOnly = false): LiveSessionCommand {
   if (!record(value) || !nonEmptyString(value.type, 64)) throw new LiveSessionProtocolError('invalid_command', 'command type is required')
   if (jsonBytes(value) > LIVE_SESSION_MAX_COMMAND_BYTES) throw new LiveSessionProtocolError('command_too_large', 'command exceeds 8 MiB')
-  if (browserOnly && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'feature_command') {
-    throw new LiveSessionProtocolError('unsupported_command', 'browser command must be input, abort, set_session_name, get_models, or feature_command')
+  if (browserOnly && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'set_model' && value.type !== 'compact' && value.type !== 'reload' && value.type !== 'feature_command') {
+    throw new LiveSessionProtocolError('unsupported_command', 'browser command is not supported')
   }
   switch (value.type) {
     case 'resync':
@@ -168,6 +168,15 @@ export function validateLiveSessionCommand(value: unknown, browserOnly = false):
       if (onlyKeys(value, ['type', 'name']) && nonEmptyString(value.name, 160)) return value as unknown as LiveSessionCommand
       break
     case 'get_models':
+      if (onlyKeys(value, ['type'])) return value as unknown as LiveSessionCommand
+      break
+    case 'set_model':
+      if (onlyKeys(value, ['type', 'provider', 'modelId']) && nonEmptyString(value.provider, 512) && nonEmptyString(value.modelId, 1024)) return value as unknown as LiveSessionCommand
+      break
+    case 'compact':
+      if (onlyKeys(value, ['type', 'leaseId']) && nonEmptyString(value.leaseId, 256)) return value as unknown as LiveSessionCommand
+      break
+    case 'reload':
       if (onlyKeys(value, ['type'])) return value as unknown as LiveSessionCommand
       break
     case 'feature_command': {

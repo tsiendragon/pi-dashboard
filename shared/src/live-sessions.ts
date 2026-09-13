@@ -151,6 +151,9 @@ export type LiveSessionCommand =
   | { type: 'abort'; leaseId: string }
   | { type: 'set_session_name'; name: string }
   | { type: 'get_models' }
+  | { type: 'set_model'; provider: string; modelId: string }
+  | { type: 'compact'; leaseId: string }
+  | { type: 'reload' }
   | { type: 'feature_command'; leaseId: string; feature: 'btw'; command: { type: 'open' | 'close' } }
 
 export interface LiveSessionCommandEnvelope {
