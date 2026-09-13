@@ -38,6 +38,9 @@
   0%,60%,100%{transform:translateY(0);opacity:.4}
   30%{transform:translateY(var(--bounce-y, -6px));opacity:1}
 }
+@media (prefers-reduced-motion: reduce){
+  .typing-dots span,.typing-dots-sm span{animation:none}
+}
 @keyframes pulse-dot{
   0%,100%{opacity:.3;transform:scale(.85)}
   50%{opacity:1;transform:scale(1.1)}
