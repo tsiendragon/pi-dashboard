@@ -479,6 +479,40 @@ describe('PATCH /api/chat/slots/:key/title', () => {
   })
 })
 
+describe('PATCH /api/chat/slots/:key/pin', () => {
+  let srv, port
+  beforeAll(async () => ({ srv, port } = await startServer()))
+  afterAll(() => stopServer(srv))
+
+  const patch = (path, body) => fetch(`http://127.0.0.1:${port}${path}`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })
+
+  it('returns 404 when slot not found', async () => {
+    mockManager.getSlot.mockReturnValue(null)
+    const res = await patch('/api/chat/slots/no-such-slot/pin', { pinned: true })
+    expect(res.status).toBe(404)
+  })
+
+  it('sets _pinned and persists (sidebar Pin)', async () => {
+    const fakeSlot = { _title: 'Old', _pinned: false, on: vi.fn(), messages: [], running: false }
+    mockManager.getSlot.mockReturnValue(fakeSlot)
+    mockManager.persistSlots?.mockClear?.()
+    const res = await patch('/api/chat/slots/chat-1-1000/pin', { pinned: true })
+    expect(res.status).toBe(200)
+    expect((await res.json()).pinned).toBe(true)
+    expect(fakeSlot._pinned).toBe(true)
+  })
+
+  it('coerces any falsy body value to false', async () => {
+    const fakeSlot = { _title: 'Old', _pinned: true, on: vi.fn(), messages: [], running: false }
+    mockManager.getSlot.mockReturnValue(fakeSlot)
+    const res = await patch('/api/chat/slots/chat-1-1000/pin', {})
+    expect(res.status).toBe(200)
+    expect(fakeSlot._pinned).toBe(false)
+  })
+})
+
 describe('SPA fallback / unknown routes', () => {
   let srv, port
   beforeAll(async () => ({ srv, port } = await startServer()))
