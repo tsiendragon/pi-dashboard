@@ -1,8 +1,9 @@
 /**
  * Live Session 斜杠命令菜单（仅用于 `/` 自动补全与提示文案）。
  *
- * 统一输入模型下，本模块不再把文本翻译成结构化命令：用户在 web 端输入的
- * 任何命令 / skill / 消息都原样走 `input` 文本流发给 Pi（与 TUI 逐字等价）。
+ * TUI 内置命令（/compact /reload /model）无法通过 input 文本流触发，由 submit
+ * 翻译成结构化命令；扩展命令（/clear /goal /effort）与 skill 命令 / 普通消息
+ * 则原样走 `input` 文本流发送给 Pi。
  */
 
 export interface LiveSessionSlashItem {
