@@ -120,9 +120,9 @@ describe('LiveSessionRegistry', () => {
       type: 'input', text: 'inspect this', channel: 'web',
       images: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }],
     })
-    await registry.sendBrowserCommand('process-a', 'browser-a', { type: 'input', text: '/compact', channel: 'web' })
-    expect(commands.at(-1)).toEqual({ type: 'input', text: '/compact', channel: 'web' })
-    await registry.sendBrowserCommand('process-a', 'browser-a', { type: 'input', text: '/clear', channel: 'web' })
+    await registry.sendBrowserCommand('process-a', 'browser-a', { type: 'compact', leaseId: 'lease-a' })
+    expect(commands.at(-1)).toEqual({ type: 'compact', leaseId: 'lease-a' })
+    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'input', text: '/clear', channel: 'web' })
     expect(commands.at(-1)).toEqual({ type: 'input', text: '/clear', channel: 'web' })
 
     registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 1, event: { type: 'agent_start', data: {} } }, transport)

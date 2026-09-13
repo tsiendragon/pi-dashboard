@@ -15,7 +15,7 @@ export interface LiveSessionSlashItem {
 
 /** 可在 web 端执行的命令（`/` 菜单的可用项）。 */
 export const LIVE_SESSION_SLASH_MENU: LiveSessionSlashItem[] = [
-  { command: '/compact', description: '压缩当前会话上下文，释放 token', insert: '/compact', kind: 'control' },
+  { command: '/compact', description: '压缩当前会话上下文，释放 token', insert: '/compact', kind: 'lease' },
   { command: '/clear', description: '开启新的空会话（旧对话保留在文件中）', insert: '/clear', kind: 'control' },
   { command: '/abort', description: '中止当前正在执行的回答', insert: '/abort', kind: 'lease' },
   { command: '/reload', description: '重载扩展 / 技能 / 提示词 / 主题', insert: '/reload', kind: 'control' },

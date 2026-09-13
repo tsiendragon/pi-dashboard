@@ -75,7 +75,7 @@ export const liveSessionApi = {
   models: (processInstanceId: string) => post<{ ok: true; result: { models: LiveSessionModelOption[] } }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'get_models' } },
   ).then(result => result.result.models),
-  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'input' | 'abort' | 'set_session_name' | 'get_models' | 'feature_command' }>) => post<{ ok: true; result: unknown }>(
+  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'input' | 'abort' | 'set_session_name' | 'get_models' | 'set_model' | 'compact' | 'reload' | 'feature_command' }>) => post<{ ok: true; result: unknown }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command },
   ),
 }
