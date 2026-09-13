@@ -142,7 +142,10 @@ async function runJob(deps: RouteDeps, job: ScheduledJob, triggeredBy: 'schedule
     cwd: normalizeCwd(job.cwd),
     modelProvider,
     modelId,
-    tags: ['job', job.id],
+    // System-tag namespace: a single `job:<id>` tag (not `['job', id]`) so the
+    // sidebar can hide it from tag chips/groups instead of creating one throwaway
+    // group per run. See frontend sessionMeta.isSystemTag.
+    tags: ['job:' + job.id],
     // Scheduled/manual jobs run unattended in the background — pin to the
     // isolated RPC subprocess transport (design decision #2). Without this,
     // the slice-10 foreground `sdk` default would run jobs in-process, so a

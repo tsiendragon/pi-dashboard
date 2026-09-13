@@ -11,11 +11,12 @@ import { parseSessionMessages, parseSessionTree, findSessionFile } from '../sess
 import { PiRpcSession } from '../pi-manager.js'
 import type { PiSession, PiTransport } from '../pi-session.js'
 import * as piEnv from '../pi-env.js'
+import { filterEnabledModels, readPiModelSettings } from '../model-match.js'
 
 type ModelInfo = {
   provider?: string
   id?: string
-  name?: string
+  name?: string | null
 }
 
 // Opus/Sonnet are served via the claude-code provider (us.* inference profiles).
@@ -114,6 +115,7 @@ export function registerChatRoutes(deps: RouteDeps): void {
       thinkingLevel: pi.thinkingLevel,
       cwd: pi.cwd,
       tags: pi._tags,
+      pinned: pi._pinned,
       // Preserve the permission-gating flag across a transport swap so a slot
       // toggled back to `sdk` keeps its opt-in (slice 11). No-op while on RPC.
       toolApproval: pi.toolApproval,
@@ -318,12 +320,26 @@ export function registerChatRoutes(deps: RouteDeps): void {
     res.json({ ok: true, tags: pi._tags })
   })
 
+  // Pin (sidebar "Pinned" group). Orthogonal to tags: a pinned slot keeps its
+  // tags and its group-mode placement, it only gets hoisted into the leading
+  // Pinned group in the sidebar.
+  app.patch('/api/chat/slots/:key/pin', (req: Request, res: Response) => {
+    const pi = manager.getSlot(req.params.key as string)
+    if (!pi) return res.status(404).json({ error: 'slot not found' })
+    pi._pinned = Boolean(req.body.pinned)
+    broadcastSlots()
+    broadcast('slot_pinned', { key: req.params.key as string, pinned: pi._pinned })
+    persistSlots()
+    res.json({ ok: true, pinned: pi._pinned })
+  })
+
   app.post('/api/chat/slots/:key/generate-title', (req: Request, res: Response) => {
     const pi = manager.getSlot(req.params.key as string)
     if (!pi) return res.status(404).json({ error: 'slot not found' })
     const firstUser = pi.messages.find((m: ChatMessage) => m.role === 'user')
     const title = firstUser ? firstUser.content.slice(0, 60).replace(/\n/g, ' ') : 'New Chat'
     pi._title = title
+    pi._userRenamed = true
     broadcast('slot_title', { key: req.params.key as string, title })
     broadcastSlots()
     persistSlots()
@@ -404,19 +420,19 @@ export function registerChatRoutes(deps: RouteDeps): void {
   app.get('/api/models', async (_req: Request, res: Response) => {
     try {
       const models = await manager.getModels()
-      // Prefer the compact dashboard model set when those models are available.
-      // Otherwise fall back to honouring `disabledProviders` from pi settings.
-      let disabled: string[] = []
-      try {
-        const s = JSON.parse(readFileSync(join(os.homedir(), '.pi', 'agent', 'settings.json'), 'utf-8'))
-        if (Array.isArray(s.disabledProviders)) disabled = s.disabledProviders
-      } catch {}
-      const preferred = preferredDashboardModels(models)
-      const filtered = preferred.length > 0
-        ? preferred
-        : disabled.length
-          ? models.filter((m: any) => !disabled.includes(m.provider))
-          : models
+      const { enabledModels, disabledProviders } = readPiModelSettings()
+      // `enabledModels` is the user-facing allowlist and must win. Only when it
+      // is absent (or resolves to nothing) fall back to the legacy dashboard
+      // preferred set / disabledProviders so the selector still surfaces models.
+      let filtered: ModelInfo[] = enabledModels.length > 0 ? filterEnabledModels(models, enabledModels) : []
+      if (filtered.length === 0) {
+        const preferred = preferredDashboardModels(models)
+        filtered = preferred.length > 0
+          ? preferred
+          : disabledProviders.length
+            ? models.filter((m: any) => !disabledProviders.includes(m.provider))
+            : models
+      }
       res.json({ models: filtered })
     } catch (e: any) {
       res.json({ models: [], error: e.message })
