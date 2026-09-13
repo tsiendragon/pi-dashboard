@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import type { LiveSessionImage, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import DocumentPreviewModal from '../../components/DocumentPreviewModal'
+import ExtensionUiModal from '../../components/ExtensionUiModal'
 import ErrorBoundary from '../../components/ErrorBoundary'
 import ToolCallBlock from '../../pages/chat/ToolCallBlock'
 import { ToolSummaryLine, type ToolSummaryStatus } from '../../components/ToolSummary'
@@ -1303,6 +1304,7 @@ export default function LiveSessionPage() {
           />
         </ErrorBoundary>
       )}
+      <ExtensionUiModal />
     </div>
   )
 }

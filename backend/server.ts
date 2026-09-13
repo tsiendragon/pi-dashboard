@@ -67,7 +67,7 @@ const liveSessionBroker = liveSessionConfig.enabled
   ? new LiveSessionBroker({ registry: liveSessionRegistry, roots: liveSessionConfig.roots })
   : undefined
 const livePiManager = liveSessionConfig.enabled ? new PiManager() : undefined
-const livePiLauncher = livePiManager ? new LivePiLauncher(livePiManager, liveSessionConfig.roots) : undefined
+const livePiLauncher = livePiManager ? new LivePiLauncher(livePiManager, liveSessionConfig.roots, _wireLiveInteraction) : undefined
 const usageLedger = new UsageLedger()
 void usageLedger.start().catch(error => console.error('[usage] Failed to load ledger:', error))
 let liveSessionRoutes: LiveSessionRoutes | undefined
@@ -333,6 +333,33 @@ const EXTENSION_UI_TIMEOUT_MS = 60_000
 // the tool is DENIED ("approval timed out"), never auto-approved (see
 // PiSdkSession.armToolApproval).
 const TOOL_APPROVAL_TIMEOUT_MS = 120_000
+
+/**
+ * Wire ONLY the extension-UI dialog interaction for a live Pi slot.
+ * Live slots run the RPC transport: `extension_ui` IS emitted, but
+ * `tool_approval` is SDK-only (`PiRpcSession` never emits it), so we do not
+ * wire tool approval here. Reuses the same `extension_ui_request` frame +
+ * `/api/chat/slots/:key/extension-ui-response` endpoint as regular chat.
+ */
+function _wireLiveInteraction(pi: PiSession, slotKey: string): void {
+  pi.on('extension_ui', (event: any) => {
+    if (event.method === 'confirm' || event.method === 'select' ||
+        event.method === 'input' || event.method === 'editor') {
+      pi.armExtensionUi(event.id, event.method, EXTENSION_UI_TIMEOUT_MS)
+      broadcast('extension_ui_request', {
+        slot: slotKey,
+        id: event.id,
+        method: event.method,
+        prompt: event.title,
+        message: event.message,
+        options: event.options,
+        prefill: event.prefill,
+        placeholder: event.placeholder,
+        defaultValue: event.prefill,
+      })
+    }
+  })
+}
 
 function _wireSlotEvents(pi: PiSession, slotKey: string): void {
   let streamBuf = ''
@@ -860,6 +887,7 @@ function _wireSlotEvents(pi: PiSession, slotKey: string): void {
 const routeDeps = {
   app,
   manager,
+  liveManager: livePiManager,
   broadcast,
   broadcastSlots,
   persistSlots,

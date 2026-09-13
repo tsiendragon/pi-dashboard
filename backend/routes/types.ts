@@ -12,6 +12,8 @@ import type { Notification } from '@shared/types.js'
 export interface RouteDeps {
   app: Express
   manager: PiManager
+  /** Live-session PiManager (separate from `manager`); may be undefined when live sessions are disabled. */
+  liveManager?: PiManager
   broadcast: (type: string, data: any) => void
   broadcastSlots: () => void
   persistSlots: () => void
