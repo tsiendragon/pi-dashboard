@@ -94,7 +94,7 @@ function preferredDashboardModels(models: ModelInfo[]): ModelInfo[] {
 }
 
 export function registerChatRoutes(deps: RouteDeps): void {
-  const { app, manager, broadcast, broadcastSlots, persistSlots, notifications, addNotification, wireSlotEvents } = deps
+  const { app, manager, liveManager, broadcast, broadcastSlots, persistSlots, notifications, addNotification, wireSlotEvents } = deps
 
   // Recreate a slot on a chosen transport, re-adopting its session state
   // (sessionFile, messages, model, thinking, cwd, tags, title). createSlot with
@@ -257,7 +257,7 @@ export function registerChatRoutes(deps: RouteDeps): void {
   //   select/input/editor → { value: string | undefined }
   //   cancel (any)       → { cancelled: true }
   app.post('/api/chat/slots/:key/extension-ui-response', (req: Request, res: Response) => {
-    const pi = manager.getSlot(req.params.key as string)
+    const pi = manager.getSlot(req.params.key as string) ?? liveManager?.getSlot(req.params.key as string)
     if (!pi) return res.status(404).json({ error: 'slot not found' })
     const { id, cancelled, value } = req.body || {}
     if (!id || typeof id !== 'string') return res.status(400).json({ error: 'id required' })
