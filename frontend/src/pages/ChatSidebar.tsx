@@ -1,88 +1,46 @@
 import { useState, useRef, useEffect, memo } from 'react'
 import { useAppDispatch } from '../store'
 import { switchSlot, deleteSlot } from '../store/chatSlice'
+import { sseSlotTitle, sseSlotPinned, fetchSlots } from '../store/dashboardSlice'
 import { api } from '../api/client'
 import { SearchInput } from '../components/ui'
 import InfoTip from '../components/InfoTip'
 import TypewriterText from '../components/TypewriterText'
+import {
+  type SlotMeta, projectName, visibleTags,
+  relTime, slotOrder, tagCounts,
+} from './chat/sessionMeta'
+import { TagChip, TagEditor, RowMenu, type RowMenuItem } from '../components/sessionMetaUi'
 
+type Slot = SlotMeta
+type GroupMode = 'date' | 'project' | 'status' | 'tag'
 
-interface Slot {
-  key: string
-  title: string
-  running: boolean
-  stopping?: boolean
-  pending_approval?: boolean
-  agent?: string
-  workspace?: string
-  cwd?: string
-  created?: string
-  updated?: string
-  tags?: string[]
-}
-
-const STATUS_ORDER: Record<string, number> = {
-  '⚠ Needs Input': 0, '▶ Running': 1, '⏸ Idle': 2,
-}
-
-function groupByStatus<T extends { running: boolean; stopping?: boolean; pending_approval?: boolean; updated?: string }>(items: T[]): { key: string; items: T[] }[] {
-  const map = new Map<string, T[]>()
-  for (const item of items) {
-    const k = item.pending_approval ? '⚠ Needs Input' : item.running ? '▶ Running' : '⏸ Idle'
-    const arr = map.get(k)
-    if (arr) arr.push(item)
-    else map.set(k, [item])
-  }
-  return Array.from(map.entries())
-    .sort(([a], [b]) => (STATUS_ORDER[a] ?? 99) - (STATUS_ORDER[b] ?? 99))
-    .map(([key, items]) => ({
-      key,
-      items: items.sort((a, b) => {
-        const ta = a.updated ? new Date(a.updated).getTime() : 0
-        const tb = b.updated ? new Date(b.updated).getTime() : 0
-        return tb - ta
-      })
-    }))
-}
-
-interface ChatSidebarProps {
-  slots: Slot[]
-  activeSlot: string | null
-  unreadSlots: string[]
-
-  onNewSessionInCwd?: (cwd: string) => void
-  onNewSession?: () => void
-  mobileOpen?: boolean
-  onMobileClose?: () => void
-}
-
+const STATUS_ORDER: Record<string, number> = { 'Needs Input': 0, 'Running': 1, 'Idle': 2 }
 const SIDEBAR_MIN = 180
 const SIDEBAR_MAX = 800
 const SIDEBAR_LS_KEY = 'mc-sidebar-width'
+const SLOTS_GROUP_LS_KEY = 'mc-slots-group-mode'
+const COLLAPSED_GROUPS_LS_KEY = 'mc-collapsed-groups'
+const TEMPORAL_ORDER: Record<string, number> = { Today: 0, Yesterday: 1, 'Last 7 Days': 2, 'Last 30 Days': 3 }
+const UNTAGGED = 'untagged'
+const PINNED_GROUP = 'Pinned'
+const MAX_TAG_CHIPS = 2
 
-/** Extract a short project name from a cwd path or project string. */
-function projectName(cwd?: string | null): string {
-  if (!cwd) return ''
-  // Strip trailing slashes, take last path segment
-  return cwd.replace(/\/+$/, '').split('/').pop() || ''
-}
+// ─────────────────────────── grouping ───────────────────────────
 
-/** Group items by a key function, preserving order of first appearance. */
-function groupBy<T>(items: T[], keyFn: (item: T) => string): { key: string; items: T[] }[] {
+interface Group<T> { key: string; items: T[] }
+
+function groupBy<T>(items: T[], keyFn: (item: T) => string): Group<T>[] {
   const map = new Map<string, T[]>()
   for (const item of items) {
     const k = keyFn(item)
     const arr = map.get(k)
-    if (arr) arr.push(item)
-    else map.set(k, [item])
+    if (arr) arr.push(item); else map.set(k, [item])
   }
   return Array.from(map.entries()).map(([key, items]) => ({ key, items }))
 }
 
-type GroupMode = 'date' | 'project' | 'status' | 'tag'
-const SLOTS_GROUP_LS_KEY = 'mc-slots-group-mode'
-
-/** Temporal grouping matching iOS: Today, Yesterday, Last 7 Days, Last 30 Days, then months. */
+/** iOS-like time buckets: Today, Yesterday, Last 7 Days, Last 30 Days, then months. */
 function temporalGroupLabel(dateStr?: string): string {
   if (!dateStr) return 'Unknown'
   const date = new Date(dateStr)
@@ -98,65 +56,196 @@ function temporalGroupLabel(dateStr?: string): string {
   return date.toLocaleDateString([], { month: 'long', year: 'numeric' })
 }
 
-/** Fixed ordering for temporal groups. Lower = shown first. */
-const TEMPORAL_ORDER: Record<string, number> = {
-  'Today': 0, 'Yesterday': 1, 'Last 7 Days': 2, 'Last 30 Days': 3,
+function statusOf(s: Slot): 'Needs Input' | 'Running' | 'Idle' {
+  if (s.pending_approval && !s.stopping) return 'Needs Input'
+  return s.running ? 'Running' : 'Idle'
 }
 
-/** Group slots by their tags. Slots with multiple tags appear in each group. Untagged slots go to 'Untagged'. */
-function groupByTag<T extends { tags?: string[]; updated?: string }>(items: T[]): { key: string; items: T[] }[] {
-  const map = new Map<string, T[]>()
-  for (const item of items) {
-    const tags = item.tags?.length ? item.tags : ['untagged']
-    for (const tag of tags) {
-      const arr = map.get(tag)
-      if (arr) arr.push(item)
-      else map.set(tag, [item])
-    }
-  }
-  // Sort: named tags first (alphabetical), then 'untagged' last
-  return Array.from(map.entries())
-    .sort(([a], [b]) => {
-      if (a === 'untagged') return 1
-      if (b === 'untagged') return -1
-      return a.localeCompare(b)
-    })
-    .map(([key, items]) => ({
-      key,
-      items: items.sort((a, b) => {
-        const ta = (a as any).updated ? new Date((a as any).updated).getTime() : 0
-        const tb = (b as any).updated ? new Date((b as any).updated).getTime() : 0
-        return tb - ta
-      })
-    }))
+/** Primary (first human) tag only — a multi-tag slot must not be listed twice. */
+function primaryTag(s: Slot): string { return visibleTags(s.tags)[0] || UNTAGGED }
+
+function sorterFor(mode: GroupMode): (s: Slot) => string {
+  if (mode === 'status') return statusOf
+  if (mode === 'date') return s => temporalGroupLabel(s.created)
+  if (mode === 'tag') return primaryTag
+  return s => projectName(s.cwd)
 }
 
-function groupByDate<T extends { created?: string }>(items: T[]): { key: string; items: T[] }[] {
-  const map = new Map<string, T[]>()
-  for (const item of items) {
-    const k = temporalGroupLabel(item.created)
-    const arr = map.get(k)
-    if (arr) arr.push(item)
-    else map.set(k, [item])
+function sortGroups<T extends Slot>(groups: Group<T>[], mode: GroupMode): Group<T>[] {
+  const out = groups.map(g => ({ ...g, items: [...g.items].sort(slotOrder) }))
+  if (mode === 'status') {
+    return out.sort((a, b) => (STATUS_ORDER[a.key] ?? 99) - (STATUS_ORDER[b.key] ?? 99))
   }
-  return Array.from(map.entries())
-    .sort(([a], [b]) => {
-      const oa = TEMPORAL_ORDER[a] ?? 100
-      const ob = TEMPORAL_ORDER[b] ?? 100
+  if (mode === 'date') {
+    return out.sort((a, b) => {
+      const oa = TEMPORAL_ORDER[a.key] ?? 100, ob = TEMPORAL_ORDER[b.key] ?? 100
       if (oa !== ob) return oa - ob
-      if (oa === 100 && ob === 100) {
-        return new Date(b + ' 1').getTime() - new Date(a + ' 1').getTime()
-      }
-      return 0
+      return new Date(b.key + ' 1').getTime() - new Date(a.key + ' 1').getTime()
     })
-    .map(([key, items]) => ({
-      key,
-      items: items.sort((a, b) => {
-        const ta = a.created ? new Date(a.created).getTime() : 0
-        const tb = b.created ? new Date(b.created).getTime() : 0
-        return tb - ta
-      })
-    }))
+  }
+  if (mode === 'tag') {
+    return out.sort((a, b) => (a.key === UNTAGGED ? 1 : b.key === UNTAGGED ? -1 : b.items.length - a.items.length || a.key.localeCompare(b.key)))
+  }
+  return out.sort((a, b) => b.items.length - a.items.length || a.key.localeCompare(b.key))
+}
+
+/**
+ * Pinned slots always form the leading group; the rest follow the chosen mode.
+ * Keeping pin orthogonal to the modes means it survives every group/filter.
+ */
+function buildGroups(slots: Slot[], mode: GroupMode): Group<Slot>[] {
+  const pinned = slots.filter(s => s.pinned).sort(slotOrder)
+  const rest = slots.filter(s => !s.pinned)
+  const out: Group<Slot>[] = []
+  if (pinned.length) out.push({ key: PINNED_GROUP, items: pinned })
+  out.push(...sortGroups(groupBy(rest, sorterFor(mode)), mode))
+  return out
+}
+
+// ─────────────────────────── row ───────────────────────────
+
+interface RowProps {
+  slot: Slot
+  active: boolean
+  unread: boolean
+  /** Hide the project meta when the list is already grouped by project. */
+  showProject: boolean
+  tagFilter: string | null
+  /** Bottom of the list → open the menu upward so it stays visible. */
+  up: boolean
+  allTags: string[]
+  onActivate: () => void
+  onToggleTagFilter: (tag: string) => void
+  onPin: (pinned: boolean) => void
+  onNewInDir: () => void
+  onClose: () => void
+  onRename: (title: string) => void
+  onTags: (tags: string[]) => void
+}
+
+function SlotRow(p: RowProps) {
+  const s = p.slot
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [tagEditing, setTagEditing] = useState(false)
+  const [renameValue, setRenameValue] = useState(s.title)
+
+  const status = statusOf(s)
+  const tags = visibleTags(s.tags)
+  const chips = tags.slice(0, MAX_TAG_CHIPS)
+  const extra = tags.length - chips.length
+  const proj = projectName(s.cwd)
+  const label = s.title !== s.key ? s.title : s.key
+
+  const menuItems: RowMenuItem[] = [
+    { label: '✎ 重命名', onClick: () => { setRenameValue(s.title); setRenaming(true) } },
+    { label: '🏷 标签', onClick: () => setTagEditing(true) },
+    { separator: true },
+    { label: s.pinned ? '📌 取消置顶' : '📌 置顶', onClick: () => p.onPin(!s.pinned) },
+    ...(s.cwd ? [{ label: '＋ 在此目录新建', onClick: p.onNewInDir, hint: proj || s.cwd || '' }] : []),
+    { separator: true },
+    { label: '✕ 关闭会话', confirmLabel: '再点一次确认关闭', danger: true, onClick: p.onClose },
+  ]
+
+  const submitRename = (commit: boolean) => {
+    const v = renameValue.trim()
+    setRenaming(false)
+    if (commit && v && v !== s.title) p.onRename(v)
+  }
+
+  return (
+    <div className="relative">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-current={p.active || undefined}
+        data-pidash-slot-status={status === 'Needs Input' ? 'attention' : s.running ? 'busy' : 'idle'}
+        title={label}
+        onMouseDown={e => e.preventDefault()}
+        onClick={p.onActivate}
+        onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onActivate() } }}
+        className={`pidash-slot-item group flex cursor-pointer gap-2 rounded-md px-1.5 py-1.5 transition-colors ${p.active ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}
+      >
+        {/* status rail — replaces the old full-width ⚠ pill so rows stay equal height */}
+        <span className={`w-[2px] shrink-0 self-stretch rounded-full ${
+          status === 'Needs Input' ? 'bg-warn shadow-[0_0_7px_var(--warn)]'
+            : s.stopping ? 'bg-danger'
+              : s.running ? 'bg-accent shadow-[0_0_7px_var(--accent-glow)]'
+                : p.unread ? 'bg-info' : 'bg-transparent'
+        }`} />
+
+        <div className="min-w-0 flex-1">
+          {/* line 1 — title */}
+          <div className="flex h-[18px] items-center gap-1.5">
+            {status === 'Needs Input' && <span role="status" title="Waiting for approval" aria-label="状态：等待输入" className="shrink-0 text-[13px] leading-none">⚠️</span>}
+            {s.stopping && <span role="status" title="Stopping" aria-label="状态：停止中" className="shrink-0 text-[11px] leading-none">■</span>}
+            {s.running && status !== 'Needs Input' && !s.stopping && (p.active
+              ? <span className="typing-dots-sm shrink-0"><span /><span /><span /></span>
+              : <span role="status" title="Running" aria-label="状态：工作中" className="shrink-0 text-[13px] leading-none">🔨</span>)}
+            {status === 'Idle' && !s.stopping && !p.unread && <span title="Idle" aria-label="状态：空闲" className="shrink-0 text-[13px] leading-none opacity-60">💤</span>}
+            {p.unread && status === 'Idle' && !s.stopping && <span role="status" title="Unread — 有新回复未查看" aria-label="状态：未读" className="shrink-0 text-[13px] leading-none">📬</span>}
+            {renaming ? (
+              <input
+                autoFocus
+                aria-label="Edit session title"
+                value={renameValue}
+                maxLength={200}
+                onChange={e => setRenameValue(e.target.value)}
+                onMouseDown={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+                onBlur={() => submitRename(true)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); submitRename(true) }
+                  else if (e.key === 'Escape') { e.preventDefault(); setRenaming(false) }
+                }}
+                className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-[13px] text-text-strong outline-none"
+              />
+            ) : (
+              <TypewriterText text={label} className={`min-w-0 flex-1 truncate text-[13px] leading-[18px] ${p.active || status !== 'Idle' ? 'text-text-strong' : 'text-text'}`} />
+            )}
+            <span className={`shrink-0 font-mono text-[10px] leading-none text-muted-strong ${menuOpen ? 'invisible' : ''}`}>{relTime(s.updated)}</span>
+            <button
+              type="button"
+              aria-label="Session menu"
+              onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+              onClick={() => setMenuOpen(v => !v)}
+              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-[13px] leading-none text-muted transition-opacity hover:bg-bg-elevated hover:text-text-strong ${menuOpen ? 'bg-bg-elevated text-text-strong opacity-100' : 'opacity-50 group-hover:opacity-100 md:opacity-0'}`}
+            >⋯</button>
+          </div>
+
+          {/* line 2 — meta; fixed height keeps the list from jittering */}
+          <div className="flex h-[16px] items-center gap-1 overflow-hidden">
+            {s.pinned && <span title="Pinned" className="shrink-0 text-[9px] leading-none text-accent">📌</span>}
+            {chips.map(t => <TagChip key={t} tag={t} active={p.tagFilter === t} onClick={p.onToggleTagFilter} />)}
+            {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-[9px] font-semibold leading-[14px] text-muted-strong" title={tags.join(', ')}>+{extra}</span>}
+            {status === 'Needs Input' && <span className="shrink-0 text-[10px] leading-none font-semibold text-warn">等待输入</span>}
+            {p.showProject && proj && <span className="min-w-0 truncate font-mono text-[10px] leading-none text-muted-strong" title={s.cwd || ''}>{proj}</span>}
+            {p.showProject && s.workspace && s.workspace !== 'default' && (
+              <span className="ml-auto shrink-0 truncate text-[10px] leading-none font-semibold text-ok" title={`workspace: ${s.workspace}`}>{s.workspace}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {tagEditing && (
+        <TagEditor tags={s.tags} allTags={p.allTags} onTags={p.onTags} onClose={() => setTagEditing(false)} />
+      )}
+
+      {menuOpen && <RowMenu items={menuItems} up={p.up} ariaLabel={`Session actions for ${label}`} onClose={() => setMenuOpen(false)} />}
+    </div>
+  )
+}
+
+// ─────────────────────────── sidebar ───────────────────────────
+
+interface ChatSidebarProps {
+  slots: Slot[]
+  activeSlot: string | null
+  unreadSlots: string[]
+  onNewSessionInCwd?: (cwd: string) => void
+  onNewSession?: () => void
+  mobileOpen?: boolean
+  onMobileClose?: () => void
 }
 
 function ChatSidebar({
@@ -166,35 +255,18 @@ function ChatSidebar({
 }: ChatSidebarProps) {
   const dispatch = useAppDispatch()
 
-  // Sidebar width (self-managed)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_LS_KEY)
     const n = saved ? parseInt(saved, 10) : NaN
     return !isNaN(n) && n >= SIDEBAR_MIN && n <= SIDEBAR_MAX ? n : 260
   })
-
-  // Sidebar-only state
   const [slotFilter, setSlotFilter] = useState('')
-
+  const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [slotsGroupMode, setSlotsGroupMode] = useState<GroupMode>(() => (localStorage.getItem(SLOTS_GROUP_LS_KEY) as GroupMode) || 'date')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
-    try { const s = localStorage.getItem('mc-collapsed-groups'); return s ? new Set(JSON.parse(s)) : new Set() } catch { return new Set() }
-  })
-  const toggleGroup = (key: string) => {
-    setCollapsedGroups(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key); else next.add(key)
-      localStorage.setItem('mc-collapsed-groups', JSON.stringify([...next]))
-      return next
-    })
-  }
-  const [editingTagsSlot, setEditingTagsSlot] = useState<string | null>(null)
-  const [tagInput, setTagInput] = useState('')
-  const tagInputRef = useRef<HTMLInputElement>(null)
-  const [slotsGroupMode, setSlotsGroupMode] = useState<GroupMode>(() => {
-    return (localStorage.getItem(SLOTS_GROUP_LS_KEY) as GroupMode) || 'date'
+    try { const s = localStorage.getItem(COLLAPSED_GROUPS_LS_KEY); return s ? new Set(JSON.parse(s)) : new Set() } catch { return new Set() }
   })
 
-  // Resize logic
   const sidebarDragging = useRef(false)
   const sidebarStartX = useRef(0)
   const sidebarStartW = useRef(0)
@@ -202,8 +274,7 @@ function ChatSidebar({
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!sidebarDragging.current) return
-      const newW = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, sidebarStartW.current + e.clientX - sidebarStartX.current))
-      setSidebarWidth(newW)
+      setSidebarWidth(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, sidebarStartW.current + e.clientX - sidebarStartX.current)))
     }
     const onUp = () => {
       if (!sidebarDragging.current) return
@@ -217,140 +288,129 @@ function ChatSidebar({
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
   }, [])
 
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      localStorage.setItem(COLLAPSED_GROUPS_LS_KEY, JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  const counts = tagCounts(slots)
+  const allTagNames = counts.map(c => c.tag)
+  const q = slotFilter.trim().toLowerCase()
+  const filtered = slots.filter(s =>
+    (!tagFilter || visibleTags(s.tags).includes(tagFilter)) &&
+    (!q || [s.title, s.key, s.agent || '', s.workspace || '', projectName(s.cwd), visibleTags(s.tags).join(' ')].join(' ').toLowerCase().includes(q))
+  )
+  const groups = buildGroups(filtered, slotsGroupMode)
+  const needsHeaders = groups.length > 1 || (groups.length === 1 && groups[0].key !== '')
+
+  const setPinned = (key: string, pinned: boolean) => {
+    dispatch(sseSlotPinned({ key, pinned }))
+    api.pinSlot(key, pinned).catch(() => dispatch(fetchSlots()))
+  }
 
   return (
     <>
-    {mobileOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={onMobileClose} />}
-    <div className={`pidash-sidebar bg-bg-accent border-r border-border flex-col shrink-0 relative
-      fixed top-0 left-0 bottom-0 w-[280px] z-50 transition-transform duration-300
-      pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]
-      md:relative md:z-auto md:translate-x-0 md:transition-none md:flex md:pt-0 md:pb-0
-      ${mobileOpen ? 'flex translate-x-0' : 'hidden md:flex -translate-x-full md:translate-x-0'}`}
-      style={{ width: typeof window !== 'undefined' && window.innerWidth >= 768 ? sidebarWidth : undefined }}>
-      {/* Drag handle (desktop only) */}
-      <div
-        className="absolute top-0 -right-[2px] w-[5px] h-full cursor-col-resize z-10 group/drag items-center justify-center hidden md:flex"
-        onMouseDown={e => { e.preventDefault(); sidebarDragging.current = true; sidebarStartX.current = e.clientX; sidebarStartW.current = sidebarWidth; document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none' }}
-      >
-        <div className="w-[2px] h-full bg-transparent group-hover/drag:bg-orange-400 group-active/drag:bg-orange-500 transition-colors duration-200" />
-      </div>
-      <div className="flex justify-between items-center px-4 py-3.5 border-b border-border">
-        <span className="text-[13px] font-medium text-muted uppercase tracking-[.04em] flex items-center gap-1.5">Sessions <InfoTip text="Each tab is an independent pi session with its own context. Switch agents per tab. Sessions persist to history on close." /></span>
-        <div className="flex items-center gap-1.5">
-          <select className="h-6 rounded-md border border-border bg-transparent text-[11px] text-muted cursor-pointer outline-none px-1 hover:border-border-strong hover:text-text transition-all" value={slotsGroupMode} onChange={e => { const v = e.target.value as GroupMode; setSlotsGroupMode(v); localStorage.setItem(SLOTS_GROUP_LS_KEY, v) }}>
-            <option value="date">🕐 Date</option>
-            <option value="project">📂 Project</option>
-            <option value="status">⚡ Status</option>
-            <option value="tag">🏷 Tag</option>
-          </select>
-          <button className="w-7 h-7 rounded-md bg-accent text-white border-none text-lg cursor-pointer flex items-center justify-center hover:bg-accent-hover hover:shadow-[0_0_16px_var(--accent-glow)] hover:rotate-90 hover:scale-110 active:scale-95 transition-all" onClick={() => onNewSession ? onNewSession() : dispatch(switchSlot(null))} title="New chat" aria-label="New chat session">+</button>
+      {mobileOpen && <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={onMobileClose} />}
+      <div className={`pidash-sidebar bg-bg-accent border-r border-border flex-col shrink-0 relative
+        fixed top-0 left-0 bottom-0 w-[280px] z-50 transition-transform duration-300
+        pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]
+        md:relative md:z-auto md:translate-x-0 md:transition-none md:flex md:pt-0 md:pb-0
+        ${mobileOpen ? 'flex translate-x-0' : 'hidden md:flex -translate-x-full md:translate-x-0'}`}
+        style={{ width: typeof window !== 'undefined' && window.innerWidth >= 768 ? sidebarWidth : undefined }}>
+        {/* drag handle (desktop only) */}
+        <div
+          className="absolute top-0 -right-[2px] z-10 hidden h-full w-[5px] cursor-col-resize items-center justify-center group/drag md:flex"
+          onMouseDown={e => { e.preventDefault(); sidebarDragging.current = true; sidebarStartX.current = e.clientX; sidebarStartW.current = sidebarWidth; document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none' }}
+        >
+          <div className="h-full w-[2px] bg-transparent transition-colors duration-200 group-hover/drag:bg-orange-400 group-active/drag:bg-orange-500" />
+        </div>
+
+        {/* header */}
+        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">
+          <span className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium uppercase tracking-[.05em] text-muted">
+            Sessions <InfoTip text="Each tab is an independent pi session. Hover a row for ⋯ actions: rename, tags, pin and close. Click a tag to filter." />
+            <span className="shrink-0 font-mono text-[10px] normal-case tracking-normal text-muted-strong">
+              {tagFilter || q ? `${filtered.length}/${slots.length}` : slots.length}
+            </span>
+          </span>
+          <button
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border-none bg-accent text-lg text-white transition-all hover:rotate-90 hover:scale-110 hover:bg-accent-hover hover:shadow-[0_0_16px_var(--accent-glow)] active:scale-95"
+            onClick={() => onNewSession ? onNewSession() : dispatch(switchSlot(null))}
+            title="New chat" aria-label="New chat session">+</button>
+        </div>
+
+        {/* filter + group mode + tag rail */}
+        <div className="px-2 pt-2 pb-1">
+          <SearchInput placeholder="Filter sessions…" value={slotFilter} onChange={e => setSlotFilter(e.target.value)} />
+        </div>
+        <div className="mx-2 mb-1 flex gap-0.5 rounded-md border border-border bg-bg p-0.5">
+          {(['date', 'project', 'tag', 'status'] as GroupMode[]).map(m => (
+            <button key={m} type="button" onClick={() => { setSlotsGroupMode(m); localStorage.setItem(SLOTS_GROUP_LS_KEY, m) }}
+              className={`flex-1 rounded py-[3px] text-[11px] capitalize transition-colors ${slotsGroupMode === m ? 'bg-bg-hover font-semibold text-text-strong shadow-[inset_0_0_0_1px_var(--border-strong)]' : 'text-muted hover:text-text'}`}>{m}</button>
+          ))}
+        </div>
+        {counts.length > 0 && (
+          <div className="flex items-center gap-1 overflow-x-auto px-2 pb-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button type="button" onClick={() => setTagFilter(null)}
+              className={`shrink-0 rounded-full border px-2 py-px text-[10px] font-semibold leading-[16px] ${!tagFilter ? 'border-border-strong bg-bg-hover text-text-strong' : 'border-transparent text-muted hover:text-text'}`}>
+              全部
+            </button>
+            {counts.slice(0, 12).map(({ tag, count }) => (
+              <TagChip key={tag} tag={tag} active={tagFilter === tag} onClick={t => setTagFilter(f => f === t ? null : t)} title={`#${tag} · ${count} 个会话`} />
+            ))}
+          </div>
+        )}
+
+        {/* list */}
+        <div className="flex-1 overflow-y-auto px-1 pb-2">
+          {groups.map(g => {
+            const gk = g.key || '__ungrouped'
+            const collapsed = collapsedGroups.has(gk)
+            const isPinned = g.key === PINNED_GROUP
+            return (
+              <div key={gk}>
+                {needsHeaders && (
+                  <div
+                    className={`sticky top-0 z-10 flex cursor-pointer select-none items-center gap-1.5 px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[.06em] transition-colors hover:text-text ${isPinned ? 'text-accent' : 'text-muted-strong'}`}
+                    style={{ background: 'linear-gradient(var(--bg-accent) 72%, transparent)' }}
+                    onClick={() => toggleGroup(gk)}
+                  >
+                    <span className={`text-[8px] transition-transform ${collapsed ? '' : 'rotate-90'}`}>▶</span>
+                    {g.key || 'Other'}
+                    <span className="ml-auto font-mono text-[10px] font-normal opacity-60">{g.items.length}</span>
+                  </div>
+                )}
+                {!collapsed && g.items.map((s, i) => (
+                  <SlotRow
+                    key={s.key}
+                    slot={s}
+                    active={activeSlot === s.key}
+                    unread={unreadSlots.includes(s.key)}
+                    showProject={slotsGroupMode !== 'project'}
+                    tagFilter={tagFilter}
+                    up={i >= g.items.length - 2}
+                    allTags={allTagNames}
+                    onActivate={() => { if (activeSlot !== s.key) dispatch(switchSlot(s.key)); onMobileClose?.() }}
+                    onToggleTagFilter={t => setTagFilter(f => f === t ? null : t)}
+                    onPin={pinned => setPinned(s.key, pinned)}
+                    onNewInDir={() => { if (s.cwd) onNewSessionInCwd?.(s.cwd) }}
+                    onClose={() => dispatch(deleteSlot(s.key))}
+                    onRename={title => { dispatch(sseSlotTitle({ key: s.key, title })); api.renameSlot(s.key, title).catch(() => {}) }}
+                    onTags={tags => api.tagSlot(s.key, tags).catch(() => {})}
+                  />
+                ))}
+              </div>
+            )
+          })}
+          {!filtered.length && (
+            <div className="px-3 py-6 text-center text-[12px] text-muted-strong">{slots.length ? '没有匹配的会话' : '还没有会话'}</div>
+          )}
         </div>
       </div>
-      <div className="px-2 pt-2 pb-1"><SearchInput placeholder="Filter sessions…" value={slotFilter} onChange={e => setSlotFilter(e.target.value)} /></div>
-      <div className="flex-1 overflow-y-auto p-2">
-        {(() => {
-          const filtered = slots.filter(s => !slotFilter || (s.title + s.key + (s.agent || '') + (s.tags || []).join(' ')).toLowerCase().includes(slotFilter.toLowerCase()))
-          const groups = slotsGroupMode === 'status'
-            ? groupByStatus(filtered)
-            : slotsGroupMode === 'date'
-            ? groupByDate(filtered)
-            : slotsGroupMode === 'tag'
-            ? groupByTag(filtered)
-            : groupBy(filtered, s => projectName(s.cwd) || '')
-          const needsHeaders = groups.length > 1 || (groups.length === 1 && groups[0].key !== '')
-          return groups.map(g => (
-            <div key={g.key || '__ungrouped'}>
-              {needsHeaders && <div className="text-[11px] text-muted font-semibold uppercase tracking-wider px-2 pt-2 pb-1 flex items-center gap-1.5 cursor-pointer select-none hover:text-text transition-colors" onClick={() => toggleGroup(g.key || '__ungrouped')}><span className={`text-[10px] transition-transform ${collapsedGroups.has(g.key || '__ungrouped') ? '' : 'rotate-90'}`}>▶</span>{g.key || 'Other'}<span className="text-[10px] opacity-50 font-mono">{g.items.length}</span></div>}
-              {!collapsedGroups.has(g.key || '__ungrouped') && <div className="divide-y divide-white/10">{g.items.map(s => {
-                const agentName = 'pi'
-                const agentColor = 'text-accent'
-                const needsAttention = s.pending_approval && !s.stopping
-                const isIdle = !s.running && !s.stopping && !s.pending_approval
-                const hasUnread = unreadSlots.includes(s.key)
-                return (
-                  <div key={s.key}>
-                  <div className={`pidash-slot-item group flex items-start gap-2.5 px-2.5 py-4 md:py-2 rounded-md cursor-pointer text-sm transition-all border animate-slide-in-left ${needsAttention ? 'bg-warn-subtle border-warn/40 text-text-strong shadow-[0_0_12px_rgba(245,158,11,.15)]' : activeSlot === s.key ? 'text-text-strong bg-accent-subtle border-accent-subtle' : 'text-muted hover:text-text hover:bg-bg-hover border-transparent'}`}
-                    data-pidash-slot-status={needsAttention ? 'attention' : s.running ? 'busy' : 'idle'}
-                    role="button"
-                    tabIndex={0}
-                    onMouseDown={(e) => { e.preventDefault(); if ((e.target as HTMLElement).dataset.close) { dispatch(deleteSlot(s.key)); return }; dispatch(switchSlot(s.key)) }}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dispatch(switchSlot(s.key)) } }}>
-                    {needsAttention ? <span className="w-2 h-2 rounded-full bg-warn shrink-0 shadow-[0_0_8px_rgba(245,158,11,.5)] animate-dot-breathe self-center" /> : unreadSlots.includes(s.key) ? <span className="w-2 h-2 rounded-full bg-[var(--info)] shrink-0 shadow-[0_0_6px_rgba(59,130,246,.4)] animate-dot-breathe self-center" /> : <span className="w-2 shrink-0" />}
-                    <div className="flex-1 min-w-0 overflow-hidden">
-                      <div className={`text-[13px] font-semibold truncate leading-tight flex items-center gap-1 md:text-[11px] ${agentColor}`}>
-                      {agentName}
-                      {needsAttention ? (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-[2px] rounded-full text-[10px] font-bold bg-warn text-white animate-pulse" title="Waiting for approval">⚠ Needs input</span>
-                      ) : s.stopping ? (
-                        <span className="inline-flex items-center gap-0.5 px-1 py-[1px] rounded-full text-[10px] font-bold bg-danger-subtle text-danger border border-danger/30" title="Stopping">■</span>
-                      ) : s.running ? (
-                        <span className="typing-dots-sm"><span /><span /><span /></span>
-                      ) : isIdle && !hasUnread ? (
-                        <span className="inline-flex items-center px-1 py-[1px] rounded-full text-[10px] text-muted/50">idle</span>
-                      ) : null}
-                    </div>
-                      <div className="overflow-x-auto" title={s.title !== s.key ? s.title : s.key}>
-                        <TypewriterText className="whitespace-nowrap text-[17px] font-normal md:text-[13px] md:font-mono" text={s.title !== s.key ? s.title : s.key} />
-                      </div>
-                      {s.tags && s.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-0.5 mt-0.5">
-                          {s.tags.map(tag => (
-                            <span key={tag} className="px-1.5 py-[1px] rounded-full text-[10px] font-semibold bg-accent/15 text-accent border border-accent/25 leading-tight">{tag}</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {s.workspace && s.workspace !== 'default' && <span className="px-1.5 py-[2px] rounded-full text-[11px] font-bold bg-ok-subtle text-ok border border-ok/30 shrink-0 max-w-[60px] overflow-hidden text-ellipsis whitespace-nowrap self-center" title={`workspace: ${s.workspace}`}>{s.workspace}</span>}
-                    {s.cwd && onNewSessionInCwd && <span className="opacity-0 text-[12px] text-muted cursor-pointer px-[3px] py-[2px] rounded hover:opacity-100 hover:text-accent hover:bg-accent-subtle group-hover:opacity-50 transition-all self-center" title={`New session in ${s.cwd}`} onClick={e => { e.stopPropagation(); onNewSessionInCwd(s.cwd!) }}>+</span>}
-                    <span className="opacity-0 text-[12px] text-muted cursor-pointer px-[3px] py-[2px] rounded hover:opacity-100 hover:text-accent hover:bg-accent-subtle group-hover:opacity-50 transition-all self-center" title="Edit tags" onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingTagsSlot(editingTagsSlot === s.key ? null : s.key); setTagInput(''); setTimeout(() => tagInputRef.current?.focus(), 50) }}>🏷</span>
-                    <span data-close="1" className="opacity-0 text-[12px] text-muted cursor-pointer px-[5px] py-[2px] rounded hover:opacity-100 hover:text-danger hover:bg-danger-subtle group-hover:opacity-50 transition-all self-center">✕</span>
-                  </div>
-                  {editingTagsSlot === s.key && (
-                    <div className="px-2.5 pb-2 pt-0.5 flex flex-wrap items-center gap-1 animate-slide-in-left" onClick={e => e.stopPropagation()}>
-                      {(s.tags || []).map(tag => (
-                        <span key={tag} className="inline-flex items-center gap-0.5 px-1.5 py-[1px] rounded-full text-[10px] font-semibold bg-accent/15 text-accent border border-accent/25">
-                          {tag}
-                          <span className="cursor-pointer hover:text-danger ml-0.5" onClick={() => { api.tagSlot(s.key, (s.tags || []).filter(t => t !== tag)) }}>×</span>
-                        </span>
-                      ))}
-                      <input
-                        ref={editingTagsSlot === s.key ? tagInputRef : undefined}
-                        className="bg-transparent border border-border rounded-md px-1.5 py-[2px] text-[11px] text-text w-20 outline-none focus:border-accent"
-                        placeholder="add tag…"
-                        value={tagInput}
-                        onChange={e => setTagInput(e.target.value)}
-                        onBlur={() => { setTimeout(() => { setEditingTagsSlot(null); setTagInput('') }, 150) }}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && tagInput.trim()) {
-                            e.preventDefault()
-                            const newTag = tagInput.trim().toLowerCase()
-                            const current = s.tags || []
-                            if (!current.includes(newTag)) {
-                              api.tagSlot(s.key, [...current, newTag])
-                            }
-                            setTagInput('')
-                            setEditingTagsSlot(null)
-                          } else if (e.key === 'Escape') {
-                            setEditingTagsSlot(null)
-                            setTagInput('')
-                          } else if (e.key === 'Backspace' && !tagInput && s.tags?.length) {
-                            api.tagSlot(s.key, s.tags.slice(0, -1))
-                          }
-                        }}
-                      />
-                    </div>
-                  )}
-                  </div>
-                )
-              })}</div>}
-            </div>
-          ))
-        })()}
-      </div>
-
-
-
-    </div>
     </>
   )
 }
