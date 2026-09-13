@@ -12,6 +12,7 @@ import { extractText, summarizeProviderError, ChatMessage } from './session-stor
 import type { PiSession, PiTransport, ImagePayload, ToolApprovalDecision } from './pi-session.js'
 import { PiSdkSession } from './pi-sdk-session.js'
 import { resolveDefaultThinkingLevel } from './thinking-level.js'
+import { readPiModelSettings, filterEnabledModels } from './model-match.js'
 import { extensionBridgeRegistry } from './extension-bridge/registry.js'
 import { rpcExtensionBridgeServer } from './extension-bridge/rpc-server.js'
 
@@ -56,6 +57,7 @@ interface PiProcessOptions {
   title?: string | null
   key?: string
   tags?: string[]
+  pinned?: boolean
   transport?: PiTransport | null
   toolApproval?: boolean
   runtime?: 'dashboard' | 'live'
@@ -99,6 +101,7 @@ interface SlotInfo {
   thinkingLevel: string | null
   cwd: string | null
   tags: string[]
+  pinned: boolean
   created_at: string
   updated_at: string
   // Transport backend + permission-gating flag (surfaced so the FE settings
@@ -161,6 +164,7 @@ export class PiRpcSession extends EventEmitter implements PiSession {
   thinkingLevel: string | null
   _title: string | null
   _tags: string[]
+  _pinned: boolean
   _userRenamed: boolean
   _startTime: number
   _lastActivity: number
@@ -219,7 +223,10 @@ export class PiRpcSession extends EventEmitter implements PiSession {
     this.thinkingLevel = opts.thinkingLevel || null
     this._title = opts.title || null
     this._tags = opts.tags || []
-    this._userRenamed = false  // true if user manually renamed
+    this._pinned = opts.pinned || false
+    // Any title supplied by the dashboard is authoritative. This also makes
+    // restored titles stable across process restarts.
+    this._userRenamed = Boolean(this._title)
     this._startTime = Date.now()
     this._lastActivity = 0  // 0 = never; updated on actual activity
     this._pendingRequests = new Map() // id → { resolve, timer }
@@ -491,7 +498,6 @@ export class PiRpcSession extends EventEmitter implements PiSession {
       }
 
       const RPC_MAP: Record<string, Record<string, any>> = {
-        'compact': { type: 'compact' },
         'new': { type: 'new_session' },
         'clear': { type: 'new_session' },
         'fork': { type: 'fork' },
@@ -507,6 +513,46 @@ export class PiRpcSession extends EventEmitter implements PiSession {
         'tools': { type: 'get_commands' },
       }
 
+      // Builtins with no RPC equivalent in dashboard mode — surface a clear
+      // message instead of forwarding literal text to the model as a prompt.
+      const UNSUPPORTED: Record<string, string> = {
+        'mcp': 'MCP 服务器列表在 Dashboard 的 RPC 模式下暂不支持，请在系统页面查看。',
+      }
+
+      if (cmd === 'compact') {
+        this.request({ type: 'compact' }, 120_000).then((resp: any) => {
+          const r = resp?.data
+          const before = typeof r?.tokensBefore === 'number' ? r.tokensBefore.toLocaleString() : '?'
+          const after = typeof r?.estimatedTokensAfter === 'number' ? r.estimatedTokensAfter.toLocaleString() : '?'
+          const content = `✅ Session compacted (tokens ${before} → ${after})`
+          this.messages.push({ role: 'assistant', content, ts: new Date().toISOString() })
+          this.emit('slash_result', { content })
+        }).catch((err: any) => {
+          const content = `⚠️ ${err?.message || 'Compaction failed'}`
+          this.messages.push({ role: 'assistant', content, ts: new Date().toISOString() })
+          this.emit('slash_result', { content })
+        })
+        return
+      }
+
+      if (cmd === 'model') {
+        this.getAvailableModels().then((models: any[]) => {
+          const { enabledModels } = readPiModelSettings()
+          const list = enabledModels.length > 0 ? filterEnabledModels(models, enabledModels) : models
+          const text = list.length
+            ? list.map((m: any) => `- ${m.provider}/${m.id}${m.name ? ` (${m.name})` : ''}`).join('\n')
+            : '(no models available)'
+          const content = '```\nAvailable models:\n' + text + '\n```'
+          this.messages.push({ role: 'assistant', content, ts: new Date().toISOString() })
+          this.emit('slash_result', { content })
+        }).catch(() => {
+          const content = '⚠️ Could not load models.'
+          this.messages.push({ role: 'assistant', content, ts: new Date().toISOString() })
+          this.emit('slash_result', { content })
+        })
+        return
+      }
+
       if (DATA_CMDS[cmd]) {
         this.request(DATA_CMDS[cmd]).then((resp: any) => {
           if (resp?.data) {
@@ -515,6 +561,13 @@ export class PiRpcSession extends EventEmitter implements PiSession {
             this.emit('slash_result', { content: '```\n' + text + '\n```' })
           }
         }).catch(() => {})
+        return
+      }
+
+      if (UNSUPPORTED[cmd]) {
+        const content = `⚠️ ${UNSUPPORTED[cmd]}`
+        this.messages.push({ role: 'system', content, ts: new Date().toISOString() })
+        this.emit('slash_result', { content })
         return
       }
 
@@ -1062,14 +1115,16 @@ export class PiManager {
     // Foreground default is 'sdk' (slice 10 flip). A per-slot override or
     // PI_DASH_TRANSPORT=rpc forces the isolated RPC subprocess; background
     // slots are moved to 'rpc' by conductorDetach() after creation.
+    const title = name || opts.title || 'New Chat'
+    const slotOpts = { ...opts, title }
     const pi: PiSession = transport === 'sdk'
-      ? new PiSdkSession(key, { agent, ...opts, transport, toolApproval })
-      : new PiRpcSession(key, { agent, ...opts, transport, toolApproval })
+      ? new PiSdkSession(key, { agent, ...slotOpts, transport, toolApproval })
+      : new PiRpcSession(key, { agent, ...slotOpts, transport, toolApproval })
     // Don't start pi process yet — defer to first message (ensureRunning)
     // This allows CWD/model to be changed in WelcomeView before process starts
     this.slots.set(key, pi)
     this._save()
-    return { key, title: name || pi._title || 'New Chat', messages: pi.messages.length, running: false }
+    return { key, title: pi._title || 'New Chat', messages: pi.messages.length, running: false }
   }
 
   restoreSlot(key: string, title: string, messages: ChatMessage[], opts: PiProcessOptions = {}): void {
@@ -1080,9 +1135,10 @@ export class PiManager {
     // override and keeps the slot on the isolated RPC subprocess.
     const transport = resolveTransport(opts.transport)
     const toolApproval = resolveToolApproval(opts.toolApproval)
+    const restoredTitle = title || opts.title || 'New Chat'
     const pi: PiSession = transport === 'sdk'
-      ? new PiSdkSession(key, { messages, title, ...opts, transport, toolApproval })
-      : new PiRpcSession(key, { messages, title, ...opts, transport, toolApproval })
+      ? new PiSdkSession(key, { messages, ...opts, title: restoredTitle, transport, toolApproval })
+      : new PiRpcSession(key, { messages, ...opts, title: restoredTitle, transport, toolApproval })
     pi.ready = false
     this.slots.set(key, pi)
     if (parseInt(key.split('-')[1]) >= this._slotCounter) {
@@ -1153,6 +1209,7 @@ export class PiManager {
         thinkingLevel: pi.thinkingLevel,
         cwd: pi.cwd || null,
         tags: pi._tags || [],
+        pinned: pi._pinned || false,
         transport: pi.transport,
         toolApproval: pi.toolApproval || false,
         created_at: createdAt,

@@ -81,6 +81,7 @@ export interface PiSdkSessionOptions {
   title?: string | null
   key?: string
   tags?: string[]
+  pinned?: boolean
   transport?: PiTransport | null
   toolApproval?: boolean
 }
@@ -125,6 +126,7 @@ export class PiSdkSession extends EventEmitter implements PiSession {
   _toolsRunning: number
   _title: string | null
   _tags: string[]
+  _pinned: boolean
   _userRenamed: boolean
   _startTime: number
   _lastActivity: number
@@ -196,7 +198,10 @@ export class PiSdkSession extends EventEmitter implements PiSession {
     this.thinkingLevel = opts.thinkingLevel || null
     this._title = opts.title || null
     this._tags = opts.tags || []
-    this._userRenamed = false
+    this._pinned = opts.pinned || false
+    // A title supplied by the dashboard is authoritative and remains stable
+    // when the SDK emits its own session_info_changed name.
+    this._userRenamed = Boolean(this._title)
     this._startTime = Date.now()
     this._lastActivity = 0
     this.ready = false
