@@ -1061,11 +1061,12 @@ export default function LiveSessionPage() {
   })
   const selectModel = (model: LiveSessionModelOption) => perform(async () => {
     if (!activeId) return
-    await liveSessionApi.command(activeId, { type: 'input', text: `/model ${model.provider}/${model.id}`, channel: 'web' })
+    await liveSessionApi.command(activeId, { type: 'set_model', provider: model.provider, modelId: model.id })
   })
   const compact = () => perform(async () => {
     if (!activeId) return
-    await liveSessionApi.command(activeId, { type: 'input', text: '/compact', channel: 'web' })
+    const leaseId = await claim()
+    await liveSessionApi.command(activeId, { type: 'compact', leaseId })
   })
   const goal = () => perform(async () => {
     if (!activeId) return
@@ -1083,7 +1084,7 @@ export default function LiveSessionPage() {
   })
   const reload = () => perform(async () => {
     if (!activeId) return
-    await liveSessionApi.command(activeId, { type: 'input', text: '/reload', channel: 'web' })
+    await liveSessionApi.command(activeId, { type: 'reload' })
   })
   const controlBtw = (type: 'open' | 'close') => perform(async () => {
     if (!activeId) return
