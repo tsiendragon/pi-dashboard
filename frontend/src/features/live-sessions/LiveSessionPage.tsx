@@ -757,7 +757,7 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
   const record = entry as Record<string, unknown>
   const type = typeof record.type === 'string' ? record.type : 'event'
-  if (type === 'message_start' || type === 'live_feature_snapshot' || type === 'agent_start' || type === 'agent_end' || type === 'agent_settled' || type === 'turn_start' || type === 'turn_end') return null
+  if (type === 'message_start' || type === 'live_feature_snapshot' || type === 'agent_start' || type === 'agent_end' || type === 'agent_settled' || type === 'turn_start' || type === 'turn_end' || type === 'claim_changed') return null
   if (type === 'tool_execution_update') {
     const data = record.data && typeof record.data === 'object' ? record.data as Record<string, unknown> : record
     const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
@@ -1067,6 +1067,7 @@ export default function LiveSessionPage() {
     if (!activeId) return
     const leaseId = await claim()
     await liveSessionApi.command(activeId, { type: 'compact', leaseId })
+    setCommandNotice('上下文压缩完成')
   })
   const goal = () => perform(async () => {
     if (!activeId) return
@@ -1085,6 +1086,7 @@ export default function LiveSessionPage() {
   const reload = () => perform(async () => {
     if (!activeId) return
     await liveSessionApi.command(activeId, { type: 'reload' })
+    setCommandNotice('已触发重载，Web 端将短暂重连')
   })
   const controlBtw = (type: 'open' | 'close') => perform(async () => {
     if (!activeId) return
@@ -1101,11 +1103,13 @@ export default function LiveSessionPage() {
     // 必须在这里翻译成结构化命令，才能与 TUI 行为一致。
     if (trimmed === '/reload') {
       await liveSessionApi.command(processInstanceId, { type: 'reload' })
+      setCommandNotice('已触发重载，Web 端将短暂重连')
       return
     }
     if (trimmed === '/compact') {
       const leaseId = await claim()
       await liveSessionApi.command(processInstanceId, { type: 'compact', leaseId })
+      setCommandNotice('上下文压缩完成')
       return
     }
     if (trimmed === '/abort') {
