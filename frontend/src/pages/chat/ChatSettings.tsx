@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../../api/client'
-import { THINKING_LEVELS, modelFullId, modelPatternMatches, preferredThinkingLevel, supportedThinkingLevels, type ModelLike } from '../../utils/modelUtils'
+import { THINKING_LEVELS, modelFullId, preferredThinkingLevel, supportedThinkingLevels, type ModelLike } from '../../utils/modelUtils'
 
 export interface ChatConfig {
   historyExpanded: boolean
@@ -39,7 +39,6 @@ interface Props {
  */
 export default function ChatSettings({ activeSlot, currentModel, currentThinking, models }: Props) {
   const [open, setOpen] = useState(false)
-  const [showAllModels, setShowAllModels] = useState(false)
   const [enabledModels, setEnabledModels] = useState<string[]>([])
   const currentModelInfo = useMemo(() => models?.find(m => modelFullId(m) === currentModel) || null, [models, currentModel])
   const availableThinkingLevels = useMemo(() => supportedThinkingLevels(currentModelInfo), [currentModelInfo])
@@ -54,23 +53,9 @@ export default function ChatSettings({ activeSlot, currentModel, currentThinking
     }).catch(() => {})
   }, [])
 
-  const { pinnedModels, otherModels } = useMemo<{ pinnedModels: ModelLike[]; otherModels: ModelLike[] }>(() => {
-    if (!models) return { pinnedModels: [], otherModels: [] }
-    if (enabledModels.length === 0) return { pinnedModels: models, otherModels: [] }
-    const pinned: ModelLike[] = []
-    const other: ModelLike[] = []
-    for (const m of models) {
-      if (enabledModels.some(e => modelPatternMatches(e, m))) {
-        pinned.push(m)
-      } else {
-        other.push(m)
-      }
-    }
-    // /api/models is already the dashboard's hard-filtered selector list.
-    // Keep enabledModels as an ordering hint only; don't hide returned models
-    // behind "Show all" when the backend selected them dynamically.
-    return { pinnedModels: [...pinned, ...other], otherModels: [] }
-  }, [models, enabledModels])
+  // /api/models already returns the enabledModels-scoped list, so render the
+  // returned models directly (enabledModels is still used below for the
+  // per-model preferred thinking level).
 
   // Auto-adjust thinking level when model changes (only if pi hasn't told us
   // a value yet — honour whatever the running pi process actually has).
@@ -118,18 +103,11 @@ export default function ChatSettings({ activeSlot, currentModel, currentThinking
               <span className="text-[12px] text-muted">Model</span>
               <select className="bg-bg-elevated border border-border rounded-md px-2 py-1.5 text-[13px] text-text outline-none cursor-pointer font-mono" value={currentModel || ''} onChange={e => handleModelChange(e.target.value)}>
                 {!currentModel && <option value="">—</option>}
-                {pinnedModels.map(m => <option key={`${m.provider}/${m.id}`} value={`${m.provider}/${m.id}`}>{`${m.provider} → ${m.name || m.id}`}</option>)}
-                {showAllModels && otherModels.length > 0 && (
-                  <optgroup label="All Models">
-                    {otherModels.map(m => <option key={`${m.provider}/${m.id}`} value={`${m.provider}/${m.id}`}>{`${m.provider} → ${m.name || m.id}`}</option>)}
-                  </optgroup>
+                {currentModel && !models.some(m => modelFullId(m) === currentModel) && (
+                  <option value={currentModel} disabled>{currentModel} (current)</option>
                 )}
+                {models.map(m => <option key={`${m.provider}/${m.id}`} value={`${m.provider}/${m.id}`}>{`${m.provider} → ${m.name || m.id}`}</option>)}
               </select>
-              {otherModels.length > 0 && (
-                <button className="text-[11px] text-muted hover:text-accent cursor-pointer text-left" onClick={() => setShowAllModels(!showAllModels)}>
-                  {showAllModels ? '▾ Hide other models' : `▸ Show all models (${otherModels.length} more)`}
-                </button>
-              )}
             </div>
           )}
 

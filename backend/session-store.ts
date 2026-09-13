@@ -26,6 +26,9 @@ export interface SlotState {
   thinkingLevel?: string | null
   cwd: string | null
   tags?: string[]
+  // Sidebar pin (slice: sidebar-refresh). Absent/false → unpinned. Pinned slots
+  // render in a leading "Pinned" group regardless of the chosen group mode.
+  pinned?: boolean
   // Transport backend for this slot ('rpc' | 'sdk'). Absent in old state →
   // restore defaults to 'rpc' (see pi-manager restoreSlot).
   transport?: PiTransport
@@ -54,6 +57,7 @@ export interface SessionTreeEntry {
 interface SlotProcess {
   _title?: string
   _tags?: string[]
+  _pinned?: boolean
   messages: ChatMessage[]
   sessionFile?: string | null
   modelProvider?: string | null
@@ -300,6 +304,7 @@ export function saveSlotState(slots: Map<string, SlotProcess>): void {
       transport: pi.transport || undefined,
       toolApproval: pi.toolApproval || undefined,
       tags: pi._tags?.length ? pi._tags : undefined,
+      pinned: pi._pinned || undefined,
       midTurn: pi.running === true ? true : undefined,
     }
     // Only persist messages for slots without a session file (unsaved new chats)
@@ -346,6 +351,7 @@ export function saveSlotStateSync(slots: Map<string, SlotProcess>): void {
       transport: pi.transport || undefined,
       toolApproval: pi.toolApproval || undefined,
       tags: pi._tags?.length ? pi._tags : undefined,
+      pinned: pi._pinned || undefined,
       midTurn: pi.running === true ? true : undefined,
     }
     // Only persist messages for slots without a session file (unsaved new chats)

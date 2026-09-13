@@ -64,6 +64,8 @@ export interface PiSession extends EventEmitter {
   _title: string | null
   _userRenamed: boolean
   _tags: string[]
+  /** Sidebar pin flag (see routes/chat.ts PATCH /pin + session-store SlotState). */
+  _pinned: boolean
   _toolsRunning: number
   /** Wall-clock of last turn/tool activity; drives listSlots' updated_at and
    *  the idle reaper in PiManager._healthCheck. 0 = never. */
