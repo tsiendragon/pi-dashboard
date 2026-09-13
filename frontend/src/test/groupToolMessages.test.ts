@@ -38,6 +38,24 @@ describe('groupToolMessages', () => {
     expect(result[2].type).toBe('single')
   })
 
+  it('keeps one tool batch together across thinking frames', () => {
+    const msgs = [
+      msg('thinking'),
+      msg('tool'),
+      msg('thinking', 'reasoning between calls'),
+      msg('tool'),
+      msg('thinking'),
+      msg('tool'),
+      msg('assistant', 'done'),
+    ]
+    const result = groupToolMessages(msgs)
+    const group = result.find(item => item.type === 'group')
+    expect(group?.type).toBe('group')
+    if (group?.type === 'group') expect(group.tools.map(tool => tool.index)).toEqual([1, 3, 5])
+    expect(result.some(item => item.type === 'single' && item.index === 0)).toBe(false)
+    expect(result.some(item => item.type === 'single' && item.index === 2)).toBe(true)
+  })
+
   it('keeps 3 consecutive ensemble spawns as singles', () => {
     const msgs = [
       { ...msg('tool', 'ensemble_spawn'), meta: { toolName: 'ensemble_spawn', toolCallId: 'tc-1' } },
