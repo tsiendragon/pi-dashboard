@@ -1095,6 +1095,36 @@ export default function LiveSessionPage() {
   const submit = (text: string, deliverAs?: 'steer' | 'followUp', images?: LiveSessionImage[]) => perform(async () => {
     if (!activeId) return
     const processInstanceId = activeId
+    const trimmed = text.trim()
+
+    // TUI 内置命令在 input 文本流里不会被 dispatch（sendUserMessage 只处理扩展命令/skill/模板），
+    // 必须在这里翻译成结构化命令，才能与 TUI 行为一致。
+    if (trimmed === '/reload') {
+      await liveSessionApi.command(processInstanceId, { type: 'reload' })
+      return
+    }
+    if (trimmed === '/compact') {
+      const leaseId = await claim()
+      await liveSessionApi.command(processInstanceId, { type: 'compact', leaseId })
+      return
+    }
+    if (trimmed === '/abort') {
+      const leaseId = await claim()
+      await liveSessionApi.command(processInstanceId, { type: 'abort', leaseId })
+      return
+    }
+    const modelMatch = trimmed.match(/^\/model[ \t]+([^ \t/]+)\/(.+)$/)
+    if (modelMatch) {
+      await liveSessionApi.command(processInstanceId, { type: 'set_model', provider: modelMatch[1], modelId: modelMatch[2].trim() })
+      return
+    }
+    const nameMatch = trimmed.match(/^\/name[ \t]+(.+)$/)
+    if (nameMatch) {
+      await liveSessionApi.command(processInstanceId, { type: 'set_session_name', name: nameMatch[1].trim() })
+      return
+    }
+
+    // 普通消息、扩展命令（/clear /goal /effort）、skill 命令都走 input 文本流
     const localId = `dashboard-${Date.now()}-${Math.random().toString(36).slice(2)}`
     dispatch(liveSessionUserMessageAdded({ processInstanceId, localId, text, ...(images?.length ? { images } : {}) }))
     try {
