@@ -1,5 +1,6 @@
 import { useState, useMemo, memo } from 'react'
 import type { ChatMessage } from '../../types'
+import { ToolSummaryLine, type ToolSummaryStatus } from '../../components/ToolSummary'
 
 interface ToolGroupProps {
   tools: { index: number; message: ChatMessage }[]
@@ -8,9 +9,10 @@ interface ToolGroupProps {
 
 const UNGROUPED_TOOL_NAMES = new Set(['subagent', 'process', 'ensemble_spawn', 'ensemble_send'])
 
-/** Collapsible group of consecutive tool calls with a live counter. */
+/** TUI-like summary for a consecutive batch of tool calls. */
 const ToolGroup = memo(function ToolGroup({ tools, renderTool }: ToolGroupProps) {
   const [expanded, setExpanded] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
 
   const summary = useMemo(() => {
     const names = new Map<string, number>()
@@ -20,9 +22,8 @@ const ToolGroup = memo(function ToolGroup({ tools, renderTool }: ToolGroupProps)
     for (const { message: m } of tools) {
       const name = (m.meta?.toolName as string) || m.content.replace('🔧 ', '')
       names.set(name, (names.get(name) || 0) + 1)
-      if (m.meta?.result) completed++
+      if (typeof m.meta?.result === 'string' || m.meta?.isError) completed++
       if (m.meta?.isError) errors++
-      // Extract file paths from tool args for richer summary
       if (m.meta?.args && (name === 'edit' || name === 'write' || name === 'read')) {
         try {
           const parsed = JSON.parse(m.meta.args as string)
@@ -36,43 +37,60 @@ const ToolGroup = memo(function ToolGroup({ tools, renderTool }: ToolGroupProps)
     return { names, errors, completed, total: tools.length, files }
   }, [tools])
 
-  // Don't group single tool calls
   if (tools.length <= 1) {
     return <>{tools.map(t => renderTool(t.index, t.message))}</>
   }
 
   const nameStr = Array.from(summary.names.entries())
-    .map(([name, count]) => count > 1 ? `${name} ×${count}` : name)
+    .map(([name, count]) => count > 1 ? `${name}×${count}` : name)
     .join(', ')
+  const progress = summary.completed === summary.total
+    ? `${summary.total} done`
+    : `${summary.completed} done · ${summary.total - summary.completed} running`
+  const groupTone = summary.errors > 0
+    ? 'border-danger/40 bg-danger-subtle/10'
+    : summary.completed === summary.total
+      ? 'border-ok/35 bg-ok-subtle/10'
+      : 'border-accent/35 bg-accent-subtle/10'
 
   return (
-    <div className="animate-scale-in">
+    <div className="animate-scale-in font-mono">
       <button
-        className="w-full min-w-0 flex items-center gap-1.5 px-2 py-1 text-[11px] text-muted font-body bg-card border border-border rounded-md hover:text-text hover:border-border-strong transition-all cursor-pointer mb-0.5"
-        onClick={() => setExpanded(!expanded)}
+        className={`w-full min-w-0 flex items-center gap-1.5 rounded-md border px-2 py-1 text-left text-[11px] transition-all cursor-pointer hover:border-border-strong ${groupTone}`}
+        onClick={() => { setExpanded(value => !value); setSelectedIndex(null) }}
         aria-expanded={expanded}
         aria-label={expanded ? 'Collapse tool calls' : 'Expand tool calls'}
       >
-        <span className={`text-[11px] transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
-        <span className="text-accent font-semibold">{summary.total}</span>
-        <span>tool calls</span>
-        <span className="text-muted/60 text-[12px] truncate flex-1 text-left min-w-0 break-all">
-          {nameStr}
-          {summary.files.length > 0 && <span className="text-text/50 ml-1.5">— {summary.files.slice(0, 3).join(', ')}{summary.files.length > 3 ? ` +${summary.files.length - 3}` : ''}</span>}
-        </span>
-        <span className="flex items-center gap-1.5 shrink-0">
-          {summary.completed > 0 && <span className="text-ok text-[12px]">✓{summary.completed}</span>}
-          {summary.errors > 0 && <span className="text-danger text-[12px]">✗{summary.errors}</span>}
-          {summary.completed < summary.total - summary.errors && (
-            <span className="inline-block w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-          )}
-        </span>
+        <span className={`h-2 w-2 shrink-0 rounded-full ${summary.errors > 0 ? 'bg-danger' : summary.completed === summary.total ? 'bg-ok' : 'bg-accent'}`} />
+        <span className="shrink-0 font-semibold text-text-strong">Multiple Tools: {progress}</span>
+        <span className="shrink-0 text-muted/60">•</span>
+        <span className="min-w-0 flex-1 truncate text-muted">{nameStr}</span>
+        <span className="shrink-0 text-muted/50">• 点击展开</span>
       </button>
       {expanded && (
-        <div className="pl-3 border-l-2 border-border ml-3 space-y-1">
-          {tools.map(t => (
-            <div key={t.index}>{renderTool(t.index, t.message)}</div>
-          ))}
+        <div className="mt-1 ml-1 border-l border-border/70 pl-2">
+          <div className="space-y-0.5">
+            {tools.map(tool => {
+              const message = tool.message
+              const toolName = (message.meta?.toolName as string) || message.content.replace('🔧 ', '')
+              const args = typeof message.meta?.args === 'string' ? message.meta.args : undefined
+              const status: ToolSummaryStatus = message.meta?.isError ? 'error' : typeof message.meta?.result === 'string' ? 'success' : 'running'
+              const active = selectedIndex === tool.index
+              return (
+                <div key={tool.index}>
+                  <button
+                    type="button"
+                    className={`flex w-full min-w-0 items-center rounded px-1 py-0.5 text-left text-[11px] transition-colors hover:bg-bg-hover ${active ? 'bg-bg-hover' : ''}`}
+                    onClick={() => setSelectedIndex(active ? null : tool.index)}
+                    aria-expanded={active}
+                  >
+                    <ToolSummaryLine toolName={toolName} args={args} timestamp={message.ts} status={status} className="flex-1" />
+                  </button>
+                  {active && <div className="ml-4 mt-0.5 mb-1">{renderTool(tool.index, message)}</div>}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -88,45 +106,47 @@ export default ToolGroup
 export function groupToolMessages(messages: ChatMessage[]): ({ type: 'single'; index: number; message: ChatMessage } | { type: 'group'; tools: { index: number; message: ChatMessage }[] })[] {
   const result: ({ type: 'single'; index: number; message: ChatMessage } | { type: 'group'; tools: { index: number; message: ChatMessage }[] })[] = []
   let currentGroup: { index: number; message: ChatMessage }[] = []
+  let pendingThinking: { index: number; message: ChatMessage }[] = []
 
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i]
-    if (m.role === 'tool') {
-      // Never group long-running/rich-card tools — they need individual visibility
-      const toolName = (m.meta?.toolName as string) || ''
-      if (UNGROUPED_TOOL_NAMES.has(toolName)) {
-        if (currentGroup.length > 0) {
-          if (currentGroup.length > 2) {
-            result.push({ type: 'group', tools: currentGroup })
-          } else {
-            for (const t of currentGroup) result.push({ type: 'single', ...t })
-          }
-          currentGroup = []
-        }
-        result.push({ type: 'single', index: i, message: m })
-      } else {
-        currentGroup.push({ index: i, message: m })
-      }
-    } else {
-      if (currentGroup.length > 0) {
-        if (currentGroup.length > 2) {
-          result.push({ type: 'group', tools: currentGroup })
-        } else {
-          for (const t of currentGroup) result.push({ type: 'single', ...t })
-        }
-        currentGroup = []
-      }
-      result.push({ type: 'single', index: i, message: m })
-    }
-  }
-  // Flush remaining
-  if (currentGroup.length > 0) {
+  const flush = () => {
     if (currentGroup.length > 2) {
       result.push({ type: 'group', tools: currentGroup })
     } else {
-      for (const t of currentGroup) result.push({ type: 'single', ...t })
+      for (const tool of currentGroup) result.push({ type: 'single', ...tool })
     }
+    currentGroup = []
+    // Keep meaningful thinking visible, but place it after the completed tool batch.
+    for (const thinking of pendingThinking) result.push({ type: 'single', ...thinking })
+    pendingThinking = []
   }
 
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i]
+    if (message.role === 'tool') {
+      const toolName = (message.meta?.toolName as string) || ''
+      if (UNGROUPED_TOOL_NAMES.has(toolName)) {
+        if (currentGroup.length > 0 || pendingThinking.length > 0) flush()
+        result.push({ type: 'single', index: i, message })
+      } else {
+        currentGroup.push({ index: i, message })
+      }
+      continue
+    }
+
+    if (message.role === 'thinking') {
+      // Empty thinking frames are transport noise. Meaningful thinking between
+      // tool calls belongs to the same turn and must not split its tool batch.
+      if (!message.content.trim()) continue
+      if (currentGroup.length > 0) {
+        pendingThinking.push({ index: i, message })
+        continue
+      }
+    }
+
+    if (currentGroup.length > 0 || pendingThinking.length > 0) flush()
+    result.push({ type: 'single', index: i, message })
+  }
+
+  if (currentGroup.length > 0 || pendingThinking.length > 0) flush()
   return result
 }

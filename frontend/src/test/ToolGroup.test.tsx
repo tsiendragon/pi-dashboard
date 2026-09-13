@@ -32,6 +32,8 @@ describe('ToolGroup', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: /expand tool calls/i }))
+    expect(screen.getByText(/Multiple Tools: 3 done/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /edit.*\/tmp\/a\.ts/i }))
 
     expect(screen.getByText('✏️ edit')).toBeTruthy()
   })
