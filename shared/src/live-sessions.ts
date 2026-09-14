@@ -155,6 +155,18 @@ export type LiveSessionCommand =
   | { type: 'compact'; leaseId: string }
   | { type: 'reload' }
   | { type: 'feature_command'; leaseId: string; feature: 'btw'; command: { type: 'open' | 'close' } }
+  | { type: 'answer_ui'; id: string; value?: string; cancelled?: boolean }
+
+/** A pending extension UI request projected from a live session (L1 emits `extension_ui`). */
+export interface LiveSessionUiRequest {
+  id: string
+  method: 'confirm' | 'select' | 'input' | 'editor'
+  title: string
+  message?: string
+  options?: string[]
+  placeholder?: string
+  prefill?: string
+}
 
 export interface LiveSessionCommandEnvelope {
   type: 'command'
