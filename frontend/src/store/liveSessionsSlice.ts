@@ -22,6 +22,13 @@ export interface LiveSessionsState {
   error?: string
   /** Pending extension UI requests per session (L1 `extension_ui` → answered via `answer_ui`). */
   pendingUi: Record<string, Record<string, LiveSessionUiRequest>>
+  /** One-way extension notifications per session (L1 `extension_ui_notify`, e.g. /goal command options). */
+  notifications: Record<string, LiveSessionNotification[]>
+}
+
+export interface LiveSessionNotification {
+  message: string
+  notifyType: 'info' | 'warning' | 'error'
 }
 
 const initialState: LiveSessionsState = {
@@ -31,6 +38,7 @@ const initialState: LiveSessionsState = {
   ownedLeases: {},
   wsConnected: false,
   pendingUi: {},
+  notifications: {},
 }
 
 function upsertSummary(state: LiveSessionsState, summary: LiveSessionSummary): boolean {
@@ -269,6 +277,17 @@ const liveSessionsSlice = createSlice({
           }
         }
       }
+      if (message.event.type === 'extension_ui_notify') {
+        const data = message.event.data as Record<string, unknown> | undefined
+        const text = data && typeof data.message === 'string' ? data.message : undefined
+        if (text) {
+          const notifyType: LiveSessionNotification['notifyType'] =
+            data?.notifyType === 'warning' || data?.notifyType === 'error' ? data.notifyType : 'info'
+          const list = state.notifications[message.processInstanceId] ?? (state.notifications[message.processInstanceId] = [])
+          list.push({ message: text, notifyType })
+          if (list.length > 20) list.splice(0, list.length - 20)
+        }
+      }
       appendEvent(detail, message)
     },
     liveSessionClaimChanged(state, action: PayloadAction<LiveSessionSummary>) {
@@ -288,6 +307,7 @@ const liveSessionsSlice = createSlice({
       delete state.details[id]
       delete state.ownedLeases[id]
       delete state.pendingUi[id]
+      delete state.notifications[id]
       if (state.activeId === id) state.activeId = undefined
     },
     liveSessionOwned(state, action: PayloadAction<{ processInstanceId: string; leaseId: string; expiresAt?: number }>) {
@@ -333,12 +353,16 @@ const liveSessionsSlice = createSlice({
       const bucket = state.pendingUi[action.payload.processInstanceId]
       if (bucket) delete bucket[action.payload.id]
     },
+    dismissSessionNotifications(state, action: PayloadAction<string>) {
+      delete state.notifications[action.payload]
+    },
     selectLiveSession(state, action: PayloadAction<string | undefined>) { state.activeId = action.payload },
     clearLiveSessions(state) {
       state.sessions = {}
       state.details = {}
       state.ownedLeases = {}
       state.pendingUi = {}
+      state.notifications = {}
       state.activeId = undefined
       state.wsConnected = false
     },
@@ -351,6 +375,7 @@ export const {
   liveSessionClaimChanged, liveSessionReconnecting, liveSessionDetached,
   liveSessionOwned, liveSessionReleased, liveSessionUserMessageAdded,
   liveSessionUserMessageRemoved, liveSessionResynced, selectLiveSession, clearLiveSessions, uiAnswered,
+  dismissSessionNotifications,
 } = liveSessionsSlice.actions
 
 export default liveSessionsSlice.reducer

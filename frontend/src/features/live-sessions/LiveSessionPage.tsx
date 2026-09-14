@@ -20,6 +20,7 @@ import {
   liveSessionUserMessageRemoved,
   selectLiveSession,
   setLiveSessionError,
+  dismissSessionNotifications,
 } from '../../store/liveSessionsSlice'
 import { liveSessionApi, LiveSessionApiError } from './api'
 import LiveSessionComposer from './LiveSessionComposer'
@@ -911,6 +912,7 @@ export default function LiveSessionPage() {
   const summary = activeId ? state.sessions[activeId] : undefined
   const detail = activeId ? state.details[activeId] : undefined
   const ownedLeaseId = activeId ? state.ownedLeases[activeId] : undefined
+  const notifications = activeId ? state.notifications[activeId] ?? [] : []
   const features = useMemo(() => collectLiveFeatures(detail?.entries || []), [detail?.entries])
   const toolStates = useMemo(() => collectToolStates(detail?.entries || []), [detail?.entries])
   const timelineItems = useMemo(() => groupLiveToolEntries(detail?.entries || []), [detail?.entries])
@@ -1197,6 +1199,15 @@ export default function LiveSessionPage() {
         </div>}
         {state.error && <div className="px-4 py-2 bg-danger-subtle text-danger text-xs border-b border-danger/20">{state.error}</div>}
         {commandNotice && !state.error && <div className="px-4 py-2 bg-accent-subtle text-accent text-xs border-b border-accent/20">{commandNotice}</div>}
+        {activeId && notifications.length > 0 && <div className="shrink-0 border-b border-border bg-bg-elevated px-3 py-2">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[10px] font-medium text-muted">扩展通知 · {notifications.length}</span>
+            <button type="button" onClick={() => dispatch(dismissSessionNotifications(activeId))} className="rounded border border-border bg-bg px-2 py-0.5 text-[10px] text-muted hover:border-accent hover:text-accent">全部清除</button>
+          </div>
+          <div className="max-h-[180px] space-y-1 overflow-y-auto">
+            {notifications.map((note, index) => <pre key={index} className={`m-0 whitespace-pre-wrap break-words rounded border px-2 py-1 font-mono text-[10px] leading-4 ${note.notifyType === 'error' ? 'border-danger/40 bg-danger-subtle text-danger' : note.notifyType === 'warning' ? 'border-warn/40 bg-warn-subtle text-warn' : 'border-border bg-card text-text'}`}>{note.message}</pre>)}
+          </div>
+        </div>}
         {!summary || !detail ? (
           <div className="flex-1 flex items-center justify-center text-sm text-muted">选择一个正在运行的 Pi session。</div>
         ) : (
