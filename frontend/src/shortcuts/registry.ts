@@ -194,6 +194,9 @@ export function getShortcutsByCategory(): Record<ActionCategory, ActionDef[]> {
 
 /** Match a KeyboardEvent against the registry. Returns the matching action or undefined. */
 export function matchEvent(e: KeyboardEvent): ActionDef | undefined {
+  // Some environments (proxies/automation) deliver a 'keydown' that is not a real
+  // KeyboardEvent and has no `key`; ignore those instead of throwing.
+  if (!e || typeof e.key !== 'string') return undefined
   for (const action of Object.values(ACTIONS)) {
     if (!action.keys || !action.callback) continue
     const parsed = parseKeys(action.keys)
