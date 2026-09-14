@@ -131,6 +131,30 @@ describe('LiveSessionRegistry', () => {
     expect(registry.get('process-a').summary.status).toBe('idle')
   })
 
+  it('dispatches answer_ui from a non-lease holder so any channel can answer a UI request', async () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const commands = []
+    const transport = {
+      send(envelope) {
+        if (envelope.type !== 'command') return
+        commands.push(envelope.command)
+        queueMicrotask(() => registry.handleCommandResult({ type: 'command_result', requestId: envelope.requestId, ok: true, result: { accepted: true } }, transport))
+      },
+    }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary(), entries: [] }, transport, '/tmp/root/task')
+
+    // browser-b holds no lease, yet must be able to answer a pending UI request
+    // (the live-session analogue of the RPC ExtensionUiModal). Previously this
+    // was rejected as unsupported_command, so the click never reached the TUI.
+    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'answer_ui', id: 'ui-1', value: 'a' })
+    expect(commands.at(-1)).toEqual({ type: 'answer_ui', id: 'ui-1', value: 'a' })
+
+    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'answer_ui', id: 'ui-2', cancelled: true })
+    expect(commands.at(-1)).toEqual({ type: 'answer_ui', id: 'ui-2', cancelled: true })
+  })
+
   it('exposes every attached Pi process, including multiple sessions in one worktree', () => {
     const registry = new LiveSessionRegistry()
     cleanups.push(() => registry.stop())
