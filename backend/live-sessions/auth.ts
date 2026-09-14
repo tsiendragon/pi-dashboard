@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'crypto'
-import { chmod, lstat, mkdir, open, readFile } from 'fs/promises'
+import { chmod, lstat, mkdir, open, readFile, writeFile } from 'fs/promises'
 import type { IncomingHttpHeaders } from 'http'
 import os from 'os'
 import path from 'path'
@@ -95,6 +95,7 @@ function urlMatchesRequest(url: URL, request: HeaderSource): boolean {
 
 export class LiveSessionBrowserAuth {
   readonly tokenPath: string
+  private readonly sessionsPath: string
   private token?: Buffer
   private startPromise?: Promise<void>
   private readonly sessions = new Map<string, LiveSessionBrowserIdentity>()
@@ -104,6 +105,7 @@ export class LiveSessionBrowserAuth {
 
   constructor(options: LiveSessionBrowserAuthOptions = {}) {
     this.tokenPath = options.tokenPath || path.join(os.homedir(), '.pi', 'agent', 'run', 'pi-dashboard', 'live-control-token')
+    this.sessionsPath = `${this.tokenPath}.sessions.json`
     const configured = process.env.PI_DASH_ALLOWED_ORIGIN?.split(',').map(value => value.trim()).filter(Boolean) || []
     this.allowedOrigins = new Set([...(options.allowedOrigins || []), ...configured])
     this.now = options.now || Date.now
@@ -138,6 +140,7 @@ export class LiveSessionBrowserAuth {
       lastSeenAt: now,
     }
     this.sessions.set(cookieValue, identity)
+    this.persistSessions()
     return {
       ...identity,
       setCookie: `${LIVE_SESSION_COOKIE_NAME}=${cookieValue}; Path=/api; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`,
@@ -156,7 +159,7 @@ export class LiveSessionBrowserAuth {
 
   forget(request: HeaderSource): void {
     const cookie = parseCookies(request.headers.cookie).get(LIVE_SESSION_COOKIE_NAME)
-    if (cookie) this.sessions.delete(cookie)
+    if (cookie) { this.sessions.delete(cookie); this.persistSessions() }
   }
 
   issueWebSocketTicket(request: HeaderSource): BrowserWebSocketTicket | undefined {
@@ -235,6 +238,26 @@ export class LiveSessionBrowserAuth {
     const token = (await readFile(this.tokenPath, 'utf8')).trim()
     if (!/^[a-f0-9]{64}$/.test(token)) throw new Error('live control token file is invalid')
     this.token = Buffer.from(token, 'utf8')
+    await this.loadSessions()
+  }
+
+  private async loadSessions(): Promise<void> {
+    try {
+      const raw = await readFile(this.sessionsPath, 'utf8')
+      const parsed = JSON.parse(raw) as Record<string, LiveSessionBrowserIdentity>
+      const now = this.now()
+      for (const [cookie, identity] of Object.entries(parsed)) {
+        if (identity && typeof identity.browserClientId === 'string' && typeof identity.lastSeenAt === 'number' && now - identity.lastSeenAt < SESSION_MAX_AGE_MS) {
+          this.sessions.set(cookie, { browserClientId: identity.browserClientId, createdAt: typeof identity.createdAt === 'number' ? identity.createdAt : now, lastSeenAt: identity.lastSeenAt })
+        }
+      }
+    } catch { /* missing or corrupt sessions file -> start empty */ }
+  }
+
+  private persistSessions(): void {
+    const data: Record<string, LiveSessionBrowserIdentity> = {}
+    for (const [cookie, identity] of this.sessions) data[cookie] = identity
+    void writeFile(this.sessionsPath, JSON.stringify(data), { encoding: 'utf8', mode: 0o600 }).catch(() => {})
   }
 
   private prune(): void {
