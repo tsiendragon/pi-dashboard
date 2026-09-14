@@ -307,10 +307,12 @@ export class LiveSessionRegistry extends EventEmitter {
 
   async sendBrowserCommand(processInstanceId: string, browserClientId: string, command: unknown): Promise<unknown> {
     const validated = validateLiveSessionCommand(command, true)
-    if (validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'feature_command') {
+    if (validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'feature_command' && validated.type !== 'answer_ui') {
       throw new LiveSessionRegistryError('unsupported_command', 'browser command is not allowed')
     }
-    if (validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'set_model' || validated.type === 'reload') return this.dispatch(processInstanceId, validated)
+    // answer_ui settles a pending extension UI request (first answer wins), so it
+    // is deliberately dispatchable without holding the lease.
+    if (validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'set_model' || validated.type === 'reload' || validated.type === 'answer_ui') return this.dispatch(processInstanceId, validated)
     this.requireLease(processInstanceId, browserClientId, validated.leaseId)
     return this.dispatch(processInstanceId, validated)
   }
