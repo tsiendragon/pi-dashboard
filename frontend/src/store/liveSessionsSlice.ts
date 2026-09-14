@@ -4,6 +4,7 @@ import type {
   LiveSessionEventMessage,
   LiveSessionImage,
   LiveSessionSummary,
+  LiveSessionUiRequest,
 } from '@shared/live-sessions'
 
 export interface LiveSessionDetailState extends LiveSessionDetail {
@@ -19,6 +20,8 @@ export interface LiveSessionsState {
   activeId?: string
   wsConnected: boolean
   error?: string
+  /** Pending extension UI requests per session (L1 `extension_ui` → answered via `answer_ui`). */
+  pendingUi: Record<string, Record<string, LiveSessionUiRequest>>
 }
 
 const initialState: LiveSessionsState = {
@@ -27,6 +30,7 @@ const initialState: LiveSessionsState = {
   details: {},
   ownedLeases: {},
   wsConnected: false,
+  pendingUi: {},
 }
 
 function upsertSummary(state: LiveSessionsState, summary: LiveSessionSummary): boolean {
@@ -245,6 +249,26 @@ const liveSessionsSlice = createSlice({
           summary.sessionName = typeof name === 'string' ? name : undefined
         }
       }
+      if (message.event.type === 'extension_ui' || message.event.type === 'extension_ui_closed') {
+        const data = message.event.data as Record<string, unknown> | undefined
+        const uiId = data && typeof data.id === 'string' ? data.id : undefined
+        if (uiId) {
+          const bucket = state.pendingUi[message.processInstanceId] ?? (state.pendingUi[message.processInstanceId] = {})
+          if (message.event.type === 'extension_ui' && data) {
+            bucket[uiId] = {
+              id: uiId,
+              method: (typeof data.method === 'string' ? data.method : 'confirm') as LiveSessionUiRequest['method'],
+              title: typeof data.title === 'string' ? data.title : '',
+              ...(typeof data.message === 'string' ? { message: data.message } : {}),
+              ...(Array.isArray(data.options) ? { options: data.options.filter((o): o is string => typeof o === 'string') } : {}),
+              ...(typeof data.placeholder === 'string' ? { placeholder: data.placeholder } : {}),
+              ...(typeof data.prefill === 'string' ? { prefill: data.prefill } : {}),
+            }
+          } else {
+            delete bucket[uiId]
+          }
+        }
+      }
       appendEvent(detail, message)
     },
     liveSessionClaimChanged(state, action: PayloadAction<LiveSessionSummary>) {
@@ -263,6 +287,7 @@ const liveSessionsSlice = createSlice({
       delete state.sessions[id]
       delete state.details[id]
       delete state.ownedLeases[id]
+      delete state.pendingUi[id]
       if (state.activeId === id) state.activeId = undefined
     },
     liveSessionOwned(state, action: PayloadAction<{ processInstanceId: string; leaseId: string; expiresAt?: number }>) {
@@ -304,11 +329,16 @@ const liveSessionsSlice = createSlice({
       const detail = state.details[action.payload]
       if (detail) detail.needsResync = false
     },
+    uiAnswered(state, action: PayloadAction<{ processInstanceId: string; id: string }>) {
+      const bucket = state.pendingUi[action.payload.processInstanceId]
+      if (bucket) delete bucket[action.payload.id]
+    },
     selectLiveSession(state, action: PayloadAction<string | undefined>) { state.activeId = action.payload },
     clearLiveSessions(state) {
       state.sessions = {}
       state.details = {}
       state.ownedLeases = {}
+      state.pendingUi = {}
       state.activeId = undefined
       state.wsConnected = false
     },
@@ -320,7 +350,7 @@ export const {
   sessionsLoaded, liveSessionAttached, liveSessionSnapshot, liveSessionEvent,
   liveSessionClaimChanged, liveSessionReconnecting, liveSessionDetached,
   liveSessionOwned, liveSessionReleased, liveSessionUserMessageAdded,
-  liveSessionUserMessageRemoved, liveSessionResynced, selectLiveSession, clearLiveSessions,
+  liveSessionUserMessageRemoved, liveSessionResynced, selectLiveSession, clearLiveSessions, uiAnswered,
 } = liveSessionsSlice.actions
 
 export default liveSessionsSlice.reducer
