@@ -149,7 +149,7 @@ export function parseGoodbye(value: unknown): LiveSessionGoodbye {
 export function validateLiveSessionCommand(value: unknown, browserOnly = false): LiveSessionCommand {
   if (!record(value) || !nonEmptyString(value.type, 64)) throw new LiveSessionProtocolError('invalid_command', 'command type is required')
   if (jsonBytes(value) > LIVE_SESSION_MAX_COMMAND_BYTES) throw new LiveSessionProtocolError('command_too_large', 'command exceeds 8 MiB')
-  if (browserOnly && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'set_model' && value.type !== 'compact' && value.type !== 'reload' && value.type !== 'feature_command') {
+  if (browserOnly && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'set_model' && value.type !== 'compact' && value.type !== 'reload' && value.type !== 'feature_command' && value.type !== 'answer_ui') {
     throw new LiveSessionProtocolError('unsupported_command', 'browser command is not supported')
   }
   switch (value.type) {
@@ -183,6 +183,13 @@ export function validateLiveSessionCommand(value: unknown, browserOnly = false):
       if (!onlyKeys(value, ['type', 'leaseId', 'feature', 'command'])) break
       if (!nonEmptyString(value.leaseId, 512) || value.feature !== 'btw' || !record(value.command)
         || !onlyKeys(value.command, ['type']) || (value.command.type !== 'open' && value.command.type !== 'close')) break
+      return value as unknown as LiveSessionCommand
+    }
+    case 'answer_ui': {
+      if (!onlyKeys(value, ['type', 'id', 'value', 'cancelled'])) break
+      if (!nonEmptyString(value.id, 256)) break
+      if (value.value !== undefined && typeof value.value !== 'string') break
+      if (value.cancelled !== undefined && typeof value.cancelled !== 'boolean') break
       return value as unknown as LiveSessionCommand
     }
     case 'input': {

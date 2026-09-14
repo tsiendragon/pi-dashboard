@@ -4,6 +4,7 @@ import type { LiveSessionImage, LiveSessionModelOption, LiveSessionSummary } fro
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import DocumentPreviewModal from '../../components/DocumentPreviewModal'
 import ExtensionUiModal from '../../components/ExtensionUiModal'
+import LiveSessionExtensionUiModal from './LiveSessionExtensionUiModal'
 import ErrorBoundary from '../../components/ErrorBoundary'
 import ToolCallBlock from '../../pages/chat/ToolCallBlock'
 import { ToolSummaryLine, type ToolSummaryStatus } from '../../components/ToolSummary'
@@ -1305,6 +1306,7 @@ export default function LiveSessionPage() {
         </ErrorBoundary>
       )}
       <ExtensionUiModal />
+      <LiveSessionExtensionUiModal processInstanceId={activeId} />
     </div>
   )
 }
