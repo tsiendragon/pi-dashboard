@@ -6,6 +6,7 @@ import type { LiveSessionBrowserEvent, LiveSessionBrowserEventType } from '../..
 import { LiveSessionBrowserAuth, type LiveSessionBrowserIdentity } from '../live-sessions/auth.js'
 import { LiveSessionGroupStore } from '../live-sessions/groups.js'
 import { LiveSessionMetaStore } from '../live-sessions/meta.js'
+import { LiveSessionOrderStore } from '../live-sessions/order.js'
 import { LivePiLauncher } from '../live-sessions/launcher.js'
 import { LiveSessionProtocolError } from '../live-sessions/protocol.js'
 import { LiveSessionRegistry, LiveSessionRegistryError } from '../live-sessions/registry.js'
@@ -17,6 +18,7 @@ export interface LiveSessionRouteOptions {
   disconnectGraceMs?: number
   groupStore?: LiveSessionGroupStore
   metaStore?: LiveSessionMetaStore
+  orderStore?: LiveSessionOrderStore
   launcher?: LivePiLauncher
 }
 
@@ -65,6 +67,7 @@ export class LiveSessionRoutes {
   private readonly disconnectGraceMs: number
   private readonly groupStore: LiveSessionGroupStore
   private readonly metaStore: LiveSessionMetaStore
+  private readonly orderStore: LiveSessionOrderStore
   private readonly launcher?: LivePiLauncher
   private readonly wss = new WebSocketServer({ noServer: true })
   private readonly clients = new Map<WebSocket, LiveSessionBrowserIdentity>()
@@ -81,6 +84,7 @@ export class LiveSessionRoutes {
     this.disconnectGraceMs = options.disconnectGraceMs ?? 15_000
     this.groupStore = options.groupStore ?? new LiveSessionGroupStore()
     this.metaStore = options.metaStore ?? new LiveSessionMetaStore()
+    this.orderStore = options.orderStore ?? new LiveSessionOrderStore()
     this.launcher = options.launcher
   }
 
@@ -93,7 +97,7 @@ export class LiveSessionRoutes {
       this.active = true
       this.subscribeRegistry()
     }
-    if (!this.startPromise) this.startPromise = Promise.all([this.auth.start(), this.groupStore.start(), this.metaStore.start()]).then(() => undefined).catch(error => {
+    if (!this.startPromise) this.startPromise = Promise.all([this.auth.start(), this.groupStore.start(), this.metaStore.start(), this.orderStore.start()]).then(() => undefined).catch(error => {
       this.active = false
       this.unsubscribeRegistry()
       this.startPromise = undefined
@@ -233,6 +237,16 @@ export class LiveSessionRoutes {
     // short-lived processInstanceId, so metadata survives a Pi restart).
     this.app.get('/api/live-session-meta', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
       res.json({ meta: await this.metaStore.list() })
+    })
+
+    // Manual sidebar order for live sessions (same sessionId keying as meta).
+    // Whole-list replace, so one drag costs one request instead of N index bumps.
+    this.app.get('/api/live-session-order', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+      res.json({ order: await this.orderStore.list() })
+    })
+
+    this.app.put('/api/live-session-order', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => ({ ok: true, order: await this.orderStore.replace(req.body?.order) }))
     })
 
     this.app.patch('/api/live-sessions/:processInstanceId/meta', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
