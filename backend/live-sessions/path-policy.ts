@@ -49,19 +49,34 @@ export class LiveSessionPathPolicy {
         message: this.configurationError?.message || 'no canonical live session roots are configured',
       }
     }
-    if (!path.isAbsolute(cwd)) return { allowed: false, code: 'out_of_scope', message: 'cwd must be absolute' }
+    if (!path.isAbsolute(cwd)) {
+      return { allowed: false, code: 'out_of_scope', message: `cwd must be absolute (got "${cwd}"); use ~ or a path under one of: ${this.canonicalRoots.join(', ')}` }
+    }
     let canonicalCwd: string
     try {
       canonicalCwd = await realpath(cwd)
       const cwdStat = await stat(canonicalCwd)
-      if (!cwdStat.isDirectory()) return { allowed: false, code: 'cwd_unavailable', message: 'cwd is not a directory' }
-    } catch {
-      return { allowed: false, code: 'cwd_unavailable', message: 'cwd cannot be resolved' }
+      if (!cwdStat.isDirectory()) return { allowed: false, code: 'cwd_unavailable', message: `cwd is not a directory: ${cwd}` }
+    } catch (error) {
+      // The single most common failure by far is a stale or mistyped path, so
+      // name it instead of the previous catch-all "cannot be resolved".
+      const code = (error as NodeJS.ErrnoException)?.code
+      const reason = code === 'ENOENT' || code === 'ENOTDIR'
+        ? 'cwd does not exist'
+        : code === 'EACCES'
+          ? 'cwd is not readable by the dashboard process'
+          : `cwd cannot be resolved (${code || 'unknown error'})`
+      return { allowed: false, code: 'cwd_unavailable', message: `${reason}: ${cwd}` }
     }
     for (const canonicalRoot of this.canonicalRoots) {
       if (isPathWithinRoot(canonicalRoot, canonicalCwd)) return { allowed: true, canonicalCwd, canonicalRoot }
     }
-    return { allowed: false, canonicalCwd, code: 'out_of_scope', message: 'cwd is outside configured roots' }
+    return {
+      allowed: false,
+      canonicalCwd,
+      code: 'out_of_scope',
+      message: `cwd is outside configured roots: ${canonicalCwd} is not under ${this.canonicalRoots.join(', ')}`,
+    }
   }
 
   private async initialize(): Promise<void> {
