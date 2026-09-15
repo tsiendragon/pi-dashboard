@@ -106,3 +106,14 @@ tmux new-session -d -s pi-dash-smoke1 -c <repo> -e PI_RUNTIME=live -e TERM=xterm
 - 思考等级只能创建时定（live 协议没有运行时改 thinking 的命令）。
 - 外部（非 dashboard 启动）的 live session 没有 `tmux`，因此不显示终端与关闭入口。
 - live 页的「新建」串行一次一个；同一目录并发新建时，注册匹配按 pane pid 优先、其次新 + cwd + 最新 startedAt。
+
+## 后续修补（用户实测反馈：`启动失败：cwd cannot be resolved`）
+
+实测确认：只有「**绝对路径但不存在**」才会给这条泛指报错（存在的目录、`~`、`~/x` 都正常；相对路径给另一种提示）。
+同时用真实服务端到端跑通了创建链路（见上方实测），所以不是功能坏了，是输入与报错文案的问题：
+
+- `path-policy.ts` 报错分类：`cwd does not exist: <path>` / `cwd is not a directory: <path>` /
+  `cwd is not readable by the dashboard process: <path>` / `cwd cannot be resolved (<code>): <path>`；
+  越界与相对路径的提示里现在会附带**白名单根目录**。
+- 启动表单：cwd 输入框支持 **Tab 目录补全**（复用 `PathCompleteMenu`，与 chat 输入框同一手势），
+  并在下方常驻一行提示「必须是已存在的绝对目录（或 `~/…`），且在白名单根目录内」。
