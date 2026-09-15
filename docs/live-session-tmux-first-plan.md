@@ -148,3 +148,40 @@ tmux 默认项保留，密钥未出现在任何进程 argv。
 仍不能自动对齐的：只存在于你**某个终端 shell** 里的变量（如 `ANTHROPIC_BASE_URL`/`ANTHROPIC_MODEL`/`ANTHROPIC_AUTH_TOKEN`）
 不会进 pane；要一致就用带这些变量的 shell 重启 dashboard，或写进 `~/.bashrc`。
 另外 tmux 的 `update-environment` 是**全局选项**，这次会被扩展（默认项保留），属于对 tmux server 的可见副作用。
+
+## 后续修补 3（用户拍板：与 `pi-clean` 一致、启动器走脚本）
+
+用户在 `$BASH_ENV_DIR/.bash_aliases` 里有 `pi-clean()`（拼接 global+project 指令文件、`--no-context-files`、
+`--append-system-prompt`、`--goal-continuation`）并把 `pi` 别名指向它——这正是模型差异的另一半原因。
+结论与决策：dashboard **不复制**这套逻辑，只负责用用户自己的启动器。
+
+新配置（`~/.pi/dashboard.json`）：
+
+```json
+"liveSessions": {
+  "launch": {
+    "command": "/home/tsien/.local/bin/pi-clean",
+    "args": [],
+    "unsetEnv": ["HF_TOKEN", "AZURE_OPENAI_API_KEY", "..."]
+  }
+}
+```
+
+- `command`：pane 启动器（默认仍为 PATH 上的 `pi`）；`args` 排在 dashboard 自己的 `--name/--model/--thinking` **之前**。
+- `unsetEnv`：用 **`env -u`** 真正移除（而不是 `tmux -e VAR=` 置空：空白值和不存在在 provider 判定里不等价）。
+
+机器侧落地（不在仓库里）：
+
+- 新增 `~/.local/bin/pi-clean`（从 `.bash_aliases` 的函数体搬出，加：source `$BASH_ENV_DIR/.env`（用 `set -a`/`set +a`）+ `exec`）；
+- `$BASH_ENV_DIR/.bash_aliases` 的 `pi-clean()` 改为一行委派（已生成 `.bash_aliases.bak-<时间戳>` 备份），`alias pi='pi-clean'` 不变。
+- 踩到的坑（实测发现）：`.env` 里是**裸赋值**，而 `.bashrc` 是用 `set -a`/`set +a` 包着 source 的；脚本里漏了 `set -a` 就只是 shell 变量、不会导给 `pi` 子进程 → dashscope/azure-okx 凭据丢失。
+
+**验收（真实环境）**：用与 launcher 完全相同的 argv 起 tmux 会话，调 `get_models` 对比 terminal 里 `pi-clean` 启的会话：
+
+| | 模型数 | provider 分布 |
+|---|---|---|
+| pane（新配置） | 31 | anthropic 14 / openai-codex 6 / dashscope 8 / azure-okx 3 |
+| terminal（pi-clean） | 31 | 完全相同 |
+
+pane 进程环境核对：`HF_TOKEN`/`AZURE_OPENAI_API_KEY` 缺失（被 `env -u` 移除）、`DASHSCOPE_API_KEY`/`AZURE_GPT4O_API_KEY` 到位。
+（对比修前的 dashboard pane：134 个模型，多 huggingface 75 + azure-openai-responses 39。）

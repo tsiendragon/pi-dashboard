@@ -10,8 +10,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LivePiLauncher, paneEnvironment } from '../live-sessions/launcher.js'
+import { LivePiLauncher, paneEnvironment, paneLaunchArgv } from '../live-sessions/launcher.js'
 import { sanitizeTmuxSession } from '../tmux-sessions.js'
+import { parseLiveSessionConfig } from '../live-sessions/config.js'
 
 function summary(over = {}) {
   return {
@@ -192,6 +193,85 @@ async function realpathOr(p) {
   const { realpath } = await import('fs/promises')
   return realpath(p)
 }
+
+describe('configured launcher (pi-clean style wrapper)', () => {
+  let dir, app
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'live-launch-cfg-'))
+    app = join(dir, 'app')
+    mkdirSync(app)
+  })
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  const startWith = async (launch) => {
+    const registry = registeringRegistry([], [summary({ canonicalCwd: app, processInstanceId: 'pi-new', sessionId: 'session-new' })])
+    const { launcher, created } = makeLauncher({ roots: [dir], registry, over: { launch } })
+    await launcher.start({ cwd: app, title: 'T' })
+    return created[0].options
+  }
+
+  it('runs the configured wrapper and appends the dashboard arguments after its own', async () => {
+    const options = await startWith({ command: '/home/u/.local/bin/pi-clean', args: ['--goal-continuation'], unsetEnv: [] })
+    expect(options.command).toBe('/home/u/.local/bin/pi-clean')
+    expect(options.args).toEqual(['--goal-continuation', '--name', 'T'])
+  })
+
+  it('removes the configured credentials with env -u instead of blanking them', async () => {
+    const options = await startWith({
+      command: '/home/u/.local/bin/pi-clean',
+      args: [],
+      unsetEnv: ['HF_TOKEN', 'AZURE_OPENAI_API_KEY'],
+    })
+    expect(options.command).toBe('env')
+    expect(options.args).toEqual(['-u', 'HF_TOKEN', '-u', 'AZURE_OPENAI_API_KEY', '/home/u/.local/bin/pi-clean', '--name', 'T'])
+  })
+
+  it('falls back to the plain pi launcher when nothing is configured', async () => {
+    const options = await startWith(undefined)
+    expect(options.command).toBe('/usr/bin/pi')
+    expect(options.args).toEqual(['--name', 'T'])
+  })
+})
+
+describe('parseLiveSessionConfig launch section', () => {
+  it('defaults to no wrapper, no extra args and no unset list', () => {
+    const cfg = parseLiveSessionConfig({ enabled: true, roots: ['/tmp'] })
+    expect(cfg.launch).toEqual({ args: [], unsetEnv: [] })
+  })
+
+  it('reads the wrapper, its args and the unset list', () => {
+    const cfg = parseLiveSessionConfig({
+      roots: ['/tmp'],
+      launch: {
+        command: '  /home/u/.local/bin/pi-clean  ',
+        args: ['--goal-continuation', 42],
+        unsetEnv: ['HF_TOKEN', 'HF_TOKEN', 'BAD NAME', 'AZURE_OPENAI_API_KEY'],
+      },
+    })
+    expect(cfg.launch).toEqual({
+      command: '/home/u/.local/bin/pi-clean',
+      args: ['--goal-continuation'],
+      unsetEnv: ['HF_TOKEN', 'AZURE_OPENAI_API_KEY'],
+    })
+  })
+
+  it('ignores a blank command and a non-object launch block', () => {
+    expect(parseLiveSessionConfig({ roots: ['/tmp'], launch: { command: '   ' } }).launch.command).toBeUndefined()
+    expect(parseLiveSessionConfig({ roots: ['/tmp'], launch: 'pi-clean' }).launch).toEqual({ args: [], unsetEnv: [] })
+  })
+})
+
+describe('paneLaunchArgv', () => {
+  it('leaves argv untouched without an unset list', () => {
+    expect(paneLaunchArgv({ command: 'pi', args: ['--name', 'x'], unsetEnv: [] }))
+      .toEqual({ command: 'pi', args: ['--name', 'x'] })
+  })
+
+  it('prefixes env -u for every unset variable', () => {
+    expect(paneLaunchArgv({ command: 'pi-clean', args: ['--name', 'x'], unsetEnv: ['A', 'B'] }))
+      .toEqual({ command: 'env', args: ['-u', 'A', '-u', 'B', 'pi-clean', '--name', 'x'] })
+  })
+})
 
 describe('LivePiLauncher.stop', () => {
   it('shuts the legacy manager down but never kills tmux sessions', async () => {

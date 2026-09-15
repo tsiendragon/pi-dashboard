@@ -2,6 +2,24 @@ import path from 'path'
 
 export type LiveSessionClaimMode = 'manual' | 'on-first-input'
 
+/**
+ * How a dashboard-started live Pi is launched inside its tmux pane.
+ *
+ * `command` exists so the pane can go through the user's own wrapper (for
+ * example a `pi-clean` script that unsets provider credentials, disables
+ * context files and appends a system prompt). The dashboard must not copy that
+ * logic: the wrapper is the single source of truth, and the dashboard only
+ * appends its own `--name/--model/--thinking` after `args`.
+ */
+export interface LivePiLaunchConfig {
+  /** Pane command. Defaults to the `pi` launcher on PATH. */
+  command?: string
+  /** Arguments placed before the dashboard's own arguments. */
+  args: string[]
+  /** Variables really removed from the pane env (`env -u`), not merely blanked. */
+  unsetEnv: string[]
+}
+
 export interface LiveSessionConfig {
   enabled: boolean
   roots: string[]
@@ -10,6 +28,7 @@ export interface LiveSessionConfig {
   leaseMs: number
   disconnectGraceMs: number
   snapshotEntryLimit: number
+  launch: LivePiLaunchConfig
 }
 
 export const DEFAULT_LIVE_SESSION_CONFIG: LiveSessionConfig = {
@@ -20,6 +39,7 @@ export const DEFAULT_LIVE_SESSION_CONFIG: LiveSessionConfig = {
   leaseMs: 30_000,
   disconnectGraceMs: 15_000,
   snapshotEntryLimit: 200,
+  launch: { args: [], unsetEnv: [] },
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -28,6 +48,19 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
   return Number.isInteger(value) && Number(value) >= min && Number(value) <= max ? Number(value) : fallback
+}
+
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+function parseLaunch(value: unknown): LivePiLaunchConfig {
+  const input = record(value)
+  if (!input) return { args: [], unsetEnv: [] }
+  const command = typeof input.command === 'string' && input.command.trim() ? input.command.trim() : undefined
+  const args = Array.isArray(input.args) ? input.args.filter((arg): arg is string => typeof arg === 'string') : []
+  const unsetEnv = Array.isArray(input.unsetEnv)
+    ? [...new Set(input.unsetEnv.filter((name): name is string => typeof name === 'string' && ENV_NAME_RE.test(name)))]
+    : []
+  return { ...(command ? { command } : {}), args, unsetEnv }
 }
 
 export function parseLiveSessionConfig(value: unknown): LiveSessionConfig {
@@ -51,5 +84,6 @@ export function parseLiveSessionConfig(value: unknown): LiveSessionConfig {
     leaseMs: boundedInteger(input.leaseMs, DEFAULT_LIVE_SESSION_CONFIG.leaseMs, 10_000, 120_000),
     disconnectGraceMs: boundedInteger(input.disconnectGraceMs, DEFAULT_LIVE_SESSION_CONFIG.disconnectGraceMs, 5_000, 60_000),
     snapshotEntryLimit: boundedInteger(input.snapshotEntryLimit, DEFAULT_LIVE_SESSION_CONFIG.snapshotEntryLimit, 20, 500),
+    launch: parseLaunch(input.launch),
   }
 }

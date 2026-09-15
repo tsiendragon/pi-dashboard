@@ -12,6 +12,7 @@ import {
   type CreateTmuxSessionOptions,
 } from '../tmux-sessions.js'
 import { LiveSessionPathPolicy } from './path-policy.js'
+import type { LivePiLaunchConfig } from './config.js'
 
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
@@ -54,6 +55,8 @@ export interface LivePiLauncherOptions {
   killSession?: (name: string) => void
   panePid?: (fullName: string) => number | undefined
   sessionExists?: (fullName: string) => boolean
+  /** Wrapper/args/unset list, so a pane can mirror the user's terminal launcher. */
+  launch?: LivePiLaunchConfig
   piCommand?: string
   registrationTimeoutMs?: number
   pollIntervalMs?: number
@@ -134,25 +137,30 @@ export class LivePiLauncher {
   }
 
   /**
-   * Create the pane under a name that is definitely unused. Reusing an existing
-   * `pi-dash-*` name would attach the live row to somebody else's Pi and — on
-   * the registration timeout — kill it.
+   * Build the pane's argv.
+   *
+   * `unsetEnv` is applied with `env -u` instead of `tmux -e VAR=`: an empty value
+   * is not the same thing as an absent one, and provider detection can treat
+   * "defined but blank" differently from "missing".
    */
   private createFreshSession(cwd: string, title: string, options: LivePiStartOptions): string {
     const args = [
+      ...(this.options.launch?.args ?? []),
       ...(options.modelProvider && options.modelId ? ['--model', `${options.modelProvider}/${options.modelId}`] : []),
       ...(options.thinkingLevel ? ['--thinking', options.thinkingLevel] : []),
       '--name', title,
     ]
     const env = paneEnvironment()
-    const command = this.options.piCommand ?? resolvePiCommand()
+    const command = this.options.launch?.command || this.options.piCommand || resolvePiCommand()
+    const unset = this.options.launch?.unsetEnv ?? []
+    const launch = paneLaunchArgv({ command, args, unsetEnv: unset })
     let lastError: unknown
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const name = `live-${randomUUID().slice(0, 8)}`
       const fullName = `pi-dash-${name}`
       if (this.sessionExists(fullName)) continue
       try {
-        return this.createSession(name, { command, cwd, args, env })
+        return this.createSession(name, { ...launch, cwd, env })
       } catch (error) {
         const code = (error as NodeJS.ErrnoException)?.code
         if (code === 'ENOENT') throw new Error('tmux_unavailable: tmux is not installed or not on PATH')
@@ -201,4 +209,14 @@ export function paneEnvironment(): Record<string, string> {
     PI_DASH_BRIDGE_SOCKET: '',
     PI_DASH_BRIDGE_TOKEN: '',
   }
+}
+
+/**
+ * Pane argv for the configured launcher, applying `env -u` for every variable
+ * that must be absent rather than blank.
+ */
+export function paneLaunchArgv(input: { command: string; args: readonly string[]; unsetEnv: readonly string[] }): { command: string; args: string[] } {
+  if (!input.unsetEnv.length) return { command: input.command, args: [...input.args] }
+  const unset = input.unsetEnv.flatMap(name => ['-u', name])
+  return { command: 'env', args: [...unset, input.command, ...input.args] }
 }
