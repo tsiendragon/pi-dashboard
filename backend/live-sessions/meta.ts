@@ -15,6 +15,12 @@ import { dirname } from 'node:path'
 export interface LiveSessionMeta {
   tags: string[]
   pinned: boolean
+  /**
+   * Namespaced tmux session hosting this live Pi (`pi-dash-live-xxxxxxxx`),
+   * written only by the launcher. Present ⇒ the session can be reached from a
+   * terminal (`tmux attach -t …`) and can be closed by killing that session.
+   */
+  tmux?: string
   updatedAt: string
 }
 
@@ -46,10 +52,12 @@ function normalizeEntry(value: unknown): LiveSessionMeta | undefined {
   const record = value as Record<string, unknown>
   const tags = normalizeTags(record.tags)
   const pinned = record.pinned === true
-  if (!tags.length && !pinned) return undefined
+  const tmux = typeof record.tmux === 'string' && record.tmux.trim() ? record.tmux.trim().slice(0, 128) : undefined
+  if (!tags.length && !pinned && !tmux) return undefined
   return {
     tags,
     pinned,
+    ...(tmux ? { tmux } : {}),
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : new Date().toISOString(),
   }
 }
@@ -96,17 +104,22 @@ export class LiveSessionMetaStore {
   /**
    * Merge a partial update for one session. `null`/`[]` clears the field; an
    * entry that ends up empty is removed so the file does not accumulate ghosts.
+   * `tmux` is machine-written (launcher only) and never comes from the browser.
    */
-  async update(sessionId: string, patch: { tags?: unknown; pinned?: unknown }): Promise<LiveSessionMeta> {
+  async update(sessionId: string, patch: { tags?: unknown; pinned?: unknown; tmux?: unknown }): Promise<LiveSessionMeta> {
     await this.start()
     if (!sessionId) throw new Error('session_id_required')
     const current = this.meta[sessionId] || { tags: [], pinned: false, updatedAt: new Date().toISOString() }
+    const tmux = Object.prototype.hasOwnProperty.call(patch, 'tmux')
+      ? (typeof patch.tmux === 'string' && patch.tmux.trim() ? patch.tmux.trim().slice(0, 128) : undefined)
+      : current.tmux
     const next: LiveSessionMeta = {
       tags: Object.prototype.hasOwnProperty.call(patch, 'tags') ? normalizeTags(patch.tags) : current.tags,
       pinned: Object.prototype.hasOwnProperty.call(patch, 'pinned') ? patch.pinned === true : current.pinned,
+      ...(tmux ? { tmux } : {}),
       updatedAt: new Date().toISOString(),
     }
-    if (next.tags.length || next.pinned) this.meta[sessionId] = next
+    if (next.tags.length || next.pinned || next.tmux) this.meta[sessionId] = next
     else delete this.meta[sessionId]
     await this.persist()
     return next
