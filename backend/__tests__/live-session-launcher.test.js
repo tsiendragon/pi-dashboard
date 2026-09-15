@@ -7,7 +7,7 @@
  * asserted without touching a real tmux server.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { LivePiLauncher, paneEnvironment } from '../live-sessions/launcher.js'
@@ -150,6 +150,23 @@ describe('LivePiLauncher.start', () => {
     const registry = { list: () => [] }
     const { launcher, created } = makeLauncher({ roots: [dir], registry })
     await expect(launcher.start({ cwd: tmpdir() })).rejects.toThrow(/outside configured roots/)
+    expect(created).toEqual([])
+  })
+
+  it('names the real problem when the cwd is wrong', async () => {
+    const registry = { list: () => [] }
+    const { launcher, created } = makeLauncher({ roots: [dir], registry })
+    const missing = join(dir, 'gone')
+    await expect(launcher.start({ cwd: missing })).rejects.toThrow(new RegExp(`cwd does not exist: ${missing}`))
+
+    const file = join(dir, 'app', 'not-a-dir.txt')
+    writeFileSync(file, 'x')
+    await expect(launcher.start({ cwd: file })).rejects.toThrow(/cwd is not a directory/)
+
+    const outside = join(dir, '..')
+    await expect(launcher.start({ cwd: outside })).rejects.toThrow(/cwd is outside configured roots: .* is not under /)
+
+    await expect(launcher.start({ cwd: 'relative/dir' })).rejects.toThrow(/cwd must be absolute/)
     expect(created).toEqual([])
   })
 
