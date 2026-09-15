@@ -5,6 +5,7 @@ import { api } from '../../api/client'
 import type { ModelLike } from '../../utils/modelUtils'
 import { modelFullId, modelLabel } from '../../utils/modelUtils'
 import { SearchInput } from '../../components/ui'
+import PathCompleteMenu from '../../components/PathCompleteMenu'
 import { TagChip, TagEditor, RowMenu, type RowMenuItem } from '../../components/sessionMetaUi'
 import { relTime, projectName } from '../../pages/chat/sessionMeta'
 import { liveSessionApi } from './api'
@@ -285,6 +286,9 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
   const [starting, setStarting] = useState(false)
   const [startOpen, setStartOpen] = useState(false)
   const [startCwd, setStartCwd] = useState('')
+  const [startCwdMenuOpen, setStartCwdMenuOpen] = useState(false)
+  const [startCwdCursor, setStartCwdCursor] = useState(0)
+  const startCwdRef = useRef<HTMLInputElement>(null)
   const [startModel, setStartModel] = useState('')
   const [startModels, setStartModels] = useState<(ModelLike & { contextWindow?: number })[]>([])
   const [startModelsLoading, setStartModelsLoading] = useState(false)
@@ -634,7 +638,44 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
         {(startOpen || creating) && <div className="mt-2 space-y-2 rounded-lg border border-border bg-bg p-2">
           {startOpen && <form onSubmit={event => { void startLivePi(event) }} className="space-y-1.5">
             <div className="text-[10px] font-semibold text-accent">启动 Live Pi</div>
-            <input autoFocus value={startCwd} onChange={event => setStartCwd(event.target.value)} placeholder="工作目录，例如 /mnt/workspace/lilong/repos/..." className="w-full rounded border border-border bg-card px-2 py-1 text-[11px] text-text outline-none focus:border-accent" />
+            <input
+              ref={startCwdRef}
+              autoFocus
+              value={startCwd}
+              onChange={event => { setStartCwd(event.target.value); setStartCwdCursor(event.target.selectionStart ?? 0) }}
+              onKeyDown={event => {
+                // Tab drives directory completion, same affordance as the chat
+                // composer. Typing a path that does not exist is the single
+                // most common start failure, so make the valid choices visible.
+                if (event.key === 'Tab' && !event.shiftKey) {
+                  event.preventDefault()
+                  setStartCwdCursor(startCwdRef.current?.selectionStart ?? 0)
+                  setStartCwdMenuOpen(true)
+                } else if (event.key === 'Escape') setStartCwdMenuOpen(false)
+              }}
+              placeholder="工作目录，例如 /mnt/workspace/lilong/repos/...（Tab 补全）"
+              className="w-full rounded border border-border bg-card px-2 py-1 text-[11px] text-text outline-none focus:border-accent"
+            />
+            <div className="text-[10px] leading-[15px] text-muted-strong">
+              必须是<b>已存在</b>的绝对目录（或 <span className="font-mono">~/…</span>），且在白名单根目录内；按 Tab 可补全目录。
+            </div>
+            {startCwdMenuOpen && <PathCompleteMenu
+              input={startCwd}
+              cursorPos={startCwdCursor}
+              anchorRef={startCwdRef}
+              onComplete={(before, completed, after) => {
+                setStartCwd(before + completed + after)
+                setStartCwdMenuOpen(true)
+                setTimeout(() => {
+                  const input = startCwdRef.current
+                  if (!input) return
+                  const pos = before.length + completed.length
+                  input.selectionStart = input.selectionEnd = pos
+                  setStartCwdCursor(pos)
+                }, 0)
+              }}
+              onClose={() => setStartCwdMenuOpen(false)}
+            />}
             <select value={startModel} onChange={event => setStartModel(event.target.value)} disabled={startModelsLoading} className="w-full rounded border border-border bg-card px-2 py-1 text-[11px] text-text outline-none disabled:opacity-60" title="选择启动模型">
               <option value="">{startModelsLoading ? '读取模型列表…' : '默认模型'}</option>
               {startModels.map(model => <option key={modelFullId(model)} value={modelFullId(model)}>{modelLabel(model)} · {modelFullId(model)}</option>)}

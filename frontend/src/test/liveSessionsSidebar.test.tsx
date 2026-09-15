@@ -67,6 +67,9 @@ function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string,
       return ok({ ok: true, groups })
     }
     if (url.startsWith('/api/pty/sessions/') && method === 'DELETE') return ok({ ok: true })
+    if (url.startsWith('/api/path-complete')) {
+      return ok({ dir: '/mnt/workspace/lilong/repos', prefix: '', entries: [{ name: 'pi-dashboard', path: '/mnt/workspace/lilong/repos/pi-dashboard', isDir: true }] })
+    }
     if (url.includes('/commands') && method === 'POST') return ok({ ok: true, result: {} })
     return ok({})
   })
@@ -252,6 +255,23 @@ describe('LiveSessionsList sidebar', () => {
     menuFor('pi 102')
     fireEvent.click(await screen.findByText(/\u21e4 移出「任务A」/))
     await waitFor(() => expect(currentGroups()[0].sessionIds).toEqual([]))
+  })
+
+  // ---- start form (cwd input) ---------------------------------------------
+
+  it('opens the start form with a hint about valid cwds, and completes directories on Tab', async () => {
+    mockFetch()
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTitle('启动一个新的 Live Pi'))
+    const input = screen.getByPlaceholderText(/工作目录/)
+    expect(screen.getByText(/必须是/)).toBeInTheDocument()
+
+    fireEvent.change(input, { target: { value: '/mnt/workspace/lilong/' } })
+    fireEvent.keyDown(input, { key: 'Tab' })
+    // the completion is portaled; the directory entry is what the user picks
+    await waitFor(() => expect(screen.getByText(/pi-dashboard\//)).toBeInTheDocument())
   })
 
   // ---- tmux-first live sessions -------------------------------------------
