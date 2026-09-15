@@ -1,6 +1,11 @@
 # PRD — pi-dashboard LiveSession 用户选择交互（选项 / 审批）支持
 
-- 状态：Draft（待评审）
+> ⚠️ **方案已升级**：本文第 4 节的「最小改动方案（只覆盖 dashboard 自启 RPC 进程）」已被实测否定——
+> 真实需求是「外部 TUI 进程的 option 也能投影到 web livesession，且 TUI 与 web 为平行渠道」。
+> 正确方案为 **Extension UI 请求多通道**，详见：
+> `docs/extension-ui-request-multi-channel-tech-design.md`。本文背景/根因仍有效，实施请以该 tech design 为准。
+
+- 状态：已实现并验证（方案升级为多通道，见上；实施与实测记录以该 tech design 的 §8/§11/§12 为准）
 - 所属仓库：`/mnt/workspace/lilong/repos/pi-dashboard`
 - 依赖版本：`@earendil-works/pi-coding-agent >= 0.84.2`
 
