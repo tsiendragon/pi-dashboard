@@ -71,7 +71,7 @@ const livePiManager = liveSessionConfig.enabled ? new PiManager() : undefined
 // legacy manager is kept so already-running RPC live slots stay reachable and
 // get a graceful shutdown; nothing creates new ones.
 const livePiLauncher = liveSessionConfig.enabled
-  ? new LivePiLauncher({ registry: liveSessionRegistry, roots: liveSessionConfig.roots, manager: livePiManager })
+  ? new LivePiLauncher({ registry: liveSessionRegistry, roots: liveSessionConfig.roots, manager: livePiManager, launch: liveSessionConfig.launch })
   : undefined
 const usageLedger = new UsageLedger()
 void usageLedger.start().catch(error => console.error('[usage] Failed to load ledger:', error))
