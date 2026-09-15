@@ -117,3 +117,34 @@ tmux new-session -d -s pi-dash-smoke1 -c <repo> -e PI_RUNTIME=live -e TERM=xterm
   越界与相对路径的提示里现在会附带**白名单根目录**。
 - 启动表单：cwd 输入框支持 **Tab 目录补全**（复用 `PathCompleteMenu`，与 chat 输入框同一手势），
   并在下方常驻一行提示「必须是已存在的绝对目录（或 `~/…`），且在白名单根目录内」。
+
+## 后续修补 2（用户反馈：新建 session 的模型选项和其他 session 不一样）
+
+实测（在跑着的服务上直接调 `get_models` 比对两个真实 session）：
+
+| session | 模型数 | 多出来的 provider |
+|---|---|---|
+| dashboard 新建（tmux-first） | 134 | huggingface 75、azure-openai-responses 39 |
+| terminal 启动 | 31 | dashscope 8、azure-okx 3 |
+
+原因不是 flags，也不是 shell alias（`pi-clean` 在本机不存在，且 tmux 直接 exec 二进制、**不会经过 shell，任何 alias 都不会生效**），
+而是**环境变量**：tmux 给 pane 的是 **tmux server 的环境**（server 是之前某个进程起的，已经陈旧），
+不是 dashboard 进程的、也不是当前 shell 的。provider 可用性由凭据环境决定，所以两边的模型集合不同。
+实测三份环境互不相同：dashboard 进程有 `DASHSCOPE_API_KEY`/`AZURE_OPENAI_API_KEY`/`HF_TOKEN`/`CLAUDE_CODE_OAUTH_TOKEN`，
+terminal session 有 `DASHSCOPE_API_KEY`/`ANTHROPIC_*`，而 pane 两者都缺一部分。
+
+修法（`backend/tmux-sessions.ts`）：
+
+- `panePassthroughEnv()` 选出要传递的变量名（排除 dashboard 自身接线：`PI_RUNTIME`/`PI_SLOT_KEY`/`PI_SCRIPT`/`PI_DASH_*`、
+  易混淆的 `PI_SESSION_FILE`/`PI_SESSION_ID`、`TMUX*`/`BASH_*`/`npm_*`/`CONDA*` 噪声、`PATH`/`HOME` 等）；
+- `ensureUpdateEnvironment()` 用 tmux 的 **`update-environment`** 把名单与现有值取并集（保留 tmux 自带的
+  `DISPLAY`/`SSH_AUTH_SOCK` 等），值通过 tmux 客户端 socket 传递、**不进命令行**（不泄到 `ps`）；
+  server 不存在时直接跳过（我们自己起 server 时 pane 本来就继承我们的环境），任何失败只告警不阻断建会话；
+- `createTmuxSession()` 默认钉住 `-e PI_RUNTIME=live` 并清空 slot/bridge 变量（dashboard 自己起 server 时 pane 不会拿到 `PI_RUNTIME=dashboard`）。
+
+实测（隔离 tmux server，模拟“已有陈旧 server”的生产场景）：改动前 server 环境无 PROBE 变量 → 改动后新 pane 拿到 2/2，
+tmux 默认项保留，密钥未出现在任何进程 argv。
+
+仍不能自动对齐的：只存在于你**某个终端 shell** 里的变量（如 `ANTHROPIC_BASE_URL`/`ANTHROPIC_MODEL`/`ANTHROPIC_AUTH_TOKEN`）
+不会进 pane；要一致就用带这些变量的 shell 重启 dashboard，或写进 `~/.bashrc`。
+另外 tmux 的 `update-environment` 是**全局选项**，这次会被扩展（默认项保留），属于对 tmux server 的可见副作用。

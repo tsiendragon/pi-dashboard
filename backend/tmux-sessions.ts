@@ -67,15 +67,106 @@ export interface CreateTmuxSessionOptions {
    *  server's inherited environment (the dashboard exports PI_RUNTIME=dashboard,
    *  which would make a pane's Pi silently skip live-session registration). */
   env?: Record<string, string>
+  /** Extra names to carry over from this process's environment (see
+   *  `panePassthroughEnv`). Pass `[]` to skip. */
+  passthroughEnv?: readonly string[]
+}
+
+/**
+ * Environment variables a dashboard-created pane must NOT inherit from the
+ * dashboard process: they either describe the dashboard itself (slot wiring,
+ * runtime flag) or would freeze client-side session details.
+ */
+const PASSTHROUGH_EXCLUSIONS = new Set([
+  '_', 'PWD', 'OLDPWD', 'SHLVL', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'TERM',
+  'HOSTNAME', 'MAIL', 'LANG', 'LS_COLORS', 'EDITOR', 'INIT_CWD', 'LESSOPEN', 'LESSCLOSE', 'COLOR',
+  'NODE', 'NODE_OPTIONS', 'NODE_ENV',
+  'PI_RUNTIME', 'PI_SLOT_KEY', 'PI_SCRIPT', 'PI_DASH_PORT',
+  // Per-session pi state: a brand-new pane must not resume somebody's session.
+  'PI_SESSION_FILE', 'PI_SESSION_ID',
+  'PI_DASH_BRIDGE_SOCKET', 'PI_DASH_BRIDGE_TOKEN',
+])
+
+/** Toolchain noise that says nothing about how the Pi should behave. */
+const PASSTHROUGH_PREFIX_EXCLUSIONS = /^(TMUX|BASH_|PI_DASH_|npm_|CONDA|_CE_|_CONDA)/
+
+/**
+ * Env var names to copy from the dashboard process into a new pane.
+ *
+ * Why: tmux gives a pane the **tmux server's** environment, not the client's.
+ * The dashboard therefore used to hand panes a stale environment (from whenever
+ * the tmux server was started), which silently changed which providers/models a
+ * Pi could reach — dashboard-created sessions showed a different model list than
+ * terminal-started ones. Copying the dashboard's own environment makes a pane
+ * behave like the dashboard slots, which are spawned with `...process.env`.
+ */
+export function panePassthroughEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+  return Object.keys(env)
+    .filter(key => !PASSTHROUGH_EXCLUSIONS.has(key))
+    .filter(key => !PASSTHROUGH_PREFIX_EXCLUSIONS.test(key))
+    .sort()
+}
+
+/** Read the names currently listed in tmux's global `update-environment`. */
+export function readUpdateEnvironment(run: TmuxRunner = defaultRunner): string[] {
+  try {
+    const out = run(['show-options', '-g', 'update-environment'])
+    return out
+      .split('\n')
+      .map(line => line.trim())
+      .map(line => line.replace(/^update-environment(\[\d+\])?\s+/, ''))
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Make tmux copy `names` from the client environment into new sessions.
+ *
+ * `update-environment` is how the values travel: they go over the tmux client
+ * socket, never through a command line, so secrets do not appear in `ps`. The
+ * option is global, so the list is unioned with whatever is already there
+ * (tmux's own defaults such as `SSH_AUTH_SOCK` must survive) and written only
+ * when it actually changes.
+ */
+export function ensureUpdateEnvironment(names: readonly string[], run: TmuxRunner = defaultRunner): void {
+  if (!names.length) return
+  try {
+    // A readable option means a server is already running; a server we start
+    // ourselves hands our own environment to its panes anyway. (A tmux server
+    // with no sessions exits immediately, so there is nothing to configure.)
+    const current = readUpdateEnvironment(run)
+    if (!current.length) return
+    const merged = [...current]
+    for (const name of names) if (!merged.includes(name)) merged.push(name)
+    if (merged.length === current.length) return
+    run(['set-option', '-g', 'update-environment', merged.join(' ')])
+  } catch (error) {
+    // Best effort by design: failing to pass the environment through must never
+    // block session creation.
+    console.warn('[tmux] Could not extend update-environment (pane keeps the tmux server env):', (error as Error).message)
+  }
+}
+
+type TmuxRunner = (argv: string[]) => string
+
+function defaultRunner(argv: string[]): string {
+  return execFileSync('tmux', argv, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] })
 }
 
 /** Create (if absent) a detached tmux session and return its full name. */
 export function createTmuxSession(name: string, options: CreateTmuxSessionOptions = {}): string {
   const fullName = sanitizeTmuxSession(name)
   if (hasTmuxSession(fullName)) return fullName
+  ensureUpdateEnvironment(options.passthroughEnv ?? panePassthroughEnv())
   const argv = ['new-session', '-d', '-s', fullName]
   if (options.cwd) argv.push('-c', options.cwd)
-  for (const [key, value] of Object.entries(options.env || {})) argv.push('-e', `${key}=${value}`)
+  // Always pin the pane's runtime flags: when the dashboard happens to start the
+  // tmux server itself, the pane would otherwise inherit PI_RUNTIME=dashboard and
+  // the Pi inside would silently skip live-session registration.
+  const env = { PI_RUNTIME: 'live', PI_SLOT_KEY: '', PI_DASH_BRIDGE_SOCKET: '', PI_DASH_BRIDGE_TOKEN: '', ...options.env }
+  for (const [key, value] of Object.entries(env)) argv.push('-e', `${key}=${value}`)
   // Command and args go in as separate argv entries: tmux was verified to hand
   // them to the pane verbatim, so titles with spaces need no quoting and never
   // become a shell command.
