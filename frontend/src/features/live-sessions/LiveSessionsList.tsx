@@ -123,6 +123,10 @@ interface RowProps {
   onJoinGroup: (groupId: string) => void
   onLeaveGroup: (groupId: string) => void
   onCopySessionId: () => void
+  /** Namespaced tmux session hosting this Pi; absent for externally started ones. */
+  tmuxSession?: string
+  onCopyTerminalCommand: () => void
+  onCloseSession: () => void
   /** Section this row renders in; drop targets are resolved per block. */
   blockId: string
   dragging: boolean
@@ -162,6 +166,11 @@ function SessionRow(p: RowProps) {
       { label: '⤒ 移到本组顶部', onClick: () => p.onMove('top') } as RowMenuItem,
     ] : []),
     ...(p.moveIndex >= 0 && p.moveIndex < p.moveCount - 1 ? [{ label: '↓ 下移', onClick: () => p.onMove('down') } as RowMenuItem] : []),
+    ...(p.tmuxSession ? [
+      { separator: true } as RowMenuItem,
+      { label: '⧉ 复制终端命令', hint: `tmux attach -t ${p.tmuxSession}`, onClick: p.onCopyTerminalCommand } as RowMenuItem,
+      { label: '⏻ 关闭 session（kill tmux）', hint: `${p.tmuxSession} · Pi 进程会一起结束`, confirmLabel: '再点一次确认关闭', danger: true, onClick: p.onCloseSession } as RowMenuItem,
+    ] : []),
     ...(groupItems.length ? [{ separator: true } as RowMenuItem] : []),
     ...groupItems,
     { separator: true },
@@ -239,6 +248,7 @@ function SessionRow(p: RowProps) {
           {/* line 2 — status · tags · group · location */}
           <div className="flex h-[16px] items-center gap-1 overflow-hidden">
             {p.pinned && <span className="shrink-0 text-[9px] leading-none text-accent" title="已置顶">📌</span>}
+            {p.tmuxSession && <span className="shrink-0 text-[10px] leading-none text-muted" title={`终端可访问：tmux attach -t ${p.tmuxSession}`}>🖥 终端</span>}
             {p.subagent
               ? <span className={`shrink-0 text-[10px] leading-none ${taskStatusClass(p.taskStatus)}`} title={`子 Agent 任务：${taskStatusLabel(p.taskStatus)}`}>{taskStatusEmoji(p.taskStatus)} 子 Agent · {taskStatusLabel(p.taskStatus)}</span>
               : <span className={`shrink-0 text-[10px] leading-none ${tone === 'running' ? 'text-accent' : tone === 'reconnecting' ? 'text-warn' : 'text-muted-strong'}`}>{statusLabel(p.session.status)}</span>}
@@ -538,6 +548,19 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     onJoinGroup: (groupId: string) => void mutateGroups(() => liveSessionApi.addGroupMember(groupId, session.processInstanceId)),
     onLeaveGroup: (groupId: string) => void mutateGroups(() => liveSessionApi.removeGroupMember(groupId, session.sessionId)),
     onCopySessionId: () => { void navigator.clipboard?.writeText(session.sessionId).catch(() => {}) },
+    onCopyTerminalCommand: () => {
+      const tmux = meta[session.sessionId]?.tmux
+      if (tmux) void navigator.clipboard?.writeText(`tmux attach -t ${tmux}`).catch(() => {})
+    },
+    // tmux-first live sessions are closed by killing their tmux session; the Pi
+    // inside it exits with the pane and the sidebar row disappears on its own.
+    onCloseSession: () => {
+      const tmux = meta[session.sessionId]?.tmux
+      if (!tmux) return
+      void liveSessionApi.closeTmuxSession(tmux).then(() => onRefresh?.()).catch(reason => {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      })
+    },
   })
 
   const renderRows = (section: Section) => {
@@ -574,6 +597,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
           up={index >= items.length - 2}
           busy={busy}
           onSelect={() => selectRow(session)}
+          tmuxSession={meta[session.sessionId]?.tmux}
           onToggleTagFilter={tag => setTagFilter(current => current === tag ? null : tag)}
           {...rowHandlers(session)}
         />

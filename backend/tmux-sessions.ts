@@ -1,5 +1,6 @@
 /**
- * Thin tmux session helpers for the web shared terminal.
+ * Thin tmux session helpers for the web shared terminal and for tmux-first live
+ * sessions.
  *
  * All session names are confined to the `pi-dash-` namespace and are passed to
  * tmux as argv (never via a shell string), so a malicious name cannot inject an
@@ -32,6 +33,21 @@ export function resolvePiBin(): string {
   }
 }
 
+/**
+ * Command used to start an interactive Pi inside a tmux pane.
+ *
+ * Deliberately prefers the `pi` launcher on PATH over `PI_SCRIPT`: that variable
+ * is the dashboard's own entry point (a `.js` file, spawned through `node`), not
+ * something a pane shell can execute directly.
+ */
+export function resolvePiCommand(): string {
+  try {
+    const found = execSync('which pi', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    if (found) return found
+  } catch { /* fall through */ }
+  return resolvePiBin()
+}
+
 export function hasTmuxSession(fullName: string): boolean {
   try {
     execFileSync('tmux', ['has-session', '-t', fullName], { stdio: 'ignore' })
@@ -41,15 +57,49 @@ export function hasTmuxSession(fullName: string): boolean {
   }
 }
 
-/** Create (if absent) a detached tmux session running `pi`, and return its full name. */
-export function createTmuxSession(name: string, command?: string): string {
+export interface CreateTmuxSessionOptions {
+  /** Defaults to the `pi` launcher on PATH. */
+  command?: string
+  /** Passed as separate argv entries — tmux does not run them through a shell. */
+  args?: readonly string[]
+  cwd?: string
+  /** Explicit `-e KEY=VALUE` overrides, so callers never depend on the tmux
+   *  server's inherited environment (the dashboard exports PI_RUNTIME=dashboard,
+   *  which would make a pane's Pi silently skip live-session registration). */
+  env?: Record<string, string>
+}
+
+/** Create (if absent) a detached tmux session and return its full name. */
+export function createTmuxSession(name: string, options: CreateTmuxSessionOptions = {}): string {
   const fullName = sanitizeTmuxSession(name)
   if (hasTmuxSession(fullName)) return fullName
-  const cmd = command ?? resolvePiBin()
-  execFileSync('tmux', ['new-session', '-d', '-s', fullName, cmd], {
-    stdio: ['ignore', 'ignore', 'pipe'],
-  })
+  const argv = ['new-session', '-d', '-s', fullName]
+  if (options.cwd) argv.push('-c', options.cwd)
+  for (const [key, value] of Object.entries(options.env || {})) argv.push('-e', `${key}=${value}`)
+  // Command and args go in as separate argv entries: tmux was verified to hand
+  // them to the pane verbatim, so titles with spaces need no quoting and never
+  // become a shell command.
+  argv.push(options.command ?? resolvePiBin(), ...(options.args ? [...options.args] : []))
+  execFileSync('tmux', argv, { stdio: ['ignore', 'ignore', 'pipe'] })
   return fullName
+}
+
+/**
+ * PID of a session's first pane, or undefined when it cannot be read.
+ * Used to confirm that a fresh live session is the Pi we just started (the `pi`
+ * launcher `exec`s its real process, so the pane pid is the Pi pid).
+ */
+export function tmuxPanePid(fullName: string): number | undefined {
+  try {
+    const out = execFileSync('tmux', ['list-panes', '-t', fullName, '-F', '#{pane_pid}'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    const pid = parseInt(out.split('\n')[0]?.trim() || '', 10)
+    return Number.isFinite(pid) ? pid : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** List full names of tmux sessions in the `pi-dash-` namespace. */

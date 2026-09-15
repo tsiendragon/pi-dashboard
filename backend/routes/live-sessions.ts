@@ -196,6 +196,10 @@ export class LiveSessionRoutes {
           ...(typeof body.thinkingLevel === 'string' ? { thinkingLevel: body.thinkingLevel } : {}),
           ...(typeof body.title === 'string' ? { title: body.title } : {}),
         })
+        // The tmux session is the terminal access path and the close handle, so
+        // it is stored with the session (keyed by pi sessionId, like tags/pin).
+        // Machine-written: the HTTP PATCH below never accepts this field.
+        if (result.sessionId) await this.metaStore.update(result.sessionId, { tmux: result.tmuxSession })
         return { ok: true, result }
       })
     })

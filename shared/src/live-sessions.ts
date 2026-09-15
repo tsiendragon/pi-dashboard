@@ -21,13 +21,16 @@ export interface LiveSessionGroup {
 
 /**
  * Browser-side organization metadata for a live Pi session (sidebar tags +
- * pin). Persisted server-side keyed by pi `sessionId`; intentionally kept out
- * of {@link LiveSessionSummary} so the versioned live-session wire protocol is
+ * pin + the tmux session hosting a dashboard-started live Pi). Persisted
+ * server-side keyed by pi `sessionId`; intentionally kept out of
+ * {@link LiveSessionSummary} so the versioned live-session wire protocol is
  * untouched.
  */
 export interface LiveSessionMeta {
   tags: string[]
   pinned: boolean
+  /** Namespaced tmux session (`pi-dash-live-xxxxxxxx`) — terminal access path. */
+  tmux?: string
   updatedAt: string
 }
 

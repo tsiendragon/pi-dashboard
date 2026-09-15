@@ -83,4 +83,8 @@ export const liveSessionApi = {
   command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'input' | 'abort' | 'set_session_name' | 'get_models' | 'set_model' | 'compact' | 'reload' | 'feature_command' | 'answer_ui' }>) => post<{ ok: true; result: unknown }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command },
   ),
+  /** Close a tmux-first live session: kills the tmux session hosting its Pi. */
+  closeTmuxSession: (tmuxSession: string) => fetch(`/api/pty/sessions/${encodeURIComponent(tmuxSession)}`, {
+    method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+  }).then(json<{ ok: true }>),
 }
