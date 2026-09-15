@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LiveSessionGroup, LiveSessionSummary } from '@shared/live-sessions'
 import { displayWorktreePath } from '../../utils/displayPath'
 import { api } from '../../api/client'
@@ -9,7 +9,9 @@ import { TagChip, TagEditor, RowMenu, type RowMenuItem } from '../../components/
 import { relTime, projectName } from '../../pages/chat/sessionMeta'
 import { liveSessionApi } from './api'
 import type { SubagentTaskStatus } from './sessionTitle'
+import { moveInOrder, materializeOrder, resolveDropTarget, sortSessions, type DropTarget } from './sessionOrder'
 import { useLiveSessionMeta } from './useLiveSessionMeta'
+import { useLiveSessionOrder } from './useLiveSessionOrder'
 
 interface LiveSessionsListProps {
   sessions: LiveSessionSummary[]
@@ -47,9 +49,15 @@ function taskStatusClass(status?: SubagentTaskStatus): string {
   return 'text-muted'
 }
 
-function sortSessions(items: LiveSessionSummary[]): LiveSessionSummary[] {
-  return [...items].sort((left, right) => left.startedAt - right.startedAt || left.processInstanceId.localeCompare(right.processInstanceId))
-}
+/** Pointer travel before a press becomes a drag; below it a press is still a
+ *  plain click, so selecting a row keeps working exactly as before. */
+const DRAG_THRESHOLD = 4
+
+/**
+ * Row order is manual now (see `sessionOrder.ts`): a row only moves when the
+ * user drags it. The old `startedAt` sort lived here and made every row below
+ * an exiting session jump up during the workday.
+ */
 
 function isSubagent(session: LiveSessionSummary): boolean {
   return session.role === 'subagent' || !!session.parentSessionId
@@ -115,6 +123,16 @@ interface RowProps {
   onJoinGroup: (groupId: string) => void
   onLeaveGroup: (groupId: string) => void
   onCopySessionId: () => void
+  /** Section this row renders in; drop targets are resolved per block. */
+  blockId: string
+  dragging: boolean
+  dropBefore: boolean
+  dropAfter: boolean
+  onDragStart: (event: React.PointerEvent<HTMLDivElement>) => void
+  onMove: (place: 'up' | 'down' | 'top') => void
+  /** Position inside its block (0-based) and the block size, for the move menu. */
+  moveIndex: number
+  moveCount: number
 }
 
 function SessionRow(p: RowProps) {
@@ -138,6 +156,12 @@ function SessionRow(p: RowProps) {
     { label: '🏷 标签', onClick: () => setTagEditing(true) },
     { separator: true },
     { label: p.pinned ? '📌 取消置顶' : '📌 置顶', onClick: () => p.onPin(!p.pinned) },
+    ...(p.moveCount > 1 ? [{ separator: true } as RowMenuItem] : []),
+    ...(p.moveIndex > 0 ? [
+      { label: '↑ 上移', onClick: () => p.onMove('up') } as RowMenuItem,
+      { label: '⤒ 移到本组顶部', onClick: () => p.onMove('top') } as RowMenuItem,
+    ] : []),
+    ...(p.moveIndex >= 0 && p.moveIndex < p.moveCount - 1 ? [{ label: '↓ 下移', onClick: () => p.onMove('down') } as RowMenuItem] : []),
     ...(groupItems.length ? [{ separator: true } as RowMenuItem] : []),
     ...groupItems,
     { separator: true },
@@ -152,16 +176,20 @@ function SessionRow(p: RowProps) {
 
   return (
     <div className="relative">
+      {p.dropBefore && <div aria-hidden className="pointer-events-none -mb-px h-[2px] rounded-full bg-accent" />}
       <div
         role="button"
         tabIndex={0}
         aria-current={p.active || undefined}
         data-pidash-live-status={tone}
+        data-live-row={p.session.sessionId}
+        data-live-block={p.blockId}
         title={`${p.title}\n${cwd}${branch ? ` · ${branch}` : ''}`}
         onMouseDown={e => e.preventDefault()}
+        onPointerDown={p.onDragStart}
         onClick={p.onSelect}
         onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onSelect() } }}
-        className={`group flex cursor-pointer gap-2 rounded-md px-1.5 py-1.5 transition-colors ${p.depth ? 'ml-4' : ''} ${p.active ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}
+        className={`group flex cursor-pointer gap-2 rounded-md px-1.5 py-1.5 transition-colors ${p.depth ? 'ml-4' : ''} ${p.dragging ? 'opacity-40' : ''} ${p.active ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}
       >
         <span className={`w-[2px] shrink-0 self-stretch rounded-full ${
           tone === 'running' ? 'bg-accent shadow-[0_0_7px_var(--accent-glow)]'
@@ -224,6 +252,7 @@ function SessionRow(p: RowProps) {
           </div>
         </div>
       </div>
+      {p.dropAfter && <div aria-hidden className="pointer-events-none -mt-px h-[2px] rounded-full bg-accent" />}
 
       {tagEditing && <TagEditor tags={p.tags} allTags={p.allTags} onTags={p.onTags} onClose={() => setTagEditing(false)} />}
       {menuOpen && <RowMenu items={items} up={p.up} ariaLabel={`Session actions for ${p.title}`} onClose={() => setMenuOpen(false)} />}
@@ -261,6 +290,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
   const [groupDraft, setGroupDraft] = useState('')
   const [armedGroup, setArmedGroup] = useState<string | null>(null)
   const { meta, allTags, tagCounts, patch, refresh: refreshMeta, error: metaError } = useLiveSessionMeta()
+  const { order, save: saveOrder, reset: resetOrder, error: orderError } = useLiveSessionOrder()
 
   const refreshGroups = useCallback(async () => {
     try {
@@ -357,20 +387,142 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     const pinnedIds = new Set(pinned.map(session => session.processInstanceId))
     const rest = main.filter(session => !pinnedIds.has(session.processInstanceId))
     const out: Section[] = []
-    if (pinned.length) out.push({ id: '__pinned', name: PINNED_SECTION, pinnedSection: true, sessions: sortSessions(pinned) })
+    if (pinned.length) out.push({ id: '__pinned', name: PINNED_SECTION, pinnedSection: true, sessions: sortSessions(pinned, order) })
     for (const group of groups) {
-      out.push({ id: group.id, name: group.name, group, sessions: sortSessions(rest.filter(session => group.sessionIds.includes(session.sessionId))) })
+      out.push({ id: group.id, name: group.name, group, sessions: sortSessions(rest.filter(session => group.sessionIds.includes(session.sessionId)), order) })
     }
-    out.push({ id: '__ungrouped', name: '未分组', sessions: sortSessions(rest.filter(session => !groupOf(session))) })
-    return out
-      .filter(section => section.sessions.length > 0)
-      .sort((left, right) => {
-        if (left.pinnedSection !== right.pinnedSection) return left.pinnedSection ? -1 : 1
-        const leftStarted = left.sessions.length ? Math.min(...left.sessions.map(session => session.startedAt)) : Number.MAX_SAFE_INTEGER
-        const rightStarted = right.sessions.length ? Math.min(...right.sessions.map(session => session.startedAt)) : Number.MAX_SAFE_INTEGER
-        return leftStarted - rightStarted || left.name.localeCompare(right.name)
-      })
-  }, [visible, groups, meta, groupOf])
+    out.push({ id: '__ungrouped', name: '未分组', sessions: sortSessions(rest.filter(session => !groupOf(session)), order) })
+    // Block order is fixed: 置顶 → task groups (creation order) → 未分组. It used
+    // to follow each block's earliest `startedAt`, so a block jumped whenever
+    // one of its sessions exited or restarted.
+    return out.filter(section => section.sessions.length > 0)
+  }, [visible, groups, meta, groupOf, order])
+
+  /** A block's rows without the dragged session — the coordinate system every
+   *  drop index (and the insertion line) is expressed in. */
+  const anchorsFor = useCallback((sectionId: string, excludeSessionId?: string): string[] => {
+    const section = sections.find(candidate => candidate.id === sectionId)
+    if (!section) return []
+    return section.sessions.map(session => session.sessionId).filter(id => id !== excludeSessionId)
+  }, [sections])
+
+  /** Every row currently on screen, in display order — the base a move edits. */
+  const displayedIds = useMemo(() => sections.flatMap(section => section.sessions.map(session => session.sessionId)), [sections])
+
+  // ─────────────────────── drag to reorder ──────────────────────
+  //
+  // A press only becomes a drag after DRAG_THRESHOLD pixels, so clicking a row
+  // to open it still works. Touch deliberately does not start a drag (moving a
+  // finger must keep scrolling the list); the `⋯` menu carries ↑/↓/⤒ there.
+  const [drag, setDrag] = useState<{ sessionId: string; processInstanceId: string } | null>(null)
+  const [dragActive, setDragActive] = useState(false)
+  const [dropTarget, setDropTarget] = useState<DropTarget | undefined>(undefined)
+  const dragOrigin = useRef<{ x: number; y: number } | null>(null)
+  const dragActiveRef = useRef(false)
+  const dropTargetRef = useRef<DropTarget | undefined>(undefined)
+  /** Swallows the single click that follows a drag, and is re-armed on the next press. */
+  const suppressSelect = useRef(false)
+
+  const beginDrag = (session: LiveSessionSummary, event: React.PointerEvent<HTMLDivElement>) => {
+    suppressSelect.current = false
+    if (event.button !== 0 || event.pointerType === 'touch') return
+    if ((event.target as HTMLElement).closest('button, input, textarea, a, [role="menu"], [role="dialog"]')) return
+    dragOrigin.current = { x: event.clientX, y: event.clientY }
+    setDrag({ sessionId: session.sessionId, processInstanceId: session.processInstanceId })
+  }
+
+  /**
+   * Apply one drop: the moved row's position, plus the block it landed in.
+   *
+   * Dropping into a task group re-assigns membership (the server drops the
+   * session from its previous group); dropping into or out of 置顶 toggles the
+   * pin. The order list is written whole, so a cross-block move is one PUT plus
+   * at most one membership call.
+   */
+  const applyDrop = useCallback(async (target: DropTarget | undefined, moved: { sessionId: string; processInstanceId: string }) => {
+    if (!target) return
+    const section = sections.find(candidate => candidate.id === target.sectionId)
+    const session = sessions.find(candidate => candidate.sessionId === moved.sessionId)
+    if (!section || !session) return
+    const anchors = section.sessions.map(item => item.sessionId).filter(id => id !== moved.sessionId)
+    const base = materializeOrder(order, displayedIds)
+    const tasks: Promise<unknown>[] = [saveOrder(moveInOrder(base, moved.sessionId, anchors, target.index))]
+    const pinnedNow = !!meta[moved.sessionId]?.pinned
+    const currentGroup = groupOf(session)
+    if (section.pinnedSection) {
+      if (!pinnedNow) tasks.push(patch(session.processInstanceId, session.sessionId, { pinned: true }))
+    } else {
+      if (pinnedNow) tasks.push(patch(session.processInstanceId, session.sessionId, { pinned: false }))
+      if (section.group && currentGroup?.id !== section.group.id) {
+        const groupId = section.group.id
+        tasks.push(mutateGroups(() => liveSessionApi.addGroupMember(groupId, session.processInstanceId)))
+      } else if (!section.group && currentGroup) {
+        const groupId = currentGroup.id
+        tasks.push(mutateGroups(() => liveSessionApi.removeGroupMember(groupId, session.sessionId)))
+      }
+    }
+    await Promise.all(tasks)
+  }, [sections, sessions, order, displayedIds, meta, groupOf, patch, saveOrder, mutateGroups])
+
+  useEffect(() => {
+    if (!drag) return
+    const onMove = (event: PointerEvent) => {
+      const origin = dragOrigin.current
+      if (!dragActiveRef.current && origin && Math.hypot(event.clientX - origin.x, event.clientY - origin.y) >= DRAG_THRESHOLD) {
+        dragActiveRef.current = true
+        setDragActive(true)
+      }
+      if (!dragActiveRef.current) return
+      const element = typeof document.elementFromPoint === 'function' ? document.elementFromPoint(event.clientX, event.clientY) : null
+      const next = resolveDropTarget(element, node => node.getBoundingClientRect(), event.clientY, id => anchorsFor(id, drag.sessionId))
+      const previous = dropTargetRef.current
+      if (previous?.sectionId === next?.sectionId && previous?.index === next?.index) return
+      dropTargetRef.current = next
+      setDropTarget(next)
+    }
+    const finish = (cancelled: boolean) => {
+      const dropped = dropTargetRef.current
+      const moved = drag
+      const wasDragging = dragActiveRef.current
+      dragActiveRef.current = false
+      dragOrigin.current = null
+      dropTargetRef.current = undefined
+      setDragActive(false)
+      setDropTarget(undefined)
+      setDrag(null)
+      if (!wasDragging || cancelled) return
+      suppressSelect.current = true
+      void applyDrop(dropped, moved)
+    }
+    const onUp = () => finish(false)
+    const onCancel = () => finish(true)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+    }
+  }, [drag, anchorsFor, applyDrop])
+
+  /** Menu fallback for touch/keyboard: move one slot inside the row's own block. */
+  const moveRow = (session: LiveSessionSummary, place: 'up' | 'down' | 'top') => {
+    const section = sections.find(candidate => candidate.sessions.some(item => item.sessionId === session.sessionId))
+    if (!section) return
+    const list = section.sessions.map(item => item.sessionId)
+    const current = list.indexOf(session.sessionId)
+    if (current < 0) return
+    const anchors = list.filter(id => id !== session.sessionId)
+    const index = place === 'top' ? 0 : place === 'up' ? current - 1 : current + 1
+    if (index < 0 || index > anchors.length) return
+    void saveOrder(moveInOrder(materializeOrder(order, displayedIds), session.sessionId, anchors, index))
+  }
+
+  const selectRow = (session: LiveSessionSummary) => {
+    if (suppressSelect.current) { suppressSelect.current = false; return }
+    onSelect(session.processInstanceId)
+  }
 
   const groupSummary = (items: LiveSessionSummary[]): string => {
     const waiting = items.filter(session => session.status === 'idle').length
@@ -388,36 +540,49 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     onCopySessionId: () => { void navigator.clipboard?.writeText(session.sessionId).catch(() => {}) },
   })
 
-  const renderRows = (items: LiveSessionSummary[]) => items.map((session, index) => {
-    const group = groupOf(session)
-    const subagent = isSubagent(session)
-    return (
-      <SessionRow
-        key={session.processInstanceId}
-        session={session}
-        title={sessionTitle(session, sessionTitles)}
-        depth={0}
-        active={activeId === session.processInstanceId}
-        groupName={group?.name}
-        childCount={childrenByParent.get(session.sessionId) || 0}
-        subagent={subagent}
+  const renderRows = (section: Section) => {
+    const items = section.sessions
+    const anchors = items.map(session => session.sessionId).filter(id => id !== drag?.sessionId)
+    const target = dropTarget?.sectionId === section.id ? dropTarget.index : undefined
+    return items.map((session, index) => {
+      const group = groupOf(session)
+      const subagent = isSubagent(session)
+      return (
+        <SessionRow
+          key={session.processInstanceId}
+          session={session}
+          title={sessionTitle(session, sessionTitles)}
+          depth={0}
+          blockId={section.id}
+          dragging={dragActive && drag?.sessionId === session.sessionId}
+          dropBefore={target !== undefined && anchors.indexOf(session.sessionId) === target}
+          dropAfter={target !== undefined && target === anchors.length && index === items.length - 1}
+          onDragStart={event => beginDrag(session, event)}
+          onMove={place => moveRow(session, place)}
+          moveIndex={index}
+          moveCount={items.length}
+          active={activeId === session.processInstanceId}
+          groupName={group?.name}
+          childCount={childrenByParent.get(session.sessionId) || 0}
+          subagent={subagent}
         taskStatus={subagent && session.subagentWorkId ? subagentStatuses[session.subagentWorkId] : undefined}
-        tags={meta[session.sessionId]?.tags || []}
-        pinned={!!meta[session.sessionId]?.pinned}
-        tagFilter={tagFilter}
-        allTags={allTags}
-        groups={groups}
-        up={index >= items.length - 2}
-        busy={busy}
-        onSelect={() => onSelect(session.processInstanceId)}
-        onToggleTagFilter={tag => setTagFilter(current => current === tag ? null : tag)}
-        {...rowHandlers(session)}
-      />
-    )
-  })
+          tags={meta[session.sessionId]?.tags || []}
+          pinned={!!meta[session.sessionId]?.pinned}
+          tagFilter={tagFilter}
+          allTags={allTags}
+          groups={groups}
+          up={index >= items.length - 2}
+          busy={busy}
+          onSelect={() => selectRow(session)}
+          onToggleTagFilter={tag => setTagFilter(current => current === tag ? null : tag)}
+          {...rowHandlers(session)}
+        />
+      )
+    })
+  }
 
   return (
-    <aside className="pidash-sidebar flex w-full shrink-0 flex-col overflow-y-auto border-r border-border bg-bg-accent md:w-[320px]">
+    <aside className={`pidash-sidebar flex w-full shrink-0 flex-col overflow-y-auto border-r border-border bg-bg-accent md:w-[320px] ${dragActive ? 'select-none' : ''}`}>
       <div className="sticky top-0 z-10 border-b border-border bg-bg-accent px-3 py-2.5">
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1 text-[12px] font-semibold uppercase tracking-[.05em] text-muted">
@@ -483,7 +648,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
       ) : sections.length === 0 ? (
         <div className="p-5 text-[12px] text-muted-strong">没有匹配的 session{filter || tagFilter ? '（清除筛选试试）' : ''}</div>
       ) : sections.map(section => (
-        <section key={section.id} className="border-b border-border/60">
+        <section key={section.id} data-live-block={section.id} className="border-b border-border/60">
           <div className="flex items-center gap-1 px-2.5 pb-1 pt-2">
             <span className={`text-[8px] transition-transform ${section.pinnedSection ? 'text-accent' : 'text-muted-strong'}`}>▾</span>
             {section.pinnedSection && <span className="text-[9px] leading-none text-accent">📌</span>}
@@ -521,12 +686,24 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
             </>}
           </div>
           <div className="px-2.5 pb-1 text-[10px] text-muted-strong">{section.group || section.pinnedSection ? groupSummary(section.sessions) : `${section.sessions.length} 个 session`}</div>
-          <div className="pb-1.5">{renderRows(section.sessions)}</div>
+          <div className="pb-1.5">{renderRows(section)}</div>
         </section>
       ))}
 
+      <div className="mt-auto flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-[10px] text-muted-strong">
+        <span title="行位置来自手动拖动，不会因活跃时间或上线状态自行变化">⇅ 排序：手动</span>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void resetOrder()}
+          className="ml-auto shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+          title="清空手动顺序，行位置回到按启动时间排列"
+        >↺ 恢复自动排序</button>
+        {orderError !== undefined && <span className="shrink-0 text-danger" title={orderError}>顺序同步失败</span>}
+      </div>
+
       <div className="px-3 py-2 text-[10px] text-muted-strong">
-        悬停 session 点 ⋯：重命名 / 标签 / 置顶 / 加入任务
+        拖动行可调顺序，拖到别的分组即改归属；触屏用 ⋯ 里的 ↑ ↓
         {metaError !== undefined && <button type="button" className="ml-1 text-danger underline" onClick={() => void refreshMeta()}>· 标签同步失败，点击重试</button>}
       </div>
     </aside>

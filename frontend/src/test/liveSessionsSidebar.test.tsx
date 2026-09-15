@@ -24,10 +24,11 @@ function session(processInstanceId: string, pid: number, over: Partial<LiveSessi
 }
 
 /** Route-mocked fetch for the live-session REST surface; records every call. */
-function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string, LiveSessionMeta> } = {}) {
+function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string, LiveSessionMeta>; order?: string[] } = {}) {
   const calls: Call[] = []
   let groups = initial.groups || []
   let meta = initial.meta || {}
+  let order = initial.order || []
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const method = (init?.method || 'GET').toUpperCase()
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
@@ -35,6 +36,11 @@ function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string,
     const ok = (payload: unknown) => ({ ok: true, status: 200, json: async () => payload })
 
     if (url === '/api/live-session-groups' && method === 'GET') return ok({ groups })
+    if (url === '/api/live-session-order' && method === 'GET') return ok({ order })
+    if (url === '/api/live-session-order' && method === 'PUT') {
+      order = Array.isArray((body as { order?: unknown })?.order) ? (body as { order: string[] }).order : []
+      return ok({ ok: true, order })
+    }
     if (url === '/api/live-session-meta' && method === 'GET') return ok({ meta })
     if (method === 'PATCH' && url.startsWith('/api/live-sessions/') && url.endsWith('/meta')) {
       const sessionId = `session-${url.split('/')[3]}`
@@ -64,7 +70,7 @@ function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string,
     return ok({})
   })
   vi.stubGlobal('fetch', fetchMock)
-  return { calls, groups: () => groups, meta: () => meta }
+  return { calls, groups: () => groups, meta: () => meta, order: () => order }
 }
 
 const menuFor = (title: string) => {
@@ -180,5 +186,70 @@ describe('LiveSessionsList sidebar', () => {
     fireEvent.change(input, { target: { value: '冷启动分析' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(calls.some(c => c.url.endsWith('/commands') && JSON.stringify(c.body) === JSON.stringify({ command: { type: 'set_session_name', name: '冷启动分析' } }))).toBe(true))
+  })
+
+  // ---- manual order (docs/live-session-sidebar-order-plan.md) ---------------
+
+  const renderedOrder = (container: HTMLElement) =>
+    [...container.querySelectorAll('[data-live-row]')].map(el => el.getAttribute('data-live-row'))
+
+  it('renders the stored manual order instead of startedAt', async () => {
+    mockFetch({ order: ['session-pid-b', 'session-pid-a'] })
+    const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-b', 102)]} onSelect={() => {}} />)
+    await waitFor(() => expect(renderedOrder(container)).toEqual(['session-pid-b', 'session-pid-a']))
+  })
+
+  it('keeps sessions that were never moved at the tail of their block', async () => {
+    mockFetch({ order: ['session-pid-c'] })
+    const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-b', 102), session('pid-c', 103)]} onSelect={() => {}} />)
+    await waitFor(() => expect(renderedOrder(container)).toEqual(['session-pid-c', 'session-pid-a', 'session-pid-b']))
+  })
+
+  it('moves a row up through the ⋯ menu and persists the whole order', async () => {
+    const { calls, order } = mockFetch()
+    const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-b', 102)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('pi 102')).toBeInTheDocument())
+    menuFor('pi 102')
+    fireEvent.click(await screen.findByText('↑ 上移'))
+    await waitFor(() => expect(order()).toEqual(['session-pid-b', 'session-pid-a']))
+    expect(renderedOrder(container)).toEqual(['session-pid-b', 'session-pid-a'])
+    expect(calls.some(c => c.url === '/api/live-session-order' && c.method === 'PUT')).toBe(true)
+  })
+
+  it('moves a row to the top of its block, and hides boundary moves', async () => {
+    const { order } = mockFetch()
+    render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-b', 102)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('pi 102')).toBeInTheDocument())
+
+    // the first row cannot move up
+    menuFor('pi 101')
+    expect(screen.queryByText('↑ 上移')).not.toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    menuFor('pi 102')
+    fireEvent.click(await screen.findByText(/移到本组顶部/))
+    await waitFor(() => expect(order()).toEqual(['session-pid-b', 'session-pid-a']))
+  })
+
+  it('restores automatic ordering from the footer', async () => {
+    const { calls, order } = mockFetch({ order: ['session-pid-b', 'session-pid-a'] })
+    const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-b', 102)]} onSelect={() => {}} />)
+    await waitFor(() => expect(renderedOrder(container)).toEqual(['session-pid-b', 'session-pid-a']))
+    fireEvent.click(screen.getByText('↺ 恢复自动排序'))
+    await waitFor(() => expect(order()).toEqual([]))
+    await waitFor(() => expect(renderedOrder(container)).toEqual(['session-pid-a', 'session-pid-b']))
+    expect(calls.filter(c => c.url === '/api/live-session-order' && c.method === 'PUT')).toHaveLength(1)
+  })
+
+  it('renders a task group block above 未分组 and keeps membership edits working', async () => {
+    const groups: LiveSessionGroup[] = [{ id: 'g1', name: '任务A', sessionIds: ['session-pid-b'], createdAt: '', updatedAt: '' }]
+    const { groups: currentGroups } = mockFetch({ groups })
+    const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-b', 102)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByTitle('任务分组：任务A')).toBeInTheDocument())
+    await waitFor(() => expect(renderedOrder(container)).toEqual(['session-pid-b', 'session-pid-a']))
+
+    menuFor('pi 102')
+    fireEvent.click(await screen.findByText('⇤ 移出「任务A」'))
+    await waitFor(() => expect(currentGroups()[0].sessionIds).toEqual([]))
   })
 })

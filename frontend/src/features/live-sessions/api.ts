@@ -44,6 +44,11 @@ export const liveSessionApi = {
   patchMeta: (processInstanceId: string, patch: { tags?: string[]; pinned?: boolean }) => fetch(`/api/live-sessions/${encodeURIComponent(processInstanceId)}/meta`, {
     method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
   }).then(json<{ ok: true; meta: LiveSessionMeta; all: Record<string, LiveSessionMeta> }>).then(result => result.all),
+  listOrder: () => fetch('/api/live-session-order', { credentials: 'same-origin' })
+    .then(json<{ order?: string[] }>).then(result => Array.isArray(result.order) ? result.order : []),
+  saveOrder: (order: string[]) => fetch('/api/live-session-order', {
+    method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order }),
+  }).then(json<{ ok: true; order?: string[] }>).then(result => Array.isArray(result.order) ? result.order : []),
   listGroups: () => fetch('/api/live-session-groups', { credentials: 'same-origin' })
     .then(json<{ groups: LiveSessionGroup[] }>)
     .then(result => result.groups),
