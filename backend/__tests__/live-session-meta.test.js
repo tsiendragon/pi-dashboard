@@ -102,14 +102,14 @@ describe('live-session meta HTTP routes', () => {
     return registry
   }
 
-  async function serve() {
+  async function serve(options = {}) {
     const base = await mkdtemp(join(tmpdir(), 'pi-live-meta-'))
     const app = express()
     app.use(express.json())
     const registry = stubRegistry()
     const auth = new LiveSessionBrowserAuth({ tokenPath: join(base, 'live-control-token') })
     const metaStore = new LiveSessionMetaStore(join(base, 'live-session-meta.json'))
-    const routes = createLiveSessionRoutes({ app, registry, auth, metaStore })
+    const routes = createLiveSessionRoutes({ app, registry, auth, metaStore, ...options })
     await routes.start()
     const server = app.listen(0, '127.0.0.1')
     await new Promise(resolve => server.once('listening', resolve))
@@ -154,6 +154,33 @@ describe('live-session meta HTTP routes', () => {
       const after = await (await fetch(`${srv.origin}/api/live-session-meta`, { headers: { cookie: srv.cookie } })).json()
       expect(after.meta['session-a']).toMatchObject({ tags: ['ocr', 'router'], pinned: true })
       expect(await srv.metaStore.list()).toMatchObject({ 'session-a': { pinned: true } })
+    } finally { await srv.close() }
+  })
+
+  it('records the tmux session of a tmux-first live start, and refuses browser writes to it', async () => {
+    const launcher = {
+      start: async () => ({ tmuxSession: 'pi-dash-live-abcd1234', cwd: '/tmp/app', title: 'Live \u00b7 app', sessionId: 'session-a', processInstanceId: 'pid-a' }),
+      stop: async () => {},
+    }
+    const srv = await serve({ launcher })
+    try {
+      const started = await fetch(`${srv.origin}/api/live-sessions/start`, {
+        method: 'POST', headers: { cookie: srv.cookie, origin: srv.origin, 'content-type': 'application/json' },
+        body: JSON.stringify({ cwd: '/tmp/app', thinkingLevel: 'high' }),
+      })
+      expect(started.status).toBe(200)
+      expect(await started.json()).toMatchObject({ ok: true, result: { tmuxSession: 'pi-dash-live-abcd1234' } })
+      expect(await srv.metaStore.list()).toMatchObject({ 'session-a': { tmux: 'pi-dash-live-abcd1234' } })
+
+      // The tmux name is machine-written: a browser PATCH must not overwrite it.
+      const patched = await fetch(`${srv.origin}/api/live-sessions/pid-a/meta`, {
+        method: 'PATCH', headers: { cookie: srv.cookie, origin: srv.origin, 'content-type': 'application/json' },
+        body: JSON.stringify({ tags: ['ocr'], tmux: 'pi-dash-attacker' }),
+      })
+      expect(patched.status).toBe(200)
+      expect(await srv.metaStore.list()).toMatchObject({
+        'session-a': { tags: ['ocr'], tmux: 'pi-dash-live-abcd1234' },
+      })
     } finally { await srv.close() }
   })
 

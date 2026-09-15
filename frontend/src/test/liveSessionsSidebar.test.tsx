@@ -66,6 +66,7 @@ function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string,
       groups = groups.filter(g => g.id !== url.split('/')[3])
       return ok({ ok: true, groups })
     }
+    if (url.startsWith('/api/pty/sessions/') && method === 'DELETE') return ok({ ok: true })
     if (url.includes('/commands') && method === 'POST') return ok({ ok: true, result: {} })
     return ok({})
   })
@@ -249,7 +250,45 @@ describe('LiveSessionsList sidebar', () => {
     await waitFor(() => expect(renderedOrder(container)).toEqual(['session-pid-b', 'session-pid-a']))
 
     menuFor('pi 102')
-    fireEvent.click(await screen.findByText('⇤ 移出「任务A」'))
+    fireEvent.click(await screen.findByText(/\u21e4 移出「任务A」/))
     await waitFor(() => expect(currentGroups()[0].sessionIds).toEqual([]))
+  })
+
+  // ---- tmux-first live sessions -------------------------------------------
+
+  it('marks a tmux-hosted session as terminal-reachable and copies the attach command', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    mockFetch({ meta: { 'session-pid-a': { tags: [], pinned: false, tmux: 'pi-dash-live-abcd1234', updatedAt: '' } } })
+
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByTitle('终端可访问：tmux attach -t pi-dash-live-abcd1234')).toBeInTheDocument())
+
+    menuFor('pi 101')
+    fireEvent.click(await screen.findByText('⧉ 复制终端命令'))
+    expect(writeText).toHaveBeenCalledWith('tmux attach -t pi-dash-live-abcd1234')
+  })
+
+  it('closes a session by killing its tmux session, after a confirmation', async () => {
+    const { calls } = mockFetch({ meta: { 'session-pid-a': { tags: [], pinned: false, tmux: 'pi-dash-live-abcd1234', updatedAt: '' } } })
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByTitle('终端可访问：tmux attach -t pi-dash-live-abcd1234')).toBeInTheDocument())
+
+    menuFor('pi 101')
+    fireEvent.click(await screen.findByText('⏻ 关闭 session（kill tmux）'))
+    // first click only arms the destructive action
+    expect(calls.some(c => c.method === 'DELETE')).toBe(false)
+
+    fireEvent.click(await screen.findByText('再点一次确认关闭'))
+    await waitFor(() => expect(calls.some(c => c.url === '/api/pty/sessions/pi-dash-live-abcd1234' && c.method === 'DELETE')).toBe(true))
+  })
+
+  it('hides the terminal affordances for sessions started outside the dashboard', async () => {
+    mockFetch()
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
+    menuFor('pi 101')
+    expect(screen.queryByText(/复制终端命令/)).not.toBeInTheDocument()
+    expect(screen.queryByText('⏻ 关闭 session（kill tmux）')).not.toBeInTheDocument()
   })
 })
