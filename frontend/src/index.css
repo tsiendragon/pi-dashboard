@@ -6,12 +6,17 @@
 
 /* ── Base ── */
 @layer base {
+  :root{
+    --ease-out:cubic-bezier(.16,1,.3,1);
+    --ease-in:cubic-bezier(.4,0,1,1);
+    --dur-fast:120ms;--dur-base:200ms;--dur-slow:300ms}
   *{box-sizing:border-box;margin:0;padding:0}
   html,body,#root{height:100%}
   body{font:400 14px/1.55 var(--font-body);letter-spacing:-.02em;background:var(--bg);color:var(--text);
     -webkit-font-smoothing:antialiased;overflow:hidden}
   ::selection{background:var(--accent-subtle);color:var(--text-strong)}
-  .bg-accent::selection{background:rgba(255,255,255,.25);color:white}
+  /* inverted selection so it stays legible on a filled accent surface in every theme */
+  .bg-accent::selection{background:var(--accent-fg);color:var(--accent)}
   ::-webkit-scrollbar{width:6px;height:6px}
   ::-webkit-scrollbar-track{background:transparent}
   ::-webkit-scrollbar-thumb{background:var(--border);border-radius:9999px}
@@ -50,8 +55,8 @@
 /* ── Code in messages ── */
 .msg-content{-webkit-user-select:text;user-select:text;cursor:text;overflow-wrap:break-word;word-break:break-word}
 .msg-content code{font-family:var(--mono);font-size:.9em}
-.msg-content :not(pre)>code{padding:.15em .4em;border-radius:4px;overflow-wrap:break-word;word-break:break-all}
-.msg-content pre{border-radius:var(--radius-sm);padding:10px 12px;overflow-x:auto;margin:4px 0;font-size:13px;font-family:var(--mono);line-height:1.5}
+.msg-content :not(pre)>code{padding:.15em .4em;border-radius:var(--radius-sm);overflow-wrap:break-word;word-break:break-all}
+.msg-content pre{border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px;overflow-x:auto;margin:6px 0;font-size:13px;font-family:var(--mono);line-height:1.5}
 
 /* ── Topbar ── */
 /* No backdrop-filter in opaque mode — it burns GPU every frame for zero visual benefit.
@@ -90,9 +95,33 @@ html.is-standalone .standalone-pad [role="button"]{-webkit-app-region:no-drag}
 /* ── Skeleton placeholder (static — no shimmer animation) ── */
 .skeleton{background:var(--bg-elevated);border-radius:var(--radius-sm)}
 
-/* ── Focus ring ── */
-.focus-ring:focus{outline:none;border-color:var(--ring);
+/* ── Press feedback ── */
+/* Tactile :active response. Uses filter (not transform) so it never disturbs layout
+   or the containing block of an open popover. */
+@media (hover:hover){
+  button:not(:disabled):active{
+    filter:brightness(.93);
+    transition-duration:60ms}
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+    scroll-behavior:auto !important}
+}
+
+/* ─ Focus ring ── */
+/* Keyboard-only ring (mouse clicks no longer paint a ring). Text fields still match
+   :focus-visible on click, so they keep their ring. */
+.focus-ring:focus-visible{outline:none;border-color:var(--ring);
   box-shadow:0 0 0 3px var(--accent-subtle)}
+/* Zero-specificity fallback so every interactive element is keyboard-discoverable
+   without fighting component styles. */
+:where(a,button,summary,[role="button"],input,select,textarea):focus-visible{
+  outline:2px solid var(--ring);outline-offset:2px}
 
 /* ── Syntax highlighting (highlight.js) ── */
 .hljs{color:var(--text)}
@@ -116,7 +145,7 @@ html.is-standalone .standalone-pad [role="button"]{-webkit-app-region:no-drag}
 
 .cmdk-input-wrapper{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)}
 .cmdk-search-icon{width:18px;height:18px;color:var(--muted);flex-shrink:0}
-.cmdk-input{flex:1;background:transparent;border:none;outline:none;font-size:15px;font-family:inherit;color:var(--text);caret-color:var(--accent)}
+.cmdk-input{flex:1;background:transparent;border:none;outline:none;font-size:14px;font-family:inherit;color:var(--text);caret-color:var(--accent)}
 .cmdk-input::placeholder{color:var(--muted)}
 
 .cmdk-badge{font-size:11px;font-family:var(--font-mono,ui-monospace,monospace);color:var(--muted);
@@ -158,8 +187,8 @@ html.is-standalone .standalone-pad [role="button"]{-webkit-app-region:no-drag}
   border:1px solid var(--border);background:var(--bg-elevated);
   font:600 11px/1 var(--mono);color:var(--text);white-space:nowrap;cursor:default}
 .stat-chip-dot{width:7px;height:7px;border-radius:9999px;flex:none;background:currentColor}
-.stat-chip-label{color:var(--muted);letter-spacing:.04em;text-transform:uppercase;font-size:9.5px;font-weight:700}
-.stat-chip-value{color:var(--text-strong);font-weight:700;font-size:11.5px;font-variant-numeric:tabular-nums}
+.stat-chip-label{color:var(--muted);letter-spacing:.04em;text-transform:uppercase;font-size:10px;font-weight:700}
+.stat-chip-value{color:var(--text-strong);font-weight:700;font-size:11px;font-variant-numeric:tabular-nums}
 .stat-chip-sub{color:var(--muted);font-weight:600}
 .stat-rail{display:flex;flex-direction:column}
 .stat-rail-bar{width:100%;height:6px;display:flex;overflow:hidden;cursor:default;
@@ -171,7 +200,7 @@ html.is-standalone .standalone-pad [role="button"]{-webkit-app-region:no-drag}
 .status-cell{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:var(--radius-sm);
   border:1px solid var(--border);background:var(--bg-elevated);
   font:600 11px/1 var(--mono);color:var(--text);white-space:nowrap;max-width:340px;overflow:hidden}
-.status-cell-label{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:9px;font-weight:700}
+.status-cell-label{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:10px;font-weight:700}
 .status-cell-value{color:var(--text-strong);font-weight:600;overflow:hidden;text-overflow:ellipsis}
 html[data-theme="aurora-glow"] .status-cell{
   border-color:rgba(205,214,244,.1);
