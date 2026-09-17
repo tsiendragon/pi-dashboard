@@ -981,7 +981,7 @@ export default function ChatPage() {
   const virtuosoComponents = useMemo(() => ({
     Header: () => slotHasMore && slotOldestIndex > 0 ? (
       <div className="text-center py-2.5 px-5">
-        {loadingOlder ? <span className="text-muted text-[13px]">Loading…</span> : <span className="text-muted text-[13px] opacity-40">scroll up for more</span>}
+        {loadingOlder ? <span className="text-muted text-body-s">Loading…</span> : <span className="text-muted text-body-s opacity-40">scroll up for more</span>}
       </div>
     ) : null,
     Footer: () => <ChatFooter running={slotRunning} stopping={slotStopping} state={slotState} lastRole={lastRole} />,
@@ -1001,7 +1001,7 @@ export default function ChatPage() {
     if (m.role === 'thinking') return <ThinkingBlock key={key} content={m.content} />
     if (m.role === 'tool') return <ToolCallBlock key={key} content={m.content} meta={m.meta} onFileOpen={handleFileOpen} slotKey={activeSlot ?? undefined} />
     if (m.role === 'queued') return null // rendered as pills above the input, not inline
-    if (m.role === 'error') return <div key={key} className="bg-danger-subtle text-danger text-[13px] px-3 py-2 rounded-md border border-danger/15 self-center animate-scale-in">{m.content}</div>
+    if (m.role === 'error') return <div key={key} className="bg-danger-subtle text-danger text-body-s px-3 py-2 rounded-md border border-danger/15 self-center animate-scale-in">{m.content}</div>
     if (m.role === 'system') return <SystemMessage key={key} content={m.content} meta={m.meta} />
     if (m.role === 'permission') {
       const isLast = i === messages.map(x => x.role).lastIndexOf('permission')
@@ -1022,15 +1022,15 @@ export default function ChatPage() {
       return d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     })() : ''
     return (
-      <div key={key} className={`pidash-msg-card flex gap-2 md:gap-3 items-start mb-1.5 md:mb-3 mr-2 md:mr-4 ${isUser ? 'flex-row-reverse animate-slide-in-right' : 'animate-slide-up'}`} data-pidash-sender={isUser ? 'user' : 'assistant'} data-pidash-streaming={isStreaming ? 'true' : undefined}>
+      <div key={key} className={`pidash-msg-card flex gap-2 md:gap-3 items-start mb-2 md:mb-4 mr-2 md:mr-4 ${isUser ? 'flex-row-reverse animate-slide-in-right' : 'animate-slide-up'}`} data-pidash-sender={isUser ? 'user' : 'assistant'} data-pidash-streaming={isStreaming ? 'true' : undefined}>
         {/* Avatars hidden on mobile for more message width — like Claude app */}
         {isUser
           ? <div className="hidden md:grid w-8 h-8 rounded-md place-items-center font-semibold text-xs shrink-0 self-end mb-0.5 bg-accent-subtle text-accent">U</div>
           : <img src="/logo.png" alt="Pi" className="hidden md:block w-8 h-8 rounded-md shrink-0 self-end mb-0.5 object-cover" />
         }
-        <div className={`flex flex-col gap-0.5 max-w-[min(820px,calc(100%-16px))] md:max-w-[min(820px,calc(100%-56px))] ${isUser ? 'items-end' : ''} group/msg relative`}>
+        <div className={`flex flex-col gap-0.5 max-w-[min(720px,calc(100%-16px))] md:max-w-[min(720px,calc(100%-56px))] ${isUser ? 'items-end' : ''} group/msg relative`}>
           {isUser ? (
-            <div className="pidash-msg-content msg-content px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap rounded-lg bg-accent text-white rounded-br-[4px] overflow-hidden select-text" style={{ overflowWrap: 'anywhere' }}>
+            <div className="pidash-msg-content msg-content px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap rounded-lg bg-accent text-accent-fg rounded-br-[4px] shadow-sm overflow-hidden select-text" style={{ overflowWrap: 'anywhere' }}>
               {m.content.split('\n').map((line, li) => {
                 const imgMatch = line.match(/^!\[image\]\((data:image\/[^)]+)\)$/)
                 if (imgMatch) {
@@ -1038,7 +1038,7 @@ export default function ChatPage() {
                   return (
                     <span key={li} className="relative inline-block group/img">
                       <img src={dataUrl} alt="Pasted" className="max-h-48 rounded-md my-1" />
-                      <button className="absolute top-2 right-2 opacity-60 group-hover/img:opacity-100 bg-black/60 hover:bg-black/80 text-white text-[11px] px-2 py-1 rounded cursor-pointer border-none transition-opacity" title="Save image to disk" onClick={async (e) => {
+                      <button className="absolute top-2 right-2 opacity-60 group-hover/img:opacity-100 bg-black/60 hover:bg-black/80 text-white text-2xs px-2 py-1 rounded cursor-pointer border-none transition-opacity" title="Save image to disk" onClick={async (e) => {
                         e.stopPropagation()
                         const name = prompt('Save image as:', `screenshot-${Date.now()}.png`)
                         if (!name) return
@@ -1062,8 +1062,8 @@ export default function ChatPage() {
             }} />
           )}
           <div className="flex items-center gap-1 px-1">
-            {chatConfig.showTimestamps && msgTime && <span className="text-muted text-[11px] font-body">{msgTime}</span>}
-            <button className="hidden md:inline-block opacity-40 group-hover/msg:opacity-100 text-[11px] text-muted hover:text-text cursor-pointer bg-transparent border-none transition-opacity px-1" title="Copy" onClick={() => { navigator.clipboard.writeText(m.content); }}>📋</button>
+            {chatConfig.showTimestamps && msgTime && <span className="text-muted text-2xs font-body">{msgTime}</span>}
+            <button className="hidden md:inline-block opacity-40 group-hover/msg:opacity-100 text-2xs text-muted hover:text-text cursor-pointer bg-transparent border-none transition-opacity px-1" title="Copy" onClick={() => { navigator.clipboard.writeText(m.content); }}>📋</button>
           </div>
         </div>
       </div>
@@ -1130,18 +1130,18 @@ export default function ChatPage() {
                 ) : (
                   <TypewriterText className="text-sm font-semibold text-text font-body truncate" text={title} onDoubleClick={() => { setEditingHeader(true); setEditingTitle(title) }} />
                 )}
-                {!editingHeader && <span className="hidden md:inline text-[11px] text-muted cursor-pointer opacity-40 hover:opacity-100 hover:text-accent transition-all" title="Rename session" onClick={() => { setEditingHeader(true); setEditingTitle(title) }}>✏️</span>}
+                {!editingHeader && <span className="hidden md:inline text-2xs text-muted cursor-pointer opacity-40 hover:opacity-100 hover:text-accent transition" title="Rename session" onClick={() => { setEditingHeader(true); setEditingTitle(title) }}>✏️</span>}
                 {/* Model badge, cwd badge & context pill moved to the status-line footer above the composer (StatusLine.tsx). Mobile keeps a compact model button. */}
-                {currentSlot?.model && <button className="md:hidden px-2 py-0.5 rounded-md text-[11px] font-mono bg-bg-elevated border border-border text-muted shrink-0 cursor-pointer hover:border-accent hover:text-accent transition-colors max-w-[120px] truncate" title={currentSlot.model} onClick={() => setShowOverflowMenu(v => !v)}>{modelDisplay}</button>}
+                {currentSlot?.model && <button className="md:hidden px-2 py-0.5 rounded-md text-2xs font-mono bg-bg-elevated border border-border text-muted shrink-0 cursor-pointer hover:border-accent hover:text-accent transition-colors max-w-[120px] truncate" title={currentSlot.model} onClick={() => setShowOverflowMenu(v => !v)}>{modelDisplay}</button>}
                 {/* cwd badge moved to status-line footer */}
               </div>
               {/* Desktop toolbar */}
               <div className="hidden md:flex gap-1.5 shrink-0">
-                {slotRunning && <button className="bg-transparent border border-border text-muted rounded-md px-3 py-[5px] text-[13px] font-medium cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition-all font-body" aria-label={slotStopping ? 'Skip queue' : 'Stop generation'} onClick={() => { if (activeSlot) api.stopChatSlot(activeSlot) }}>{slotStopping ? '■ Skip Queue' : '■ Stop'}</button>}
+                {slotRunning && <button className="bg-transparent border border-border text-muted rounded-md px-3 py-[5px] text-body-s font-medium cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition font-body" aria-label={slotStopping ? 'Skip queue' : 'Stop generation'} onClick={() => { if (activeSlot) api.stopChatSlot(activeSlot) }}>{slotStopping ? '■ Skip Queue' : '■ Stop'}</button>}
                 {/* Panels dropdown — groups Tree, Refs, Files, Terminal */}
                 <div className="relative">
                   <button
-                    className={`bg-transparent border rounded-md px-3 py-[5px] text-[13px] font-medium cursor-pointer transition-all font-body ${showTree || showRefs || showFiles || showTerminal ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong hover:bg-bg-hover'}`}
+                    className={`bg-transparent border rounded-md px-3 py-[5px] text-body-s font-medium cursor-pointer transition font-body ${showTree || showRefs || showFiles || showTerminal ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong hover:bg-bg-hover'}`}
                     onClick={() => setShowOverflowMenu(v => !v)}
                     aria-label="Toggle panels"
                   >
@@ -1151,10 +1151,10 @@ export default function ChatPage() {
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowOverflowMenu(false)} />
                       <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[180px]">
-                        <button className={`w-full text-left px-3 py-2 text-[13px] hover:bg-bg-hover flex items-center gap-2 ${showTree ? 'text-accent' : 'text-text'}`} onClick={() => { setShowTree(t => !t); setShowOverflowMenu(false) }}>🌳 Tree{showTree ? ' ✓' : ''}</button>
-                        <button className={`w-full text-left px-3 py-2 text-[13px] hover:bg-bg-hover flex items-center gap-2 ${showRefs ? 'text-accent' : 'text-text'}`} onClick={() => { setShowRefs(t => !t); setShowOverflowMenu(false) }}>📎 Refs{referencedFiles.length > 0 ? ` (${referencedFiles.length})` : ''}{showRefs ? ' ✓' : ''}</button>
-                        <button className={`w-full text-left px-3 py-2 text-[13px] hover:bg-bg-hover flex items-center gap-2 ${showFiles ? 'text-accent' : 'text-text'}`} onClick={() => { setShowFiles(t => !t); setShowOverflowMenu(false) }}>📄 Files{showFiles ? ' ✓' : ''}</button>
-                        <button className={`w-full text-left px-3 py-2 text-[13px] hover:bg-bg-hover flex items-center gap-2 ${showTerminal ? 'text-accent' : 'text-text'}`} onClick={() => { setShowTerminal(t => !t); setShowOverflowMenu(false) }}>🖥️ Terminal{showTerminal ? ' ✓' : ''}</button>
+                        <button className={`w-full text-left px-3 py-2 text-body-s hover:bg-bg-hover flex items-center gap-2 ${showTree ? 'text-accent' : 'text-text'}`} onClick={() => { setShowTree(t => !t); setShowOverflowMenu(false) }}>🌳 Tree{showTree ? ' ✓' : ''}</button>
+                        <button className={`w-full text-left px-3 py-2 text-body-s hover:bg-bg-hover flex items-center gap-2 ${showRefs ? 'text-accent' : 'text-text'}`} onClick={() => { setShowRefs(t => !t); setShowOverflowMenu(false) }}>📎 Refs{referencedFiles.length > 0 ? ` (${referencedFiles.length})` : ''}{showRefs ? ' ✓' : ''}</button>
+                        <button className={`w-full text-left px-3 py-2 text-body-s hover:bg-bg-hover flex items-center gap-2 ${showFiles ? 'text-accent' : 'text-text'}`} onClick={() => { setShowFiles(t => !t); setShowOverflowMenu(false) }}>📄 Files{showFiles ? ' ✓' : ''}</button>
+                        <button className={`w-full text-left px-3 py-2 text-body-s hover:bg-bg-hover flex items-center gap-2 ${showTerminal ? 'text-accent' : 'text-text'}`} onClick={() => { setShowTerminal(t => !t); setShowOverflowMenu(false) }}>🖥️ Terminal{showTerminal ? ' ✓' : ''}</button>
                       </div>
                     </>
                   )}
@@ -1162,7 +1162,7 @@ export default function ChatPage() {
                 {/* Split view button + picker */}
                 <div className="relative">
                   <button
-                    className={`hidden md:inline-flex bg-transparent border rounded-md px-3 py-[5px] text-[13px] font-medium cursor-pointer transition-all font-body ${splitSlot ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong hover:bg-bg-hover'}`}
+                    className={`hidden md:inline-flex bg-transparent border rounded-md px-3 py-[5px] text-body-s font-medium cursor-pointer transition font-body ${splitSlot ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong hover:bg-bg-hover'}`}
                     onClick={() => { if (splitSlot) { setSplitSlot(null) } else { setShowSplitPicker(v => !v) } }}
                     aria-label={splitSlot ? 'Close split view' : 'Split view'}
                     title={splitSlot ? 'Close split view' : 'View another session side-by-side'}
@@ -1173,14 +1173,14 @@ export default function ChatPage() {
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowSplitPicker(false)} />
                       <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[220px] max-h-[300px] overflow-y-auto">
-                        <div className="px-3 py-1.5 text-[11px] text-muted font-semibold uppercase tracking-wider">Pick session to view</div>
+                        <div className="px-3 py-1.5 text-2xs text-muted font-semibold uppercase tracking-wider">Pick session to view</div>
                         {slots.filter(s => s.key !== activeSlot).length === 0 ? (
-                          <div className="px-3 py-2 text-[13px] text-muted italic">No other sessions open</div>
+                          <div className="px-3 py-2 text-body-s text-muted italic">No other sessions open</div>
                         ) : (
                           slots.filter(s => s.key !== activeSlot).map(s => (
                             <button
                               key={s.key}
-                              className="w-full text-left px-3 py-2 text-[13px] hover:bg-bg-hover flex items-center gap-2 text-text"
+                              className="w-full text-left px-3 py-2 text-body-s hover:bg-bg-hover flex items-center gap-2 text-text"
                               onClick={() => { setSplitSlot(s.key); setShowSplitPicker(false) }}
                             >
                               {s.running && <span className="typing-dots-sm"><span /><span /><span /></span>}
@@ -1193,13 +1193,13 @@ export default function ChatPage() {
                   )}
                 </div>
                 <ChatSettings activeSlot={activeSlot} currentModel={currentSlot?.model} currentThinking={currentSlot?.thinkingLevel} models={availableModels} />
-                <button className="bg-transparent border border-border text-muted rounded-md px-3 py-[5px] text-[13px] font-medium cursor-pointer hover:text-danger hover:border-danger transition-all font-body" aria-label="Close session" onClick={() => { if (activeSlot) dispatch(deleteSlot(activeSlot)) }}>✕</button>
+                <button className="bg-transparent border border-border text-muted rounded-md px-3 py-[5px] text-body-s font-medium cursor-pointer hover:text-danger hover:border-danger transition font-body" aria-label="Close session" onClick={() => { if (activeSlot) dispatch(deleteSlot(activeSlot)) }}>✕</button>
               </div>
               {/* Mobile overflow menu */}
               <div className="md:hidden relative shrink-0 flex items-center gap-1.5">
                 {/* Connection status dot */}
-                <span className={`w-2 h-2 rounded-full shrink-0 ${connected ? 'bg-ok' : 'bg-danger'}`} title={connected ? 'Connected' : 'Offline'} />
-                <button className="bg-transparent border border-border text-muted rounded-md w-8 h-8 text-[16px] cursor-pointer hover:text-text hover:border-border-strong" onClick={() => setShowOverflowMenu(v => !v)}>⋯</button>
+                <span role="status" aria-label={connected ? '连接正常' : '连接断开'} className={`w-2 h-2 rounded-full shrink-0 ${connected ? 'bg-ok' : 'bg-danger'}`} title={connected ? 'Connected' : 'Offline'} />
+                <button className="bg-transparent border border-border text-muted rounded-md w-8 h-8 text-base cursor-pointer hover:text-text hover:border-border-strong" onClick={() => setShowOverflowMenu(v => !v)}>⋯</button>
                 {showOverflowMenu && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setShowOverflowMenu(false)} />
@@ -1207,10 +1207,10 @@ export default function ChatPage() {
                       {/* Per-slot settings */}
                       {activeSlot && (
                         <>
-                          <div className="px-3 py-1.5 text-[11px] text-muted font-semibold uppercase tracking-wider">Model</div>
+                          <div className="px-3 py-1.5 text-2xs text-muted font-semibold uppercase tracking-wider">Model</div>
                           <div className="px-3 pb-2">
                             <select
-                              className="w-full bg-bg-elevated border border-border rounded-md px-2 py-1.5 text-[13px] text-text font-mono cursor-pointer"
+                              className="w-full bg-bg-elevated border border-border rounded-md px-2 py-1.5 text-body-s text-text font-mono cursor-pointer"
                               value={currentSlot?.model || ''}
                               onChange={e => {
                                 const val = e.target.value
@@ -1226,14 +1226,14 @@ export default function ChatPage() {
                               })}
                             </select>
                           </div>
-                          <div className="px-3 py-1.5 text-[11px] text-muted font-semibold uppercase tracking-wider">Thinking</div>
+                          <div className="px-3 py-1.5 text-2xs text-muted font-semibold uppercase tracking-wider">Thinking</div>
                           <div className="flex flex-wrap gap-1.5 px-3 pb-2">
                             {supportedThinkingLevels(availableModels.find(m => modelFullId(m) === currentSlot?.model) || null).map(level => (
                               <button
                                 key={level}
-                                className={`px-2.5 py-1 rounded-full text-[12px] font-medium border cursor-pointer transition-all ${
+                                className={`px-2.5 py-1 rounded-full text-meta font-medium border cursor-pointer transition ${
                                   currentSlot?.thinkingLevel === level
-                                    ? 'bg-accent text-white border-accent'
+                                    ? 'bg-accent text-accent-fg border-accent'
                                     : 'bg-bg-elevated border-border text-muted hover:border-accent hover:text-accent'
                                 }`}
                                 onClick={() => api.setSlotThinking(activeSlot, level)}
@@ -1243,9 +1243,9 @@ export default function ChatPage() {
                           {/* Permission gating (slice 11) — SDK-only. Pauses each
                               tool call for approve/deny/edit. Disabled on RPC
                               slots (can't gate in-process). */}
-                          <div className="px-3 py-1.5 text-[11px] text-muted font-semibold uppercase tracking-wider">Tool approval</div>
+                          <div className="px-3 py-1.5 text-2xs text-muted font-semibold uppercase tracking-wider">Tool approval</div>
                           <div className="px-3 pb-2">
-                            <label className={`flex items-center gap-2 text-[13px] ${currentSlot?.transport === 'sdk' ? 'text-text cursor-pointer' : 'text-muted opacity-50 cursor-not-allowed'}`}>
+                            <label className={`flex items-center gap-2 text-body-s ${currentSlot?.transport === 'sdk' ? 'text-text cursor-pointer' : 'text-muted opacity-50 cursor-not-allowed'}`}>
                               <input
                                 type="checkbox"
                                 className="cursor-pointer disabled:cursor-not-allowed"
@@ -1259,20 +1259,20 @@ export default function ChatPage() {
                           <div className="border-t border-border my-1" />
                         </>
                       )}
-                      <button className="w-full text-left px-3 py-2 text-[13px] text-text hover:bg-bg-hover" onClick={() => { setShowTree(t => !t); setShowOverflowMenu(false) }}>🌳 Tree</button>
-                      <button className="w-full text-left px-3 py-2 text-[13px] text-text hover:bg-bg-hover" onClick={() => { setShowRefs(t => !t); setShowOverflowMenu(false) }}>📎 Refs{referencedFiles.length > 0 ? ` (${referencedFiles.length})` : ''}</button>
-                      <button className="w-full text-left px-3 py-2 text-[13px] text-text hover:bg-bg-hover" onClick={() => { setShowFiles(t => !t); setShowOverflowMenu(false) }}>📄 Files</button>
+                      <button className="w-full text-left px-3 py-2 text-body-s text-text hover:bg-bg-hover" onClick={() => { setShowTree(t => !t); setShowOverflowMenu(false) }}>🌳 Tree</button>
+                      <button className="w-full text-left px-3 py-2 text-body-s text-text hover:bg-bg-hover" onClick={() => { setShowRefs(t => !t); setShowOverflowMenu(false) }}>📎 Refs{referencedFiles.length > 0 ? ` (${referencedFiles.length})` : ''}</button>
+                      <button className="w-full text-left px-3 py-2 text-body-s text-text hover:bg-bg-hover" onClick={() => { setShowFiles(t => !t); setShowOverflowMenu(false) }}>📄 Files</button>
                       {isNativeApp && (
                         <>
                           <div className="border-t border-border my-1" />
-                          <button className="w-full text-left px-3 py-2 text-[13px] text-text hover:bg-bg-hover" onClick={() => { navigate('/system'); setShowOverflowMenu(false) }}>🖥 System</button>
-                          <button className="w-full text-left px-3 py-2 text-[13px] text-text hover:bg-bg-hover" onClick={() => { navigate('/logs'); setShowOverflowMenu(false) }}>📋 Logs</button>
-                          <button className="w-full text-left px-3 py-2 text-[13px] text-text hover:bg-bg-hover" onClick={() => { navigate('/settings'); setShowOverflowMenu(false) }}>⚙️ Settings</button>
-                          <button className="w-full text-left px-3 py-2 text-[13px] text-muted hover:bg-bg-hover" onClick={() => { setShowOverflowMenu(false); (window as any).webkit?.messageHandlers?.piOpenSettings?.postMessage({}) }}>🔧 Pi Settings</button>
+                          <button className="w-full text-left px-3 py-2 text-body-s text-text hover:bg-bg-hover" onClick={() => { navigate('/system'); setShowOverflowMenu(false) }}>🖥 System</button>
+                          <button className="w-full text-left px-3 py-2 text-body-s text-text hover:bg-bg-hover" onClick={() => { navigate('/logs'); setShowOverflowMenu(false) }}>📋 Logs</button>
+                          <button className="w-full text-left px-3 py-2 text-body-s text-text hover:bg-bg-hover" onClick={() => { navigate('/settings'); setShowOverflowMenu(false) }}>⚙️ Settings</button>
+                          <button className="w-full text-left px-3 py-2 text-body-s text-muted hover:bg-bg-hover" onClick={() => { setShowOverflowMenu(false); (window as any).webkit?.messageHandlers?.piOpenSettings?.postMessage({}) }}>🔧 Pi Settings</button>
                         </>
                       )}
                       <div className="border-t border-border my-1" />
-                      <button className="w-full text-left px-3 py-2 text-[13px] text-danger hover:bg-bg-hover" onClick={() => { if (activeSlot) dispatch(deleteSlot(activeSlot)); setShowOverflowMenu(false) }}>✕ Close Session</button>
+                      <button className="w-full text-left px-3 py-2 text-body-s text-danger hover:bg-bg-hover" onClick={() => { if (activeSlot) dispatch(deleteSlot(activeSlot)); setShowOverflowMenu(false) }}>✕ Close Session</button>
                     </div>
                   </>
                 )}
@@ -1320,7 +1320,7 @@ export default function ChatPage() {
                 />
               )}
               {Object.keys(extensionStatuses).length > 0 && (
-                <div className="hidden md:flex px-4 py-1 bg-accent-subtle text-accent text-[11px] font-medium border-b border-border items-center gap-4 shrink-0">
+                <div className="hidden md:flex px-4 py-1 bg-accent-subtle text-accent text-2xs font-medium border-b border-border items-center gap-4 shrink-0">
                   {Object.entries(extensionStatuses).map(([key, text]) => (
                     <span key={key} className="opacity-80">{text}</span>
                   ))}
@@ -1402,7 +1402,7 @@ export default function ChatPage() {
             {!isAtBottom && messages.length > 0 && (
               <div className="absolute bottom-2 right-4 z-10">
                 <button
-                  className="relative w-9 h-9 rounded-full bg-accent text-white shadow-lg cursor-pointer border-none hover:bg-accent-hover transition-all flex items-center justify-center"
+                  className="relative w-9 h-9 rounded-full bg-accent text-accent-fg shadow-lg cursor-pointer border-none hover:bg-accent-hover transition flex items-center justify-center"
                   onClick={() => { setNewMessageCount(0); setIsAtBottom(true); isAtBottomRef.current = true; scrollBottom() }}
                   aria-label="Scroll to bottom"
                 >
@@ -1410,7 +1410,7 @@ export default function ChatPage() {
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
                   {newMessageCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-danger-fg text-2xs font-bold flex items-center justify-center leading-none">
                       {newMessageCount > 99 ? '99+' : newMessageCount}
                     </span>
                   )}
@@ -1425,8 +1425,8 @@ export default function ChatPage() {
             {activeSlot && showWorkbench && <WorkbenchPanel slot={activeSlot} onClose={() => setShowWorkbench(false)} />}
             {prefillHint && (
               <div className="flex items-center gap-2 px-5 py-2 bg-accent/10 border-t border-accent/30">
-                <span className="text-accent text-[13px]">📋 Plan pre-filled below — add your context then press Send</span>
-                <button className="text-muted text-[12px] hover:text-text ml-auto" onClick={() => setPrefillHint(false)}>✕</button>
+                <span className="text-accent text-body-s">📋 Plan pre-filled below — add your context then press Send</span>
+                <button className="text-muted text-meta hover:text-text ml-auto" onClick={() => setPrefillHint(false)}>✕</button>
               </div>
             )}
             <div className={`pidash-compose flex flex-row gap-2 items-end px-3 md:px-5 pt-2.5 pb-[max(0.875rem,env(safe-area-inset-bottom,0.875rem))] md:pb-3.5 bg-chrome transition-colors relative border-t-0 shadow-[0_-8px_24px_rgba(0,0,0,0.15)] md:border-t md:border-border md:shadow-none ${dragOver ? 'bg-accent-subtle' : ''}`}
@@ -1438,10 +1438,10 @@ export default function ChatPage() {
                   <span className="text-accent font-semibold text-sm">Drop files here — images, PDFs, documents</span>
                 </div>
               )}
-              {isMac && <button className="hidden md:flex w-[44px] h-[44px] rounded-lg border border-border bg-bg-elevated text-muted items-center justify-center shrink-0 cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition-all disabled:opacity-30" onClick={pickFiles} disabled={uploading} title="Attach file or folder">
-                {uploading ? <span className="text-[13px] animate-pulse">⏳</span> : <span className="text-base">📎</span>}
+              {isMac && <button className="hidden md:flex w-[44px] h-[44px] rounded-lg border border-border bg-bg-elevated text-muted items-center justify-center shrink-0 cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition disabled:opacity-30" onClick={pickFiles} disabled={uploading} title="Attach file or folder">
+                {uploading ? <span className="text-body-s animate-pulse">⏳</span> : <span className="text-base">📎</span>}
               </button>}
-              {isMac && <button className="hidden md:flex w-[44px] h-[44px] rounded-lg border border-border bg-bg-elevated text-muted items-center justify-center shrink-0 cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition-all disabled:opacity-30" onClick={takeScreenshot} disabled={uploading} title="Screenshot (grant Screen Recording to your terminal app in System Settings)">
+              {isMac && <button className="hidden md:flex w-[44px] h-[44px] rounded-lg border border-border bg-bg-elevated text-muted items-center justify-center shrink-0 cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition disabled:opacity-30" onClick={takeScreenshot} disabled={uploading} title="Screenshot (grant Screen Recording to your terminal app in System Settings)">
                 <span className="text-base">📷</span>
               </button>}
               {/* "+" expandable attach menu */}
@@ -1450,8 +1450,8 @@ export default function ChatPage() {
                   <input ref={mobileFileInputRef} type="file" accept="image/*,application/pdf,text/*" multiple className="hidden" onChange={handleMobileFileInput} />
                 )}
                 <button
-                  className={`flex w-[40px] h-[40px] rounded-full items-center justify-center shrink-0 cursor-pointer transition-all text-xl font-light border ${
-                    showAttachMenu ? 'bg-accent text-white border-accent rotate-45' : 'bg-bg-elevated border-border text-muted hover:text-text hover:border-accent'
+                  className={`flex w-[40px] h-[40px] rounded-full items-center justify-center shrink-0 cursor-pointer transition text-xl font-light border ${
+                    showAttachMenu ? 'bg-accent text-accent-fg border-accent rotate-45' : 'bg-bg-elevated border-border text-muted hover:text-text hover:border-accent'
                   }`}
                   onClick={() => setShowAttachMenu(v => !v)}
                   title="Attach"
@@ -1475,11 +1475,11 @@ export default function ChatPage() {
               </div>
               {/* Voice button — tap toggles voice mode on/off */}
               <button
-                className={`flex w-[40px] h-[40px] rounded-full items-center justify-center shrink-0 cursor-pointer transition-all border select-none ${
+                className={`flex w-[40px] h-[40px] rounded-full items-center justify-center shrink-0 cursor-pointer transition border select-none ${
                   voiceMode
-                    ? 'bg-accent text-white border-accent'
+                    ? 'bg-accent text-accent-fg border-accent'
                     : isListeningVoice
-                      ? 'bg-danger text-white border-danger animate-pulse'
+                      ? 'bg-danger text-danger-fg border-danger animate-pulse'
                       : 'bg-bg-elevated border-border text-muted hover:text-text hover:border-border-strong'
                 }`}
                 onClick={handleVoiceClick}
@@ -1517,7 +1517,7 @@ export default function ChatPage() {
                     {pendingImages.map((img, i) => (
                       <div key={i} className="relative group">
                         <img src={img.preview} alt="Pasted" className="h-16 rounded-md border border-border object-cover" />
-                        <button className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-danger text-white text-[11px] border-none cursor-pointer opacity-40 group-hover:opacity-100 transition-opacity flex items-center justify-center" onClick={() => removeImage(i)}>✕</button>
+                        <button className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-danger text-danger-fg text-2xs border-none cursor-pointer opacity-40 group-hover:opacity-100 transition-opacity flex items-center justify-center" onClick={() => removeImage(i)}>✕</button>
                       </div>
                     ))}
                   </div>
@@ -1528,7 +1528,7 @@ export default function ChatPage() {
                       <div key={i} className="relative group flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-bg-elevated text-sm text-text">
                         <span className="text-base">📄</span>
                         <span className="max-w-[200px] truncate">{f.name}</span>
-                        <button className="w-4 h-4 rounded-full bg-danger text-white text-[10px] border-none cursor-pointer opacity-40 group-hover:opacity-100 transition-opacity flex items-center justify-center shrink-0" onClick={() => removeFile(i)}>✕</button>
+                        <button className="w-4 h-4 rounded-full bg-danger text-danger-fg text-2xs border-none cursor-pointer opacity-40 group-hover:opacity-100 transition-opacity flex items-center justify-center shrink-0" onClick={() => removeFile(i)}>✕</button>
                       </div>
                     ))}
                   </div>
@@ -1536,14 +1536,14 @@ export default function ChatPage() {
                 {queuedMessages.length > 0 && (
                   <div className="flex gap-1.5 flex-wrap">
                     {queuedMessages.map(({ msg, idx }) => (
-                      <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warn-subtle border border-warn/30 text-warn text-[12px] font-medium max-w-[280px] animate-scale-in" title="Queued in pi as a follow-up">
-                        <span className="text-[11px] opacity-70 shrink-0">{'\u23f3'}</span>
+                      <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warn-subtle border border-warn/30 text-warn text-meta font-medium max-w-[280px] animate-scale-in" title="Queued in pi as a follow-up">
+                        <span className="text-2xs opacity-70 shrink-0">{'\u23f3'}</span>
                         <span className="truncate">{msg.content.length > 40 ? msg.content.slice(0, 40) + '…' : msg.content}</span>
                       </div>
                     ))}
                   </div>
                 )}
-                <textarea ref={inputRef} aria-label="Message input" className={`bg-bg-elevated border border-border rounded-lg px-4 py-3 text-text text-base md:text-sm font-body outline-none min-h-[44px] leading-normal transition-all focus-ring placeholder:text-muted overflow-hidden ${prefillHint ? 'resize-y max-h-[50vh]' : 'resize-none max-h-[140px]'} ${slotStopping ? 'opacity-40 pointer-events-none' : ''}`} placeholder={slotStopping ? 'Stopping…' : pendingImages.length > 0 ? 'Add a message about the image(s)…' : pendingFiles.length > 0 ? 'Add a message about the file(s)…' : 'Message Pi…'} rows={1} value={input}
+                <textarea ref={inputRef} aria-label="Message input" className={`bg-bg-elevated border border-border rounded-lg px-4 py-3 text-text text-base md:text-sm font-body shadow-inner outline-none min-h-[44px] leading-normal transition focus-ring placeholder:text-muted overflow-hidden ${prefillHint ? 'resize-y max-h-[50vh]' : 'resize-none max-h-[140px]'} ${slotStopping ? 'opacity-40 pointer-events-none' : ''}`} placeholder={slotStopping ? 'Stopping…' : pendingImages.length > 0 ? 'Add a message about the image(s)…' : pendingFiles.length > 0 ? 'Add a message about the file(s)…' : 'Message Pi…'} rows={1} value={input}
                 onPaste={handlePaste}
                 onDragOver={e => { e.preventDefault(); e.stopPropagation() }}
                 onDrop={handleDrop}
@@ -1555,32 +1555,32 @@ export default function ChatPage() {
                 onKeyDown={e => { if (e.key === 'Tab' && !e.shiftKey && !input.startsWith('/')) { e.preventDefault(); setPathMenuOpen(true); setCursorPos(inputRef.current?.selectionStart ?? 0) } else if (e.key === 'Enter' && !e.shiftKey && !e.defaultPrevented && !e.nativeEvent.isComposing && !(inputRef.current as any)?.__composing) { e.preventDefault(); send() } }}
                 onInput={e => { const t = e.target as HTMLTextAreaElement; const cap = prefillHint ? 320 : 140; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, cap) + 'px' }} />
               </div>
-              <button type="button" onClick={() => { void runQuickCommand('compact', '/compact') }} disabled={!activeSlot || slotRunning || !!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-border bg-bg-elevated px-2.5 text-[11px] text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="压缩当前 session context">{quickAction === 'compact' ? '压缩中…' : 'Compact'}</button>
-              <button type="button" onClick={() => { void runQuickCommand('clear', '/clear') }} disabled={!!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-danger/40 bg-danger-subtle px-2.5 text-[11px] text-danger hover:border-danger disabled:opacity-40" title="开始新的 session">{quickAction === 'clear' ? '清理中…' : 'Clear'}</button>
+              <button type="button" onClick={() => { void runQuickCommand('compact', '/compact') }} disabled={!activeSlot || slotRunning || !!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-border bg-bg-elevated px-2.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="压缩当前 session context">{quickAction === 'compact' ? '压缩中…' : 'Compact'}</button>
+              <button type="button" onClick={() => { void runQuickCommand('clear', '/clear') }} disabled={!!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-danger/40 bg-danger-subtle px-2.5 text-2xs text-danger hover:border-danger disabled:opacity-40" title="开始新的 session">{quickAction === 'clear' ? '清理中…' : 'Clear'}</button>
               <div className="relative hidden md:block">
-                <button type="button" onClick={() => setShowQuickModelMenu(value => !value)} disabled={!!quickAction || slotStopping} className="h-[44px] max-w-[180px] truncate rounded-lg border border-border bg-bg-elevated px-2.5 text-[11px] text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="切换当前模型">{currentSlot?.model ? `Model · ${modelDisplay}` : 'Model'}</button>
+                <button type="button" onClick={() => setShowQuickModelMenu(value => !value)} disabled={!!quickAction || slotStopping} className="h-[44px] max-w-[180px] truncate rounded-lg border border-border bg-bg-elevated px-2.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="切换当前模型">{currentSlot?.model ? `模型 · ${modelDisplay}` : '模型'}</button>
                 {showQuickModelMenu && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-72 w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-lg border border-border bg-card p-2 shadow-xl">
-                  <div className="mb-1 px-1 text-[10px] font-semibold text-muted">当前 Dashboard 可用模型</div>
+                  <div className="mb-1 px-1 text-2xs font-semibold text-muted">当前 Dashboard 可用模型</div>
                   {availableModels.length === 0 && <div className="px-2 py-3 text-xs text-muted">当前没有可用模型。</div>}
                   {availableModels.map(model => {
                     const id = modelFullId(model)
                     const selected = currentSlot?.model === id
                     return <button key={id} type="button" onClick={() => { void selectQuickModel(model) }} className={`flex w-full items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-bg-hover ${selected ? 'bg-accent-subtle' : ''}`}>
                       <span className={`mt-0.5 text-xs ${selected ? 'text-accent' : 'text-muted'}`}>{selected ? '✓' : '○'}</span>
-                      <span className="min-w-0 flex-1"><span className="block truncate font-mono text-[10px] text-text-strong">{id}</span><span className="block truncate text-[10px] text-muted">{modelLabel(model)}{model.contextWindow ? ` · context ${model.contextWindow.toLocaleString()}` : ''}</span></span>
+                      <span className="min-w-0 flex-1"><span className="block truncate font-mono text-2xs text-text-strong">{id}</span><span className="block truncate text-2xs text-muted">{modelLabel(model)}{model.contextWindow ? ` · context ${model.contextWindow.toLocaleString()}` : ''}</span></span>
                     </button>
                   })}
                 </div>}
               </div>
               {slotRunning
                 ? <button
-                    className="bg-danger/10 border border-danger/40 text-danger rounded-lg shrink-0 w-[40px] h-[40px] md:w-auto md:px-5 md:h-[44px] text-sm font-semibold cursor-pointer hover:bg-danger/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-body flex items-center justify-center"
+                    className="bg-danger/10 border border-danger/40 text-danger rounded-lg shrink-0 w-[40px] h-[40px] md:w-auto md:px-5 md:h-[44px] text-sm font-semibold cursor-pointer hover:bg-danger/20 disabled:opacity-40 disabled:cursor-not-allowed transition font-body flex items-center justify-center"
                     onClick={() => { if (activeSlot) { ;(window as any).webkit?.messageHandlers?.piHaptic?.postMessage({ style: 'warning' }); api.stopChatSlot(activeSlot) } }}
                     disabled={slotStopping}
                   >
                     <span className="md:hidden">■</span><span className="hidden md:inline">{slotStopping ? 'Stopping…' : 'Stop'}</span>
                   </button>
-                : <button className="btn-sweep bg-accent text-white border-none rounded-lg shrink-0 w-[40px] h-[40px] md:w-auto md:px-5 md:h-[44px] text-sm font-semibold cursor-pointer hover:bg-accent-hover hover:shadow-[0_0_20px_var(--accent-glow)] disabled:opacity-40 disabled:cursor-not-allowed transition-all font-body flex items-center justify-center" onClick={() => send()} disabled={slotStopping}><span className="md:hidden">↑</span><span className="hidden md:inline">Send</span></button>
+                : <button className="btn-sweep bg-accent text-accent-fg border-none rounded-lg shrink-0 w-[40px] h-[40px] md:w-auto md:px-5 md:h-[44px] text-sm font-semibold cursor-pointer hover:bg-accent-hover hover:shadow-[0_0_20px_var(--accent-glow)] disabled:opacity-40 disabled:cursor-not-allowed transition font-body flex items-center justify-center" onClick={() => send()} disabled={slotStopping}><span className="md:hidden">↑</span><span className="hidden md:inline">Send</span></button>
               }
             </div>
           </div>
@@ -1592,7 +1592,7 @@ export default function ChatPage() {
         <SplitPane slotKey={splitSlot} onClose={() => setSplitSlot(null)} onFileOpen={handleFileOpen} />
       )}
       {panel.isOpen && (
-        <ErrorBoundary key={`panel:${panel.filePath}`}>
+        <ErrorBoundary key={`panel:${panel.filePath}`} fallback={<div className="flex-[0_0_40%] border-l border-border bg-bg flex flex-col items-center justify-center gap-3 p-6 text-center"><div className="text-sm text-danger">文件渲染失败</div><div className="max-w-full truncate text-xs text-muted" title={panel.filePath}>{panel.filePath}</div><div className="flex items-center gap-2"><a href={`/api/local-file/download?path=${encodeURIComponent(panel.filePath)}`} download className="rounded border border-accent px-3 py-1 text-xs text-accent no-underline hover:bg-accent hover:text-accent-fg">下载原文件</a><button type="button" onClick={() => window.location.reload()} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">重新加载</button><button type="button" onClick={panel.closePanel} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button></div></div>}>
           <Suspense fallback={<div className="flex-[0_0_40%] border-l border-border bg-bg flex items-center justify-center"><span className="text-muted text-sm">Loading…</span></div>}>
             <DocumentPanel filePath={panel.filePath} content={panel.content} onContentChange={handleContentChange} onSave={handleFileSave} onClose={panel.closePanel} dirty={panel.dirty} versions={panel.versions} selectedVersion={panel.selectedVersion} conflictContent={panel.conflictContent} onSelectVersion={panel.selectVersion} onResolveConflict={panel.resolveConflict} diffMode={panel.diffMode} onToggleDiff={panel.toggleDiffMode} comments={panel.comments} onAddComment={handleAddComment} onEditComment={handleEditComment} onDeleteComment={handleDeleteComment} onReviewComments={handleReviewComments} />
           </Suspense>

@@ -141,7 +141,7 @@ export default memo(function DiffBlock({ code, complete, initialSideBySide = fal
   const toggleCtx = (idx: number) => setExpandedCtx(prev => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n })
 
   const renderUnifiedLine = (line: DiffLine, key: number) => (
-    <div key={key} className={`flex text-[13px] font-mono leading-relaxed min-w-fit ${BG[line.type]}`}>
+    <div key={key} className={`flex text-body-s font-mono leading-relaxed min-w-fit ${BG[line.type]}`}>
       {hasLineNums && <span className="select-none text-muted/50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border/30">{line.type === 'add' ? '' : (line.oldNum ?? '')}</span>}
       {hasLineNums && <span className="select-none text-muted/50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border/30">{line.type === 'del' ? '' : (line.newNum ?? '')}</span>}
       <span className={`select-none w-[2ch] text-center shrink-0 ${FG[line.type]}`}>{SIGN[line.type]}</span>
@@ -152,10 +152,10 @@ export default memo(function DiffBlock({ code, complete, initialSideBySide = fal
   return (
     <div className="relative group my-2">
       <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-3 py-1.5">
-        <span className="text-muted text-[12px] font-mono uppercase">diff</span>
+        <span className="text-muted text-meta font-mono uppercase">diff</span>
         <div className="flex items-center gap-2">
-          <button className="text-muted text-[12px] opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => setSideBySide(!sideBySide)}>{sideBySide ? 'unified' : 'split'}</button>
-          <button className="text-muted text-[12px] opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={copy}>{copied ? 'Copied!' : 'Copy patch'}</button>
+          <button className="text-muted text-meta opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => setSideBySide(!sideBySide)}>{sideBySide ? 'unified' : 'split'}</button>
+          <button className="text-muted text-meta opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={copy}>{copied ? 'Copied!' : 'Copy patch'}</button>
         </div>
       </div>
       <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-0 overflow-x-auto">
@@ -169,11 +169,11 @@ export default memo(function DiffBlock({ code, complete, initialSideBySide = fal
             // Meta and hunk lines span full width
             if (lType === 'meta' || lType === 'hunk') {
               return (
-                <div key={i} className={`text-[13px] font-mono leading-relaxed px-3 ${BG[lType]} ${FG[lType]}`}>{left?.content}</div>
+                <div key={i} className={`text-body-s font-mono leading-relaxed px-3 ${BG[lType]} ${FG[lType]}`}>{left?.content}</div>
               )
             }
             return (
-              <div key={i} className="flex text-[13px] font-mono leading-relaxed">
+              <div key={i} className="flex text-body-s font-mono leading-relaxed">
                 <div className={`w-1/2 flex overflow-hidden border-r border-border/30 ${left ? BG[lType] : ''}`}>
                   {hasLineNums && <span className="select-none text-muted/50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border/30">{left?.oldNum ?? ''}</span>}
                   <span className={`select-none w-[2ch] text-center shrink-0 ${left ? FG[lType] : 'text-muted'}`}>{left ? (SIGN[lType] || ' ') : ' '}</span>
@@ -205,19 +205,19 @@ export default memo(function DiffBlock({ code, complete, initialSideBySide = fal
             if (expandedCtx.has(si)) {
               return <div key={si}>
                 {ctxLines.map((l, li) => renderUnifiedLine(l, si * 10000 + li))}
-                <div className="px-3 py-0.5 text-[12px] text-muted cursor-pointer hover:text-text bg-bg-hover/50" onClick={() => toggleCtx(si)}>▲ collapse {ctxLines.length} context lines</div>
+                <div className="px-3 py-0.5 text-meta text-muted cursor-pointer hover:text-text bg-bg-hover/50" onClick={() => toggleCtx(si)}>▲ collapse {ctxLines.length} context lines</div>
               </div>
             }
             // Show first 2 + last 2, collapse middle
             const hidden = ctxLines.length - 4
             return <div key={si}>
               {ctxLines.slice(0, 2).map((l, li) => renderUnifiedLine(l, si * 10000 + li))}
-              <div className="px-3 py-0.5 text-[12px] text-muted cursor-pointer hover:text-text bg-bg-hover/50 select-none" onClick={() => toggleCtx(si)}>▼ {hidden} lines hidden</div>
+              <div className="px-3 py-0.5 text-meta text-muted cursor-pointer hover:text-text bg-bg-hover/50 select-none" onClick={() => toggleCtx(si)}>▼ {hidden} lines hidden</div>
               {ctxLines.slice(-2).map((l, li) => renderUnifiedLine(l, si * 10000 + 9000 + li))}
             </div>
           })
         )}
-        {!complete && <div className="px-3 py-1 text-muted text-[12px] italic animate-pulse">generating diff…</div>}
+        {!complete && <div className="px-3 py-1 text-muted text-meta italic animate-pulse">generating diff…</div>}
       </pre>
     </div>
   )

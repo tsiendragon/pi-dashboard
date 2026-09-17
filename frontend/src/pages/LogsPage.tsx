@@ -78,7 +78,7 @@ export default function LogsPage() {
         <div className="flex items-center gap-3 flex-wrap">
           <SearchInput placeholder="Filter logs…" value={filter} onChange={e => setFilter(e.target.value)} className="w-full md:w-64" />
           <select
-            className="bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-text text-[13px] font-body outline-none cursor-pointer transition-colors focus-ring"
+            className="bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-text text-body-s font-body outline-none cursor-pointer transition-colors focus-ring"
             value={levelFilter}
             onChange={e => setLevelFilter(e.target.value)}
           >
@@ -92,20 +92,20 @@ export default function LogsPage() {
             <div className={`w-9 h-5 rounded-full relative transition-colors ${tail ? 'bg-accent' : 'bg-border'}`} onClick={() => setTail(!tail)}>
               <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${tail ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </div>
-            <span className="text-[13px] text-muted">Auto-scroll</span>
+            <span className="text-body-s text-muted">Auto-scroll</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <div className={`w-9 h-5 rounded-full relative transition-colors ${paused ? 'bg-warn' : 'bg-border'}`} onClick={() => setPaused(!paused)}>
               <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${paused ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </div>
-            <span className="text-[13px] text-muted">{paused ? 'Paused' : 'Live'}</span>
+            <span className="text-body-s text-muted">{paused ? 'Paused' : 'Live'}</span>
           </label>
-          <button className="px-2.5 py-1 rounded-md border border-border bg-transparent text-muted text-[13px] cursor-pointer font-body hover:text-text hover:border-border-strong hover:bg-bg-hover transition-all ml-auto" onClick={clear}>Clear</button>
-          <span className="text-[12px] text-muted font-mono">{filtered.length} / {logs.length}</span>
+          <button className="px-2.5 py-1 rounded-md border border-border bg-transparent text-muted text-body-s cursor-pointer font-body hover:text-text hover:border-border-strong hover:bg-bg-hover transition ml-auto" onClick={clear}>Clear</button>
+          <span className="text-meta text-muted font-mono">{filtered.length} / {logs.length}</span>
         </div>
 
         <Card className="flex-1 min-h-0 !p-0 flex flex-col">
-          <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-auto font-mono text-[13px] leading-relaxed p-3">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-auto font-mono text-body-s leading-relaxed p-3">
             {filtered.length === 0 ? (
               <div className="text-muted text-center py-8">
                 {logs.length === 0 ? '📡 Waiting for log events…' : 'No logs match filter'}
@@ -115,7 +115,7 @@ export default function LogsPage() {
                 <tbody>
                   {filtered.map((l, i) => (
                     <tr key={i} className="hover:bg-bg-hover transition-colors group">
-                      <td className="px-2 py-0.5 text-muted/50 text-[11px] whitespace-nowrap align-top select-none w-[140px]">
+                      <td className="px-2 py-0.5 text-muted/50 text-2xs whitespace-nowrap align-top select-none w-[140px]">
                         {l.displayTime}
                       </td>
                       <td className="px-2 py-0.5 whitespace-nowrap align-top w-[60px]">

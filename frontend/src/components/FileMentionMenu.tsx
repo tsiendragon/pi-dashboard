@@ -91,16 +91,16 @@ export default function FileMentionMenu({ input, cursorPos, cwd, anchorRef, onPi
       {entries.map((entry, i) => (
         <button
           key={entry.path}
-          className={`w-full text-left px-3 py-1.5 flex items-center gap-2 cursor-pointer transition-colors text-[13px] font-mono ${i === selected ? 'bg-accent-subtle text-text' : 'text-muted hover:bg-bg-hover hover:text-text'}`}
+          className={`w-full text-left px-3 py-1.5 flex items-center gap-2 cursor-pointer transition-colors text-body-s font-mono ${i === selected ? 'bg-accent-subtle text-text' : 'text-muted hover:bg-bg-hover hover:text-text'}`}
           onMouseEnter={() => setSelected(i)}
           onMouseDown={e => { e.preventDefault(); applyPick(entry) }}
         >
           <span className="shrink-0 w-4 text-center">📄</span>
           <span className="truncate flex-1">{entry.name}</span>
-          <span className="text-[11px] text-muted/50 shrink-0 ml-auto">{entry.path.replace(/^\/home\/[^/]+/, '~').replace(/^\/Users\/[^/]+/, '~')}</span>
+          <span className="text-2xs text-muted/50 shrink-0 ml-auto">{entry.path.replace(/^\/home\/[^/]+/, '~').replace(/^\/Users\/[^/]+/, '~')}</span>
         </button>
       ))}
-      <div className="px-3 py-1 border-t border-border text-[11px] text-muted/40 flex gap-3">
+      <div className="px-3 py-1 border-t border-border text-2xs text-muted/40 flex gap-3">
         <span>⏎ pick</span>
         <span>↑↓ navigate</span>
         <span>Esc dismiss</span>

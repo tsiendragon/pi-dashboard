@@ -4,7 +4,7 @@ interface ImageRendererProps {
   filePath: string
 }
 
-const BTN = 'px-2 py-1 rounded-md text-[12px] font-medium border border-border text-muted hover:text-text cursor-pointer disabled:opacity-40'
+const BTN = 'px-2 py-1 rounded-md text-meta font-medium border border-border text-muted hover:text-text cursor-pointer disabled:opacity-40'
 
 export default function ImageRenderer({ filePath }: ImageRendererProps) {
   const [scale, setScale] = useState(0) // 0 = fit mode
@@ -23,7 +23,7 @@ export default function ImageRenderer({ filePath }: ImageRendererProps) {
   return (
     <div className="flex flex-col w-full h-full">
       {/* Controls bar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-chrome text-[12px] shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-chrome text-meta shrink-0">
         <button className={BTN} disabled={scale !== 0 && scale <= 0.25} onClick={() => zoom(-0.25)}>−</button>
         <span className="text-muted w-12 text-center">{scale === 0 ? 'Fit' : `${Math.round(scale * 100)}%`}</span>
         <button className={BTN} disabled={scale >= 5.0} onClick={() => zoom(0.25)}>+</button>

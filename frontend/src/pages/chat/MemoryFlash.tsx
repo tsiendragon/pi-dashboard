@@ -47,21 +47,21 @@ export default function MemoryFlash({ slotKey }: MemoryFlashProps) {
   return (
     <div className="mx-3 md:mx-6 mb-3 rounded-xl border border-accent/25 bg-accent-subtle/35 shadow-[0_8px_32px_rgba(0,0,0,.12)] animate-scale-in overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-accent/15">
-        <span className="text-[15px]">🧠</span>
+        <span className="text-sm">🧠</span>
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold text-text-strong">Memory Flash</div>
-          <div className="text-[11px] text-muted">
+          <div className="text-body-s font-semibold text-text-strong">Memory Flash</div>
+          <div className="text-2xs text-muted">
             Relevant context loaded for this session{stats ? ` · ${stats.semantic} facts · ${stats.lessons} lessons` : ''}
           </div>
         </div>
         <button
-          className="text-[12px] text-muted hover:text-text bg-transparent border-none cursor-pointer px-2 py-1"
+          className="text-meta text-muted hover:text-text bg-transparent border-none cursor-pointer px-2 py-1"
           onClick={() => setExpanded(v => !v)}
         >
           {expanded ? 'Less' : `Show ${items.length}`}
         </button>
         <button
-          className="text-[13px] text-muted hover:text-danger bg-transparent border-none cursor-pointer px-1"
+          className="text-body-s text-muted hover:text-danger bg-transparent border-none cursor-pointer px-1"
           title="Dismiss for this session"
           onClick={() => setDismissed(prev => new Set(prev).add(slotKey))}
         >
@@ -70,7 +70,7 @@ export default function MemoryFlash({ slotKey }: MemoryFlashProps) {
       </div>
       <div className="p-2.5 space-y-1.5">
         {visibleItems.map((item, idx) => (
-          <div key={idx} className="rounded-lg bg-bg/60 border border-border/70 px-2.5 py-1.5 text-[12px] text-text leading-relaxed whitespace-pre-wrap">
+          <div key={idx} className="rounded-lg bg-bg/60 border border-border/70 px-2.5 py-1.5 text-meta text-text leading-relaxed whitespace-pre-wrap">
             {item}
           </div>
         ))}

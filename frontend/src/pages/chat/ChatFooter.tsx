@@ -43,7 +43,7 @@ const ChatFooter = memo(function ChatFooter({ running, stopping, state, lastRole
   if (!running || lastRole === 'streaming') return null
 
   const timer = elapsed >= 3
-    ? <span className="text-muted/50 text-[12px] font-mono tabular-nums ml-2">{elapsed}s</span>
+    ? <span className="text-muted/50 text-meta font-mono tabular-nums ml-2">{elapsed}s</span>
     : null
 
   return (
@@ -53,12 +53,12 @@ const ChatFooter = memo(function ChatFooter({ running, stopping, state, lastRole
         {stopping ? (
           <div className="flex items-center gap-2">
             <span className="inline-block w-4 h-4 border-2 border-muted/30 border-t-muted rounded-full animate-spin" />
-            <span className="text-muted text-[13px]">Pulling from the oven…</span>
+            <span className="text-muted text-body-s">Pulling from the oven…</span>
           </div>
         ) : state === 'tool_running' ? (
           <div className="flex items-center gap-2">
             <span className="inline-block w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-            <span className="text-[13px] text-muted">Greasing the pan…</span>
+            <span className="text-body-s text-muted">Greasing the pan…</span>
             {timer}
           </div>
         ) : (
@@ -68,7 +68,7 @@ const ChatFooter = memo(function ChatFooter({ running, stopping, state, lastRole
               <span className="block w-[6px] h-[6px] rounded-full bg-accent/70 animate-[pulse-dot_1.4s_ease-in-out_0.2s_infinite]" />
               <span className="block w-[6px] h-[6px] rounded-full bg-accent/70 animate-[pulse-dot_1.4s_ease-in-out_0.4s_infinite]" />
             </div>
-            <span className="text-[13px] text-muted transition-opacity duration-300">{label}</span>
+            <span className="text-body-s text-muted transition-opacity duration-300">{label}</span>
             {timer}
           </div>
         )}

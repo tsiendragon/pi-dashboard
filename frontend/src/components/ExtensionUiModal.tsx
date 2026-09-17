@@ -71,7 +71,7 @@ export default function ExtensionUiModal() {
           {req.prompt || 'Extension request'}
         </div>
         {req.message && (
-          <div className="mb-3 whitespace-pre-wrap text-[13px] text-muted">{req.message}</div>
+          <div className="mb-3 whitespace-pre-wrap text-body-s text-muted">{req.message}</div>
         )}
 
         {req.method === 'confirm' && (
@@ -82,7 +82,7 @@ export default function ExtensionUiModal() {
               disabled={submitting}
             >No</button>
             <button
-              className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-40"
+              className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-40"
               onClick={() => respond({ value: true })}
               disabled={submitting}
             >Yes</button>
@@ -118,7 +118,7 @@ export default function ExtensionUiModal() {
             />
             <div className="flex justify-end gap-2">
               <button type="button" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:bg-bg disabled:opacity-40" onClick={cancel} disabled={submitting}>Cancel</button>
-              <button type="submit" className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-40" disabled={submitting}>Submit</button>
+              <button type="submit" className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-40" disabled={submitting}>Submit</button>
             </div>
           </form>
         )}
@@ -127,13 +127,13 @@ export default function ExtensionUiModal() {
           <form onSubmit={(e) => { e.preventDefault(); respond({ value }) }}>
             <textarea
               ref={firstFieldRef as React.RefObject<HTMLTextAreaElement>}
-              className="mb-3 h-40 w-full resize-y rounded-lg border border-border bg-bg px-3 py-2 font-mono text-[13px] text-text outline-none focus:border-accent"
+              className="mb-3 h-40 w-full resize-y rounded-lg border border-border bg-bg px-3 py-2 font-mono text-body-s text-text outline-none focus:border-accent"
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
             <div className="flex justify-end gap-2">
               <button type="button" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:bg-bg disabled:opacity-40" onClick={cancel} disabled={submitting}>Cancel</button>
-              <button type="submit" className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-40" disabled={submitting}>Save</button>
+              <button type="submit" className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-40" disabled={submitting}>Save</button>
             </div>
           </form>
         )}

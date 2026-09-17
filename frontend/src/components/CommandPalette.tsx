@@ -181,9 +181,9 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
         <div className="cmdk-dialog cmdk-dialog--fullview" tabIndex={-1} ref={el => el?.focus()} onKeyDown={handleSysPromptKey} style={{ outline: 'none' }}>
           <div className="cmdk-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px 0' }}>
-              <span className="cmdk-search-icon cursor-pointer text-[14px] hover:text-accent" onClick={goBack} title="Back">←</span>
+              <span className="cmdk-search-icon cursor-pointer text-sm hover:text-accent" onClick={goBack} title="Back">←</span>
               <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>System Prompt</span>
-              <span className="text-[11px] text-muted font-mono">{charCount.toLocaleString()} chars</span>
+              <span className="text-2xs text-muted font-mono">{charCount.toLocaleString()} chars</span>
               <kbd className="cmdk-badge" style={{ cursor: 'pointer' }} onClick={close}>ESC</kbd>
             </div>
             <div style={{ display: 'flex', gap: 2, padding: '8px 16px 0', borderBottom: '1px solid var(--border)' }}>
@@ -249,7 +249,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
         {open && <div className="cmdk-overlay" onClick={close} />}
         <div className="cmdk-dialog" style={{ position: 'fixed', top: '20%', left: '50%', transform: 'translateX(-50%)', zIndex: 99999 }}>
           <div className="cmdk-input-wrapper">
-            <span className="cmdk-search-icon cursor-pointer text-[14px] hover:text-accent" onClick={goBack} title="Back">←</span>
+            <span className="cmdk-search-icon cursor-pointer text-sm hover:text-accent" onClick={goBack} title="Back">←</span>
             <input
               ref={inputRef}
               className="cmdk-input"
@@ -258,7 +258,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
               onChange={e => setSessionQuery(e.target.value)}
               onKeyDown={handleSessionKey}
             />
-            {sessionSearching && <span className="text-[12px] text-muted animate-pulse">…</span>}
+            {sessionSearching && <span className="text-meta text-muted animate-pulse">…</span>}
             <kbd className="cmdk-badge">ESC</kbd>
           </div>
           <div ref={sessionListRef} className="cmdk-list" style={{ maxHeight: 400, overflowY: 'auto' }}>
@@ -282,7 +282,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
                   <span className="cmdk-item-icon">📜</span>
                   <div className="flex-1 min-w-0">
                     <div className="cmdk-item-label truncate">{r.name}</div>
-                    <div className="flex items-center gap-2 text-[11px] text-muted mt-0.5">
+                    <div className="flex items-center gap-2 text-2xs text-muted mt-0.5">
                       {date && <span>{date}</span>}
                       {project && <span className="font-mono truncate max-w-[150px]">{project}</span>}
                       {model && <span>🧠 {model}</span>}
@@ -310,7 +310,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
         {open && <div className="cmdk-overlay" onClick={close} />}
         <Command.Dialog key="theme" open={open} onOpenChange={onOpenChange} label="Pick theme" className="cmdk-dialog" shouldFilter={true}>
           <div className="cmdk-input-wrapper">
-            <span className="cmdk-search-icon cursor-pointer text-[14px] hover:text-accent" onClick={goBack} title="Back">←</span>
+            <span className="cmdk-search-icon cursor-pointer text-sm hover:text-accent" onClick={goBack} title="Back">←</span>
             <Command.Input ref={inputRef} placeholder="Switch theme…" className="cmdk-input" />
             <kbd className="cmdk-badge">ESC</kbd>
           </div>
@@ -326,7 +326,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
                       {[vars['bg'], vars['accent'], vars['text']].map((c, i) => <span key={i} className="w-2.5 h-2.5 rounded-full border border-white/10" style={{ background: c || '#888' }} />)}
                     </span>
                     <span className="cmdk-item-label">{t.label}</span>
-                    {isCurrent && <span className="text-[11px] text-accent ml-auto">✓</span>}
+                    {isCurrent && <span className="text-2xs text-accent ml-auto">✓</span>}
                   </Command.Item>
                 )
               })}
@@ -342,7 +342,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
                         {[vars['bg'], vars['accent'], vars['text']].map((c, i) => <span key={i} className="w-2.5 h-2.5 rounded-full border border-white/10" style={{ background: c || '#888' }} />)}
                       </span>
                       <span className="cmdk-item-label">{t.label}</span>
-                      {isCurrent && <span className="text-[11px] text-accent ml-auto">✓</span>}
+                      {isCurrent && <span className="text-2xs text-accent ml-auto">✓</span>}
                     </Command.Item>
                   )
                 })}
@@ -361,7 +361,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
         {open && <div className="cmdk-overlay" onClick={close} />}
         <Command.Dialog open={open} onOpenChange={onOpenChange} label="Pick model" className="cmdk-dialog" shouldFilter={true}>
           <div className="cmdk-input-wrapper">
-            <span className="cmdk-search-icon cursor-pointer text-[14px] hover:text-accent" onClick={goBack} title="Back">←</span>
+            <span className="cmdk-search-icon cursor-pointer text-sm hover:text-accent" onClick={goBack} title="Back">←</span>
             <Command.Input ref={inputRef} placeholder="Switch model…" className="cmdk-input" />
             <kbd className="cmdk-badge">ESC</kbd>
           </div>
@@ -375,7 +375,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
                   <Command.Item key={fullId} value={`${m.name || m.id} ${m.provider}`} onSelect={() => handleModelSelect(m.provider, m.id)} className="cmdk-item">
                     <span className="cmdk-item-icon">{isCurrent ? '●' : '○'}</span>
                     <span className="cmdk-item-label font-mono">{m.name || m.id}</span>
-                    <span className="text-[11px] text-muted ml-auto">{m.provider}</span>
+                    <span className="text-2xs text-muted ml-auto">{m.provider}</span>
                   </Command.Item>
                 )
               })}
@@ -393,7 +393,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
         {open && <div className="cmdk-overlay" onClick={close} />}
         <Command.Dialog open={open} onOpenChange={onOpenChange} label="Thinking level" className="cmdk-dialog" shouldFilter={true}>
           <div className="cmdk-input-wrapper">
-            <span className="cmdk-search-icon cursor-pointer text-[14px] hover:text-accent" onClick={goBack} title="Back">←</span>
+            <span className="cmdk-search-icon cursor-pointer text-sm hover:text-accent" onClick={goBack} title="Back">←</span>
             <Command.Input ref={inputRef} placeholder="Set thinking level…" className="cmdk-input" />
             <kbd className="cmdk-badge">ESC</kbd>
           </div>
@@ -420,7 +420,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
         {open && <div className="cmdk-overlay" onClick={close} />}
         <div className="cmdk-dialog" style={{ position: 'fixed', top: '20%', left: '50%', transform: 'translateX(-50%)', zIndex: 99999 }}>
           <div className="cmdk-input-wrapper">
-            <span className="cmdk-search-icon cursor-pointer text-[14px] hover:text-accent" onClick={goBack} title="Back">←</span>
+            <span className="cmdk-search-icon cursor-pointer text-sm hover:text-accent" onClick={goBack} title="Back">←</span>
             <input
               ref={inputRef}
               className="cmdk-input"
@@ -446,10 +446,10 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
         {open && <div className="cmdk-overlay" onClick={close} />}
         <div className="cmdk-dialog" style={{ position: 'fixed', top: '20%', left: '50%', transform: 'translateX(-50%)', zIndex: 99999 }}>
           <div className="cmdk-input-wrapper">
-            <span className="cmdk-search-icon cursor-pointer text-[14px] hover:text-accent" onClick={goBack} title="Back">←</span>
+            <span className="cmdk-search-icon cursor-pointer text-sm hover:text-accent" onClick={goBack} title="Back">←</span>
             <div className="flex items-center gap-1 flex-1 min-w-0">
               {(currentSlot?.tags || []).map(t => (
-                <span key={t} className="px-1.5 py-[1px] rounded-full text-[10px] font-semibold bg-accent/15 text-accent border border-accent/25 whitespace-nowrap shrink-0">{t}</span>
+                <span key={t} className="px-1.5 py-[1px] rounded-full text-2xs font-semibold bg-accent/15 text-accent border border-accent/25 whitespace-nowrap shrink-0">{t}</span>
               ))}
               <input
                 ref={inputRef}
@@ -531,7 +531,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
               <Command.Item value="Switch model provider" onSelect={() => enterMode('model')} className="cmdk-item">
                 <span className="cmdk-item-icon">🤖</span>
                 <span className="cmdk-item-label">Switch Model</span>
-                {currentSlot?.model && <span className="text-[11px] text-muted ml-auto font-mono">{currentSlot.model.split('/').pop()}</span>}
+                {currentSlot?.model && <span className="text-2xs text-muted ml-auto font-mono">{currentSlot.model.split('/').pop()}</span>}
               </Command.Item>
               <Command.Item value="Thinking level reasoning budget" onSelect={() => enterMode('thinking')} className="cmdk-item">
                 <span className="cmdk-item-icon">🧠</span>

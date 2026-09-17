@@ -86,7 +86,7 @@ export function CodeEditor({ content, lang, lineNums, onChange, readOnly, commen
   return (
     <div className="relative w-full h-full font-mono text-sm leading-[1.5] bg-bg-elevated border border-border rounded-md overflow-hidden">
       {lineNums && (
-        <div ref={gutterRef} data-testid="gutter" className="absolute left-0 top-0 bottom-0 w-[3em] bg-chrome border-r border-border text-right pr-2 pt-3 text-[11px] text-muted select-none overflow-hidden z-10 leading-[1.5]" style={{ fontFamily: 'inherit' }}>
+        <div ref={gutterRef} data-testid="gutter" className="absolute left-0 top-0 bottom-0 w-[3em] bg-chrome border-r border-border text-right pr-2 pt-3 text-2xs text-muted select-none overflow-hidden z-10 leading-[1.5]" style={{ fontFamily: 'inherit' }}>
           {Array.from({ length: lineCount }, (_, i) => <div key={i} className={commentedLines?.has(i + 1) ? 'text-cyan-400' : ''}>{commentedLines?.has(i + 1) ? '💬' : i + 1}</div>)}
         </div>
       )}
@@ -103,11 +103,11 @@ export function CommentInput({ range, onSave, onCancel }: { range: { start: numb
   useEffect(() => { ref.current?.focus() }, [])
   return (
     <div className="ml-[3em] pl-3 py-1.5 border-l-2 border-cyan-400 bg-cyan-500/5">
-      <div className="text-[10px] text-muted mb-1">Comment on {range.start === range.end ? `line ${range.start}` : `lines ${range.start}–${range.end}`}</div>
-      <textarea ref={ref} className="w-full bg-bg border border-border rounded px-2 py-1 text-[12px] text-text outline-none focus:border-accent resize-none" rows={2} placeholder="Add a comment..." value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (value.trim()) onSave(value.trim()) } if (e.key === 'Escape') onCancel() }} />
+      <div className="text-2xs text-muted mb-1">Comment on {range.start === range.end ? `line ${range.start}` : `lines ${range.start}–${range.end}`}</div>
+      <textarea ref={ref} className="w-full bg-bg border border-border rounded px-2 py-1 text-meta text-text outline-none focus:border-accent resize-none" rows={2} placeholder="Add a comment..." value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (value.trim()) onSave(value.trim()) } if (e.key === 'Escape') onCancel() }} />
       <div className="flex gap-1 mt-1">
-        <button className="px-2 py-0.5 rounded border border-accent text-accent text-[11px] cursor-pointer hover:bg-accent-subtle" onClick={() => { if (value.trim()) onSave(value.trim()) }}>Save</button>
-        <button className="px-2 py-0.5 rounded border border-border text-muted text-[11px] cursor-pointer hover:bg-bg-hover" onClick={onCancel}>Cancel</button>
+        <button className="px-2 py-0.5 rounded border border-accent text-accent text-2xs cursor-pointer hover:bg-accent-subtle" onClick={() => { if (value.trim()) onSave(value.trim()) }}>Save</button>
+        <button className="px-2 py-0.5 rounded border border-border text-muted text-2xs cursor-pointer hover:bg-bg-hover" onClick={onCancel}>Cancel</button>
       </div>
     </div>
   )
@@ -123,21 +123,21 @@ function InlineCommentWidget({ comment, onEdit, onDelete }: { comment: Comment; 
   const lineLabel = comment.startLine === comment.endLine ? `L${comment.startLine}` : `L${comment.startLine}–${comment.endLine}`
 
   return (
-    <div className="my-1 mx-2 pl-2 py-1 border-l-2 border-cyan-400 bg-cyan-500/5 rounded-r text-[12px]">
+    <div className="my-1 mx-2 pl-2 py-1 border-l-2 border-cyan-400 bg-cyan-500/5 rounded-r text-meta">
       {editing ? (
         <>
-          <textarea ref={ref} className="w-full bg-bg border border-border rounded px-2 py-1 text-[12px] text-text outline-none resize-none" rows={2} value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save() } if (e.key === 'Escape') { setValue(comment.content); setEditing(false) } }} />
+          <textarea ref={ref} className="w-full bg-bg border border-border rounded px-2 py-1 text-meta text-text outline-none resize-none" rows={2} value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save() } if (e.key === 'Escape') { setValue(comment.content); setEditing(false) } }} />
           <div className="flex gap-1 mt-1">
-            <button className="px-2 py-0.5 rounded border border-accent text-accent text-[11px] cursor-pointer" onClick={save}>Save</button>
-            <button className="px-2 py-0.5 rounded border border-border text-muted text-[11px] cursor-pointer" onClick={() => { setValue(comment.content); setEditing(false) }}>Cancel</button>
+            <button className="px-2 py-0.5 rounded border border-accent text-accent text-2xs cursor-pointer" onClick={save}>Save</button>
+            <button className="px-2 py-0.5 rounded border border-border text-muted text-2xs cursor-pointer" onClick={() => { setValue(comment.content); setEditing(false) }}>Cancel</button>
           </div>
         </>
       ) : (
         <div className="flex items-start justify-between gap-2">
           <div className={onEdit ? 'cursor-pointer hover:bg-cyan-500/10 rounded px-1 -mx-1 transition-colors' : ''} onClick={onEdit ? () => setEditing(true) : undefined}>
-            <span className="text-[10px] text-cyan-400 font-mono mr-1.5">{lineLabel}</span><span className="text-text">{comment.content}</span>
+            <span className="text-2xs text-cyan-400 font-mono mr-1.5">{lineLabel}</span><span className="text-text">{comment.content}</span>
           </div>
-          {onDelete && <button className="text-[10px] text-muted hover:text-danger cursor-pointer shrink-0" onClick={() => onDelete(comment.id)} title="Delete">✕</button>}
+          {onDelete && <button className="text-2xs text-muted hover:text-danger cursor-pointer shrink-0" onClick={() => onDelete(comment.id)} title="Delete">✕</button>}
         </div>
       )}
     </div>
@@ -177,7 +177,7 @@ function CodePreviewWithComments({ content, ext, comments, onEdit, onDelete }: {
       {htmlLines.map((html, i) => (
         <Fragment key={i}>
           <div className="flex">
-            <span className={`w-[3em] text-right pr-3 text-[11px] select-none shrink-0 ${commentedLines.has(i + 1) ? 'text-cyan-400' : 'text-muted'}`}>{i + 1}</span>
+            <span className={`w-[3em] text-right pr-3 text-2xs select-none shrink-0 ${commentedLines.has(i + 1) ? 'text-cyan-400' : 'text-muted'}`}>{i + 1}</span>
             <code className="hljs" dangerouslySetInnerHTML={{ __html: html || '\u00a0' }} />
           </div>
           {commentMap.get(i + 1)?.map(c => <InlineCommentWidget key={c.id} comment={c} onEdit={onEdit} onDelete={onDelete} />)}

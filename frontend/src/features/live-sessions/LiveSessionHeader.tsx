@@ -18,14 +18,14 @@ export default function LiveSessionHeader({ summary, owned, busy, onClaim, onRel
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${summary.status === 'running' ? 'bg-ok animate-pulse' : summary.status === 'reconnecting' ? 'bg-warn' : 'bg-muted'}`} />
           <h1 className="min-w-0 whitespace-normal break-words text-sm font-semibold text-text-strong" title={summary.sessionName || `Pi session ${summary.pid}`}>{summary.sessionName || `Pi session ${summary.pid}`}</h1>
-          {summary.claim.state === 'claimed' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-warn-subtle text-warn">{owned ? '已取得强控制' : '其他端持有强控制'}</span>}
+          {summary.claim.state === 'claimed' && <span className="text-2xs px-2 py-0.5 rounded-full bg-warn-subtle text-warn">{owned ? '已取得强控制' : '其他端持有强控制'}</span>}
         </div>
         {sidebarVisible ? (
-          <div className="mt-1 text-[10px] text-muted">{summary.status === 'running' ? '运行中' : summary.status === 'reconnecting' ? '连接中断' : '空闲'} · {summary.mode.toUpperCase()}</div>
+          <div className="mt-1 text-2xs text-muted">{summary.status === 'running' ? '运行中' : summary.status === 'reconnecting' ? '连接中断' : '空闲'} · {summary.mode.toUpperCase()}</div>
         ) : (
           <>
-            <div className="mt-1 text-[11px] text-muted font-mono whitespace-normal break-all" title={summary.canonicalCwd}>{displayWorktreePath(summary.canonicalCwd)}</div>
-            <div className="mt-1 text-[10px] text-muted whitespace-normal break-all">
+            <div className="mt-1 text-2xs text-muted font-mono whitespace-normal break-all" title={summary.canonicalCwd}>{displayWorktreePath(summary.canonicalCwd)}</div>
+            <div className="mt-1 text-2xs text-muted whitespace-normal break-all">
               PID {summary.pid} · {summary.mode.toUpperCase()} · {summary.model ? `${summary.model.provider}/${summary.model.id}` : 'model unavailable'}
               {summary.thinkingLevel ? ` · ${summary.thinkingLevel}` : ''}
             </div>
@@ -39,7 +39,7 @@ export default function LiveSessionHeader({ summary, owned, busy, onClaim, onRel
         {owned ? (
           <button type="button" disabled={busy} onClick={onRelease} className="px-3 py-1.5 rounded-md border border-border bg-bg text-xs text-text disabled:opacity-50">释放强控制</button>
         ) : (
-          <button type="button" disabled={busy || summary.status === 'reconnecting'} onClick={onClaim} className="px-3 py-1.5 rounded-md border border-accent bg-accent text-white text-xs disabled:opacity-50">取得强控制</button>
+          <button type="button" disabled={busy || summary.status === 'reconnecting'} onClick={onClaim} className="px-3 py-1.5 rounded-md border border-accent bg-accent text-accent-fg text-xs disabled:opacity-50">取得强控制</button>
         )}
       </div>
     </header>

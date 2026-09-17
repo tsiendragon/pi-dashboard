@@ -48,7 +48,7 @@ export default function BtwDrawer({ slot, onClose, onCopy }: { slot: string; onC
     <footer className="border-t border-border p-3">
       <div className="flex gap-2">
         <textarea className="flex-1 min-h-12 max-h-32 bg-bg-elevated border border-border rounded-lg px-3 py-2 text-sm" placeholder="Ask without interrupting the main agent" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }} />
-        {snapshot?.status === 'busy' ? <button className="px-3 rounded-lg border border-danger/40 text-danger" onClick={() => void send({ type: 'abort' })}>Stop</button> : <button className="px-4 rounded-lg bg-accent text-white disabled:opacity-40" disabled={!input.trim() || !attached} onClick={submit}>Send</button>}
+        {snapshot?.status === 'busy' ? <button className="px-3 rounded-lg border border-danger/40 text-danger" onClick={() => void send({ type: 'abort' })}>Stop</button> : <button className="px-4 rounded-lg bg-accent text-accent-fg disabled:opacity-40" disabled={!input.trim() || !attached} onClick={submit}>Send</button>}
       </div>
       <div className="flex gap-3 mt-2 text-xs"><button className="text-muted hover:text-text" disabled={snapshot?.status === 'busy'} onClick={() => void send({ type: 'refresh-parent' })}>Refresh parent context</button><span className="text-muted ml-auto">read · grep · find · ls · session_history</span></div>
     </footer>

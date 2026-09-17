@@ -89,9 +89,9 @@ export default function SlashCommandMenu({ input, anchorRef, onSelect, onClose, 
             onMouseEnter={() => setSelected(i)}
             onMouseDown={e => { e.preventDefault(); onSelect((cmd.insert ?? cmd.name) + ' ') }}
           >
-            <span className="text-[13px] font-mono font-semibold text-accent shrink-0">{cmd.name}</span>
-            <span className="text-[12px] truncate flex-1">{cmd.description}</span>
-            {badge && <span className={`px-1.5 py-[1px] rounded-full text-[10px] font-semibold shrink-0 ${badge.cls}`}>{badge.label}</span>}
+            <span className="text-body-s font-mono font-semibold text-accent shrink-0">{cmd.name}</span>
+            <span className="text-meta truncate flex-1">{cmd.description}</span>
+            {badge && <span className={`px-1.5 py-[1px] rounded-full text-2xs font-semibold shrink-0 ${badge.cls}`}>{badge.label}</span>}
           </button>
         )
       })}

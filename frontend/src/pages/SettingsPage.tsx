@@ -19,8 +19,8 @@ function Toggle({ label, hint, checked, onChange }: { label: string; hint?: stri
   return (
     <label className="flex items-center justify-between cursor-pointer group py-2">
       <div>
-        <span className="text-[13px] text-text group-hover:text-text-strong transition-colors">{label}</span>
-        {hint && <div className="text-[12px] text-muted/60 mt-0.5">{hint}</div>}
+        <span className="text-body-s text-text group-hover:text-text-strong transition-colors">{label}</span>
+        {hint && <div className="text-meta text-muted/60 mt-0.5">{hint}</div>}
       </div>
       <div className={`w-9 h-5 rounded-full relative transition-colors shrink-0 ml-4 ${checked ? 'bg-accent' : 'bg-border'}`} onClick={() => onChange(!checked)}>
         <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
@@ -33,11 +33,11 @@ function SelectRow({ label, hint, value, options, onChange }: { label: string; h
   return (
     <div className="flex items-center justify-between py-2">
       <div>
-        <span className="text-[13px] text-text">{label}</span>
-        {hint && <div className="text-[12px] text-muted/60 mt-0.5">{hint}</div>}
+        <span className="text-body-s text-text">{label}</span>
+        {hint && <div className="text-meta text-muted/60 mt-0.5">{hint}</div>}
       </div>
       <select
-        className="bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-[13px] text-text font-body outline-none cursor-pointer transition-colors focus-ring ml-4"
+        className="bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-body-s text-text font-body outline-none cursor-pointer transition-colors focus-ring ml-4"
         value={value}
         onChange={e => onChange(e.target.value)}
       >
@@ -51,12 +51,12 @@ function NumberRow({ label, hint, value, onChange, min, max, step, placeholder }
   return (
     <div className="flex items-center justify-between py-2">
       <div>
-        <span className="text-[13px] text-text">{label}</span>
-        {hint && <div className="text-[12px] text-muted/60 mt-0.5">{hint}</div>}
+        <span className="text-body-s text-text">{label}</span>
+        {hint && <div className="text-meta text-muted/60 mt-0.5">{hint}</div>}
       </div>
       <input
         type="number"
-        className="w-28 bg-bg-elevated border border-border rounded-md px-2.5 py-1.5 text-[13px] font-mono text-text outline-none focus-ring transition-colors text-right ml-4"
+        className="w-28 bg-bg-elevated border border-border rounded-md px-2.5 py-1.5 text-body-s font-mono text-text outline-none focus-ring transition-colors text-right ml-4"
         value={value ?? ''}
         onChange={e => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
         min={min}
@@ -72,11 +72,11 @@ function TextRow({ label, hint, value, onChange, placeholder, mono }: { label: s
   return (
     <div className="flex items-center justify-between py-2">
       <div className="min-w-0 mr-4">
-        <span className="text-[13px] text-text">{label}</span>
-        {hint && <div className="text-[12px] text-muted/60 mt-0.5">{hint}</div>}
+        <span className="text-body-s text-text">{label}</span>
+        {hint && <div className="text-meta text-muted/60 mt-0.5">{hint}</div>}
       </div>
       <input
-        className={`w-64 bg-bg-elevated border border-border rounded-md px-2.5 py-1.5 text-[13px] text-text outline-none focus-ring transition-colors text-right ml-4 ${mono ? 'font-mono' : 'font-body'}`}
+        className={`w-64 bg-bg-elevated border border-border rounded-md px-2.5 py-1.5 text-body-s text-text outline-none focus-ring transition-colors text-right ml-4 ${mono ? 'font-mono' : 'font-body'}`}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
@@ -161,7 +161,7 @@ interface GalleryPkg {
 function Feedback({ feedback }: { feedback: { type: 'ok' | 'err'; msg: string } | null }) {
   if (!feedback) return null
   return (
-    <div className={`px-3 py-2 rounded-md text-[13px] font-medium animate-scale-in ${feedback.type === 'ok' ? 'bg-ok-subtle text-ok border border-ok/20' : 'bg-danger-subtle text-danger border border-danger/20'}`}>
+    <div className={`px-3 py-2 rounded-md text-body-s font-medium animate-scale-in ${feedback.type === 'ok' ? 'bg-ok-subtle text-ok border border-ok/20' : 'bg-danger-subtle text-danger border border-danger/20'}`}>
       {feedback.msg}
     </div>
   )
@@ -208,7 +208,7 @@ function ModelTab() {
     fetch('/api/models').then(j).then(r => setAvailableModels(r?.models || [])).catch(() => {})
   }, [])
 
-  if (!settings) return <div className="text-muted text-[13px] py-4">Loading settings…</div>
+  if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
 
   const currentDefaultModel = (() => {
     const raw = settings.defaultModel ? splitThinkingSuffix(settings.defaultModel).modelPattern : ''
@@ -304,9 +304,9 @@ function ModelTab() {
 
       <Card>
         <CardTitle>Enabled Models <InfoTip text="Glob patterns to filter which models appear in the model picker. Empty = all models." /></CardTitle>
-        <div className="text-[12px] text-muted/60 mb-2">One pattern per line. Supports wildcards and optional thinking suffixes (e.g. <code className="font-mono text-text">bedrock-mantle/openai.gpt-5.5:xhigh</code>, <code className="font-mono text-text">*/gpt-4o</code>)</div>
+        <div className="text-meta text-muted/60 mb-2">One pattern per line. Supports wildcards and optional thinking suffixes (e.g. <code className="font-mono text-text">bedrock-mantle/openai.gpt-5.5:xhigh</code>, <code className="font-mono text-text">*/gpt-4o</code>)</div>
         <textarea
-          className="w-full bg-bg-elevated border border-border rounded-md p-3 text-[13px] font-mono text-text resize-none outline-none focus-ring leading-relaxed min-h-[80px]"
+          className="w-full bg-bg-elevated border border-border rounded-md p-3 text-body-s font-mono text-text resize-none outline-none focus-ring leading-relaxed min-h-[80px]"
           value={(settings.enabledModels || []).join('\n')}
           onChange={e => {
             const lines = e.target.value.split('\n')
@@ -323,7 +323,7 @@ function ModelTab() {
 /* ── BEHAVIOR TAB ── */
 function BehaviorTab() {
   const { settings, feedback, set, setNested } = usePiSettings()
-  if (!settings) return <div className="text-muted text-[13px] py-4">Loading settings…</div>
+  if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
 
   return (
     <div className="space-y-4">
@@ -391,7 +391,7 @@ function BehaviorTab() {
 /* ── TERMINAL TAB ── */
 function TerminalTab() {
   const { settings, feedback, set, setNested } = usePiSettings()
-  if (!settings) return <div className="text-muted text-[13px] py-4">Loading settings…</div>
+  if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
 
   return (
     <div className="space-y-4">
@@ -522,7 +522,7 @@ function GeneralTab() {
     !galleryFilter || (p.name + p.description + p.author).toLowerCase().includes(galleryFilter.toLowerCase())
   )
 
-  if (!settings) return <div className="text-muted text-[13px] py-4">Loading settings…</div>
+  if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
 
   // Resource paths
   const resourceSections: { key: keyof PiSettings; label: string; hint: string; placeholder: string }[] = [
@@ -540,14 +540,14 @@ function GeneralTab() {
         <CardTitle>Installed Packages <InfoTip text="Extensions, skills, and themes installed via pi install" /></CardTitle>
         <div className="flex gap-2 mb-3">
           <input
-            className="bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-text text-[13px] font-body outline-none flex-1 transition-colors focus-ring font-mono"
+            className="bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-text text-body-s font-body outline-none flex-1 transition-colors focus-ring font-mono"
             placeholder="npm:package-name or git:github.com/user/repo"
             value={installInput}
             onChange={e => setInstallInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && installInput.trim()) installPkg(installInput.trim()) }}
           />
           <button
-            className="px-3 py-1.5 rounded-md text-[13px] font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-white transition-all disabled:opacity-30"
+            className="px-3 py-1.5 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30"
             disabled={!installInput.trim() || !!installing}
             onClick={() => installPkg(installInput.trim())}
           >
@@ -555,14 +555,14 @@ function GeneralTab() {
           </button>
         </div>
         {installedPkgs.length === 0 ? (
-          <div className="text-[13px] text-muted py-2">No packages installed</div>
+          <div className="text-body-s text-muted py-2">No packages installed</div>
         ) : (
           <div className="space-y-1">
             {installedPkgs.map(p => (
               <div key={p} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-bg-hover transition-colors group">
-                <span className="text-[13px] font-mono text-text truncate flex-1" title={p}>{p}</span>
+                <span className="text-body-s font-mono text-text truncate flex-1" title={p}>{p}</span>
                 <button
-                  className="opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-[12px] text-danger border border-danger/30 bg-transparent cursor-pointer hover:bg-danger-subtle transition-all"
+                  className="opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-meta text-danger border border-danger/30 bg-transparent cursor-pointer hover:bg-danger-subtle transition"
                   onClick={() => removePkg(p)}
                   disabled={installing === p}
                 >
@@ -579,7 +579,7 @@ function GeneralTab() {
         <Card key={key}>
           <CardTitle>{label} <InfoTip text={hint} /></CardTitle>
           <textarea
-            className="w-full bg-bg-elevated border border-border rounded-md p-3 text-[13px] font-mono text-text resize-none outline-none focus-ring leading-relaxed min-h-[60px]"
+            className="w-full bg-bg-elevated border border-border rounded-md p-3 text-body-s font-mono text-text resize-none outline-none focus-ring leading-relaxed min-h-[60px]"
             value={((settings[key] as string[]) || []).join('\n')}
             onChange={e => {
               const lines = e.target.value.split('\n').filter(l => l.trim())
@@ -598,11 +598,11 @@ function GeneralTab() {
       <Card>
         <CardTitle>
           Package Gallery <InfoTip text="Community packages from npmjs.com tagged with pi-package" />
-          <a href="https://shittycodingagent.ai/packages" target="_blank" rel="noopener" className="text-[12px] text-accent ml-2 hover:underline">↗ Browse</a>
+          <a href="https://shittycodingagent.ai/packages" target="_blank" rel="noopener" className="text-meta text-accent ml-2 hover:underline">↗ Browse</a>
         </CardTitle>
         <SearchInput placeholder="Search packages…" value={galleryFilter} onChange={e => setGalleryFilter(e.target.value)} className="mb-3" />
         {galleryLoading ? (
-          <div className="text-[13px] text-muted py-4 text-center">Loading gallery…</div>
+          <div className="text-body-s text-muted py-4 text-center">Loading gallery…</div>
         ) : (
           <div className="max-h-[400px] overflow-y-auto space-y-1">
             {filteredGallery.map(p => {
@@ -612,15 +612,15 @@ function GeneralTab() {
                 <div key={p.name} className="flex items-start justify-between gap-3 py-2.5 px-2 rounded hover:bg-bg-hover transition-colors border-b border-border last:border-0">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <a href={(() => { const r = p.links.repository?.replace(/^git\+/, '').replace(/\.git$/, '') || ''; return p.links.homepage || (r.startsWith('http') ? r : '') || p.links.npm || `https://www.npmjs.com/package/${p.name}` })()} target="_blank" rel="noopener" className="text-[13px] font-mono font-semibold text-text hover:text-accent transition-colors cursor-pointer">{p.name}</a>
-                      <span className="text-[11px] text-muted font-mono">v{p.version}</span>
+                      <a href={(() => { const r = p.links.repository?.replace(/^git\+/, '').replace(/\.git$/, '') || ''; return p.links.homepage || (r.startsWith('http') ? r : '') || p.links.npm || `https://www.npmjs.com/package/${p.name}` })()} target="_blank" rel="noopener" className="text-body-s font-mono font-semibold text-text hover:text-accent transition-colors cursor-pointer">{p.name}</a>
+                      <span className="text-2xs text-muted font-mono">v{p.version}</span>
                       {installed && <Badge variant="ok">installed</Badge>}
                     </div>
-                    <div className="text-[12px] text-muted mt-0.5 line-clamp-2">{p.description}</div>
-                    {p.author && <div className="text-[11px] text-muted/60 mt-0.5">by {p.author}</div>}
+                    <div className="text-meta text-muted mt-0.5 line-clamp-2">{p.description}</div>
+                    {p.author && <div className="text-2xs text-muted/60 mt-0.5">by {p.author}</div>}
                   </div>
                   <button
-                    className={`px-2.5 py-1 rounded-md text-[12px] font-medium border cursor-pointer transition-all shrink-0 ${installed ? 'border-danger/30 text-danger bg-transparent hover:bg-danger-subtle' : 'border-accent text-accent bg-transparent hover:bg-accent hover:text-white'}`}
+                    className={`px-2.5 py-1 rounded-md text-meta font-medium border cursor-pointer transition shrink-0 ${installed ? 'border-danger/30 text-danger bg-transparent hover:bg-danger-subtle' : 'border-accent text-accent bg-transparent hover:bg-accent hover:text-accent-fg'}`}
                     disabled={installing === npmSource}
                     onClick={() => installed ? removePkg(npmSource) : installPkg(npmSource)}
                   >
@@ -696,7 +696,7 @@ function DisplayTab() {
           {allCards.map(card => {
             const vars = parseVars(card.css)
             const bg = vars['bg'] || '#12141a'
-            const accent = vars['accent'] || '#f59e32'
+            const accent = vars['accent'] || '#7aa2f7'
             const text = vars['text'] || '#e4e4e7'
             const cardColor = vars['card'] || vars['bg-accent'] || '#181b22'
             const isActive = card.builtin
@@ -705,7 +705,7 @@ function DisplayTab() {
             return (
               <button
                 key={card.id}
-                className={`group relative px-3 py-2.5 rounded-lg text-[13px] font-medium border cursor-pointer transition-all text-left ${isActive ? 'bg-accent/10 text-accent border-accent/40 shadow-sm' : 'border-border text-muted bg-transparent hover:text-text hover:border-border-strong'}`}
+                className={`group relative px-3 py-2.5 rounded-lg text-body-s font-medium border cursor-pointer transition text-left ${isActive ? 'bg-accent/10 text-accent border-accent/40 shadow-sm' : 'border-border text-muted bg-transparent hover:text-text hover:border-border-strong'}`}
                 onClick={() => {
                   if (card.builtin) {
                     setTheme(card.id as ThemeId | 'system')
@@ -720,8 +720,8 @@ function DisplayTab() {
                     <span key={i} className="w-3 h-3 rounded-full border border-white/10 shrink-0" style={{ background: c }} />
                   ))}
                 </div>
-                <div className="text-[12px] truncate">{card.label}</div>
-                {!card.builtin && <span className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-[10px] text-muted hover:text-danger transition-opacity" onClick={e => { e.stopPropagation(); if (confirm(`Delete "${(card as any).name}"?`)) customStyle.remove((card as any).name) }}>✕</span>}
+                <div className="text-meta truncate">{card.label}</div>
+                {!card.builtin && <span className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-2xs text-muted hover:text-danger transition-opacity" onClick={e => { e.stopPropagation(); if (confirm(`Delete "${(card as any).name}"?`)) customStyle.remove((card as any).name) }}>✕</span>}
               </button>
             )
           })}
@@ -730,7 +730,7 @@ function DisplayTab() {
 
       <Card>
         <CardTitle>Font</CardTitle>
-        <div className="text-[13px] text-muted py-2">
+        <div className="text-body-s text-muted py-2">
           Body: <span className="font-mono text-text">Space Grotesk</span> · Code: <span className="font-mono text-text">JetBrains Mono</span>
         </div>
       </Card>
@@ -740,20 +740,20 @@ function DisplayTab() {
         <div className="divide-y divide-border">
           {customStyle.active && (
             <div className="py-2">
-              <button className="text-[12px] text-accent cursor-pointer bg-transparent border-none hover:underline" onClick={() => { if (editName === customStyle.active) { setEditName(null) } else { setEditName(customStyle.active); setEditCss(customStyle.styleContents[customStyle.active] || '') } }}>{editName === customStyle.active ? '▾ Close editor' : '▸ Edit CSS'}</button>
+              <button className="text-meta text-accent cursor-pointer bg-transparent border-none hover:underline" onClick={() => { if (editName === customStyle.active) { setEditName(null) } else { setEditName(customStyle.active); setEditCss(customStyle.styleContents[customStyle.active] || '') } }}>{editName === customStyle.active ? '▾ Close editor' : '▸ Edit CSS'}</button>
               {editName === customStyle.active && (
                 <div className="mt-2">
-                  <textarea className="w-full h-48 bg-bg-elevated border border-border rounded-md px-3 py-2 text-[13px] font-mono text-text outline-none resize-y focus-ring" value={editCss} onChange={e => setEditCss(e.target.value)} />
-                  <button className="mt-1 px-3 py-1.5 rounded-md text-[13px] font-medium bg-accent text-white border-none cursor-pointer hover:bg-accent-hover transition-all" onClick={() => { customStyle.save(editName!, editCss); setEditName(null) }}>Save</button>
+                  <textarea className="w-full h-48 bg-bg-elevated border border-border rounded-md px-3 py-2 text-body-s font-mono text-text outline-none resize-y focus-ring" value={editCss} onChange={e => setEditCss(e.target.value)} />
+                  <button className="mt-1 px-3 py-1.5 rounded-md text-body-s font-medium bg-accent text-accent-fg border-none cursor-pointer hover:bg-accent-hover transition" onClick={() => { customStyle.save(editName!, editCss); setEditName(null) }}>Save</button>
                 </div>
               )}
             </div>
           )}
           <div className="flex items-center gap-2 py-2">
-            <input className="flex-1 bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-[13px] text-text font-body outline-none focus-ring" placeholder="New style name…" value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) { customStyle.save(newName.trim(), `/* ${newName.trim()} */\n:root {\n  /* Override CSS variables here */\n}\n`); customStyle.activate(newName.trim()); setNewName('') } }} />
-            <button className="px-3 py-1.5 rounded-md text-[13px] font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-white transition-all disabled:opacity-30" disabled={!newName.trim()} onClick={() => { if (newName.trim()) { customStyle.save(newName.trim(), `/* ${newName.trim()} */\n:root {\n  /* Override CSS variables here */\n}\n`); customStyle.activate(newName.trim()); setNewName('') } }}>Create</button>
+            <input className="flex-1 bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-body-s text-text font-body outline-none focus-ring" placeholder="New style name…" value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) { customStyle.save(newName.trim(), `/* ${newName.trim()} */\n:root {\n  /* Override CSS variables here */\n}\n`); customStyle.activate(newName.trim()); setNewName('') } }} />
+            <button className="px-3 py-1.5 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30" disabled={!newName.trim()} onClick={() => { if (newName.trim()) { customStyle.save(newName.trim(), `/* ${newName.trim()} */\n:root {\n  /* Override CSS variables here */\n}\n`); customStyle.activate(newName.trim()); setNewName('') } }}>Create</button>
           </div>
-          <div className="py-2 text-[11px] text-muted/50">Tip: add <code className="font-mono">?reset-css=true</code> to the URL to disable custom styles if they break the UI.</div>
+          <div className="py-2 text-2xs text-muted/50">Tip: add <code className="font-mono">?reset-css=true</code> to the URL to disable custom styles if they break the UI.</div>
         </div>
       </Card>
     </div>
@@ -826,7 +826,7 @@ function SkillsTab() {
           <div className="w-full md:w-48 shrink-0 md:border-r border-b md:border-b-0 border-border pb-3 md:pb-0 md:pr-3 overflow-y-auto max-h-[200px] md:max-h-[500px]">
             {skills.map(s => (
               <button key={s.name} onClick={() => selectSkill(s.name)}
-                className={`w-full text-left px-2 py-1.5 rounded text-[13px] font-mono truncate cursor-pointer transition-colors ${
+                className={`w-full text-left px-2 py-1.5 rounded text-body-s font-mono truncate cursor-pointer transition-colors ${
                   selected === s.name ? 'bg-accent-subtle text-accent' : 'text-text hover:bg-bg-hover'
                 }`}
                 title={s.description}
@@ -835,13 +835,13 @@ function SkillsTab() {
           </div>
           <div className="flex-1 min-w-0">
             {!selected ? (
-              <div className="text-[13px] text-muted py-8 text-center">Select a skill to view its files</div>
+              <div className="text-body-s text-muted py-8 text-center">Select a skill to view its files</div>
             ) : !openFile ? (
               <div>
-                <div className="text-[13px] text-muted mb-2">Files in <span className="font-mono text-text">{selected}/</span></div>
+                <div className="text-body-s text-muted mb-2">Files in <span className="font-mono text-text">{selected}/</span></div>
                 {files.map(f => (
                   <button key={f} onClick={() => openSkillFile(f)}
-                    className="block w-full text-left px-2 py-1.5 rounded text-[13px] font-mono text-accent hover:bg-bg-hover cursor-pointer transition-colors truncate"
+                    className="block w-full text-left px-2 py-1.5 rounded text-body-s font-mono text-accent hover:bg-bg-hover cursor-pointer transition-colors truncate"
                   >{f}</button>
                 ))}
               </div>
@@ -849,15 +849,15 @@ function SkillsTab() {
               <div className="flex flex-col h-full">
                 <div className="flex items-center gap-2 mb-2">
                   <button onClick={() => { setOpenFile(null); setDirty(false) }}
-                    className="text-[12px] text-muted hover:text-text cursor-pointer">← back</button>
-                  <span className="text-[13px] font-mono text-text truncate">{selected}/{openFile}</span>
-                  {dirty && <span className="text-[11px] text-warning">●</span>}
+                    className="text-meta text-muted hover:text-text cursor-pointer">← back</button>
+                  <span className="text-body-s font-mono text-text truncate">{selected}/{openFile}</span>
+                  {dirty && <span className="text-2xs text-warning">●</span>}
                   <button onClick={save} disabled={!dirty || saving}
-                    className="ml-auto px-3 py-1 rounded-md text-[12px] font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-white transition-all disabled:opacity-30"
+                    className="ml-auto px-3 py-1 rounded-md text-meta font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30"
                   >{saving ? '⏳' : '💾'} Save</button>
                 </div>
                 <textarea
-                  className="flex-1 min-h-[350px] w-full bg-bg-elevated border border-border rounded-md p-3 text-[13px] font-mono text-text resize-none outline-none focus-ring leading-relaxed"
+                  className="flex-1 min-h-[350px] w-full bg-bg-elevated border border-border rounded-md p-3 text-body-s font-mono text-text resize-none outline-none focus-ring leading-relaxed"
                   value={content}
                   onChange={e => { setContent(e.target.value); setDirty(true) }}
                   spellCheck={false}
@@ -919,7 +919,7 @@ function VaultTab() {
     setTimeout(() => setFeedback(null), 2000)
   }, [])
 
-  if (!config) return <div className="text-muted text-[13px] py-4">Loading…</div>
+  if (!config) return <div className="text-muted text-body-s py-4">Loading…</div>
 
   const setVaultPath = (path: string) => save({ ...config, vault: { ...config.vault, path } })
   const setDir = (key: string, value: string) => save({ ...config, vault: { ...config.vault, dirs: { ...config.vault.dirs, [key]: value } } })
@@ -940,7 +940,7 @@ function VaultTab() {
         <CardTitle>Obsidian Vault Path <InfoTip text="Absolute path to your Obsidian vault directory. Leave empty to disable vault features." /></CardTitle>
         <div className="flex gap-2">
           <input
-            className="flex-1 bg-bg-elevated border border-border rounded-md px-3 py-2 text-[13px] font-mono text-text outline-none focus-ring transition-colors"
+            className="flex-1 bg-bg-elevated border border-border rounded-md px-3 py-2 text-body-s font-mono text-text outline-none focus-ring transition-colors"
             placeholder="/Users/you/Documents/MyVault"
             value={config.vault.path}
             onChange={e => setConfig({ ...config, vault: { ...config.vault, path: e.target.value } })}
@@ -951,7 +951,7 @@ function VaultTab() {
             onKeyDown={e => { if (e.key === 'Enter') setVaultPath((e.target as HTMLInputElement).value.trim()) }}
           />
           <button
-            className="px-3 py-2 rounded-md text-[13px] font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-white transition-all disabled:opacity-30"
+            className="px-3 py-2 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30"
             disabled={saving}
             onClick={() => setVaultPath(config.vault.path.trim())}
           >
@@ -959,7 +959,7 @@ function VaultTab() {
           </button>
         </div>
         {config.vault.path && (
-          <div className="text-[12px] text-muted mt-2">Stored in <span className="font-mono">~/.pi/dashboard.json</span></div>
+          <div className="text-meta text-muted mt-2">Stored in <span className="font-mono">~/.pi/dashboard.json</span></div>
         )}
       </Card>
 
@@ -969,11 +969,11 @@ function VaultTab() {
           {dirFields.map(({ key, label, hint }) => (
             <div key={key} className="flex items-center justify-between gap-4 py-2.5">
               <div>
-                <span className="text-[13px] text-text">{label}</span>
-                <div className="text-[12px] text-muted/60 mt-0.5">{hint}</div>
+                <span className="text-body-s text-text">{label}</span>
+                <div className="text-meta text-muted/60 mt-0.5">{hint}</div>
               </div>
               <input
-                className="w-48 bg-bg-elevated border border-border rounded-md px-2.5 py-1.5 text-[13px] font-mono text-text outline-none focus-ring transition-colors text-right"
+                className="w-48 bg-bg-elevated border border-border rounded-md px-2.5 py-1.5 text-body-s font-mono text-text outline-none focus-ring transition-colors text-right"
                 value={(config.vault.dirs as any)[key] || ''}
                 onChange={e => setConfig({ ...config, vault: { ...config.vault, dirs: { ...config.vault.dirs, [key]: e.target.value } } })}
                 onBlur={e => setDir(key, e.target.value.trim())}
@@ -1143,16 +1143,16 @@ function DeveloperTab() {
             { value: 'warn', label: 'Warn' }, { value: 'error', label: 'Error' },
           ]} onChange={changeLevel} />
           <div className="flex items-center justify-between py-2">
-            <span className="text-[13px] text-text">Version</span>
-            <span className="text-[13px] font-mono text-muted">{status?.version || '—'}</span>
+            <span className="text-body-s text-text">Version</span>
+            <span className="text-body-s font-mono text-muted">{status?.version || '—'}</span>
           </div>
           <div className="flex items-center justify-between py-2">
-            <span className="text-[13px] text-text">Platform</span>
-            <span className="text-[13px] font-mono text-muted">{status?.platform || '—'}</span>
+            <span className="text-body-s text-text">Platform</span>
+            <span className="text-body-s font-mono text-muted">{status?.platform || '—'}</span>
           </div>
           <div className="flex items-center justify-between py-2">
-            <span className="text-[13px] text-text">Uptime</span>
-            <span className="text-[13px] font-mono text-muted">{status?.uptime || '—'}</span>
+            <span className="text-body-s text-text">Uptime</span>
+            <span className="text-body-s font-mono text-muted">{status?.uptime || '—'}</span>
           </div>
         </div>
       </Card>
@@ -1160,7 +1160,7 @@ function DeveloperTab() {
       <Card>
         <CardTitle>Actions</CardTitle>
         <div className="flex gap-2 flex-wrap">
-          <button className="px-3 py-1.5 rounded-md border border-border bg-transparent text-muted text-[13px] cursor-pointer font-body hover:text-text hover:border-border-strong hover:bg-bg-hover transition-all" onClick={() => api.restartSessions()}>
+          <button className="px-3 py-1.5 rounded-md border border-border bg-transparent text-muted text-body-s cursor-pointer font-body hover:text-text hover:border-border-strong hover:bg-bg-hover transition" onClick={() => api.restartSessions()}>
             🔄 Restart Sessions
           </button>
         </div>
@@ -1170,11 +1170,11 @@ function DeveloperTab() {
         <CardTitle>
           Raw settings.json
           <InfoTip text="Direct edit of ~/.pi/agent/settings.json — for advanced users" />
-          {jsonDirty && <span className="text-[11px] text-warn ml-2">● unsaved</span>}
+          {jsonDirty && <span className="text-2xs text-warn ml-2">● unsaved</span>}
         </CardTitle>
         <Feedback feedback={jsonFeedback} />
         <textarea
-          className="w-full bg-bg-elevated border border-border rounded-md p-3 text-[13px] font-mono text-text resize-none outline-none focus-ring leading-relaxed min-h-[300px] mt-2"
+          className="w-full bg-bg-elevated border border-border rounded-md p-3 text-body-s font-mono text-text resize-none outline-none focus-ring leading-relaxed min-h-[300px] mt-2"
           value={rawJson}
           onChange={e => { setRawJson(e.target.value); setJsonDirty(true) }}
           onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 's' && jsonDirty) { e.preventDefault(); saveRawJson() } }}
@@ -1182,7 +1182,7 @@ function DeveloperTab() {
         />
         <div className="flex justify-end mt-2">
           <button
-            className="px-3 py-1.5 rounded-md text-[13px] font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-white transition-all disabled:opacity-30"
+            className="px-3 py-1.5 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30"
             disabled={!jsonDirty}
             onClick={saveRawJson}
           >
@@ -1227,7 +1227,7 @@ function ShortcutsTab() {
       {hasCustomShortcuts() && (
         <div className="flex justify-end">
           <button
-            className="px-3 py-1.5 rounded-md text-[12px] font-medium border border-danger/30 text-danger bg-transparent cursor-pointer hover:bg-danger-subtle transition-all"
+            className="px-3 py-1.5 rounded-md text-meta font-medium border border-danger/30 text-danger bg-transparent cursor-pointer hover:bg-danger-subtle transition"
             onClick={() => { if (confirm('Reset all shortcuts to defaults?')) resetAllShortcuts() }}
           >
             Reset All to Defaults
@@ -1248,14 +1248,14 @@ function ShortcutsTab() {
                 return (
                   <div key={a.id} className="flex items-center justify-between py-2.5 gap-3">
                     <div className="min-w-0">
-                      <span className="text-[13px] text-text">{a.description}</span>
+                      <span className="text-body-s text-text">{a.description}</span>
                       {isCustom && a.defaultKeys && (
-                        <div className="text-[11px] text-muted/50 mt-0.5">default: <span className="font-mono">{formatKey(a.defaultKeys)}</span></div>
+                        <div className="text-2xs text-muted/50 mt-0.5">default: <span className="font-mono">{formatKey(a.defaultKeys)}</span></div>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
-                        className={`min-w-[80px] px-2.5 py-1.5 rounded-md text-[12px] font-mono text-center border cursor-pointer transition-all ${
+                        className={`min-w-[80px] px-2.5 py-1.5 rounded-md text-meta font-mono text-center border cursor-pointer transition ${
                           isRecording
                             ? 'border-accent bg-accent-subtle text-accent animate-pulse'
                             : 'border-border bg-bg-elevated text-muted hover:border-border-strong hover:text-text'
@@ -1267,7 +1267,7 @@ function ShortcutsTab() {
                       </button>
                       {isCustom && (
                         <button
-                          className="px-1.5 py-1.5 rounded text-[11px] text-muted hover:text-text bg-transparent border-none cursor-pointer transition-colors"
+                          className="px-1.5 py-1.5 rounded text-2xs text-muted hover:text-text bg-transparent border-none cursor-pointer transition-colors"
                           onClick={() => resetShortcut(a.id)}
                           title="Reset to default"
                         >↺</button>
@@ -1281,7 +1281,7 @@ function ShortcutsTab() {
         )
       })}
 
-      <div className="text-[12px] text-muted/50 text-center pt-2">
+      <div className="text-meta text-muted/50 text-center pt-2">
         Click a binding to record a new key combo · Press Esc to cancel · Customizations are stored in your browser
       </div>
     </div>
@@ -1333,11 +1333,11 @@ export default function SettingsPage() {
         <nav className="hidden md:flex flex-col gap-4 w-[200px] shrink-0 overflow-y-auto border-r border-border px-3 py-4">
           {SETTINGS_GROUPS.map(({ group, tabs }) => (
             <div key={group}>
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted px-2 mb-1">{group}</div>
+              <div className="text-2xs font-semibold uppercase tracking-wider text-muted px-2 mb-1">{group}</div>
               {tabs.map(t => (
                 <button
                   key={t.id}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] font-medium cursor-pointer transition-all border text-left ${tab === t.id ? 'bg-accent-subtle text-accent border-accent/30' : 'border-transparent text-muted bg-transparent hover:text-text hover:bg-bg-hover'}`}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-body-s font-medium cursor-pointer transition border text-left ${tab === t.id ? 'bg-accent-subtle text-accent border-accent/30' : 'border-transparent text-muted bg-transparent hover:text-text hover:bg-bg-hover'}`}
                   onClick={() => selectTab(t.id)}
                   title={t.hint}
                 >
@@ -1354,7 +1354,7 @@ export default function SettingsPage() {
           {SETTINGS_GROUPS.flatMap(g => g.tabs).map(t => (
             <button
               key={t.id}
-              className={`px-3 py-1.5 rounded-md text-[13px] font-medium cursor-pointer transition-all border ${tab === t.id ? 'bg-accent-subtle text-accent border-accent/30' : 'border-transparent text-muted bg-transparent hover:text-text hover:bg-bg-hover'}`}
+              className={`px-3 py-1.5 rounded-md text-body-s font-medium cursor-pointer transition border ${tab === t.id ? 'bg-accent-subtle text-accent border-accent/30' : 'border-transparent text-muted bg-transparent hover:text-text hover:bg-bg-hover'}`}
               onClick={() => selectTab(t.id)}
             >
               {t.icon} {t.label}
@@ -1366,8 +1366,8 @@ export default function SettingsPage() {
         <div className="flex-1 min-h-0 overflow-y-auto px-3 md:px-6 py-4 md:py-6">
           {activeMeta && (
             <div className="max-w-2xl mb-5 hidden md:block">
-              <h2 className="text-[17px] font-semibold text-text-strong font-body">{activeMeta.icon} {activeMeta.label}</h2>
-              <p className="text-[13px] text-muted mt-0.5">{activeMeta.hint}</p>
+              <h2 className="text-base font-semibold text-text-strong font-body">{activeMeta.icon} {activeMeta.label}</h2>
+              <p className="text-body-s text-muted mt-0.5">{activeMeta.hint}</p>
             </div>
           )}
           <div className="max-w-2xl">

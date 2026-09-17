@@ -90,18 +90,18 @@ export default function ChatSettings({ activeSlot, currentModel, currentThinking
 
   return (
     <>
-      <button ref={btnRef} className="rounded-md border border-border bg-transparent text-muted px-3 py-[5px] text-[13px] font-medium flex items-center justify-center cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition-all font-body" onClick={() => setOpen(!open)} title="Model & thinking" aria-label="Model & thinking">🧠</button>
+      <button ref={btnRef} className="rounded-md border border-border bg-transparent text-muted px-3 py-[5px] text-body-s font-medium flex items-center justify-center cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition font-body" onClick={() => setOpen(!open)} title="Model & thinking" aria-label="Model & thinking">🧠</button>
       {open && btnRef.current && createPortal(
         <div ref={popoverRef} className="fixed z-[9999] bg-card border border-border rounded-lg shadow-lg w-[320px] p-3 flex flex-col gap-3 animate-slide-up" style={(() => { const r = btnRef.current!.getBoundingClientRect(); const top = r.bottom + 6; const left = Math.max(8, Math.min(r.left, window.innerWidth - 328)); return { top, left } })()}>
           <div className="flex items-center justify-between border-b border-border pb-2">
-            <span className="text-[13px] font-semibold text-text-strong">Model &amp; Thinking</span>
-            <span className="text-[11px] text-muted">this session</span>
+            <span className="text-body-s font-semibold text-text-strong">Model &amp; Thinking</span>
+            <span className="text-2xs text-muted">this session</span>
           </div>
 
           {activeSlot && models && models.length > 0 && (
             <div className="flex flex-col gap-1">
-              <span className="text-[12px] text-muted">Model</span>
-              <select className="bg-bg-elevated border border-border rounded-md px-2 py-1.5 text-[13px] text-text outline-none cursor-pointer font-mono" value={currentModel || ''} onChange={e => handleModelChange(e.target.value)}>
+              <span className="text-meta text-muted">Model</span>
+              <select className="bg-bg-elevated border border-border rounded-md px-2 py-1.5 text-body-s text-text outline-none cursor-pointer font-mono" value={currentModel || ''} onChange={e => handleModelChange(e.target.value)}>
                 {!currentModel && <option value="">—</option>}
                 {currentModel && !models.some(m => modelFullId(m) === currentModel) && (
                   <option value={currentModel} disabled>{currentModel} (current)</option>
@@ -113,11 +113,11 @@ export default function ChatSettings({ activeSlot, currentModel, currentThinking
 
           {activeSlot && (
             <div className="flex flex-col gap-1">
-              <span className="text-[12px] text-muted">Thinking level</span>
+              <span className="text-meta text-muted">Thinking level</span>
               <div className="flex gap-1">
                 {THINKING_LEVELS.map(l => {
                   const disabled = !availableThinkingLevels.includes(l)
-                  return <button key={l} disabled={disabled} className={`flex-1 px-1 py-1 rounded text-[11px] font-medium border transition-all ${thinkingLevel === l ? 'bg-accent text-white border-accent' : 'bg-bg-elevated text-muted border-border hover:border-border-strong hover:text-text'} ${disabled ? 'opacity-35 cursor-not-allowed hover:text-muted hover:border-border' : 'cursor-pointer'}`} onClick={() => handleThinkingChange(l)}>{l}</button>
+                  return <button key={l} disabled={disabled} className={`flex-1 px-1 py-1 rounded text-2xs font-medium border transition ${thinkingLevel === l ? 'bg-accent text-accent-fg border-accent' : 'bg-bg-elevated text-muted border-border hover:border-border-strong hover:text-text'} ${disabled ? 'opacity-35 cursor-not-allowed hover:text-muted hover:border-border' : 'cursor-pointer'}`} onClick={() => handleThinkingChange(l)}>{l}</button>
                 })}
               </div>
             </div>

@@ -86,7 +86,7 @@ export default function SystemPage() {
         {/* Tabs */}
         <div className="flex flex-wrap gap-0 border-b border-border mb-6">
           {tabs.map(t => (
-            <button key={t} className={`px-4 py-2 border-none bg-transparent text-sm font-medium font-body cursor-pointer border-b-2 -mb-px transition-all ${activeTab === t ? 'text-accent border-b-accent' : 'text-muted border-b-transparent hover:text-text'}`} onClick={() => { setActiveTab(t); if (t === 'host') loadHostSessions() }}>{t === 'host' ? 'Host Sessions' : tabLabel(t)}</button>
+            <button key={t} className={`px-4 py-2 border-none bg-transparent text-sm font-medium font-body cursor-pointer border-b-2 -mb-px transition ${activeTab === t ? 'text-accent border-b-accent' : 'text-muted border-b-transparent hover:text-text'}`} onClick={() => { setActiveTab(t); if (t === 'host') loadHostSessions() }}>{t === 'host' ? 'Host Sessions' : tabLabel(t)}</button>
           ))}
         </div>
 
@@ -114,8 +114,8 @@ export default function SystemPage() {
             <Card title="⏰ Cron Jobs">
               {crontab.length === 0 ? <div className="text-muted text-sm italic py-2">No cron jobs</div> : crontab.map((c, i) => (
                 <div key={i} className="py-2 border-b border-border last:border-0">
-                  <div className="text-[13px] font-mono text-accent">{c.schedule}</div>
-                  <div className="text-[13px] text-muted truncate" title={c.command}>{c.command.split('/').pop()}</div>
+                  <div className="text-body-s font-mono text-accent">{c.schedule}</div>
+                  <div className="text-body-s text-muted truncate" title={c.command}>{c.command.split('/').pop()}</div>
                 </div>
               ))}
             </Card>
@@ -128,35 +128,35 @@ export default function SystemPage() {
                 <Info k="People" v={vault.persons} />
                 <Info k="Recipes" v={vault.recipes} />
                 <Info k="Latest" v={vault.recentDaily} />
-              </> : <div className="text-muted text-[13px] py-2">Not configured. Set vault path in <a href="#" className="text-accent" onClick={e => { e.preventDefault(); window.location.hash = '/settings' }}>Settings</a>.</div>}
+              </> : <div className="text-muted text-body-s py-2">Not configured. Set vault path in <a href="#" className="text-accent" onClick={e => { e.preventDefault(); window.location.hash = '/settings' }}>Settings</a>.</div>}
             </Card>
             <Card title="📱 Connect iOS">
               {connectionInfo ? (
                 <>
-                  <div className="text-[12px] text-muted mb-2">Paste into PiDash iOS → Settings</div>
+                  <div className="text-meta text-muted mb-2">Paste into PiDash iOS → Settings</div>
                   <div className="space-y-2">
                     <div>
-                      <div className="text-[11px] text-muted mb-0.5">Server URL</div>
+                      <div className="text-2xs text-muted mb-0.5">Server URL</div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-mono text-accent truncate flex-1">{connectionInfo.serverURL}</span>
+                        <span className="text-meta font-mono text-accent truncate flex-1">{connectionInfo.serverURL}</span>
                         <button
-                          className="text-[11px] px-2 py-0.5 rounded bg-card border border-border hover:bg-accent/10 shrink-0"
+                          className="text-2xs px-2 py-0.5 rounded bg-card border border-border hover:bg-accent/10 shrink-0"
                           onClick={() => navigator.clipboard.writeText(connectionInfo.serverURL)}
                         >Copy</button>
                       </div>
                     </div>
                     <div>
-                      <div className="text-[11px] text-muted mb-0.5">Auth Token</div>
+                      <div className="text-2xs text-muted mb-0.5">Auth Token</div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-mono truncate flex-1 select-all">
+                        <span className="text-meta font-mono truncate flex-1 select-all">
                           {tokenVisible ? connectionInfo.token : '•'.repeat(16)}
                         </span>
                         <button
-                          className="text-[11px] px-2 py-0.5 rounded bg-card border border-border hover:bg-accent/10 shrink-0"
+                          className="text-2xs px-2 py-0.5 rounded bg-card border border-border hover:bg-accent/10 shrink-0"
                           onClick={() => setTokenVisible(v => !v)}
                         >{tokenVisible ? 'Hide' : 'Show'}</button>
                         <button
-                          className="text-[11px] px-2 py-0.5 rounded bg-card border border-border hover:bg-accent/10 shrink-0"
+                          className="text-2xs px-2 py-0.5 rounded bg-card border border-border hover:bg-accent/10 shrink-0"
                           onClick={() => {
                             navigator.clipboard.writeText(connectionInfo.token)
                             setTokenCopied(true)
@@ -168,7 +168,7 @@ export default function SystemPage() {
                   </div>
                 </>
               ) : (
-                <div className="text-muted text-[13px] py-2">Loading…</div>
+                <div className="text-muted text-body-s py-2">Loading…</div>
               )}
             </Card>
           </div>
@@ -188,10 +188,10 @@ export default function SystemPage() {
                 {memory?.lessons.map((l: any, i: number) => (
                   <div key={i} className="py-2.5 border-b border-border last:border-0">
                     <div className="flex items-start gap-2">
-                      <span className={`shrink-0 text-[12px] px-1.5 py-0.5 rounded-full font-medium ${l.negative ? 'bg-danger-subtle text-danger' : 'bg-ok-subtle text-ok'}`}>{l.negative ? 'DON\'T' : 'DO'}</span>
-                      <span className="text-[13px] text-text leading-relaxed">{l.rule}</span>
+                      <span className={`shrink-0 text-meta px-1.5 py-0.5 rounded-full font-medium ${l.negative ? 'bg-danger-subtle text-danger' : 'bg-ok-subtle text-ok'}`}>{l.negative ? 'DON\'T' : 'DO'}</span>
+                      <span className="text-body-s text-text leading-relaxed">{l.rule}</span>
                     </div>
-                    <div className="text-[12px] text-muted mt-1 ml-12">{l.category} · {l.created_at}</div>
+                    <div className="text-meta text-muted mt-1 ml-12">{l.category} · {l.created_at}</div>
                   </div>
                 ))}
               </div>
@@ -200,8 +200,8 @@ export default function SystemPage() {
               <div className="max-h-[400px] overflow-y-auto">
                 {memory?.facts.slice(0, 50).map((f: any, i: number) => (
                   <div key={i} className="py-2 border-b border-border last:border-0">
-                    <div className="text-[13px] font-mono text-accent">{f.key}</div>
-                    <div className="text-[13px] text-muted mt-0.5 line-clamp-2">{f.value}</div>
+                    <div className="text-body-s font-mono text-accent">{f.key}</div>
+                    <div className="text-body-s text-muted mt-0.5 line-clamp-2">{f.value}</div>
                   </div>
                 ))}
               </div>
@@ -216,8 +216,8 @@ export default function SystemPage() {
               <div className="grid gap-0">
                 {skills.map((s, i) => (
                   <div key={i} className="py-2.5 border-b border-border last:border-0">
-                    <div className="text-[13px] font-mono font-semibold text-text">{s.name}</div>
-                    <div className="text-[12px] text-muted mt-0.5 line-clamp-2">{s.description}</div>
+                    <div className="text-body-s font-mono font-semibold text-text">{s.name}</div>
+                    <div className="text-meta text-muted mt-0.5 line-clamp-2">{s.description}</div>
                   </div>
                 ))}
               </div>
@@ -226,8 +226,8 @@ export default function SystemPage() {
               <div className="grid gap-0">
                 {extensions.map((e, i) => (
                   <div key={i} className="py-2.5 border-b border-border last:border-0">
-                    <div className="text-[13px] font-mono font-semibold text-text">{e.name}</div>
-                    <div className="text-[12px] text-muted mt-0.5">{e.file} {e.description ? `— ${e.description}` : ''}</div>
+                    <div className="text-body-s font-mono font-semibold text-text">{e.name}</div>
+                    <div className="text-meta text-muted mt-0.5">{e.file} {e.description ? `— ${e.description}` : ''}</div>
                   </div>
                 ))}
               </div>
@@ -239,33 +239,33 @@ export default function SystemPage() {
         {activeTab === 'host' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-[13px] text-muted">
+              <div className="text-body-s text-muted">
                 Pi sessions running on this host (tmux). Click to open in a new dashboard chat.
               </div>
-              <button className="px-2.5 py-1 rounded-md border border-border bg-transparent text-muted text-[13px] cursor-pointer font-body hover:text-text hover:border-border-strong hover:bg-bg-hover transition-all" onClick={loadHostSessions}>
+              <button className="px-2.5 py-1 rounded-md border border-border bg-transparent text-muted text-body-s cursor-pointer font-body hover:text-text hover:border-border-strong hover:bg-bg-hover transition" onClick={loadHostSessions}>
                 {hostLoading ? '⏳' : '🔄'} Refresh
               </button>
             </div>
             {hostSessions.length === 0 ? (
               <Card title="🔍 No pi sessions found">
-                <div className="text-[13px] text-muted py-4">
+                <div className="text-body-s text-muted py-4">
                   {hostLoading ? 'Scanning tmux sessions…' : 'No pi processes detected in tmux. Start a pi session in tmux and it will appear here.'}
                 </div>
               </Card>
             ) : (
               <div className="grid gap-3">
                 {hostSessions.map((s: any, i: number) => (
-                  <div key={i} className="card-glow border border-border bg-card rounded-lg p-4 animate-rise shadow-sm hover:border-accent hover:shadow-md transition-all">
+                  <div key={i} className="card-glow border border-border bg-card rounded-lg p-4 animate-rise shadow-sm hover:border-accent hover:shadow-md transition">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[13px] font-semibold text-text-strong">{s.windowName || s.tmuxSession}</span>
-                          <span className="px-1.5 py-[1px] rounded-full text-[11px] font-mono bg-ok-subtle text-ok border border-ok/30">{s.tmuxSession}</span>
-                          {s.model && <span className="px-1.5 py-[1px] rounded-full text-[11px] font-mono bg-aim-subtle text-aim border border-aim/30">🧠 {s.model}</span>}
+                          <span className="text-body-s font-semibold text-text-strong">{s.windowName || s.tmuxSession}</span>
+                          <span className="px-1.5 py-[1px] rounded-full text-2xs font-mono bg-ok-subtle text-ok border border-ok/30">{s.tmuxSession}</span>
+                          {s.model && <span className="px-1.5 py-[1px] rounded-full text-2xs font-mono bg-aim-subtle text-aim border border-aim/30">🧠 {s.model}</span>}
                         </div>
-                        <div className="text-[12px] text-muted font-mono truncate" title={s.cwd}>📂 {s.cwd}</div>
-                        {s.lastOutput && <div className="text-[12px] text-muted mt-1.5 line-clamp-2 font-mono bg-bg-elevated rounded px-2 py-1 border border-border">{s.lastOutput}</div>}
-                        <div className="flex items-center gap-3 mt-2 text-[12px] text-muted">
+                        <div className="text-meta text-muted font-mono truncate" title={s.cwd}>📂 {s.cwd}</div>
+                        {s.lastOutput && <div className="text-meta text-muted mt-1.5 line-clamp-2 font-mono bg-bg-elevated rounded px-2 py-1 border border-border">{s.lastOutput}</div>}
+                        <div className="flex items-center gap-3 mt-2 text-meta text-muted">
                           {s.contextPct && <span>ctx: <span className="text-accent font-medium">{s.contextPct}</span></span>}
                           {s.uptime && <span>⏱ {s.uptime}</span>}
                           <span className="font-mono">pid {s.pid}</span>
@@ -273,7 +273,7 @@ export default function SystemPage() {
                         </div>
                       </div>
                       <div className="flex flex-col gap-1.5 shrink-0">
-                        <button className="px-3 py-1.5 rounded-md text-[13px] font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-white transition-all" onClick={() => navigator.clipboard.writeText(s.attachCmd)}>
+                        <button className="px-3 py-1.5 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition" onClick={() => navigator.clipboard.writeText(s.attachCmd)}>
                           📋 Copy attach
                         </button>
                       </div>
@@ -293,10 +293,10 @@ export default function SystemPage() {
                 <div key={i} className="py-2.5 border-b border-border last:border-0">
                   <div className="flex justify-between items-start gap-3">
                     <div className="min-w-0 flex-1">
-                      <div className="text-[13px] text-text font-medium truncate">{s.title}</div>
-                      <div className="text-[12px] text-muted mt-0.5">{s.project} · {(s.size / 1024).toFixed(0)} KB</div>
+                      <div className="text-body-s text-text font-medium truncate">{s.title}</div>
+                      <div className="text-meta text-muted mt-0.5">{s.project} · {(s.size / 1024).toFixed(0)} KB</div>
                     </div>
-                    <div className="text-[12px] text-muted shrink-0">{new Date(s.modified).toLocaleString()}</div>
+                    <div className="text-meta text-muted shrink-0">{new Date(s.modified).toLocaleString()}</div>
                   </div>
                 </div>
               ))}
@@ -310,17 +310,17 @@ export default function SystemPage() {
           <div className="grid grid-cols-1 md:grid-cols-[250px_1fr] gap-4">
             <Card title="📅 Daily Notes">
               {dailyNotes.length === 0 ? (
-                <div className="text-muted text-[13px] py-2 italic">No daily notes found</div>
+                <div className="text-muted text-body-s py-2 italic">No daily notes found</div>
               ) : dailyNotes.map((dn, i) => (
-                <div key={i} className={`py-2 px-2 border-b border-border last:border-0 cursor-pointer rounded transition-all ${selectedDaily === dn.date ? 'bg-accent-subtle text-accent' : 'hover:bg-bg-hover text-text'}`} onClick={() => loadDaily(dn.date)}>
-                  <div className="text-[13px] font-mono font-medium">{dn.date}</div>
-                  <div className="text-[12px] text-muted">{(dn.size / 1024).toFixed(1)} KB</div>
+                <div key={i} className={`py-2 px-2 border-b border-border last:border-0 cursor-pointer rounded transition ${selectedDaily === dn.date ? 'bg-accent-subtle text-accent' : 'hover:bg-bg-hover text-text'}`} onClick={() => loadDaily(dn.date)}>
+                  <div className="text-body-s font-mono font-medium">{dn.date}</div>
+                  <div className="text-meta text-muted">{(dn.size / 1024).toFixed(1)} KB</div>
                 </div>
               ))}
             </Card>
             <Card title={selectedDaily ? `📝 ${selectedDaily}` : '📝 Select a daily note'}>
               {dailyContent ? (
-                <div className="prose prose-sm max-w-none text-[13px] leading-relaxed max-h-[600px] overflow-y-auto">
+                <div className="prose prose-sm max-w-none text-body-s leading-relaxed max-h-[600px] overflow-y-auto">
                   <MarkdownRenderer content={dailyContent} />
                 </div>
               ) : (
@@ -330,7 +330,7 @@ export default function SystemPage() {
           </div>
           ) : (
             <Card title="📁 Vault">
-              <div className="text-[13px] text-muted py-4 text-center">
+              <div className="text-body-s text-muted py-4 text-center">
                 <p className="mb-3">Vault path not configured.</p>
                 <p>Go to <a href="#/settings" className="text-accent hover:underline">Settings → Vault</a> to set your Obsidian vault path.</p>
               </div>
@@ -344,7 +344,7 @@ export default function SystemPage() {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="card-glow border border-border bg-card rounded-lg p-5 animate-rise shadow-sm hover:border-border-strong hover:shadow-md transition-all">
+    <div className="card-glow border border-border bg-card rounded-lg p-5 animate-rise shadow-sm hover:border-border-strong hover:shadow-md transition">
       <h3 className="text-sm font-semibold text-text-strong mb-3.5">{title}</h3>
       {children}
     </div>
@@ -352,5 +352,5 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 }
 
 function Info({ k, v }: { k: string; v?: string | number | null }) {
-  return <div className="flex justify-between gap-3 py-2 border-b border-border text-sm last:border-b-0"><span className="text-muted shrink-0">{k}</span><span className="text-text font-medium font-mono text-[13px] break-all text-right">{v ?? '—'}</span></div>
+  return <div className="flex justify-between gap-3 py-2 border-b border-border text-sm last:border-b-0"><span className="text-muted shrink-0">{k}</span><span className="text-text font-medium font-mono text-body-s break-all text-right">{v ?? '—'}</span></div>
 }

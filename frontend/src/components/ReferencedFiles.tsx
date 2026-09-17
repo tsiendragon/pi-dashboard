@@ -92,19 +92,19 @@ function ReferencedFiles({ files, onFileOpen, onClose }: Props) {
     return (
       <div
         key={f.path}
-        className="flex items-center gap-1.5 py-[5px] px-2 text-[13px] font-mono cursor-pointer hover:bg-bg-hover rounded-md transition-colors group/file"
+        className="flex items-center gap-1.5 py-[5px] px-2 text-body-s font-mono cursor-pointer hover:bg-bg-hover rounded-md transition-colors group/file"
         onClick={() => onFileOpen(f.path)}
         title={f.path}
       >
-        <span className="text-[12px] shrink-0">{icon}</span>
+        <span className="text-meta shrink-0">{icon}</span>
         <span className="text-text truncate font-medium">{name}</span>
-        {dir && <span className="text-muted text-[11px] truncate flex-1 min-w-0">{dir}</span>}
+        {dir && <span className="text-muted text-2xs truncate flex-1 min-w-0">{dir}</span>}
         <button
-          className="opacity-0 group-hover/file:opacity-100 text-muted text-[11px] shrink-0 transition-opacity hover:text-accent bg-transparent border-none cursor-pointer p-0"
+          className="opacity-0 group-hover/file:opacity-100 text-muted text-2xs shrink-0 transition-opacity hover:text-accent bg-transparent border-none cursor-pointer p-0"
           onClick={(e) => handleDownload(e, f.path)}
           title="Download file"
         >⬇</button>
-        <span className="opacity-0 group-hover/file:opacity-100 text-muted text-[11px] shrink-0 transition-opacity">Open</span>
+        <span className="opacity-0 group-hover/file:opacity-100 text-muted text-2xs shrink-0 transition-opacity">Open</span>
       </div>
     )
   }
@@ -112,13 +112,13 @@ function ReferencedFiles({ files, onFileOpen, onClose }: Props) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border text-[12px] font-mono text-muted shrink-0">
-        <span className="text-[14px]">📎</span>
+      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border text-meta font-mono text-muted shrink-0">
+        <span className="text-sm">📎</span>
         <span className="flex-1 font-semibold text-text-strong">Referenced Files</span>
-        <span className="text-[11px] text-muted">{files.length}</span>
+        <span className="text-2xs text-muted">{files.length}</span>
         <button
           type="button"
-          className={`text-[11px] px-1 rounded transition-colors bg-transparent border-none cursor-pointer ${groupByType ? 'text-accent' : 'text-muted hover:text-text'}`}
+          className={`text-2xs px-1 rounded transition-colors bg-transparent border-none cursor-pointer ${groupByType ? 'text-accent' : 'text-muted hover:text-text'}`}
           onClick={() => setGroupByType(!groupByType)}
           title="Group by type"
         >≡</button>
@@ -130,7 +130,7 @@ function ReferencedFiles({ files, onFileOpen, onClose }: Props) {
         <div className="px-2 py-1 border-b border-border shrink-0">
           <input
             type="text"
-            className="w-full bg-bg border border-border rounded px-2 py-1 text-[12px] font-mono text-text outline-none focus:border-accent"
+            className="w-full bg-bg border border-border rounded px-2 py-1 text-meta font-mono text-text outline-none focus:border-accent"
             placeholder="Filter files..."
             value={filter}
             onChange={e => setFilter(e.target.value)}
@@ -141,16 +141,16 @@ function ReferencedFiles({ files, onFileOpen, onClose }: Props) {
       {/* File list */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-1">
         {files.length === 0 ? (
-          <div className="px-3 py-4 text-[12px] text-muted italic text-center">
+          <div className="px-3 py-4 text-meta text-muted italic text-center">
             No files referenced yet.<br />
-            <span className="text-[11px]">Files mentioned in chat or used by tools will appear here.</span>
+            <span className="text-2xs">Files mentioned in chat or used by tools will appear here.</span>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="px-3 py-2 text-[12px] text-muted italic">No matches</div>
+          <div className="px-3 py-2 text-meta text-muted italic">No matches</div>
         ) : grouped ? (
           grouped.map(([group, items]) => (
             <div key={group}>
-              <div className="text-[11px] text-muted font-semibold uppercase tracking-wider px-2 pt-2 pb-1">{group}</div>
+              <div className="text-2xs text-muted font-semibold uppercase tracking-wider px-2 pt-2 pb-1">{group}</div>
               {items.map(renderFile)}
             </div>
           ))

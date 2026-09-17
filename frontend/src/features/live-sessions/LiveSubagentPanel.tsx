@@ -111,16 +111,16 @@ export default function LiveSubagentPanel({ summary, detail, loading = false, on
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">子 Agent</span>
+              <span className="rounded bg-accent/15 px-1.5 py-0.5 text-2xs text-accent">子 Agent</span>
               <h2 className="truncate text-sm font-semibold text-text-strong" title={summary.sessionName || `PID ${summary.pid}`}>
                 {summary.sessionName || `子 Agent · PID ${summary.pid}`}
               </h2>
-              <span className="shrink-0 text-[11px]" title={`Session 状态：${summary.status === 'running' ? '工作中' : summary.status === 'reconnecting' ? '重连中' : '等待输入'}`}>
+              <span className="shrink-0 text-2xs" title={`Session 状态：${summary.status === 'running' ? '工作中' : summary.status === 'reconnecting' ? '重连中' : '等待输入'}`}>
                 {sessionStatusEmoji(summary.status)} {summary.status === 'running' ? '工作中' : summary.status === 'reconnecting' ? '重连中' : '等待输入'}
               </span>
             </div>
-            <div className="mt-1 truncate text-[10px] text-muted" title={summary.canonicalCwd}>{displayWorktreePath(summary.canonicalCwd)}</div>
-            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[9px] text-muted/80">
+            <div className="mt-1 truncate text-2xs text-muted" title={summary.canonicalCwd}>{displayWorktreePath(summary.canonicalCwd)}</div>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-2xs text-muted/80">
               <span title={`完整 session ID：${summary.sessionId}`}>sid {shortSessionId(summary.sessionId)}</span>
               <span>PID {summary.pid}</span>
               {summary.model && <span>{summary.model.provider}/{summary.model.id}</span>}
@@ -128,7 +128,7 @@ export default function LiveSubagentPanel({ summary, detail, loading = false, on
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <button type="button" onClick={onOpenFull} className="rounded border border-border bg-bg px-2 py-1 text-[10px] text-muted hover:border-accent hover:text-accent">完整页</button>
+            <button type="button" onClick={onOpenFull} className="rounded border border-border bg-bg px-2 py-1 text-2xs text-muted hover:border-accent hover:text-accent">完整页</button>
             <button type="button" onClick={onClose} className="rounded border border-border bg-bg px-2 py-1 text-sm leading-none text-muted hover:border-danger hover:text-danger" title="返回主 Agent">×</button>
           </div>
         </div>
@@ -140,16 +140,16 @@ export default function LiveSubagentPanel({ summary, detail, loading = false, on
         {!loading && detail && items.length > 0 && <div className="space-y-2">
           {items.map(item => item.kind === 'tool' ? (
             <details key={`${item.kind}-${item.index}`} className="rounded border border-border bg-card/70">
-              <summary className="cursor-pointer list-none px-2 py-1.5 text-[11px] text-muted hover:text-accent">
-                <span className="mr-1.5 rounded bg-bg px-1 py-0.5 font-mono text-[9px] text-accent">工具</span>
+              <summary className="cursor-pointer list-none px-2 py-1.5 text-2xs text-muted hover:text-accent">
+                <span className="mr-1.5 rounded bg-bg px-1 py-0.5 font-mono text-2xs text-accent">工具</span>
                 {item.name} <span className={item.status === '失败' ? 'text-danger' : 'text-muted/60'}>· {item.status}</span>
               </summary>
-              {item.output && <pre className="max-h-40 overflow-auto border-t border-border/70 px-2 py-1.5 font-mono text-[10px] leading-4 text-muted">{item.output}</pre>}
+              {item.output && <pre className="max-h-40 overflow-auto border-t border-border/70 px-2 py-1.5 font-mono text-2xs leading-4 text-muted">{item.output}</pre>}
             </details>
           ) : (
             <article key={`${item.kind}-${item.index}`} className={`rounded border px-2.5 py-2 ${item.role === 'user' ? 'ml-8 border-accent/20 bg-accent-subtle/50' : 'mr-2 border-border bg-card'}`}>
-              <div className="mb-1 text-[10px] font-medium text-muted">{roleLabel(item.role)}</div>
-              {item.thinking && <details className="mb-1 rounded bg-bg/60 px-2 py-1 text-[10px] text-muted">
+              <div className="mb-1 text-2xs font-medium text-muted">{roleLabel(item.role)}</div>
+              {item.thinking && <details className="mb-1 rounded bg-bg/60 px-2 py-1 text-2xs text-muted">
                 <summary className="cursor-pointer">思考过程</summary>
                 <div className="mt-1 whitespace-pre-wrap leading-4">{item.thinking}</div>
               </details>}
@@ -158,7 +158,7 @@ export default function LiveSubagentPanel({ summary, detail, loading = false, on
           ))}
         </div>}
       </div>
-      <footer className="shrink-0 border-t border-border bg-card px-4 py-2 text-[10px] text-muted">当前为主 Agent 内嵌只读视图 · 输入和控制请打开完整页面</footer>
+      <footer className="shrink-0 border-t border-border bg-card px-4 py-2 text-2xs text-muted">当前为主 Agent 内嵌只读视图 · 输入和控制请打开完整页面</footer>
     </aside>
   )
 }

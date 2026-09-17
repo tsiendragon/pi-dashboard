@@ -209,12 +209,12 @@ function SessionRow(p: RowProps) {
           {/* line 1 — title */}
           <div className="flex h-[18px] items-center gap-1.5">
             <span
-              className="shrink-0 text-[13px] leading-none"
+              className="shrink-0 text-body-s leading-none"
               role="status"
               aria-label={`Session 状态：${statusLabel(p.session.status)}`}
               title={`${sessionStatusEmoji(p.session.status)} ${statusLabel(p.session.status)}`}
             >{sessionStatusEmoji(p.session.status)}</span>
-            {p.depth > 0 && <span className="shrink-0 text-[10px] leading-none text-accent">↳</span>}
+            {p.depth > 0 && <span className="shrink-0 text-2xs leading-none text-accent">↳</span>}
             {renaming ? (
               <input
                 autoFocus
@@ -229,34 +229,34 @@ function SessionRow(p: RowProps) {
                   if (e.key === 'Enter') { e.preventDefault(); submitRename(true) }
                   else if (e.key === 'Escape') { e.preventDefault(); setRenaming(false) }
                 }}
-                className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-[13px] text-text-strong outline-none"
+                className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-body-s text-text-strong outline-none"
               />
             ) : (
-              <span className={`min-w-0 flex-1 truncate text-[13px] leading-[18px] ${tone === 'idle' && !p.active ? 'text-text' : 'text-text-strong'}`}>{p.title}</span>
+              <span className={`min-w-0 flex-1 truncate text-body-s leading-[18px] ${tone === 'idle' && !p.active ? 'text-text' : 'text-text-strong'}`}>{p.title}</span>
             )}
-            {p.childCount > 0 && <span className="shrink-0 rounded bg-bg px-1 text-[9px] leading-[14px] text-muted" title={`${p.childCount} 个子 Agent`}>{p.childCount} 子</span>}
-            {p.session.claim.state === 'claimed' && <span className="shrink-0 text-[10px] leading-none" title="已被其他浏览器接管">🔒</span>}
-            <span className={`shrink-0 font-mono text-[10px] leading-none text-muted-strong ${menuOpen ? 'invisible' : ''}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}`}>{relTime(p.session.lastActivityAt)}</span>
+            {p.childCount > 0 && <span className="shrink-0 rounded bg-bg px-1 text-2xs leading-[14px] text-muted" title={`${p.childCount} 个子 Agent`}>{p.childCount} 子</span>}
+            {p.session.claim.state === 'claimed' && <span className="shrink-0 text-2xs leading-none" title="已被其他浏览器接管">🔒</span>}
+            <span className={`shrink-0 font-mono text-2xs leading-none text-muted-strong ${menuOpen ? 'invisible' : ''}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}`}>{relTime(p.session.lastActivityAt)}</span>
             <button
               type="button"
               aria-label="Session menu"
               onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
               onClick={() => setMenuOpen(v => !v)}
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-[13px] leading-none text-muted transition-opacity hover:bg-bg-elevated hover:text-text-strong ${menuOpen ? 'bg-bg-elevated text-text-strong opacity-100' : 'opacity-50 group-hover:opacity-100 md:opacity-0'}`}
+              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-body-s leading-none text-muted transition-opacity hover:bg-bg-elevated hover:text-text-strong ${menuOpen ? 'bg-bg-elevated text-text-strong opacity-100' : 'opacity-50 group-hover:opacity-100 md:opacity-0'}`}
             >⋯</button>
           </div>
 
           {/* line 2 — status · tags · group · location */}
           <div className="flex h-[16px] items-center gap-1 overflow-hidden">
-            {p.pinned && <span className="shrink-0 text-[9px] leading-none text-accent" title="已置顶">📌</span>}
-            {p.tmuxSession && <span className="shrink-0 text-[10px] leading-none text-muted" title={`终端可访问：tmux attach -t ${p.tmuxSession}`}>🖥 终端</span>}
+            {p.pinned && <span className="shrink-0 text-2xs leading-none text-accent" title="已置顶">📌</span>}
+            {p.tmuxSession && <span className="shrink-0 text-2xs leading-none text-muted" title={`终端可访问：tmux attach -t ${p.tmuxSession}`}>🖥 终端</span>}
             {p.subagent
-              ? <span className={`shrink-0 text-[10px] leading-none ${taskStatusClass(p.taskStatus)}`} title={`子 Agent 任务：${taskStatusLabel(p.taskStatus)}`}>{taskStatusEmoji(p.taskStatus)} 子 Agent · {taskStatusLabel(p.taskStatus)}</span>
-              : <span className={`shrink-0 text-[10px] leading-none ${tone === 'running' ? 'text-accent' : tone === 'reconnecting' ? 'text-warn' : 'text-muted-strong'}`}>{statusLabel(p.session.status)}</span>}
+              ? <span className={`shrink-0 text-2xs leading-none ${taskStatusClass(p.taskStatus)}`} title={`子 Agent 任务：${taskStatusLabel(p.taskStatus)}`}>{taskStatusEmoji(p.taskStatus)} 子 Agent · {taskStatusLabel(p.taskStatus)}</span>
+              : <span className={`shrink-0 text-2xs leading-none ${tone === 'running' ? 'text-accent' : tone === 'reconnecting' ? 'text-warn' : 'text-muted-strong'}`}>{statusLabel(p.session.status)}</span>}
             {chips.map(t => <TagChip key={t} tag={t} active={p.tagFilter === t} onClick={p.onToggleTagFilter} />)}
-            {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-[9px] font-semibold leading-[14px] text-muted-strong" title={p.tags.join(', ')}>+{extra}</span>}
-            {p.groupName && <span className="shrink-0 truncate text-[10px] leading-none text-ok" title={`任务分组：${p.groupName}`}>{p.groupName}</span>}
-            <span className="ml-auto flex min-w-0 shrink items-center gap-1 text-[10px] leading-none text-muted-strong">
+            {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-2xs font-semibold leading-[14px] text-muted-strong" title={p.tags.join(', ')}>+{extra}</span>}
+            {p.groupName && <span className="shrink-0 truncate text-2xs leading-none text-ok" title={`任务分组：${p.groupName}`}>{p.groupName}</span>}
+            <span className="ml-auto flex min-w-0 shrink items-center gap-1 text-2xs leading-none text-muted-strong">
               {branch && <span className="shrink-0 truncate" title={`分支：${branch}`}>{branch}</span>}
               <span className="min-w-0 truncate font-mono" title={cwd}>{projectName(cwd) || displayWorktreePath(cwd)}</span>
             </span>
@@ -613,14 +613,14 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     <aside className={`pidash-sidebar flex w-full shrink-0 flex-col overflow-y-auto border-r border-border bg-bg-accent md:w-[320px] ${dragActive ? 'select-none' : ''}`}>
       <div className="sticky top-0 z-10 border-b border-border bg-bg-accent px-3 py-2.5">
         <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1 text-[12px] font-semibold uppercase tracking-[.05em] text-muted">
+          <div className="min-w-0 flex-1 text-meta font-semibold uppercase tracking-[.05em] text-muted">
             Live Pi Sessions
-            <span className="ml-1.5 font-mono text-[10px] normal-case tracking-normal text-muted-strong">
+            <span className="ml-1.5 font-mono text-2xs normal-case tracking-normal text-muted-strong">
               {visible.length === sessions.length ? sessions.length : `${visible.length}/${sessions.length}`}
             </span>
           </div>
-          <button type="button" disabled={busy || starting} onClick={() => setStartOpen(value => !value)} className="shrink-0 rounded-md border border-border bg-bg px-2 py-0.5 text-[11px] text-muted hover:border-accent hover:text-accent disabled:opacity-50" title="启动一个新的 Live Pi">＋启动</button>
-          <button type="button" disabled={busy || starting} onClick={() => setCreating(value => !value)} className="shrink-0 rounded-md border border-border bg-bg px-2 py-0.5 text-[11px] text-muted hover:border-accent hover:text-accent disabled:opacity-50" title="新建任务分组">＋任务</button>
+          <button type="button" disabled={busy || starting} onClick={() => setStartOpen(value => !value)} className="shrink-0 rounded-md border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-50" title="启动一个新的 Live Pi">＋启动</button>
+          <button type="button" disabled={busy || starting} onClick={() => setCreating(value => !value)} className="shrink-0 rounded-md border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-50" title="新建任务分组">＋任务</button>
         </div>
 
         <div className="mt-2"><SearchInput placeholder="搜索 session / 目录 / 标签…" value={filter} onChange={e => setFilter(e.target.value)} /></div>
@@ -628,7 +628,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
         {tagCounts.length > 0 && (
           <div className="mt-1.5 flex items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button type="button" onClick={() => setTagFilter(null)}
-              className={`shrink-0 rounded-full border px-2 py-px text-[10px] font-semibold leading-[16px] ${!tagFilter ? 'border-border-strong bg-bg-hover text-text-strong' : 'border-transparent text-muted hover:text-text'}`}>全部</button>
+              className={`shrink-0 rounded-full border px-2 py-px text-2xs font-semibold leading-[16px] ${!tagFilter ? 'border-border-strong bg-bg-hover text-text-strong' : 'border-transparent text-muted hover:text-text'}`}>全部</button>
             {tagCounts.slice(0, 12).map(({ tag, count }) => (
               <TagChip key={tag} tag={tag} active={tagFilter === tag} onClick={t => setTagFilter(current => current === t ? null : t)} title={`#${tag} · ${count} 个 session`} />
             ))}
@@ -637,7 +637,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
 
         {(startOpen || creating) && <div className="mt-2 space-y-2 rounded-lg border border-border bg-bg p-2">
           {startOpen && <form onSubmit={event => { void startLivePi(event) }} className="space-y-1.5">
-            <div className="text-[10px] font-semibold text-accent">启动 Live Pi</div>
+            <div className="text-2xs font-semibold text-accent">启动 Live Pi</div>
             <input
               ref={startCwdRef}
               autoFocus
@@ -654,9 +654,9 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
                 } else if (event.key === 'Escape') setStartCwdMenuOpen(false)
               }}
               placeholder="工作目录，例如 /mnt/workspace/lilong/repos/...（Tab 补全）"
-              className="w-full rounded border border-border bg-card px-2 py-1 text-[11px] text-text outline-none focus:border-accent"
+              className="w-full rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none focus:border-accent"
             />
-            <div className="text-[10px] leading-[15px] text-muted-strong">
+            <div className="text-2xs leading-[15px] text-muted-strong">
               必须是<b>已存在</b>的绝对目录（或 <span className="font-mono">~/…</span>），且在白名单根目录内；按 Tab 可补全目录。
             </div>
             {startCwdMenuOpen && <PathCompleteMenu
@@ -676,32 +676,32 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
               }}
               onClose={() => setStartCwdMenuOpen(false)}
             />}
-            <select value={startModel} onChange={event => setStartModel(event.target.value)} disabled={startModelsLoading} className="w-full rounded border border-border bg-card px-2 py-1 text-[11px] text-text outline-none disabled:opacity-60" title="选择启动模型">
+            <select value={startModel} onChange={event => setStartModel(event.target.value)} disabled={startModelsLoading} className="w-full rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none disabled:opacity-60" title="选择启动模型">
               <option value="">{startModelsLoading ? '读取模型列表…' : '默认模型'}</option>
               {startModels.map(model => <option key={modelFullId(model)} value={modelFullId(model)}>{modelLabel(model)} · {modelFullId(model)}</option>)}
             </select>
-            {startModelsError && <div className="text-[10px] text-warn">模型列表读取失败，将使用默认模型</div>}
+            {startModelsError && <div className="text-2xs text-warn">模型列表读取失败，将使用默认模型</div>}
             <div className="flex gap-1.5">
-              <select value={startThinking} onChange={event => setStartThinking(event.target.value)} className="min-w-0 flex-1 rounded border border-border bg-card px-1.5 py-1 text-[11px] text-text outline-none">
+              <select value={startThinking} onChange={event => setStartThinking(event.target.value)} className="min-w-0 flex-1 rounded border border-border bg-card px-1.5 py-1 text-2xs text-text outline-none">
                 {THINKING_LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
               </select>
-              <input value={startTitle} onChange={event => setStartTitle(event.target.value)} placeholder="标题（可选）" className="min-w-0 flex-1 rounded border border-border bg-card px-2 py-1 text-[11px] text-text outline-none focus:border-accent" />
+              <input value={startTitle} onChange={event => setStartTitle(event.target.value)} placeholder="标题（可选）" className="min-w-0 flex-1 rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none focus:border-accent" />
             </div>
             <div className="flex gap-1">
-              <button type="submit" disabled={starting || !startCwd.trim()} className="flex-1 rounded bg-accent px-2 py-1 text-[11px] text-white disabled:opacity-50">{starting ? '启动中…' : '启动'}</button>
-              <button type="button" disabled={starting} onClick={() => setStartOpen(false)} className="rounded border border-border px-2 py-1 text-[11px] text-muted">取消</button>
+              <button type="submit" disabled={starting || !startCwd.trim()} className="flex-1 rounded bg-accent px-2 py-1 text-2xs text-accent-fg disabled:opacity-50">{starting ? '启动中…' : '启动'}</button>
+              <button type="button" disabled={starting} onClick={() => setStartOpen(false)} className="rounded border border-border px-2 py-1 text-2xs text-muted">取消</button>
             </div>
-            {startError && <div className="text-[10px] text-danger">启动失败：{startError}</div>}
+            {startError && <div className="text-2xs text-danger">启动失败：{startError}</div>}
           </form>}
           {creating && <form onSubmit={event => { void createGroup(event) }} className="flex gap-1 border-t border-border pt-2">
-            <input value={newGroupName} onChange={event => setNewGroupName(event.target.value)} placeholder="任务分组名称" className="min-w-0 flex-1 rounded border border-border bg-card px-2 py-1 text-[11px] text-text outline-none focus:border-accent" />
-            <button type="submit" disabled={busy || !newGroupName.trim()} className="rounded border border-border px-2 py-1 text-[11px] text-muted disabled:opacity-50">创建</button>
+            <input value={newGroupName} onChange={event => setNewGroupName(event.target.value)} placeholder="任务分组名称" className="min-w-0 flex-1 rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none focus:border-accent" />
+            <button type="submit" disabled={busy || !newGroupName.trim()} className="rounded border border-border px-2 py-1 text-2xs text-muted disabled:opacity-50">创建</button>
           </form>}
         </div>}
 
-        {error && <div className="mt-2 text-[11px] text-danger">分组同步失败：{error}</div>}
+        {error && <div className="mt-2 text-2xs text-danger">分组同步失败：{error}</div>}
         {tagFilter && (
-          <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-strong">
+          <div className="mt-1.5 flex items-center gap-1.5 text-2xs text-muted-strong">
             仅显示 <TagChip tag={tagFilter} active /> 的 session
             <button type="button" className="underline hover:text-text" onClick={() => setTagFilter(null)}>清除</button>
           </div>
@@ -711,12 +711,12 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
       {sessions.length === 0 ? (
         <div className="p-5 text-sm text-muted">暂无已连接的 Pi session。已运行的 Pi 需要加载集成 Extension。</div>
       ) : sections.length === 0 ? (
-        <div className="p-5 text-[12px] text-muted-strong">没有匹配的 session{filter || tagFilter ? '（清除筛选试试）' : ''}</div>
+        <div className="p-5 text-meta text-muted-strong">没有匹配的 session{filter || tagFilter ? '（清除筛选试试）' : ''}</div>
       ) : sections.map(section => (
         <section key={section.id} data-live-block={section.id} className="border-b border-border/60">
           <div className="flex items-center gap-1 px-2.5 pb-1 pt-2">
-            <span className={`text-[8px] transition-transform ${section.pinnedSection ? 'text-accent' : 'text-muted-strong'}`}>▾</span>
-            {section.pinnedSection && <span className="text-[9px] leading-none text-accent">📌</span>}
+            <span className={`text-2xs transition-transform ${section.pinnedSection ? 'text-accent' : 'text-muted-strong'}`}>▾</span>
+            {section.pinnedSection && <span className="text-2xs leading-none text-accent">📌</span>}
             {renamingGroup === section.id ? (
               <input
                 autoFocus
@@ -729,14 +729,14 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
                   if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() }
                   else if (e.key === 'Escape') { e.preventDefault(); setRenamingGroup(null) }
                 }}
-                className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-[12px] text-text-strong outline-none"
+                className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-meta text-text-strong outline-none"
               />
             ) : (
-              <strong className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[.06em] text-text-strong" title={section.name}>{section.name}</strong>
+              <strong className="min-w-0 flex-1 truncate text-2xs font-semibold uppercase tracking-[.06em] text-text-strong" title={section.name}>{section.name}</strong>
             )}
-            <span className="shrink-0 font-mono text-[10px] text-muted-strong">{section.sessions.length}</span>
+            <span className="shrink-0 font-mono text-2xs text-muted-strong">{section.sessions.length}</span>
             {section.group && <>
-              <button type="button" disabled={busy} aria-label="重命名任务分组按钮" onClick={() => { setRenamingGroup(section.id); setGroupDraft(section.name) }} className="rounded px-1 text-[11px] text-muted hover:bg-bg-hover hover:text-accent" title="重命名任务">✎</button>
+              <button type="button" disabled={busy} aria-label="重命名任务分组按钮" onClick={() => { setRenamingGroup(section.id); setGroupDraft(section.name) }} className="rounded px-1 text-2xs text-muted hover:bg-bg-hover hover:text-accent" title="重命名任务">✎</button>
               <button
                 type="button"
                 disabled={busy}
@@ -745,29 +745,29 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
                   if (armedGroup === section.id) { setArmedGroup(null); void mutateGroups(() => liveSessionApi.deleteGroup(section.id!)) }
                   else setArmedGroup(section.id)
                 }}
-                className={`shrink-0 rounded px-1 text-[10px] ${armedGroup === section.id ? 'bg-danger-subtle font-semibold text-danger' : 'text-muted hover:bg-danger-subtle hover:text-danger'}`}
+                className={`shrink-0 rounded px-1 text-2xs ${armedGroup === section.id ? 'bg-danger-subtle font-semibold text-danger' : 'text-muted hover:bg-danger-subtle hover:text-danger'}`}
                 title={armedGroup === section.id ? '再点一次确认删除（session 不会被删除）' : '删除任务分组'}
               >{armedGroup === section.id ? '确认删除' : '×'}</button>
             </>}
           </div>
-          <div className="px-2.5 pb-1 text-[10px] text-muted-strong">{section.group || section.pinnedSection ? groupSummary(section.sessions) : `${section.sessions.length} 个 session`}</div>
+          <div className="px-2.5 pb-1 text-2xs text-muted-strong">{section.group || section.pinnedSection ? groupSummary(section.sessions) : `${section.sessions.length} 个 session`}</div>
           <div className="pb-1.5">{renderRows(section)}</div>
         </section>
       ))}
 
-      <div className="mt-auto flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-[10px] text-muted-strong">
+      <div className="mt-auto flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-2xs text-muted-strong">
         <span title="行位置来自手动拖动，不会因活跃时间或上线状态自行变化">⇅ 排序：手动</span>
         <button
           type="button"
           disabled={busy}
           onClick={() => void resetOrder()}
-          className="ml-auto shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+          className="ml-auto shrink-0 rounded border border-border px-1.5 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
           title="清空手动顺序，行位置回到按启动时间排列"
         >↺ 恢复自动排序</button>
         {orderError !== undefined && <span className="shrink-0 text-danger" title={orderError}>顺序同步失败</span>}
       </div>
 
-      <div className="px-3 py-2 text-[10px] text-muted-strong">
+      <div className="px-3 py-2 text-2xs text-muted-strong">
         拖动行可调顺序，拖到别的分组即改归属；触屏用 ⋯ 里的 ↑ ↓
         {metaError !== undefined && <button type="button" className="ml-1 text-danger underline" onClick={() => void refreshMeta()}>· 标签同步失败，点击重试</button>}
       </div>

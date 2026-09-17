@@ -46,9 +46,9 @@ export default function SubagentCard({ meta }: Props) {
   const canExpand = !!(liveOutput)
 
   return (
-    <div className="msg-content bg-card border border-border rounded-md animate-scale-in">
+    <div className="msg-content bg-card border border-border/60 rounded-md animate-scale-in">
       <button
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-[13px] font-mono bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-body-s font-mono bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
         onClick={() => canExpand && setExpanded(!expanded)}
         disabled={!canExpand}
       >
@@ -64,35 +64,35 @@ export default function SubagentCard({ meta }: Props) {
         <span className="text-accent font-semibold shrink-0">subagent</span>
 
         {id && (
-          <span className="text-text text-[12px] shrink-0">{id}</span>
+          <span className="text-text text-meta shrink-0">{id}</span>
         )}
 
         {/* Live preview line while running, otherwise task description */}
         {running && livePreview ? (
-          <span className="text-muted/70 text-[12px] font-normal truncate flex-1 italic">{truncate(livePreview, 70)}</span>
+          <span className="text-muted/70 text-meta font-normal truncate flex-1 italic">{truncate(livePreview, 70)}</span>
         ) : task ? (
-          <span className="text-muted text-[12px] font-normal truncate flex-1">{truncate(task, 60)}</span>
+          <span className="text-muted text-meta font-normal truncate flex-1">{truncate(task, 60)}</span>
         ) : null}
 
-        <span className="text-muted/50 text-[11px] shrink-0 ml-auto">
+        <span className="text-muted/50 text-2xs shrink-0 ml-auto">
           {running ? fmtElapsed(elapsed) : model ? truncate(model.split('/').pop() ?? model, 20) : ''}
         </span>
 
         {canExpand && (
-          <span className={`text-[11px] transition-transform shrink-0 ${expanded ? 'rotate-90' : ''}`}>▶</span>
+          <span className={`text-2xs transition-transform shrink-0 ${expanded ? 'rotate-90' : ''}`}>▶</span>
         )}
       </button>
 
       {expanded && liveOutput && (
         <div className="px-3 pb-3 border-t border-border">
-          <div className={`text-[11px] font-medium uppercase tracking-wider mt-2 mb-1 ${
+          <div className={`text-2xs font-medium uppercase tracking-wider mt-2 mb-1 ${
             isError ? 'text-danger' : running ? 'text-accent' : 'text-muted'
           }`}>
             {isError ? 'Error' : running ? 'Live output' : 'Result'}
           </div>
           <pre
             ref={scrollRef}
-            className={`bg-bg-hover rounded-md px-3 py-2 text-[13px] font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${
+            className={`bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${
               isError ? 'text-danger' : running ? 'text-text/80' : 'text-muted'
             }`}
           >

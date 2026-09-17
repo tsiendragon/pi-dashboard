@@ -113,21 +113,21 @@ function TreeRow({ node, selected, onSelect, hasBranch }: {
       }`}
       style={{ paddingLeft: indent + 8 }}
     >
-      {hasBranch && <span className="text-[10px] text-warning shrink-0 mt-0.5">⑂</span>}
-      <span className="text-[12px] shrink-0">{icon}</span>
+      {hasBranch && <span className="text-2xs text-warning shrink-0 mt-0.5">⑂</span>}
+      <span className="text-meta shrink-0">{icon}</span>
       <div className="flex-1 min-w-0">
-        <span className={`text-[12px] font-mono truncate block ${
+        <span className={`text-meta font-mono truncate block ${
           node.isActive ? 'text-text' : 'text-muted'
         } ${node.isLeaf ? 'font-semibold text-accent' : ''}`}>
           {node.text || node.type}
         </span>
         {node.tools && node.tools.length > 0 && (
-          <span className="text-[10px] text-muted/60 truncate block">
+          <span className="text-2xs text-muted/60 truncate block">
             {node.tools.join(', ')}
           </span>
         )}
       </div>
-      {node.isLeaf && <span className="text-[10px] text-accent shrink-0 mt-0.5">← active</span>}
+      {node.isLeaf && <span className="text-2xs text-accent shrink-0 mt-0.5">← active</span>}
     </button>
   )
 }
@@ -179,7 +179,7 @@ export default function SessionTree({ slotKey, onFork, onClose }: {
 
   if (loading) {
     return (
-      <div className="p-4 text-[13px] text-muted text-center">Loading session tree…</div>
+      <div className="p-4 text-body-s text-muted text-center">Loading session tree…</div>
     )
   }
 
@@ -187,25 +187,25 @@ export default function SessionTree({ slotKey, onFork, onClose }: {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
-        <span className="text-[13px] font-medium text-text">🌳 Session Tree</span>
-        <span className="text-[11px] text-muted">{entries.length} entries</span>
+        <span className="text-body-s font-medium text-text">🌳 Session Tree</span>
+        <span className="text-2xs text-muted">{entries.length} entries</span>
         <div className="ml-auto flex items-center gap-1.5">
           <button
             onClick={() => setFilter(f => f === 'all' ? 'user' : 'all')}
-            className={`px-2 py-0.5 rounded text-[11px] cursor-pointer transition-colors border ${
+            className={`px-2 py-0.5 rounded text-2xs cursor-pointer transition-colors border ${
               filter === 'user' ? 'border-accent/30 text-accent bg-accent-subtle' : 'border-border text-muted bg-transparent hover:text-text'
             }`}
           >
             {filter === 'user' ? '👤 User only' : '📋 All'}
           </button>
-          <button onClick={onClose} className="px-2 py-0.5 rounded text-[11px] text-muted hover:text-text cursor-pointer bg-transparent border border-border transition-colors">✕</button>
+          <button onClick={onClose} className="px-2 py-0.5 rounded text-2xs text-muted hover:text-text cursor-pointer bg-transparent border border-border transition-colors">✕</button>
         </div>
       </div>
 
       {/* Tree */}
       <div className="flex-1 overflow-y-auto overscroll-contain px-1 py-1">
         {visible.length === 0 ? (
-          <div className="text-[13px] text-muted text-center py-8">No entries</div>
+          <div className="text-body-s text-muted text-center py-8">No entries</div>
         ) : (
           visible.map(node => (
             <TreeRow
@@ -223,21 +223,21 @@ export default function SessionTree({ slotKey, onFork, onClose }: {
       <div className="flex items-center gap-2 px-3 py-2 border-t border-border shrink-0">
         {selected && selectedEntry ? (
           <>
-            <span className="text-[12px] text-muted truncate flex-1">
+            <span className="text-meta text-muted truncate flex-1">
               {ROLE_ICONS[selectedEntry.role] || '·'} {selectedEntry.text?.slice(0, 80) || selectedEntry.type}
             </span>
             {canFork && (
               <button
                 onClick={handleFork}
                 disabled={forking}
-                className="px-3 py-1 rounded-md text-[12px] font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-white transition-all disabled:opacity-30"
+                className="px-3 py-1 rounded-md text-meta font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30"
               >
                 {forking ? '⏳ Forking…' : '⑂ Fork from here'}
               </button>
             )}
           </>
         ) : (
-          <span className="text-[12px] text-muted">Select a user message to fork from</span>
+          <span className="text-meta text-muted">Select a user message to fork from</span>
         )}
       </div>
     </div>

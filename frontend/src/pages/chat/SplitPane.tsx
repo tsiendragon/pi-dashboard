@@ -66,11 +66,11 @@ export default function SplitPane({ slotKey, onClose, onFileOpen }: SplitPanePro
     const key = m.ts ? `${m.role}-${m.ts}` : `${m.role}-${i}`
     if (m.role === 'thinking') return <ThinkingBlock key={key} content={m.content} />
     if (m.role === 'tool') return <ToolCallBlock key={key} content={m.content} meta={m.meta} onFileOpen={handleFileOpen} slotKey={slotKey} />
-    if (m.role === 'queued') return <div key={key} className="bg-warn-subtle border border-warn/15 rounded-md px-3 py-2 text-[13px] text-warn italic">⏳ <em>Queued:</em> {m.content}</div>
-    if (m.role === 'error') return <div key={key} className="bg-danger-subtle text-danger text-[13px] px-3 py-2 rounded-md border border-danger/15 self-center">{m.content}</div>
+    if (m.role === 'queued') return <div key={key} className="bg-warn-subtle border border-warn/15 rounded-md px-3 py-2 text-body-s text-warn italic">⏳ <em>Queued:</em> {m.content}</div>
+    if (m.role === 'error') return <div key={key} className="bg-danger-subtle text-danger text-body-s px-3 py-2 rounded-md border border-danger/15 self-center">{m.content}</div>
     if (m.role === 'system') return <SystemMessage key={key} content={m.content} meta={m.meta} />
     if (m.role === 'permission') return (
-      <div key={key} className="bg-warn-subtle border border-warn/20 rounded-md px-3 py-2 text-[13px] text-warn">🔒 {m.content}</div>
+      <div key={key} className="bg-warn-subtle border border-warn/20 rounded-md px-3 py-2 text-body-s text-warn">🔒 {m.content}</div>
     )
 
     const isUser = m.role === 'user'
@@ -81,9 +81,9 @@ export default function SplitPane({ slotKey, onClose, onFileOpen }: SplitPanePro
           ? <div className="w-7 h-7 rounded-md grid place-items-center font-semibold text-xs shrink-0 self-end mb-0.5 bg-accent-subtle text-accent">U</div>
           : <img src="/logo.png" alt="Pi" className="w-7 h-7 rounded-md shrink-0 self-end mb-0.5 object-cover" />
         }
-        <div className={`flex flex-col gap-0.5 max-w-[min(820px,calc(100%-48px))] ${isUser ? 'items-end' : ''}`}>
+        <div className={`flex flex-col gap-0.5 max-w-[min(720px,calc(100%-48px))] ${isUser ? 'items-end' : ''}`}>
           {isUser ? (
-            <div className="msg-content px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap rounded-lg bg-accent text-white rounded-br-[4px] overflow-hidden select-text" style={{ overflowWrap: 'anywhere' }}>{m.content}</div>
+            <div className="msg-content px-3 py-2 text-body-s leading-relaxed whitespace-pre-wrap rounded-lg bg-accent text-accent-fg rounded-br-[4px] shadow-sm overflow-hidden select-text" style={{ overflowWrap: 'anywhere' }}>{m.content}</div>
           ) : (
             <AssistantMessage content={m.content} isStreaming={isStreaming} slotRunning={false} onOption={() => {}} onFileOpen={handleFileOpen} planTaskId="" onApplyPlan={async () => {}} />
           )}
@@ -97,12 +97,12 @@ export default function SplitPane({ slotKey, onClose, onFileOpen }: SplitPanePro
       {/* Header */}
       <div className="px-4 py-2 border-b border-border flex justify-between items-center bg-chrome gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="text-[11px] text-muted font-medium uppercase tracking-wider shrink-0">Split View</span>
+          <span className="text-2xs text-muted font-medium uppercase tracking-wider shrink-0">Split View</span>
           <span className="text-sm font-semibold text-text font-mono truncate">{title}</span>
           {slot?.running && <span className="typing-dots-sm"><span /><span /><span /></span>}
         </div>
         <button
-          className="bg-transparent border border-border text-muted rounded-md px-3 py-[5px] text-[13px] font-medium cursor-pointer hover:text-danger hover:border-danger transition-all font-body"
+          className="bg-transparent border border-border text-muted rounded-md px-3 py-[5px] text-body-s font-medium cursor-pointer hover:text-danger hover:border-danger transition font-body"
           onClick={onClose}
           aria-label="Close split view"
         >

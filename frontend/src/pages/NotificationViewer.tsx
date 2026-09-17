@@ -43,19 +43,19 @@ export default function NotificationViewer({ notification, onClose, dispatch }: 
         </span>
         <div className="flex gap-2">
           {notification.acked && (
-            <button className="bg-transparent border border-border text-muted rounded-md px-3 py-[5px] text-[13px] font-medium cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition-all font-body" onClick={() => { dispatch(unackNotification(notification.ts)); setManualUnread(true) }}>📩 Mark as unread</button>
+            <button className="bg-transparent border border-border text-muted rounded-md px-3 py-[5px] text-body-s font-medium cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition font-body" onClick={() => { dispatch(unackNotification(notification.ts)); setManualUnread(true) }}>📩 Mark as unread</button>
           )}
-          <button className="bg-transparent border border-border text-muted rounded-md px-3 py-[5px] text-[13px] font-medium cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition-all font-body" onClick={onClose}>✕ Close</button>
+          <button className="bg-transparent border border-border text-muted rounded-md px-3 py-[5px] text-body-s font-medium cursor-pointer hover:text-text hover:border-border-strong hover:bg-bg-hover transition font-body" onClick={onClose}>✕ Close</button>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="text-muted text-[13px] font-mono mb-3">{parseNotificationTs(notification.ts)}</div>
+        <div className="text-muted text-body-s font-mono mb-3">{parseNotificationTs(notification.ts)}</div>
         <div className="msg-content bg-card border border-border rounded-lg px-5 py-4 text-sm leading-relaxed text-text shadow-[inset_0_1px_0_var(--card-hl)] max-w-[820px] overflow-x-auto break-words">
           <MarkdownRenderer content={notification.body || ''} />
           {notification.kind === 'approval' && (
             <div className="flex gap-3 mt-4 pt-3 border-t border-border">
-              <button className="px-4 py-2 rounded-lg bg-ok text-white text-[13px] font-semibold cursor-pointer border-none hover:brightness-110 transition-all" onClick={async () => { await api.resolveApproval(notification.ts, 'approve'); dispatch(deleteNotification(notification.ts)); onClose() }}>✅ Approve</button>
-              <button className="px-4 py-2 rounded-lg bg-danger text-white text-[13px] font-semibold cursor-pointer border-none hover:brightness-110 transition-all" onClick={async () => { await api.resolveApproval(notification.ts, 'reject'); dispatch(deleteNotification(notification.ts)); onClose() }}>🚫 Reject</button>
+              <button className="px-4 py-2 rounded-lg bg-ok text-ok-fg text-body-s font-semibold cursor-pointer border-none hover:brightness-110 transition" onClick={async () => { await api.resolveApproval(notification.ts, 'approve'); dispatch(deleteNotification(notification.ts)); onClose() }}>✅ Approve</button>
+              <button className="px-4 py-2 rounded-lg bg-danger text-danger-fg text-body-s font-semibold cursor-pointer border-none hover:brightness-110 transition" onClick={async () => { await api.resolveApproval(notification.ts, 'reject'); dispatch(deleteNotification(notification.ts)); onClose() }}>🚫 Reject</button>
             </div>
           )}
           {notification.kind === 'cron' && notification.job_id && (
@@ -63,7 +63,7 @@ export default function NotificationViewer({ notification, onClose, dispatch }: 
           )}
           {(notification.kind === 'input_needed' || notification.kind === 'tool_done') && notification.slot && (
             <div className="flex gap-3 mt-4 pt-3 border-t border-border">
-              <button className="px-4 py-2 rounded-lg bg-accent text-white text-[13px] font-semibold cursor-pointer border-none hover:brightness-110 transition-all" onClick={() => {
+              <button className="px-4 py-2 rounded-lg bg-accent text-accent-fg text-body-s font-semibold cursor-pointer border-none hover:brightness-110 transition" onClick={() => {
                 dispatch(switchSlot(notification.slot!))
                 onClose()
               }}>{notification.kind === 'input_needed' ? '💬 Go to Session' : '🔧 Go to Session'}</button>
@@ -71,7 +71,7 @@ export default function NotificationViewer({ notification, onClose, dispatch }: 
           )}
           {notification.kind === 'taskrunner' && notification.task_id && (
             <div className="flex gap-3 mt-4 pt-3 border-t border-border">
-              <button className="px-4 py-2 rounded-lg bg-accent text-white text-[13px] font-semibold cursor-pointer border-none hover:brightness-110 transition-all" onClick={async () => {
+              <button className="px-4 py-2 rounded-lg bg-accent text-accent-fg text-body-s font-semibold cursor-pointer border-none hover:brightness-110 transition" onClick={async () => {
                 const res = await api.taskRunToChat(notification.task_id!)
                 if (res.slot) { dispatch(switchSlot(res.slot)); onClose() }
               }}>💬 Continue in Chat</button>

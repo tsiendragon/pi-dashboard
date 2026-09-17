@@ -52,7 +52,7 @@ function ThinkingElapsed({ startedAt }: { startedAt?: number }) {
     const timer = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(timer)
   }, [startedAt])
-  return startedAt === undefined ? null : <span className="font-mono text-[10px] text-muted">· {formatElapsed(now - startedAt)}</span>
+  return startedAt === undefined ? null : <span className="font-mono text-2xs text-muted">· {formatElapsed(now - startedAt)}</span>
 }
 
 function activityTextClass(tone: LiveSessionActivity['tone']): string {
@@ -66,7 +66,7 @@ function AgentActivityBar({ activity }: { activity?: LiveSessionActivity }) {
   if (!activity || activity.label === '等待输入') return null
   const reconnecting = activity.label === '重连中'
   return (
-    <div className={`flex min-h-7 items-center gap-2 bg-card/60 px-3 py-1 text-[11px] ${activityTextClass(activity.tone)}`} role="status" aria-live="polite" aria-label={`Agent 状态：${activity.label}`}>
+    <div className={`flex min-h-7 items-center gap-2 bg-card/60 px-3 py-1 text-2xs ${activityTextClass(activity.tone)}`} role="status" aria-live="polite" aria-label={`Agent 状态：${activity.label}`}>
       {reconnecting
         ? <span aria-hidden="true">◐</span>
         : <span className="typing-dots shrink-0" aria-hidden="true"><span /><span /><span /></span>}
@@ -189,10 +189,10 @@ export default function LiveSessionComposer({ status, activity, disabled, models
         {pendingImages.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label="待发送图片">
           {pendingImages.map((image, index) => <div key={`${image.mimeType}-${index}`} className="group relative">
             <img src={image.preview} alt={`待发送图片 ${index + 1}`} className="h-16 max-w-28 rounded-md border border-border object-cover" />
-            <button type="button" onClick={() => setPendingImages(previous => previous.filter((_, itemIndex) => itemIndex !== index))} className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border-none bg-danger text-[11px] text-white opacity-60 transition-opacity hover:opacity-100" aria-label={`移除第 ${index + 1} 张图片`}>×</button>
+            <button type="button" onClick={() => setPendingImages(previous => previous.filter((_, itemIndex) => itemIndex !== index))} className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border-none bg-danger text-2xs text-danger-fg opacity-60 transition-opacity hover:opacity-100" aria-label={`移除第 ${index + 1} 张图片`}>×</button>
           </div>)}
         </div>}
-        {imageError && <div className="mb-2 text-[11px] text-danger" role="alert">{imageError}</div>}
+        {imageError && <div className="mb-2 text-2xs text-danger" role="alert">{imageError}</div>}
         <div className="flex gap-2 items-end">
         <textarea
           ref={inputRef}
@@ -209,32 +209,32 @@ export default function LiveSessionComposer({ status, activity, disabled, models
           rows={1}
           onPaste={handlePaste}
           placeholder={pendingImages.length > 0 ? '补充图片说明，或直接发送…' : '发送到运行中的 Pi…'}
-          className="min-h-9 flex-1 resize-none rounded-md border border-border bg-bg px-2.5 py-1.5 text-sm text-text outline-none focus:border-accent disabled:opacity-50"
+          className="min-h-9 flex-1 resize-none rounded-lg border border-border bg-bg px-2.5 py-1.5 text-sm text-text shadow-inner outline-none focus-ring disabled:opacity-50"
         />
         {status === 'running' && (
-          <select value={deliverAs} onChange={event => setDeliverAs(event.target.value as 'steer' | 'followUp')} className="h-8 rounded-md border border-border bg-bg px-2 text-[11px] text-text">
-            <option value="followUp">Follow-up</option>
-            <option value="steer">Steer</option>
+          <select value={deliverAs} onChange={event => setDeliverAs(event.target.value as 'steer' | 'followUp')} className="h-8 rounded-lg border border-border bg-bg px-2 text-2xs text-text">
+            <option value="followUp">追加</option>
+            <option value="steer">插话（改方向）</option>
           </select>
         )}
         <div className="relative">
-          <button type="button" onClick={() => { void toggleModels() }} disabled={sending || !!action || disabled} className="h-8 max-w-48 truncate rounded-md border border-border bg-bg px-2 text-[11px] text-muted hover:border-accent hover:text-accent disabled:opacity-50" title="切换当前模型">
-            {currentModel ? `Model · ${currentModel.id}` : 'Model'}
+          <button type="button" onClick={() => { void toggleModels() }} disabled={sending || !!action || disabled} className="h-8 max-w-48 truncate rounded-lg border border-border bg-bg px-2 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-50" title="切换当前模型">
+            {currentModel ? `模型 · ${currentModel.id}` : '模型'}
           </button>
           {modelOpen && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-72 w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-lg border border-border bg-card p-2 shadow-xl">
-            <div className="mb-1 px-1 text-[10px] font-semibold text-muted">当前 Pi 可用模型</div>
+            <div className="mb-1 px-1 text-2xs font-semibold text-muted">当前 Pi 可用模型</div>
             {modelsLoading && <div className="px-2 py-3 text-xs text-muted">读取模型列表…</div>}
             {!modelsLoading && models.length === 0 && <div className="px-2 py-3 text-xs text-muted">当前没有可用模型。</div>}
             {!modelsLoading && models.map(model => {
               const selected = currentModel?.provider === model.provider && currentModel.id === model.id
               return <button key={`${model.provider}/${model.id}`} type="button" onClick={() => { setModelOpen(false); if (onSelectModel) { setAction('model'); void onSelectModel(model).finally(() => setAction(undefined)) } }} className={`flex w-full items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-bg-hover ${selected ? 'bg-accent-subtle' : ''}`}>
                 <span className={`mt-0.5 text-xs ${selected ? 'text-accent' : 'text-muted'}`}>{selected ? '✓' : '○'}</span>
-                <span className="min-w-0 flex-1"><span className="block truncate font-mono text-[10px] text-text-strong">{model.provider}/{model.id}</span><span className="block truncate text-[10px] text-muted">{model.name} · context {model.contextWindow.toLocaleString()}</span></span>
+                <span className="min-w-0 flex-1"><span className="block truncate font-mono text-2xs text-text-strong">{model.provider}/{model.id}</span><span className="block truncate text-2xs text-muted">{model.name} · context {model.contextWindow.toLocaleString()}</span></span>
               </button>
             })}
           </div>}
         </div>
-        <button type="button" onClick={() => void submit()} disabled={(!text.trim() && pendingImages.length === 0) || sending || !!action || disabled} className="h-8 px-3 rounded-md bg-accent text-white border-none text-xs disabled:opacity-50">
+        <button type="button" onClick={() => void submit()} disabled={(!text.trim() && pendingImages.length === 0) || sending || !!action || disabled} className="h-8 px-3 rounded-lg bg-accent text-accent-fg border-none text-xs disabled:opacity-50">
           {sending ? '发送中…' : '发送'}
         </button>
         </div>
@@ -248,17 +248,17 @@ export default function LiveSessionComposer({ status, activity, disabled, models
           <div className="fixed z-[9999] overflow-y-auto rounded-lg border border-border bg-card py-1 shadow-lg animate-slide-up" style={{ top, left: rect.left, width: Math.min(rect.width, 440), maxHeight: 400 }}>
             {slashMatches.map((item, index) => (
               <button key={item.command} type="button" onMouseEnter={() => setSlashSelected(index)} onMouseDown={event => { event.preventDefault(); applySlashSelect(item) }} className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${index === slashSelected ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}>
-                <span className="shrink-0 font-mono text-[13px] font-semibold text-accent">{item.command}</span>
-                <span className="min-w-0 flex-1 truncate text-[12px] text-text">{item.description}</span>
-                {item.kind === 'lease' && <span className="shrink-0 rounded-full bg-warn-subtle px-1.5 py-0.5 text-[10px] font-semibold text-warn">需控制</span>}
+                <span className="shrink-0 font-mono text-body-s font-semibold text-accent">{item.command}</span>
+                <span className="min-w-0 flex-1 truncate text-meta text-text">{item.description}</span>
+                {item.kind === 'lease' && <span className="shrink-0 rounded-full bg-warn-subtle px-1.5 py-0.5 text-2xs font-semibold text-warn">需控制</span>}
               </button>
             ))}
             {slashTuiMatches.length > 0 && slashMatches.length > 0 && <div className="my-1 border-t border-border" />}
             {slashTuiMatches.map(item => (
               <div key={item.command} className="flex items-center gap-2 px-3 py-1.5 opacity-60">
-                <span className="shrink-0 font-mono text-[13px] font-semibold text-muted">{item.command}</span>
-                <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{item.description}</span>
-                <span className="shrink-0 rounded-full bg-bg-elevated px-1.5 py-0.5 text-[10px] font-semibold text-muted">仅 TUI</span>
+                <span className="shrink-0 font-mono text-body-s font-semibold text-muted">{item.command}</span>
+                <span className="min-w-0 flex-1 truncate text-meta text-muted">{item.description}</span>
+                <span className="shrink-0 rounded-full bg-bg-elevated px-1.5 py-0.5 text-2xs font-semibold text-muted">仅 TUI</span>
               </div>
             ))}
           </div>

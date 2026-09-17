@@ -112,40 +112,40 @@ function EnsembleNotificationCard({ n }: { n: EnsembleNotif }) {
   }
 
   return (
-    <div className={`px-3.5 py-2.5 rounded-md border text-[13px] font-mono animate-scale-in ${tone}`}>
+    <div className={`px-3.5 py-2.5 rounded-md border text-body-s font-mono animate-scale-in ${tone}`}>
       <div className="flex items-start gap-2.5">
         <span className={`text-base leading-none mt-0.5 shrink-0 ${iconColor}`}>{icon}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             {n.persona && <span className="font-semibold text-text">{n.persona}</span>}
-            <span className={`text-[12px] ${iconColor}`}>{label}</span>
+            <span className={`text-meta ${iconColor}`}>{label}</span>
             {n.kind === 'stalled' && typeof n.silentSeconds === 'number' && (
-              <span className="text-muted text-[12px]">
+              <span className="text-muted text-meta">
                 silent {n.silentSeconds}s{typeof n.thresholdSeconds === 'number' ? ` / ${n.thresholdSeconds}s` : ''}
               </span>
             )}
-            {n.duration && <span className="text-muted text-[12px]">({n.duration})</span>}
-            {typeof n.turns === 'number' && <span className="text-muted text-[12px]">{n.turns} turns</span>}
-            {typeof n.cost === 'number' && n.cost > 0 && <span className="text-muted text-[12px]">${n.cost.toFixed(4)}</span>}
+            {n.duration && <span className="text-muted text-meta">({n.duration})</span>}
+            {typeof n.turns === 'number' && <span className="text-muted text-meta">{n.turns} turns</span>}
+            {typeof n.cost === 'number' && n.cost > 0 && <span className="text-muted text-meta">${n.cost.toFixed(4)}</span>}
             {n.agentId && (
-              <span className="ml-auto text-muted text-[11px] truncate max-w-[40%]" title={n.agentId}>
+              <span className="ml-auto text-muted text-2xs truncate max-w-[40%]" title={n.agentId}>
                 {n.agentId}
               </span>
             )}
           </div>
 
           {n.lastTool && (
-            <div className="mt-1.5 text-[12px] text-muted">
+            <div className="mt-1.5 text-meta text-muted">
               <span className="opacity-60">last:</span>{' '}
               <span className="text-text-strong break-all">{n.lastTool.length > 200 ? n.lastTool.slice(0, 200) + '…' : n.lastTool}</span>
             </div>
           )}
 
           {n.error && (
-            <pre className="mt-1.5 text-[12px] text-danger whitespace-pre-wrap break-all max-h-[120px] overflow-y-auto">{n.error}</pre>
+            <pre className="mt-1.5 text-meta text-danger whitespace-pre-wrap break-all max-h-[120px] overflow-y-auto">{n.error}</pre>
           )}
           {n.warning && (
-            <pre className="mt-1.5 text-[12px] text-warning whitespace-pre-wrap break-all max-h-[120px] overflow-y-auto">{n.warning}</pre>
+            <pre className="mt-1.5 text-meta text-warning whitespace-pre-wrap break-all max-h-[120px] overflow-y-auto">{n.warning}</pre>
           )}
 
           {n.result && (
@@ -153,18 +153,18 @@ function EnsembleNotificationCard({ n }: { n: EnsembleNotif }) {
               <button
                 type="button"
                 onClick={() => setExpanded(v => !v)}
-                className="text-[11px] text-accent hover:underline"
+                className="text-2xs text-accent hover:underline"
               >
                 {expanded ? '▾ hide result' : '▸ show result'}
               </button>
               {expanded && (
-                <pre className="mt-1 text-[12px] text-text whitespace-pre-wrap break-words max-h-[320px] overflow-y-auto p-2 rounded bg-bg-hover/40 border border-border">{n.result}</pre>
+                <pre className="mt-1 text-meta text-text whitespace-pre-wrap break-words max-h-[320px] overflow-y-auto p-2 rounded bg-bg-hover/40 border border-border">{n.result}</pre>
               )}
             </div>
           )}
 
           {n.transcript && (
-            <div className="mt-1.5 text-[11px] text-muted truncate" title={n.transcript}>
+            <div className="mt-1.5 text-2xs text-muted truncate" title={n.transcript}>
               <span className="opacity-60">transcript:</span> {n.transcript}
             </div>
           )}
@@ -232,16 +232,16 @@ const SystemMessage = memo(function SystemMessage({ content, meta }: Props) {
     const statusLabel = isSuccess ? 'completed' : isFail ? 'failed' : isStart ? 'started' : 'update'
 
     return (
-      <div className={`flex items-start gap-2.5 px-3.5 py-2.5 rounded-md border text-[13px] font-mono animate-scale-in ${colorClass}`}>
+      <div className={`flex items-start gap-2.5 px-3.5 py-2.5 rounded-md border text-body-s font-mono animate-scale-in ${colorClass}`}>
         <span className={`text-base leading-none mt-0.5 shrink-0 ${iconColorClass}`}>{icon}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold text-text">{name}</span>
-            <span className={`text-[12px] ${iconColorClass}`}>{statusLabel}</span>
-            {duration && <span className="text-muted text-[12px]">({duration})</span>}
+            <span className={`text-meta ${iconColorClass}`}>{statusLabel}</span>
+            {duration && <span className="text-muted text-meta">({duration})</span>}
           </div>
           {output && (
-            <pre className="mt-1.5 text-[12px] text-muted whitespace-pre-wrap break-all max-h-[120px] overflow-y-auto">{output}</pre>
+            <pre className="mt-1.5 text-meta text-muted whitespace-pre-wrap break-all max-h-[120px] overflow-y-auto">{output}</pre>
           )}
         </div>
       </div>
@@ -259,7 +259,7 @@ const SystemMessage = memo(function SystemMessage({ content, meta }: Props) {
     const iconColor = isComplete ? 'text-ok' : isFail ? 'text-danger' : 'text-accent'
 
     return (
-      <div className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-md border text-[13px] font-mono animate-scale-in ${colorClass}`}>
+      <div className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-md border text-body-s font-mono animate-scale-in ${colorClass}`}>
         <span className={`text-base leading-none shrink-0 ${iconColor}`}>{icon}</span>
         <span className="text-text truncate">{text}</span>
       </div>
@@ -313,7 +313,7 @@ const SystemMessage = memo(function SystemMessage({ content, meta }: Props) {
   // Generic system/custom message — simple muted bar
   const text = content.replace(/^\[[^\]]*\]\s*/, '')
   return (
-    <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-md border border-border bg-card text-[13px] text-muted font-mono animate-scale-in">
+    <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-md border border-border bg-card text-body-s text-muted font-mono animate-scale-in">
       <span className="text-base leading-none shrink-0">ℹ</span>
       <span className="truncate">{text}</span>
     </div>
@@ -358,20 +358,20 @@ function SubagentResultCard({ content }: { content: string }) {
   }
 
   return (
-    <div className={`px-3.5 py-2.5 rounded-md border text-[13px] animate-scale-in ${tone}`}>
+    <div className={`px-3.5 py-2.5 rounded-md border text-body-s animate-scale-in ${tone}`}>
       <div className="flex items-center gap-2.5 font-mono">
         <span className={`text-base leading-none shrink-0 ${iconColor}`}>{icon}</span>
         <span className="font-semibold text-text">subagent</span>
         {header?.id && (
-          <span className="text-muted text-[12px] truncate" title={header.id}>{header.id}</span>
+          <span className="text-muted text-meta truncate" title={header.id}>{header.id}</span>
         )}
-        {header?.verb && <span className={`text-[12px] ${iconColor}`}>{header.verb}</span>}
-        {header?.info && <span className="text-muted text-[12px]">({header.info})</span>}
+        {header?.verb && <span className={`text-meta ${iconColor}`}>{header.verb}</span>}
+        {header?.info && <span className="text-muted text-meta">({header.info})</span>}
         {body && (
           <button
             type="button"
             onClick={() => setOpen(v => !v)}
-            className="ml-auto text-[11px] text-accent hover:underline shrink-0"
+            className="ml-auto text-2xs text-accent hover:underline shrink-0"
           >
             {open ? '▾ hide' : '▸ show'}
           </button>
@@ -413,7 +413,7 @@ function CollapsibleMarkdownCard({
                       'border-border bg-card'
 
   return (
-    <div className={`px-3.5 py-2.5 rounded-md border text-[13px] animate-scale-in ${toneClass}`}>
+    <div className={`px-3.5 py-2.5 rounded-md border text-body-s animate-scale-in ${toneClass}`}>
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -421,8 +421,8 @@ function CollapsibleMarkdownCard({
       >
         <span className="text-base leading-none shrink-0">{icon}</span>
         <span className="font-semibold text-text">{title}</span>
-        {subtitle && <span className="text-muted text-[12px]">{subtitle}</span>}
-        <span className="ml-auto text-[11px] text-accent">{open ? '▾' : '▸'}</span>
+        {subtitle && <span className="text-muted text-meta">{subtitle}</span>}
+        <span className="ml-auto text-2xs text-accent">{open ? '▾' : '▸'}</span>
       </button>
       {open && (
         <div className="mt-2 max-h-[480px] overflow-y-auto">
