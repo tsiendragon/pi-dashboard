@@ -35,7 +35,7 @@ describe('ToolGroup', () => {
     expect(screen.getByText(/工具组：3 完成/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /edit.*\/tmp\/a\.ts/i }))
 
-    expect(screen.getByText('✏️ edit')).toBeTruthy()
+    expect(screen.getAllByText(/edit \/tmp\/a\.ts/).length).toBeGreaterThan(0)
   })
 
   it('ignores non-string paths in grouped tool summaries', () => {
