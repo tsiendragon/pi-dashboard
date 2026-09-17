@@ -19,15 +19,18 @@ export default {
         border: 'var(--border)',
         'border-strong': 'var(--border-strong)',
         accent: 'var(--accent)',
+        'accent-fg': 'var(--accent-fg)',
         'accent-hover': 'var(--accent-hover)',
         'accent-subtle': 'var(--accent-subtle)',
         'accent-glow': 'var(--accent-glow)',
         ring: 'var(--ring)',
         ok: 'var(--ok)',
+        'ok-fg': 'var(--ok-fg)',
         'ok-subtle': 'var(--ok-subtle)',
         warn: 'var(--warn)',
         'warn-subtle': 'var(--warn-subtle)',
         danger: 'var(--danger)',
+        'danger-fg': 'var(--danger-fg)',
         'danger-subtle': 'var(--danger-subtle)',
         info: 'var(--info)',
         aim: 'var(--aim)',
@@ -46,6 +49,14 @@ export default {
         body: ['var(--font-body)'],
         mono: ['var(--mono)'],
       },
+      fontSize: {
+        // Semantic scale — 4 tiers, each with a paired line-height so small text
+        // never inherits the body's 1.55 leading. Add new keys here instead of
+        // writing another `text-[Npx]` one-off. See docs/design-craft-rules.md.
+        '2xs': ['11px', { lineHeight: '16px' }],
+        meta: ['12px', { lineHeight: '18px' }],
+        'body-s': ['13px', { lineHeight: '20px' }],
+      },
       borderRadius: {
         sm: 'var(--radius-sm)',
         md: 'var(--radius-md)',
@@ -56,6 +67,9 @@ export default {
         sm: 'var(--shadow-sm)',
         md: 'var(--shadow-md)',
         lg: 'var(--shadow-lg)',
+        xl: 'var(--shadow-xl)',
+        '2xl': 'var(--shadow-xl)',
+        inner: 'var(--shadow-inset)',
       },
       keyframes: {
         rise: { from: { opacity: '0', transform: 'translateY(8px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
