@@ -65,14 +65,14 @@ function HighlightedSource({ content, language }: { content: string; language: L
 
   if (highlighted == null) {
     return (
-      <pre className="m-0 whitespace-pre-wrap break-words text-[13px] leading-relaxed font-mono text-text">
+      <pre className="m-0 whitespace-pre-wrap break-words text-body-s leading-relaxed font-mono text-text">
         <code>{content}</code>
       </pre>
     )
   }
 
   return (
-    <pre className="m-0 overflow-auto text-[13px] leading-relaxed font-mono">
+    <pre className="m-0 overflow-auto text-body-s leading-relaxed font-mono">
       <code className={`hljs language-${language?.id}`} dangerouslySetInnerHTML={{ __html: highlighted }} />
     </pre>
   )
@@ -107,9 +107,16 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
       <section className="relative z-10 flex w-full max-w-5xl max-h-[90vh] flex-col overflow-hidden rounded-xl border border-border bg-bg shadow-2xl" onClick={event => event.stopPropagation()}>
         <header className="flex min-w-0 items-center gap-2 border-b border-border bg-chrome px-3 py-2">
           <span className="shrink-0 text-sm">📄</span>
-          <span className="min-w-0 flex-1 truncate text-[13px] font-mono font-semibold text-text" title={filePath}>{filePath}</span>
-          <span className="shrink-0 rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">{label}</span>
-          <button ref={closeRef} type="button" aria-label="Close document preview" className="ml-1 shrink-0 rounded border border-border bg-transparent px-2 py-1 text-[12px] text-muted cursor-pointer hover:border-danger hover:text-danger" onClick={onClose}>✕</button>
+          <span className="min-w-0 flex-1 truncate text-body-s font-mono font-semibold text-text" title={filePath}>{filePath}</span>
+          <span className="shrink-0 rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-muted">{label}</span>
+          <a
+            href={`/api/local-file/download?path=${encodeURIComponent(filePath)}`}
+            download
+            title={`下载 ${filePath}`}
+            aria-label="下载文件"
+            className="shrink-0 rounded border border-border bg-transparent px-2 py-1 text-meta text-muted no-underline cursor-pointer hover:border-accent hover:text-accent transition-colors"
+          >⬇ 下载</a>
+          <button ref={closeRef} type="button" aria-label="Close document preview" className="ml-1 shrink-0 rounded border border-border bg-transparent px-2 py-1 text-meta text-muted cursor-pointer hover:border-danger hover:text-danger" onClick={onClose}>✕</button>
         </header>
         <div className="min-h-0 flex-1 overflow-auto p-4">
           {loading ? (

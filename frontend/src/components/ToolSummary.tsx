@@ -109,11 +109,11 @@ export function ToolSummaryLine({
   const meta = STATUS_META[status]
   const formattedTimestamp = formatToolTimestamp(timestamp)
   return (
-    <span className={`flex min-w-0 items-center gap-1.5 font-mono text-[11px] ${className}`} title={`${summary.command}${formattedTimestamp ? ` · ${formattedTimestamp}` : ''}`}>
+    <span className={`flex min-w-0 items-center gap-1.5 font-mono text-2xs ${className}`} title={`${summary.command}${formattedTimestamp ? ` · ${formattedTimestamp}` : ''}`}>
       <span className="shrink-0 text-border" aria-hidden="true">│</span>
       <span className={`shrink-0 font-semibold ${meta.className}`} aria-label={meta.label}>{meta.icon}</span>
       <span className="shrink-0 font-semibold text-text-strong">{summary.label}</span>
-      {formattedTimestamp && <time className="shrink-0 text-[10px] font-normal text-muted" dateTime={new Date(timestampValue(timestamp) || 0).toISOString()}>{formattedTimestamp}</time>}
+      {formattedTimestamp && <time className="shrink-0 text-2xs font-normal text-muted" dateTime={new Date(timestampValue(timestamp) || 0).toISOString()}>{formattedTimestamp}</time>}
       <span className="min-w-0 flex-1 truncate text-muted" title={summary.command}>{summary.command}</span>
     </span>
   )

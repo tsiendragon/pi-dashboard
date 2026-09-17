@@ -34,13 +34,13 @@ export default function InfoTip({ text }: { text: string }) {
       <button
         ref={btnRef}
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
-        className="w-4 h-4 rounded-full border border-border text-muted text-[10px] hover:text-text hover:border-text/30 transition-all leading-none cursor-help flex items-center justify-center shrink-0"
+        className="w-4 h-4 rounded-full border border-border text-muted text-2xs hover:text-text hover:border-text/30 transition leading-none cursor-help flex items-center justify-center shrink-0"
         title={text}
       >?</button>
       {open && createPortal(
         <div
           ref={tipRef}
-          className="fixed z-[9999] rounded-lg border border-border p-2.5 text-[12px] text-muted leading-relaxed max-w-[300px] whitespace-normal"
+          className="fixed z-[9999] rounded-lg border border-border p-2.5 text-meta text-muted leading-relaxed max-w-[300px] whitespace-normal"
           style={{ ...pos(), backgroundColor: 'var(--card)', boxShadow: '0 4px 24px rgba(0,0,0,0.5)' }}
         >
           {text}

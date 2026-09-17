@@ -86,7 +86,7 @@ function HighlightedCode({ code, lang, className }: { code: string; lang: string
     setSanitizedHTML(ref.current, highlighted)
   }, [code, lang])
 
-  return <code ref={ref} className={`hljs text-[12px] font-mono leading-4 ${className}`} />
+  return <code ref={ref} className={`hljs text-meta font-mono leading-4 ${className}`} />
 }
 
 const COLLAPSE_LINE_THRESHOLD = 20
@@ -103,16 +103,16 @@ const CodeBlock = memo(function CodeBlock({ code, lang, complete }: { code: stri
   return (
     <div className="relative group my-1">
       <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-2 py-1">
-        <span className="text-muted text-[10px] font-mono uppercase">{lang || 'code'}{lineCount > 1 && <span className="text-muted/50 ml-1">{lineCount} lines</span>}</span>
-        <button className="text-muted text-[10px] opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(code)}>Copy</button>
+        <span className="text-muted text-2xs font-mono uppercase">{lang || 'code'}{lineCount > 1 && <span className="text-muted/50 ml-1">{lineCount} lines</span>}</span>
+        <button className="text-muted text-2xs opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(code)}>Copy</button>
       </div>
       <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-2 overflow-x-auto">
         <HighlightedCode code={displayCode} lang={lang} className={lang ? `language-${lang}` : ''} />
-        {!complete && <span className="text-muted text-[12px] italic animate-pulse ml-2">generating…</span>}
+        {!complete && <span className="text-muted text-meta italic animate-pulse ml-2">generating…</span>}
       </pre>
       {shouldCollapse && (
         <button
-          className="w-full py-1 text-[11px] text-accent font-medium cursor-pointer bg-bg-elevated border border-t-0 border-border rounded-b-md -mt-[1px] hover:bg-bg-hover transition-colors"
+          className="w-full py-1 text-2xs text-accent font-medium cursor-pointer bg-bg-elevated border border-t-0 border-border rounded-b-md -mt-[1px] hover:bg-bg-hover transition-colors"
           onClick={() => setCollapsed(c => !c)}
         >
           {collapsed ? `Show all ${lineCount} lines` : 'Collapse'}
@@ -140,8 +140,8 @@ const MD_COMPONENTS: Record<string, React.ComponentType<any>> = {
     return (
       <div className="relative group my-1">
         <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-2 py-1">
-          <span className="text-muted text-[10px] font-mono uppercase">{lang || 'code'}</span>
-          <button className="text-muted text-[10px] opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(codeStr)}>Copy</button>
+          <span className="text-muted text-2xs font-mono uppercase">{lang || 'code'}</span>
+          <button className="text-muted text-2xs opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(codeStr)}>Copy</button>
         </div>
         <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-2 overflow-x-auto">
           <HighlightedCode code={codeStr} lang={lang} className={className || ''} />
@@ -151,7 +151,7 @@ const MD_COMPONENTS: Record<string, React.ComponentType<any>> = {
   },
   pre({ children }: any) { return <>{children}</> },
   table({ children }: any) { return <div className="overflow-x-auto my-3 -mx-1"><table className="min-w-full border-collapse text-sm">{children}</table></div> },
-  th({ children }: any) { return <th className="text-left text-muted text-[13px] font-medium px-3 py-2 border-b border-border bg-bg-elevated whitespace-nowrap">{children}</th> },
+  th({ children }: any) { return <th className="text-left text-muted text-body-s font-medium px-3 py-2 border-b border-border bg-bg-elevated whitespace-nowrap">{children}</th> },
   td({ children }: any) { return <td className="px-3 py-2 border-b border-border text-sm align-top min-w-[100px] [overflow-wrap:break-word]">{children}</td> },
   a({ href, children }: any) { return <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-2 decoration-accent/40 hover:decoration-accent">{children}</a> },
   blockquote({ children }: any) { return <blockquote className="border-l-[3px] border-accent pl-3 my-2 text-muted italic">{children}</blockquote> },
@@ -193,7 +193,7 @@ function BlockRenderer({ block }: { block: ContentBlock }) {
       return <DiffBlock code={block.content} complete={block.complete} />
     case 'mermaid':
       return block.complete ? <ResizableMermaid code={block.content} /> : (
-        <div className="my-2 p-3 bg-bg-elevated border border-border rounded-md text-muted text-[12px] italic animate-pulse">generating diagram…</div>
+        <div className="my-2 p-3 bg-bg-elevated border border-border rounded-md text-muted text-meta italic animate-pulse">generating diagram…</div>
       )
     case 'code':
       return <CodeBlock code={block.content} lang={block.language} complete={block.complete} />
@@ -229,8 +229,8 @@ export default memo(function MarkdownRenderer({ content, streaming = false, onFi
   if (rawVisible && allowRaw) {
     return (
       <div>
-        <button className="text-muted text-[12px] hover:text-text mb-1 cursor-pointer" onClick={() => setRawVisible(false)}>← rendered view</button>
-        <pre className="text-[13px] font-mono whitespace-pre-wrap break-words leading-relaxed text-muted">{content}</pre>
+        <button className="text-muted text-meta hover:text-text mb-1 cursor-pointer" onClick={() => setRawVisible(false)}>← rendered view</button>
+        <pre className="text-body-s font-mono whitespace-pre-wrap break-words leading-relaxed text-muted">{content}</pre>
       </div>
     )
   }
@@ -239,7 +239,7 @@ export default memo(function MarkdownRenderer({ content, streaming = false, onFi
     <div className="group" onClick={handleClick}>
       {blocks.map((block, i) => <BlockRenderer key={`${block.type}-${i}`} block={block} />)}
       {allowRaw && !streaming && content.length > 20 && (
-        <button className="hidden md:inline-block text-muted text-[12px] opacity-30 group-hover:opacity-60 hover:!opacity-100 transition-opacity cursor-pointer mt-1" onClick={() => setRawVisible(true)}>raw</button>
+        <button className="hidden md:inline-block text-muted text-meta opacity-30 group-hover:opacity-60 hover:!opacity-100 transition-opacity cursor-pointer mt-1" onClick={() => setRawVisible(true)}>raw</button>
       )}
     </div>
   )

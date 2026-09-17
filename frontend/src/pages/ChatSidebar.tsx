@@ -177,13 +177,13 @@ function SlotRow(p: RowProps) {
         <div className="min-w-0 flex-1">
           {/* line 1 — title */}
           <div className="flex h-[18px] items-center gap-1.5">
-            {status === 'Needs Input' && <span role="status" title="Waiting for approval" aria-label="状态：等待输入" className="shrink-0 text-[13px] leading-none">⚠️</span>}
-            {s.stopping && <span role="status" title="Stopping" aria-label="状态：停止中" className="shrink-0 text-[11px] leading-none">■</span>}
+            {status === 'Needs Input' && <span role="status" title="Waiting for approval" aria-label="状态：等待输入" className="shrink-0 text-body-s leading-none">⚠️</span>}
+            {s.stopping && <span role="status" title="Stopping" aria-label="状态：停止中" className="shrink-0 text-2xs leading-none">■</span>}
             {s.running && status !== 'Needs Input' && !s.stopping && (p.active
               ? <span className="typing-dots-sm shrink-0"><span /><span /><span /></span>
-              : <span role="status" title="Running" aria-label="状态：工作中" className="shrink-0 text-[13px] leading-none">🔨</span>)}
-            {status === 'Idle' && !s.stopping && !p.unread && <span title="Idle" aria-label="状态：空闲" className="shrink-0 text-[13px] leading-none opacity-60">💤</span>}
-            {p.unread && status === 'Idle' && !s.stopping && <span role="status" title="Unread — 有新回复未查看" aria-label="状态：未读" className="shrink-0 text-[13px] leading-none">📬</span>}
+              : <span role="status" title="Running" aria-label="状态：工作中" className="shrink-0 text-body-s leading-none">🔨</span>)}
+            {status === 'Idle' && !s.stopping && !p.unread && <span title="Idle" aria-label="状态：空闲" className="shrink-0 text-body-s leading-none opacity-60">💤</span>}
+            {p.unread && status === 'Idle' && !s.stopping && <span role="status" title="Unread — 有新回复未查看" aria-label="状态：未读" className="shrink-0 text-body-s leading-none">📬</span>}
             {renaming ? (
               <input
                 autoFocus
@@ -198,30 +198,30 @@ function SlotRow(p: RowProps) {
                   if (e.key === 'Enter') { e.preventDefault(); submitRename(true) }
                   else if (e.key === 'Escape') { e.preventDefault(); setRenaming(false) }
                 }}
-                className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-[13px] text-text-strong outline-none"
+                className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-body-s text-text-strong outline-none"
               />
             ) : (
-              <TypewriterText text={label} className={`min-w-0 flex-1 truncate text-[13px] leading-[18px] ${p.active || status !== 'Idle' ? 'text-text-strong' : 'text-text'}`} />
+              <TypewriterText text={label} className={`min-w-0 flex-1 truncate text-body-s leading-[18px] ${p.active || status !== 'Idle' ? 'text-text-strong' : 'text-text'}`} />
             )}
-            <span className={`shrink-0 font-mono text-[10px] leading-none text-muted-strong ${menuOpen ? 'invisible' : ''}`}>{relTime(s.updated)}</span>
+            <span className={`shrink-0 font-mono text-2xs leading-none text-muted-strong ${menuOpen ? 'invisible' : ''}`}>{relTime(s.updated)}</span>
             <button
               type="button"
               aria-label="Session menu"
               onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
               onClick={() => setMenuOpen(v => !v)}
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-[13px] leading-none text-muted transition-opacity hover:bg-bg-elevated hover:text-text-strong ${menuOpen ? 'bg-bg-elevated text-text-strong opacity-100' : 'opacity-50 group-hover:opacity-100 md:opacity-0'}`}
+              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-body-s leading-none text-muted transition-opacity hover:bg-bg-elevated hover:text-text-strong ${menuOpen ? 'bg-bg-elevated text-text-strong opacity-100' : 'opacity-50 group-hover:opacity-100 md:opacity-0'}`}
             >⋯</button>
           </div>
 
           {/* line 2 — meta; fixed height keeps the list from jittering */}
           <div className="flex h-[16px] items-center gap-1 overflow-hidden">
-            {s.pinned && <span title="Pinned" className="shrink-0 text-[9px] leading-none text-accent">📌</span>}
+            {s.pinned && <span title="Pinned" className="shrink-0 text-2xs leading-none text-accent">📌</span>}
             {chips.map(t => <TagChip key={t} tag={t} active={p.tagFilter === t} onClick={p.onToggleTagFilter} />)}
-            {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-[9px] font-semibold leading-[14px] text-muted-strong" title={tags.join(', ')}>+{extra}</span>}
-            {status === 'Needs Input' && <span className="shrink-0 text-[10px] leading-none font-semibold text-warn">等待输入</span>}
-            {p.showProject && proj && <span className="min-w-0 truncate font-mono text-[10px] leading-none text-muted-strong" title={s.cwd || ''}>{proj}</span>}
+            {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-2xs font-semibold leading-[14px] text-muted-strong" title={tags.join(', ')}>+{extra}</span>}
+            {status === 'Needs Input' && <span className="shrink-0 text-2xs leading-none font-semibold text-warn">等待输入</span>}
+            {p.showProject && proj && <span className="min-w-0 truncate font-mono text-2xs leading-none text-muted-strong" title={s.cwd || ''}>{proj}</span>}
             {p.showProject && s.workspace && s.workspace !== 'default' && (
-              <span className="ml-auto shrink-0 truncate text-[10px] leading-none font-semibold text-ok" title={`workspace: ${s.workspace}`}>{s.workspace}</span>
+              <span className="ml-auto shrink-0 truncate text-2xs leading-none font-semibold text-ok" title={`workspace: ${s.workspace}`}>{s.workspace}</span>
             )}
           </div>
         </div>
@@ -326,19 +326,19 @@ function ChatSidebar({
           className="absolute top-0 -right-[2px] z-10 hidden h-full w-[5px] cursor-col-resize items-center justify-center group/drag md:flex"
           onMouseDown={e => { e.preventDefault(); sidebarDragging.current = true; sidebarStartX.current = e.clientX; sidebarStartW.current = sidebarWidth; document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none' }}
         >
-          <div className="h-full w-[2px] bg-transparent transition-colors duration-200 group-hover/drag:bg-orange-400 group-active/drag:bg-orange-500" />
+          <div className="h-full w-[2px] bg-transparent transition-colors duration-200 group-hover/drag:bg-accent group-active/drag:bg-accent-hover" />
         </div>
 
         {/* header */}
         <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">
-          <span className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium uppercase tracking-[.05em] text-muted">
+          <span className="flex min-w-0 items-center gap-1.5 text-meta font-medium uppercase tracking-[.05em] text-muted">
             Sessions <InfoTip text="Each tab is an independent pi session. Hover a row for ⋯ actions: rename, tags, pin and close. Click a tag to filter." />
-            <span className="shrink-0 font-mono text-[10px] normal-case tracking-normal text-muted-strong">
+            <span className="shrink-0 font-mono text-2xs normal-case tracking-normal text-muted-strong">
               {tagFilter || q ? `${filtered.length}/${slots.length}` : slots.length}
             </span>
           </span>
           <button
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border-none bg-accent text-lg text-white transition-all hover:rotate-90 hover:scale-110 hover:bg-accent-hover hover:shadow-[0_0_16px_var(--accent-glow)] active:scale-95"
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border-none bg-accent text-lg text-accent-fg transition hover:rotate-90 hover:scale-110 hover:bg-accent-hover hover:shadow-[0_0_16px_var(--accent-glow)] active:scale-95"
             onClick={() => onNewSession ? onNewSession() : dispatch(switchSlot(null))}
             title="New chat" aria-label="New chat session">+</button>
         </div>
@@ -350,13 +350,13 @@ function ChatSidebar({
         <div className="mx-2 mb-1 flex gap-0.5 rounded-md border border-border bg-bg p-0.5">
           {(['date', 'project', 'tag', 'status'] as GroupMode[]).map(m => (
             <button key={m} type="button" onClick={() => { setSlotsGroupMode(m); localStorage.setItem(SLOTS_GROUP_LS_KEY, m) }}
-              className={`flex-1 rounded py-[3px] text-[11px] capitalize transition-colors ${slotsGroupMode === m ? 'bg-bg-hover font-semibold text-text-strong shadow-[inset_0_0_0_1px_var(--border-strong)]' : 'text-muted hover:text-text'}`}>{m}</button>
+              className={`flex-1 rounded py-[3px] text-2xs capitalize transition-colors ${slotsGroupMode === m ? 'bg-bg-hover font-semibold text-text-strong shadow-[inset_0_0_0_1px_var(--border-strong)]' : 'text-muted hover:text-text'}`}>{m}</button>
           ))}
         </div>
         {counts.length > 0 && (
           <div className="flex items-center gap-1 overflow-x-auto px-2 pb-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button type="button" onClick={() => setTagFilter(null)}
-              className={`shrink-0 rounded-full border px-2 py-px text-[10px] font-semibold leading-[16px] ${!tagFilter ? 'border-border-strong bg-bg-hover text-text-strong' : 'border-transparent text-muted hover:text-text'}`}>
+              className={`shrink-0 rounded-full border px-2 py-px text-2xs font-semibold leading-[16px] ${!tagFilter ? 'border-border-strong bg-bg-hover text-text-strong' : 'border-transparent text-muted hover:text-text'}`}>
               全部
             </button>
             {counts.slice(0, 12).map(({ tag, count }) => (
@@ -375,13 +375,13 @@ function ChatSidebar({
               <div key={gk}>
                 {needsHeaders && (
                   <div
-                    className={`sticky top-0 z-10 flex cursor-pointer select-none items-center gap-1.5 px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[.06em] transition-colors hover:text-text ${isPinned ? 'text-accent' : 'text-muted-strong'}`}
+                    className={`sticky top-0 z-10 flex cursor-pointer select-none items-center gap-1.5 px-2 pb-1 pt-2 text-2xs font-semibold uppercase tracking-[.06em] transition-colors hover:text-text ${isPinned ? 'text-accent' : 'text-muted-strong'}`}
                     style={{ background: 'linear-gradient(var(--bg-accent) 72%, transparent)' }}
                     onClick={() => toggleGroup(gk)}
                   >
-                    <span className={`text-[8px] transition-transform ${collapsed ? '' : 'rotate-90'}`}>▶</span>
+                    <span className={`text-2xs transition-transform ${collapsed ? '' : 'rotate-90'}`}>▶</span>
                     {g.key || 'Other'}
-                    <span className="ml-auto font-mono text-[10px] font-normal opacity-60">{g.items.length}</span>
+                    <span className="ml-auto font-mono text-2xs font-normal opacity-60">{g.items.length}</span>
                   </div>
                 )}
                 {!collapsed && g.items.map((s, i) => (
@@ -407,7 +407,7 @@ function ChatSidebar({
             )
           })}
           {!filtered.length && (
-            <div className="px-3 py-6 text-center text-[12px] text-muted-strong">{slots.length ? '没有匹配的会话' : '还没有会话'}</div>
+            <div className="px-3 py-6 text-center text-meta text-muted-strong">{slots.length ? '没有匹配的会话' : '还没有会话'}</div>
           )}
         </div>
       </div>

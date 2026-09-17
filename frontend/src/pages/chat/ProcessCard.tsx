@@ -42,9 +42,9 @@ export default function ProcessCard({ meta }: Props) {
   })()
 
   return (
-    <div className="msg-content bg-card border border-border rounded-md animate-scale-in">
+    <div className="msg-content bg-card border border-border/60 rounded-md animate-scale-in">
       <button
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-[13px] font-mono bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-body-s font-mono bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
         onClick={() => (result || listItems) && setExpanded(!expanded)}
         disabled={!result && !listItems}
       >
@@ -58,32 +58,32 @@ export default function ProcessCard({ meta }: Props) {
         ) : isError ? (
           <span className="text-danger shrink-0">✗</span>
         ) : (
-          <span className="text-[11px] text-muted shrink-0">{icon}</span>
+          <span className="text-2xs text-muted shrink-0">{icon}</span>
         )}
 
         <span className="text-accent font-semibold shrink-0">process</span>
-        <span className="text-muted text-[12px] shrink-0">{action}</span>
+        <span className="text-muted text-meta shrink-0">{action}</span>
 
-        {name && <span className="text-text text-[12px] shrink-0">{name}</span>}
-        {!name && procId && <span className="text-text text-[12px] shrink-0">{procId}</span>}
+        {name && <span className="text-text text-meta shrink-0">{name}</span>}
+        {!name && procId && <span className="text-text text-meta shrink-0">{procId}</span>}
 
         {command && (
-          <span className="text-muted/60 text-[12px] font-normal truncate flex-1">{truncate(command, 50)}</span>
+          <span className="text-muted/60 text-meta font-normal truncate flex-1">{truncate(command, 50)}</span>
         )}
 
         {action === 'start' && !result && (
-          <span className="text-ok text-[11px] shrink-0 ml-auto">Running</span>
+          <span className="text-ok text-2xs shrink-0 ml-auto">Running</span>
         )}
         {action === 'kill' && result && !isError && (
-          <span className="text-muted text-[11px] shrink-0 ml-auto">Stopped</span>
+          <span className="text-muted text-2xs shrink-0 ml-auto">Stopped</span>
         )}
-        {isError && <span className="text-danger text-[12px] shrink-0 ml-auto">✗ error</span>}
+        {isError && <span className="text-danger text-meta shrink-0 ml-auto">✗ error</span>}
         {result && !isError && action !== 'kill' && (
-          <span className="text-ok text-[12px] shrink-0 ml-auto">✓</span>
+          <span className="text-ok text-meta shrink-0 ml-auto">✓</span>
         )}
 
         {(result || listItems) && (
-          <span className={`text-[11px] transition-transform shrink-0 ${expanded ? 'rotate-90' : ''}`}>▶</span>
+          <span className={`text-2xs transition-transform shrink-0 ${expanded ? 'rotate-90' : ''}`}>▶</span>
         )}
       </button>
 
@@ -91,9 +91,9 @@ export default function ProcessCard({ meta }: Props) {
         <div className="px-3 pb-3 border-t border-border">
           {listItems ? (
             <div className="mt-2 overflow-x-auto">
-              <table className="w-full text-[12px] font-mono">
+              <table className="w-full text-meta font-mono">
                 <thead>
-                  <tr className="text-muted text-[11px] uppercase tracking-wider border-b border-border">
+                  <tr className="text-muted text-2xs uppercase tracking-wider border-b border-border">
                     <th className="text-left py-1 pr-3">ID</th>
                     <th className="text-left py-1 pr-3">Name</th>
                     <th className="text-left py-1">Status</th>
@@ -112,10 +112,10 @@ export default function ProcessCard({ meta }: Props) {
             </div>
           ) : result ? (
             <>
-              <div className={`text-[11px] font-medium uppercase tracking-wider mt-2 mb-1 ${isError ? 'text-danger' : 'text-muted'}`}>
+              <div className={`text-2xs font-medium uppercase tracking-wider mt-2 mb-1 ${isError ? 'text-danger' : 'text-muted'}`}>
                 {isError ? 'Error' : 'Result'}
               </div>
-              <pre className={`bg-bg-hover rounded-md px-3 py-2 text-[13px] font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${isError ? 'text-danger' : 'text-muted'}`}>
+              <pre className={`bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${isError ? 'text-danger' : 'text-muted'}`}>
                 {result}
               </pre>
             </>

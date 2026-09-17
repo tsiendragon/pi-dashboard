@@ -46,7 +46,7 @@ export default function BackgroundCommandsDock({ slot }: { slot: string }) {
         <div className="px-3 py-2 border-b border-border">
           <div className="flex items-center gap-2"><span className="font-mono text-xs text-accent">{task.taskId}</span><span className="text-xs text-muted">{task.status} · {elapsed(task, now)}{task.pid ? ` · pid ${task.pid}` : ''}</span>{(task.status === 'running' || task.status === 'starting') && <button className="ml-auto text-xs text-danger border border-danger/40 rounded px-2 py-0.5" onClick={() => void send({ type: 'cancel', taskId: task.taskId })}>Cancel</button>}</div>
           <div className="text-xs text-text mt-1 font-mono break-all">{task.command}</div>
-          <div className="text-[11px] text-muted truncate mt-1">{task.cwd} · {task.outputBytes.toLocaleString()} bytes</div>
+          <div className="text-2xs text-muted truncate mt-1">{task.cwd} · {task.outputBytes.toLocaleString()} bytes</div>
         </div>
         <pre className="p-3 bg-bg text-xs font-mono whitespace-pre-wrap break-all overflow-y-auto max-h-64 min-h-24">{task.outputTail || '(waiting for output…)'}{task.outputTruncated ? '\n… tail truncated' : ''}</pre>
         {(task.error || task.exitReason) && <div className="px-3 py-1.5 text-xs text-danger border-t border-border">{task.error || `${task.exitReason}${task.exitCode != null ? ` · exit ${task.exitCode}` : ''}`}</div>}

@@ -125,7 +125,7 @@ export default function TerminalPanel({ onClose }: { onClose: () => void }) {
     <div className="flex flex-col h-full bg-bg text-text">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <span className="text-sm font-semibold">🖥️ Terminal</span>
-        {selected && <span className="text-[11px] text-muted font-mono">{status === 'connected' ? `connected · ${stripPrefix(selected)}` : status}</span>}
+        {selected && <span className="text-2xs text-muted font-mono">{status === 'connected' ? `connected · ${stripPrefix(selected)}` : status}</span>}
         <button className="ml-auto text-muted hover:text-text" onClick={onClose} aria-label="Close terminal">✕</button>
       </div>
 
@@ -145,7 +145,7 @@ export default function TerminalPanel({ onClose }: { onClose: () => void }) {
               onKeyDown={e => { if (e.key === 'Enter') void submitAuth() }}
               placeholder="control token"
             />
-            <button className="px-3 py-1.5 rounded bg-accent text-white text-sm disabled:opacity-50" onClick={() => void submitAuth()} disabled={busy || !token.trim()}>认证</button>
+            <button className="px-3 py-1.5 rounded bg-accent text-accent-fg text-sm disabled:opacity-50" onClick={() => void submitAuth()} disabled={busy || !token.trim()}>认证</button>
           </div>
           {authError && <p className="text-xs text-danger">{authError}</p>}
         </div>
@@ -153,7 +153,7 @@ export default function TerminalPanel({ onClose }: { onClose: () => void }) {
 
       {authState === 'authed' && (
         <>
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0 text-[13px]">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0 text-body-s">
             <select
               className="flex-1 bg-bg-elevated border border-border rounded px-2 py-1.5 text-sm font-mono"
               value={selected ?? ''}
@@ -170,7 +170,7 @@ export default function TerminalPanel({ onClose }: { onClose: () => void }) {
               onKeyDown={e => { if (e.key === 'Enter') void create() }}
               placeholder="新会话名"
             />
-            <button className="px-2 py-1.5 rounded bg-accent text-white text-xs disabled:opacity-50" onClick={() => void create()} disabled={busy || !newName.trim()}>新建</button>
+            <button className="px-2 py-1.5 rounded bg-accent text-accent-fg text-xs disabled:opacity-50" onClick={() => void create()} disabled={busy || !newName.trim()}>新建</button>
           </div>
 
           {authError && <div className="px-3 py-1 text-xs text-danger border-b border-border">{authError}</div>}

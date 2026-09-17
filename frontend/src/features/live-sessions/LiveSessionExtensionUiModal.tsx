@@ -67,7 +67,7 @@ function UiDialog({ processInstanceId, request }: { processInstanceId: string; r
       >
         <div className="mb-3 text-sm font-semibold text-text-strong">{request.title || 'Extension request'}</div>
         {request.message && (
-          <div className="mb-3 whitespace-pre-wrap text-[13px] text-muted">{request.message}</div>
+          <div className="mb-3 whitespace-pre-wrap text-body-s text-muted">{request.message}</div>
         )}
 
         {request.method === 'confirm' && (
@@ -78,7 +78,7 @@ function UiDialog({ processInstanceId, request }: { processInstanceId: string; r
               disabled={submitting}
             >No</button>
             <button
-              className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-40"
+              className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-40"
               onClick={() => respond({ value: 'true' })}
               disabled={submitting}
             >Yes</button>
@@ -114,7 +114,7 @@ function UiDialog({ processInstanceId, request }: { processInstanceId: string; r
             />
             <div className="flex justify-end gap-2">
               <button type="button" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:bg-bg disabled:opacity-40" onClick={cancel} disabled={submitting}>Cancel</button>
-              <button type="submit" className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-40" disabled={submitting}>Submit</button>
+              <button type="submit" className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-40" disabled={submitting}>Submit</button>
             </div>
           </form>
         )}
@@ -123,13 +123,13 @@ function UiDialog({ processInstanceId, request }: { processInstanceId: string; r
           <form onSubmit={(event) => { event.preventDefault(); respond({ value }) }}>
             <textarea
               ref={firstFieldRef as React.RefObject<HTMLTextAreaElement>}
-              className="mb-3 h-40 w-full resize-y rounded-lg border border-border bg-bg px-3 py-2 font-mono text-[13px] text-text outline-none focus:border-accent"
+              className="mb-3 h-40 w-full resize-y rounded-lg border border-border bg-bg px-3 py-2 font-mono text-body-s text-text outline-none focus:border-accent"
               value={value}
               onChange={(event) => setValue(event.target.value)}
             />
             <div className="flex justify-end gap-2">
               <button type="button" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:bg-bg disabled:opacity-40" onClick={cancel} disabled={submitting}>Cancel</button>
-              <button type="submit" className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-40" disabled={submitting}>Save</button>
+              <button type="submit" className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-40" disabled={submitting}>Save</button>
             </div>
           </form>
         )}

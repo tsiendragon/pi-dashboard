@@ -48,7 +48,7 @@ function AgentLog({ id }: { id: string }) {
         const el = e.currentTarget
         setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 40)
       }}
-      className="flex-1 min-h-0 bg-bg px-3 py-2 text-[12px] font-mono text-text/80 whitespace-pre-wrap break-all overflow-y-auto"
+      className="flex-1 min-h-0 bg-bg px-3 py-2 text-meta font-mono text-text/80 whitespace-pre-wrap break-all overflow-y-auto"
     >
       {log || '(waiting for output…)'}
     </pre>
@@ -127,10 +127,10 @@ export default function SubagentDock() {
         onMouseDown={onDragStart}
       >
         <span className="inline-block w-2.5 h-2.5 border-2 border-accent border-t-transparent rounded-full animate-spin shrink-0" />
-        <span className="text-[12px] font-semibold text-accent flex-1">
+        <span className="text-meta font-semibold text-accent flex-1">
           {agents.length} subagent{agents.length > 1 ? 's' : ''} running
         </span>
-        <button className="text-muted hover:text-text text-[11px] bg-transparent border-none cursor-pointer px-1" onMouseDown={e => e.stopPropagation()} onClick={() => setMinimized(m => !m)}>
+        <button className="text-muted hover:text-text text-2xs bg-transparent border-none cursor-pointer px-1" onMouseDown={e => e.stopPropagation()} onClick={() => setMinimized(m => !m)}>
           {minimized ? '▲' : '▼'}
         </button>
       </div>
@@ -143,7 +143,7 @@ export default function SubagentDock() {
               {agents.map(a => (
                 <button
                   key={a.id}
-                  className={`px-3 py-1.5 text-[12px] font-mono whitespace-nowrap border-none cursor-pointer transition-colors ${selected === a.id ? 'bg-bg text-accent border-b-2 border-accent' : 'bg-transparent text-muted hover:text-text'}`}
+                  className={`px-3 py-1.5 text-meta font-mono whitespace-nowrap border-none cursor-pointer transition-colors ${selected === a.id ? 'bg-bg text-accent border-b-2 border-accent' : 'bg-transparent text-muted hover:text-text'}`}
                   onClick={() => setSelected(a.id)}
                 >
                   {a.id}
@@ -155,9 +155,9 @@ export default function SubagentDock() {
           {/* Selected agent info */}
           {selectedAgent && (
             <div className="px-3 py-1.5 border-b border-border shrink-0 flex items-center gap-3">
-              <span className="text-[11px] text-muted truncate flex-1">{selectedAgent.task}</span>
-              <span className="text-[11px] text-muted/60 shrink-0"><ElapsedTimer startTime={selectedAgent.startTime} /></span>
-              {selectedAgent.lastToolCall && <span className="text-[11px] text-muted/50 shrink-0 truncate max-w-[120px]">→ {selectedAgent.lastToolCall}</span>}
+              <span className="text-2xs text-muted truncate flex-1">{selectedAgent.task}</span>
+              <span className="text-2xs text-muted/60 shrink-0"><ElapsedTimer startTime={selectedAgent.startTime} /></span>
+              {selectedAgent.lastToolCall && <span className="text-2xs text-muted/50 shrink-0 truncate max-w-[120px]">→ {selectedAgent.lastToolCall}</span>}
             </div>
           )}
 

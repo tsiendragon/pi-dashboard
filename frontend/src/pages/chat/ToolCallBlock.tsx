@@ -133,17 +133,17 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
 
   if (isEdit) {
     return (
-      <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border rounded-md animate-scale-in ${statusTone}`}>
+      <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border/60 rounded-md animate-scale-in ${statusTone}`}>
         <button
-          className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
+          className="w-full flex items-center gap-1.5 px-2 py-1.5 text-2xs text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
           onClick={() => setEditExpanded(!editExpanded)}
           aria-expanded={editExpanded}
         >
           <ToolSummaryLine toolName={toolName} args={args} timestamp={timestamp} status={summaryStatus} className="min-w-0 flex-1" />
-          {onFileOpen && <button className="text-accent text-[11px] font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(editDiff.path) }}>Open</button>}
-          <button className="text-muted text-[11px] hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, editDiff.path)} title="Download">⬇</button>
+          {onFileOpen && <button className="text-accent text-2xs font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(editDiff.path) }}>Open</button>}
+          <button className="text-muted text-2xs hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, editDiff.path)} title="Download">⬇</button>
         </button>
-        <div className="flex items-center gap-1.5 border-t border-border/40 px-2 pb-1 text-[10px] font-mono text-muted/60">
+        <div className="flex items-center gap-1.5 border-t border-border/40 px-2 pb-1 text-2xs font-mono text-muted/60">
           <span>↳ diff</span>
           <span className="text-diff-add-text">+{editStats.additions}</span>
           <span className="text-diff-del-text">-{editStats.deletions}</span>
@@ -158,7 +158,7 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
             <DiffBlock code={editDiff.diff} complete={true} initialSideBySide />
             {isError && result && (
               <div className="mt-1">
-                <pre className="bg-bg-hover rounded-md px-3 py-2 text-[13px] font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto text-danger">{result}</pre>
+                <pre className="bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto text-danger">{result}</pre>
               </div>
             )}
           </div>
@@ -174,15 +174,15 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
       const match = result.match(/!\[image\]\(([^)]+)\)/)
       const src = match ? match[1] : imgUrl
       return (
-        <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border rounded-md animate-scale-in ${statusTone}`}>
+        <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border/60 rounded-md animate-scale-in ${statusTone}`}>
           <button
-            className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
+            className="w-full flex items-center gap-1.5 px-2 py-1.5 text-2xs text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
             onClick={() => setReadExpanded(!readExpanded)}
             aria-expanded={readExpanded}
           >
             <ToolSummaryLine toolName={toolName} args={args} timestamp={timestamp} status={summaryStatus} className="min-w-0 flex-1" />
-            {onFileOpen && <button className="text-accent text-[11px] font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(readInfo.path) }}>Open</button>}
-            <button className="text-muted text-[11px] hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, readInfo.path)} title="Download">⬇</button>
+            {onFileOpen && <button className="text-accent text-2xs font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(readInfo.path) }}>Open</button>}
+            <button className="text-muted text-2xs hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, readInfo.path)} title="Download">⬇</button>
           </button>
           {readExpanded && (
             <div className="px-2 pb-2">
@@ -196,26 +196,26 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
     const lineCount = result.split('\n').length
     const rangeLabel = readInfo.offset ? `lines ${readInfo.offset}–${readInfo.offset + (readInfo.limit || lineCount) - 1}` : `${lineCount} lines`
     return (
-      <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border rounded-md animate-scale-in ${statusTone}`}>
+      <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border/60 rounded-md animate-scale-in ${statusTone}`}>
         <button
-          className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
+          className="w-full flex items-center gap-1.5 px-2 py-1.5 text-2xs text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
           onClick={() => setReadExpanded(!readExpanded)}
           aria-expanded={readExpanded}
         >
           <ToolSummaryLine toolName={toolName} args={args} timestamp={timestamp} status={summaryStatus} className="min-w-0 flex-1" />
-          {onFileOpen && <button className="text-accent text-[11px] font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(readInfo.path) }}>Open</button>}
-          <button className="text-muted text-[11px] hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, readInfo.path)} title="Download">⬇</button>
-          <span className="text-muted/50 text-[12px] font-normal shrink-0">{rangeLabel}</span>
+          {onFileOpen && <button className="text-accent text-2xs font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(readInfo.path) }}>Open</button>}
+          <button className="text-muted text-2xs hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, readInfo.path)} title="Download">⬇</button>
+          <span className="text-muted/50 text-meta font-normal shrink-0">{rangeLabel}</span>
         </button>
         {readExpanded && (
           <div className="px-2 pb-2">
             <div className="relative group">
               <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-3 py-1.5">
-                <span className="text-muted text-[12px] font-mono uppercase">{lang || readInfo.path.split('/').pop()}</span>
-                <button className="text-muted text-[12px] opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text bg-transparent border-none font-body" onClick={() => navigator.clipboard.writeText(result)}>Copy</button>
+                <span className="text-muted text-meta font-mono uppercase">{lang || readInfo.path.split('/').pop()}</span>
+                <button className="text-muted text-meta opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text bg-transparent border-none font-body" onClick={() => navigator.clipboard.writeText(result)}>Copy</button>
               </div>
               <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-3 overflow-x-auto max-h-[400px] overflow-y-auto">
-                <code className="text-[13px] font-mono leading-relaxed text-text">{result}</code>
+                <code className="text-body-s font-mono leading-relaxed text-text">{result}</code>
               </pre>
             </div>
           </div>
@@ -228,31 +228,31 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
     const lang = langFromPath(writeInfo.path)
     const lineCount = writeInfo.content.split('\n').length
     return (
-      <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border rounded-md animate-scale-in ${statusTone}`}>
+      <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border/60 rounded-md animate-scale-in ${statusTone}`}>
         <button
-          className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
+          className="w-full flex items-center gap-1.5 px-2 py-1.5 text-2xs text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
           onClick={() => setWriteExpanded(!writeExpanded)}
           aria-expanded={writeExpanded}
         >
           <ToolSummaryLine toolName={toolName} args={args} timestamp={timestamp} status={summaryStatus} className="min-w-0 flex-1" />
-          {onFileOpen && <button className="text-accent text-[11px] font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(writeInfo.path) }}>Open</button>}
-          <button className="text-muted text-[11px] hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, writeInfo.path)} title="Download">⬇</button>
-          <span className="text-muted/50 text-[12px] font-normal shrink-0">{lineCount} lines</span>
+          {onFileOpen && <button className="text-accent text-2xs font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(writeInfo.path) }}>Open</button>}
+          <button className="text-muted text-2xs hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, writeInfo.path)} title="Download">⬇</button>
+          <span className="text-muted/50 text-meta font-normal shrink-0">{lineCount} lines</span>
         </button>
         {writeExpanded && (
           <div className="px-2 pb-2">
             <div className="relative group">
               <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-3 py-1.5">
-                <span className="text-muted text-[12px] font-mono uppercase">{lang || writeInfo.path.split('/').pop()}</span>
-                <button className="text-muted text-[12px] opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text bg-transparent border-none font-body" onClick={() => navigator.clipboard.writeText(writeInfo.content)}>Copy</button>
+                <span className="text-muted text-meta font-mono uppercase">{lang || writeInfo.path.split('/').pop()}</span>
+                <button className="text-muted text-meta opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text bg-transparent border-none font-body" onClick={() => navigator.clipboard.writeText(writeInfo.content)}>Copy</button>
               </div>
               <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-3 overflow-x-auto max-h-[400px] overflow-y-auto">
-                <code className="text-[13px] font-mono leading-relaxed text-text">{writeInfo.content}</code>
+                <code className="text-body-s font-mono leading-relaxed text-text">{writeInfo.content}</code>
               </pre>
             </div>
             {isError && result && (
               <div className="mt-1">
-                <pre className="bg-bg-hover rounded-md px-3 py-2 text-[13px] font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto text-danger">{result}</pre>
+                <pre className="bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto text-danger">{result}</pre>
               </div>
             )}
           </div>
@@ -262,39 +262,39 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
   }
 
   return (
-    <div className={`pidash-tool-card msg-content bg-transparent border border-border/30 md:bg-card md:border-border rounded-md animate-scale-in ${statusTone} ${hasDetails ? 'cursor-pointer' : ''}`} data-pidash-tool-name={toolName} data-pidash-tool-status={isError ? 'error' : result ? 'ok' : 'running'}>
+    <div className={`pidash-tool-card msg-content bg-transparent border border-border/30 md:bg-card md:border-border/60 rounded-md animate-scale-in ${statusTone} ${hasDetails ? 'cursor-pointer' : ''}`} data-pidash-tool-name={toolName} data-pidash-tool-status={isError ? 'error' : result ? 'ok' : 'running'}>
       <button
-        className="w-full min-w-0 flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted font-mono bg-transparent border-none text-left hover:text-text transition-colors"
+        className="w-full min-w-0 flex items-center gap-1.5 px-2 py-1.5 text-2xs text-muted font-mono bg-transparent border-none text-left hover:text-text transition-colors"
         onClick={() => hasDetails && setExpanded(!expanded)}
         disabled={!hasDetails}
         aria-expanded={hasDetails ? expanded : undefined}
         title={summaryText || toolName}
       >
-        {hasDetails && <span className={`shrink-0 text-[10px] transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>}
+        {hasDetails && <span className={`shrink-0 text-2xs transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>}
         <ToolSummaryLine toolName={toolName} args={args} timestamp={timestamp} status={summaryStatus} className="min-w-0 flex-1" />
       </button>
       {expanded && (
         <div className="px-3 pb-3 border-t border-border space-y-2">
           {args && (
             <div>
-              <div className="text-[11px] text-muted font-medium uppercase tracking-wider mt-2 mb-1">Arguments</div>
-              <pre className="bg-bg-hover rounded-md px-3 py-2 text-[13px] font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto text-text">{args}</pre>
+              <div className="text-2xs text-muted font-medium uppercase tracking-wider mt-2 mb-1">Arguments</div>
+              <pre className="bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto text-text">{args}</pre>
             </div>
           )}
           {result && (
             <div>
-              <div className={`text-[11px] font-medium uppercase tracking-wider mt-2 mb-1 ${isError ? 'text-danger' : 'text-muted'}`}>{isError ? 'Error' : 'Result'}</div>
+              <div className={`text-2xs font-medium uppercase tracking-wider mt-2 mb-1 ${isError ? 'text-danger' : 'text-muted'}`}>{isError ? 'Error' : 'Result'}</div>
               {/!\[image\]\(/.test(result) ? (
                 <div className="space-y-2">
                   {result.split(/\n\n/).map((part, i) => {
                     const imgMatch = part.match(/!\[image\]\(([^)]+)\)/)
                     return imgMatch
                       ? <ResizableImage key={i} src={imgMatch[1]} alt="tool result" />
-                      : part.trim() ? <pre key={i} className={`bg-bg-hover rounded-md px-3 py-2 text-[13px] font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${isError ? 'text-danger' : 'text-muted'}`}>{part}</pre> : null
+                      : part.trim() ? <pre key={i} className={`bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${isError ? 'text-danger' : 'text-muted'}`}>{part}</pre> : null
                   })}
                 </div>
               ) : (
-                <pre className={`bg-bg-hover rounded-md px-3 py-2 text-[13px] font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${isError ? 'text-danger' : 'text-muted'}`}>{result}</pre>
+                <pre className={`bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${isError ? 'text-danger' : 'text-muted'}`}>{result}</pre>
               )}
             </div>
           )}

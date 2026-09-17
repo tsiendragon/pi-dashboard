@@ -13,7 +13,7 @@ interface PdfRendererProps {
   filePath: string
 }
 
-const BTN = 'px-2 py-1 rounded-md text-[12px] font-medium border border-border text-muted hover:text-text cursor-pointer disabled:opacity-40'
+const BTN = 'px-2 py-1 rounded-md text-meta font-medium border border-border text-muted hover:text-text cursor-pointer disabled:opacity-40'
 
 export default function PdfRenderer({ filePath }: PdfRendererProps) {
   const [numPages, setNumPages] = useState(0)
@@ -46,13 +46,13 @@ export default function PdfRenderer({ filePath }: PdfRendererProps) {
   return (
     <div className="flex flex-col w-full h-full">
       {/* Controls bar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-chrome text-[12px] shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-chrome text-meta shrink-0">
         <button className={BTN} disabled={pageNumber <= 1} onClick={() => goPage(pageNumber - 1)}>← Prev</button>
         <span className="text-muted">
           Page{' '}
           <input
             type="number"
-            className="w-10 text-center bg-bg border border-border rounded px-1 py-0.5 text-[12px] text-text"
+            className="w-10 text-center bg-bg border border-border rounded px-1 py-0.5 text-meta text-text"
             value={pageNumber}
             min={1}
             max={numPages || 1}
