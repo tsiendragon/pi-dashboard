@@ -157,7 +157,7 @@ function defaultTimezone(): string {
   return process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 }
 
-function dateInTimezone(at: number, timezone: string): string {
+export function dateInTimezone(at: number, timezone: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',

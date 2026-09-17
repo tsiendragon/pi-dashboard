@@ -20,6 +20,7 @@ import SettingsPage from './pages/SettingsPage'
 import LiveSessionPage from './features/live-sessions/LiveSessionPage'
 import LiveSessionGalleryPage from './features/live-sessions/LiveSessionGalleryPage'
 import UsagePage from './pages/UsagePage'
+import TimePage from './pages/TimePage'
 import CommandPalette from './components/CommandPalette'
 import SessionPicker from './components/SessionPicker'
 import { PluginContextProvider, CommandRouteSlot } from './plugins'
@@ -41,6 +42,7 @@ const NAV_ITEMS = [
   { path: '/live-sessions/gallery', id: 'live-gallery', label: 'Session Gallery', group: 'Main', icon: <><rect x="3" y="4" width="7" height="7" rx="1" /><rect x="14" y="4" width="7" height="7" rx="1" /><rect x="3" y="13" width="7" height="7" rx="1" /><rect x="14" y="13" width="7" height="7" rx="1" /></> },
   { path: '/tasks', id: 'tasks', label: 'Tasks', group: 'Main', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="m3 6 1.5 1.5L7 5" /><path d="m3 12 1.5 1.5L7 11" /><path d="m3 18 1.5 1.5L7 17" /></> },
   { path: '/usage', id: 'usage', label: 'Token Cost', group: 'Main', icon: <><path d="M4 19V5" /><path d="M4 19h17" /><path d="m7 15 3-4 3 2 5-7" /></> },
+  { path: '/time', id: 'time', label: 'Time Analysis', group: 'Main', icon: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /><path d="M3.5 5.5 6 3" /></> },
   { path: '/system', id: 'system', label: 'System', group: 'Main', icon: <><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></> },
   { path: '/logs', id: 'logs', label: 'Logs', group: 'Tools', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></> },
   { path: '/jobs', id: 'jobs', label: 'Jobs', group: 'Tools', icon: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></> },
@@ -336,6 +338,7 @@ export default function App() {
             <Route path="/live-sessions/gallery" element={<LiveSessionGalleryPage />} />
             <Route path="/live-sessions/:processInstanceId" element={<LiveSessionPage />} />
             <Route path="/usage" element={<UsagePage />} />
+            <Route path="/time" element={<TimePage />} />
             <Route path="/system" element={<SystemPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />

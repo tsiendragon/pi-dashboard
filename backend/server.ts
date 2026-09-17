@@ -28,6 +28,7 @@ import {
   registerIntegrationRoutes,
   createLiveSessionRoutes,
   registerUsageRoutes,
+  registerTimingRoutes,
   registerPtyRoutes,
   registerTaskRoutes,
   type LiveSessionRoutes,
@@ -42,6 +43,7 @@ import { LiveSessionBroker } from './live-sessions/broker.js'
 import { liveSessionRegistry } from './live-sessions/registry.js'
 import { LivePiLauncher } from './live-sessions/launcher.js'
 import { UsageLedger } from './usage-ledger.js'
+import { TimingLedger } from './timing-ledger.js'
 import { handlePtyConnection, shutdownPtyClients } from './pty-manager.js'
 
 process.env.PI_RUNTIME = 'dashboard'
@@ -77,6 +79,8 @@ const livePiLauncher = liveSessionConfig.enabled
   : undefined
 const usageLedger = new UsageLedger()
 void usageLedger.start().catch(error => console.error('[usage] Failed to load ledger:', error))
+const timingLedger = new TimingLedger()
+void timingLedger.start().catch(error => console.error('[timing] Failed to load ledger:', error))
 let liveSessionRoutes: LiveSessionRoutes | undefined
 
 // ─── Notifications ───────────────────────────────────────────
@@ -891,6 +895,7 @@ registerSessionRoutes(routeDeps)
 registerJobsRoutes(routeDeps)
 registerIntegrationRoutes(routeDeps)
 registerUsageRoutes({ app, ledger: usageLedger })
+registerTimingRoutes({ app, ledger: timingLedger })
 registerPtyRoutes({ app, auth: liveSessionAuth })
 
 const taskService = new TaskService({
