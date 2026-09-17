@@ -53,6 +53,21 @@ describe('UsageLedger', () => {
     expect((await restored.getReport('2026-09', 'UTC')).total).toMatchObject({ costUsd: 0.055, totalTokens: 3630 })
   })
 
+  it('keeps a provider-qualified response model from double-prefixing the key', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'pi-usage-qualified-'))
+    const ledgerDirectory = path.join(dir, 'token-usage')
+    const sessionFile = path.join(dir, 'session.jsonl')
+    await writeFile(sessionFile, [
+      JSON.stringify({ type: 'session', version: 3, id: 'session-q', timestamp: '2026-09-01T00:00:00.000Z', cwd: '/tmp/self-hosted' }),
+      JSON.stringify({ type: 'message', id: 'entry-q1', timestamp: '2026-09-03T10:00:00.000Z', message: { role: 'assistant', provider: 'dsw', model: 'deepseek_v41_flash', responseModel: 'dsw/deepseek_v41_flash', timestamp: Date.parse('2026-09-03T10:00:00.000Z'), usage: usage(1000, 100, 0) } }),
+    ].join('\n') + '\n')
+
+    const ledger = new UsageLedger(ledgerDirectory)
+    await ledger.ingestSessionFile(sessionFile, { sessionFile, label: 'Self-hosted', cwd: '/tmp/self-hosted' })
+    const report = await ledger.getReport('2026-09', 'UTC')
+    expect(report.models.map(item => item.key)).toEqual(['dsw/deepseek_v41_flash'])
+  })
+
   it('records terminal live events with an entry id once', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'pi-usage-live-'))
     const ledger = new UsageLedger(path.join(dir, 'token-usage'))
