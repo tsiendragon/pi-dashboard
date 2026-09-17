@@ -136,6 +136,11 @@ function modelKeyOf(message: Record<string, unknown>): string {
   if (message.role === 'toolResult') return 'Tools/summaries'
   const provider = stringValue(message.provider) || 'unknown'
   const model = stringValue(message.responseModel) || stringValue(message.model) || 'unknown'
+  // Self-hosted servers often echo a provider-qualified canonical name (for
+  // example a vLLM `--served-model-name` of `dsw/deepseek_v41_flash`). Adding
+  // the provider again would produce `dsw/dsw/deepseek_v41_flash`, so keep a
+  // model name that already carries the provider prefix as the whole key.
+  if (provider !== 'unknown' && model.startsWith(`${provider}/`)) return model
   return `${provider}/${model}`
 }
 
