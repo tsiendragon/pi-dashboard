@@ -12,9 +12,10 @@
   --border:rgba(147,153,178,.22);--border-strong:rgba(166,173,200,.4);--border-hover:rgba(203,166,247,.55);
   --accent:#cba6f7;--accent-hover:#dec7ff;--accent-subtle:rgba(203,166,247,.18);
   --accent-glow:rgba(203,166,247,.42);--ring:#cba6f7;
-  --ok:#a6e3a1;--ok-subtle:rgba(166,227,161,.14);
+  --accent-fg:#1e1e2e;--danger-fg:#1e1e2e;--ok-fg:#1e1e2e;
+  --ok:#94e2d5;--ok-subtle:rgba(148,226,213,.14);
   --warn:#f9e2af;--warn-subtle:rgba(249,226,175,.14);
-  --danger:#f38ba8;--danger-subtle:rgba(243,139,168,.14);
+  --danger:#e5808c;--danger-subtle:rgba(229,128,140,.14);
   --info:#89b4fa;
   --aim:#cba6f7;--aim-subtle:rgba(203,166,247,.15);
   --clarify:#f9e2af;--clarify-subtle:rgba(249,226,175,.06);
@@ -33,9 +34,11 @@
 
   --font-body:'Space Grotesk',-apple-system,BlinkMacSystemFont,sans-serif;
   --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
-  --shadow-md:0 4px 14px rgba(0,0,0,.4),0 0 0 1px rgba(205,214,244,.05);
-  --shadow-lg:0 16px 44px rgba(0,0,0,.55),0 0 2rem rgba(203,166,247,.1);
+  --shadow-color:240 30% 5%;
+  --shadow-sm:0.5px 1px 1px hsl(var(--shadow-color)/0.45);
+  --shadow-md:1px 2px 2px hsl(var(--shadow-color)/0.34),2px 4px 6px hsl(var(--shadow-color)/0.28);
+  --shadow-lg:1px 2px 3px hsl(var(--shadow-color)/0.34),3px 6px 10px hsl(var(--shadow-color)/0.3),6px 12px 22px hsl(var(--shadow-color)/0.24);
+  --shadow-xl:2px 4px 6px hsl(var(--shadow-color)/0.32),6px 12px 20px hsl(var(--shadow-color)/0.28),12px 24px 44px hsl(var(--shadow-color)/0.22);--shadow-inset:inset 0.5px 1px 2px hsl(var(--shadow-color)/0.38);
   --radius-sm:8px;--radius-md:10px;--radius-lg:14px;--radius-xl:18px;
   color-scheme:dark;
 }
