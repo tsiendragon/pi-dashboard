@@ -1,0 +1,552 @@
+# LiveSession 会话树 + 树图页面 — 完整设计方案（v4）
+
+**状态**：待 review（v4：零新增 npm 依赖 + 零协议变更；Phase 0 已用真实数据完成验证）
+**关联**：`docs/research/agent-tree-branching-feasibility.md`、`docs/research/live-session-tree-and-graph-page.md`
+**Mock**：`docs/mockups/session-tree-graph.html`
+
+---
+
+## 0. 修订记录
+
+### v3 → v4（零依赖 + 零协议 + 数据验证）
+
+| 变更 | 内容 |
+|---|---|
+| **不装任何第三方包** | 取消原 Phase 0 的 `pi-session-tree-browser` 安装验证 |
+| **不新增 npm 依赖** | 取消 React Flow / dagre；改用**自写原生 SVG 图谱**（数据是树，布局 ~15 行） |
+| **不改协议** | navigate/fork 改用 **bridge 斜杠命令 + 已有 `input` 通道**，不需要 v3 协议与区间兼容（§6.2） |
+| **Phase 0 改为数据验证（已完成）** | 扫描真实会话：**97% 无分支**，fork 仅 3/336 → 结论：**只读图谱价值低，必须与“切分支”同批交付** |
+| 有界读取成为硬需求 | 单文件最大 **764MB**、entries 最大 7176 → 必须 >20MB 只读尾部 + 节点上限 + 长线性段折叠 |
+
+### v2 → v3（需求收敛）
+
+| 变更 | 内容 |
+|---|---|
+| 取消泳道布局 | 只保留分层（§7.2） |
+| 只做一个 graph 页 | 移除图/列表切换与 `SessionTreeList`（§7.1） |
+| **图谱 ↔ 会话 双向跳转** | 图谱页为独立路由；节点点击可打开对应会话；会话页可返回图谱（§8.3） |
+| 新增只读会话视图 | 无进程会话也能“打开”（从 JSONL 渲染只读转录） |
+
+### v1 → v2（对抗性 review 返工）
+
+上一版经过对抗性 review，发现 3 处**阻断级**问题与 6 处设计缺陷。本版逐条返工：
+
+| 编号 | v1 的问题 | 证据 | v2 的修法 |
+|---|---|---|---|
+| **A1** | 只画**单个 session 文件**的树 → fork 出的分支不在图上，用户只会看到直线 | `createBranchedSession` 写新文件并记 `parentSession`（`session-manager.js:1134`、`.d.ts:11`）；`parseSessionTree` 跳过 header 且只读单文件（`session-store.ts:237`） | **L0 引入 session family 拼装**（用 `SessionInfo.parentSessionPath`，`session-manager.d.ts:133`） |
+| **A2** | 终端 `/tree` 切分支后 web 不刷新 | bridge **无 `session_tree` 订阅**；`markChanged()` 仅在 lease 变化 / onConnected / onDisconnected（`live-session.ts:228/436/443`） | bridge 加 `pi.on('session_tree')` → `markChanged()` + publish；**L0 即跨两个仓库** |
+| **A3** | 用 `LiveSessionPathPolicy` 校验 `sessionFile` 是错的 | `authorize()` 要求路径是**目录**（`path-policy.ts:57` `isDirectory()`），传文件必返 `cwd_unavailable` | 改为校验落在 `<agentDir>/sessions/` 内，realpath 归一化 |
+| B1 | `parseSessionTree` 不解析 `label`、不读 `parentSession` | 无 `label` 分支，未知类型归为 `role:'system'`（`session-store.ts:265-269`） | L0 解析层扩 `label` 与 header |
+| B2 | 同步全量解析 + 高频刷新会阻塞 Express 主线程 | `readFileSync` 读整文件（`session-store.ts:232`）；所有 slot 共用一个进程 | 异步读 + `path+mtime+size` 缓存 + 仅面板打开时订阅 + 超阈值只读尾部 |
+| B3 | "编辑并重发"在**选中时**就移动 HEAD（副作用） | v1 §8.3 表述 | 拆为 **预览 / 提交** 两步 |
+| B4 | 无撤销 | pi TUI 有 Esc，web 没有等价物 | 记录 `previousLeafId` + "撤销切换" |
+| B5 | 能力协商没有落地位置 | v1 §6.5 只提到 `capabilities` | 由 `entry.hello.protocolVersion` 派生，放进 detail 响应 |
+| B6 | 大 session 策略缺失（只截文本不截节点数） | — | 节点上限 + `truncated` + 默认折叠 + 简化渲染 |
+| C1–C5 | mock 与计划不一致（孤儿语义混淆、标签 L0 不可得、按钮状态、时间轴命名、触屏） | — | 见 §8 与同批重做的 mock |
+
+**结论修正**：v1 说"L0 只动 pi-dashboard、零改动"——**错误**。L0 必须改 bridge（A2），因此**从第一期就跨两个仓库**。仍然**不需要改 pi 上游**。
+
+---
+
+## 1. 背景与目标
+
+### 1.1 问题
+
+pi 的会话是树（entry 有 `id`/`parentId`，有可变 leaf/HEAD），且**分叉会产生新的 session 文件**（通过 `parentSession` 串成"会话家族"）。但 pi-dashboard：
+
+- 只把单个文件的树渲染成**列表**（`frontend/src/pages/chat/SessionTree.tsx`）；
+- LiveSession 侧**完全没有树视图**；
+- **跨文件的家族关系完全不可见**——而 fork 恰恰是主要的分叉手段。
+
+### 1.2 目标
+
+1. **LiveSession 支持树形工作**：看到**整棵家族树**（含同文件废弃分支 + 跨文件 fork 分支）、能切分支、能从任意节点分叉。
+2. **一个可视化树图页面**：主干/分支/泳道一目了然，可从图上进分支、建分支。
+3. **一个可视化图谱页**：主干/分支/fork 边一目了然；**从图上点开即可进入对应会话，从会话可回到图谱**。
+
+### 1.3 非目标
+
+- 文件级 checkpoint / 快照回滚（Claude Code / Cline / Cursor 那种）——artifact 层，另立项。
+- 分支 merge / 三方合并——pi 无此语义。
+- 跨机器同步、多人协作编辑。
+
+---
+
+## 2. 现状与设计约束（每条带证据）
+
+| 事实 | 证据 | 约束 |
+|---|---|---|
+| pi session JSONL 是树：`id`/`parentId` + 可变 leaf | `session-format.md`、`session-manager.d.ts` | 不造树模型 |
+| 原地切分支 = `navigateTree(targetId, opts)`（**同文件**） | `agent-session.d.ts:634` | 语义 = git checkout |
+| 新文件分叉 = `fork(entryId)` / `clone()`，新文件头记 `parentSession` | `rpc-types.d.ts`；`session-manager.js:1134`；`SessionHeader.parentSession`（`.d.ts:11`） | **家族关系必须显式拼装** |
+| 家族链接字段已现成 | `SessionInfo.parentSessionPath`（`session-manager.d.ts:133`） | 不需要新协议 |
+| LiveSession 已下发 `sessionFile` | `shared/src/live-sessions.ts:44`；bridge `live-session.ts:243` | 拿得到文件 |
+| LiveSession 已有会话级血缘（main/subagent） | `live-sessions.ts:39-43`；`registry.ts:60-88` | 会话间已是树 |
+| bridge 跑在 pi 进程内，可调 `ctx.navigateTree()`/`ctx.fork()` | `extensions/types.d.ts:263-296` | 切分支无需动 pi |
+| bridge **未订阅** `session_tree` | `live-session.ts` 无该订阅 | **必须补，否则 web 失同步** |
+| `parseSessionTree` 不解析 `label`、不读 header、同步整文件读 | `session-store.ts:227-275` | 解析层要扩 + 要异步 |
+| `LiveSessionPathPolicy.authorize()` 只接受目录 | `path-policy.ts:57` | **不能复用它校验文件** |
+| 控制权 = claim + lease | `live-session/lease.ts` | 写操作必须持 lease |
+
+---
+
+## 3. 总体架构（v2）
+
+```
+┌─────────────────────────── 前端（React） ───────────────────────────┐
+│  <SessionFamilyGraph>  图：家族树（跨文件）                            │
+│  <SessionTreeList>     列表视图                                       │
+│  <SidebarForest>       侧栏：家族 + 子代理两层                         │
+│  <BranchDetailPanel>   预览/提交分离 + 撤销                            │
+└──────────┬──────────────────────────────────────────────────────────┘
+           │ 读：HTTP（异步、带缓存）        写：HTTP → broker 命令
+───────────▼──────────────── 后端（Express） ─────────────────────────┐
+│  GET /api/live-sessions/:pid/tree        → 家族树（新增）             │
+│  GET /api/chat/slots/:key/tree           → 单文件树（已有，可扩家族）  │
+│  POST /api/live-sessions/:pid/commands   → 复用，承载新命令（无新端点）│
+│  family.ts   会话家族拼装（沿 parentSessionPath）                     │
+│  tree.ts     解析 + 派生字段 + 异步缓存                                │
+└───────────┬──────────────────────────────────────────────────────────┘
+            │ broker（WS，已有通道）
+┌───────────▼──────────── pi 进程内（bridge 扩展）────────────────────┐
+│  L0：pi.on('session_tree') → projector.markChanged() + publish       │
+│  L2：protocol v3 { navigate_tree } → ctx.navigateTree()              │
+│  L3：protocol v3 { fork_from }     → ctx.fork()                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**读路径**：解析 JSONL + 家族拼装（不需要进程存活，会话结束后仍可浏览）。
+**写路径**：下发命令给进程内 pi（需 lease）。
+
+---
+
+## 4. 数据模型（v2）
+
+### 4.1 关键修正：三层状态要分开
+
+v1 把三种"分支状态"混成一个"孤儿"概念，这是错的。v2 明确三层：
+
+| 层 | 含义 | 视觉 |
+|---|---|---|
+| **废弃分支**（in-file abandoned） | 同文件里不是当前活动路径的分支 | 淡化（opacity .55），**不**标"未运行" |
+| **未运行会话**（session without process） | 文件存在但没有 pi 进程（fork 后旧会话、或已退出） | 会话级徽标"未运行" + 只读 |
+| **未持久化**（no sessionFile） | `--no-session` 启动，无文件 | 空态"该会话未持久化，无树可看" |
+
+### 4.2 树节点
+
+```ts
+interface SessionTreeNode {
+  id: string
+  parentId: string | null
+  sessionFile: string          // 所属文件（跨文件时用于分组/着色）
+  kind: 'message' | 'branch_summary' | 'compaction' | 'model_change' | 'custom' | 'label'
+  role: 'user' | 'assistant' | 'toolResult' | 'branchSummary' | 'compaction' | 'system'
+  text: string
+  fullText?: string            // 仅 user（保持现行为）
+  tools?: string[]
+  timestamp?: string
+  label?: string               // ← 新增：解析 label entry（v1 缺失）
+  // 派生
+  childCount: number
+  isBranchPoint: boolean
+  isOnActivePath: boolean
+  isHead: boolean
+  isForkRoot: boolean          // ← 新增：本文件是 fork 出来的（挂在父文件的分叉点上）
+}
+```
+
+### 4.3 会话家族（v2 的核心新增）
+
+```ts
+interface SessionFamily {
+  sessions: Array<{
+    sessionFile: string
+    sessionId?: string
+    parentSessionFile: string | null   // ← SessionHeader.parentSession
+    forkFromEntryId?: string | null    // ← 父文件里的分叉点（需在父文件中定位）
+    role: 'main' | 'subagent'
+    alive: boolean                     // 是否有运行中的 pi 进程
+    isHeadSession: boolean             // 当前查看的会话
+  }>
+  entries: SessionTreeNode[]           // 全部文件的节点，合并到一张图
+  heads: Record<string, string | null> // sessionFile → 该文件的 leafId
+  truncated: boolean
+}
+```
+
+**家族拼装规则**：
+1. 从当前会话文件出发，沿 `parentSession` 向上收集祖先，向下收集子会话（需要枚举同 `cwd` 下 sessions 目录，读 header）。
+2. 每条 fork 边：父文件里定位"分叉点"——即子文件 root 的父。实现上取子文件**第一条 entry 的 `parentId`**（`createBranchedSession` 会保留路径，root 的 `parentId` 指向父文件的那个 entry）。若定位不到，退化为把子文件根挂在父文件 HEAD 上并标 `unresolved`。
+3. 子代理会话（`role:'subagent'`）不并进家族图，单独作为挂载在 `parentToolCallId` 节点上的折叠子树。
+
+> ⚠️ **拼装第 2 条需要开工前做一次 5 行探针验证**：fork 出来的文件里，root entry 的 `parentId` 是否确实指向父文件的 entry id（而非 null）。若为 null，则只能按时间戳近似挂载——这会显著影响图的可读性。**这是 v2 新增的第二个未知数。**
+
+---
+
+## 5. 后端设计
+
+### 5.1 读：`GET /api/live-sessions/:processInstanceId/tree`
+
+```
+200 → SessionFamily
+404 → { error: 'live_session_not_found' }
+```
+
+实现要点：
+- **异步读**：用 `fs/promises`，不要 `readFileSync`。
+- **缓存**：key = `sessionFile + mtime + size`；命中直接返回。
+- **家族拼装**：`family.ts` 沿 `parentSession` 上/下遍历；同 cwd 的 sessions 目录列表也缓存（TTL 5s）。
+- **节点上限**：默认 2000 节点/文件；超限只保留"活动路径 + 分支点 + 最近 N 条"，并置 `truncated: true`。
+- **安全校验**（替代 v1 的错误做法）：
+  ```
+  sessionFile 必须 realpath 后落在 <agentDir>/sessions/ 之内
+  agentDir = process.env.PI_CODING_AGENT_DIR || ~/.pi/agent
+  否则 403 { error: 'out_of_scope' }
+  ```
+  **不复用** `LiveSessionPathPolicy`（它只接受目录）。
+
+### 5.2 写：复用 `POST /api/live-sessions/:id/commands`
+
+**不需要新端点**（v1 已确认）。L2/L3 只需在 `validateLiveSessionCommand` 与 `sendBrowserCommand` 的白名单里加上新命令类型，并归入"需要 lease"集合。
+
+### 5.3 Chat Slot 侧
+
+`GET /api/chat/slots/:key/tree` 已有；v2 允许它复用 `family.ts` 返回家族（可选，非 L0 必须）。
+`POST /api/chat/slots/:key/navigate` 只在 **SDK 通道**可用（RPC 无 navigate 命令）→ 不在 L0–L3 范围。
+
+---
+
+## 6. 协议与 bridge 改动
+
+### 6.1 L0（**不 bump 协议版本**）
+
+bridge 新增订阅：
+
+```ts
+pi.on("session_tree", (_event, ctx) => {
+  projector?.markChanged()              // 让下次 snapshot 反映新 HEAD
+  publish("session_tree", { newLeafId, oldLeafId }, ctx)   // 通知 web 立即重取
+})
+```
+- `session_tree` 是 pi 已有的扩展事件（`docs/extensions.md:493-513`，携带 `newLeafId`/`oldLeafId`）。
+- 现有 `bindings` 表（`routes/live-sessions.ts`）需加一条 `['session_tree', 'live_session_tree_changed']` 或复用 `live_session_event`。
+- **不改协议版本号**，因为只新增一个上行事件、不新增下行命令。
+
+### 6.2 L2/L3（**也不 bump 协议** —— v4 关键简化）
+
+**发现**：bridge 投递输入用的是 `pi.sendUserMessage()`（`live-session.ts:164-176`），而代码注释明确写着：
+
+> *“For a model prompt sendUserMessage resolves at the end of the turn; for a slash command (e.g. `/effort` raising a dialog) pi executes the extension [command]”*
+
+所以：**以 `/` 开头的文本会被 pi 当作斜杠命令执行**。而 `{type:'input', text}` 已是**现有**协议命令。
+
+因此 L2/L3 的做法改为：
+
+```ts
+// bridge 新增两个扩展斜杠命令（注册，不需要协议字段）
+pi.registerCommand('ls-navigate', { handler: async (args, ctx) => { ... ctx.navigateTree(args.trim()) } })
+pi.registerCommand('ls-fork',     { handler: async (args, ctx) => { ... ctx.fork(args.trim())       } })
+
+// dashboard 侧：直接复用已有的 commands 端点与命令类型
+POST /api/live-sessions/:pid/commands
+  { command: { type:'input', channel:'web', text:'/ls-navigate <entryId>' } }
+```
+
+**收益**：
+- **不改协议版本号**（无 `parseHello` 严格相等问题、无 v2/v3 区间兼容、无版本偏差）
+- 不需要给 `validateLiveSessionCommand` / `sendBrowserCommand` 加白名单
+- 风险最高的那部分工作（协议兼容）**整个消失**
+
+**代价与对策**
+
+| 代价 | 对策 |
+|---|---|
+| 没有结构化 `command_result`（不知道成功/失败） | 结果通过**已有的 `session_tree` 事件 + snapshot 变化**确认；失败时 bridge 用 `ctx.ui.notify` + `publish` 上抛 |
+| `input` 命令在 registry 与 bridge 都**不要求 lease** | 在 bridge 的斜杠命令 handler 内自行 `lease.assertLease`（lease 对象就在同文件内） |
+| 命令文本会进入会话历史 | `/ls-*` 是一次性斜杠命令（不产生 turn，与 `/live-session-reload` 同一机制），不会污染上下文 |
+
+> 如果后续需要严检的返回码（例如 UI 要区分 session_busy / not_found），再升级为结构化命令；这不影响现在开工。
+
+### 6.3 bridge 侧实现要点
+
+1. **先做 5 行探针**：确认斜杠命令的 `ctx` 是否含 `navigateTree`/`fork`（`ExtensionCommandContext` 有）。
+2. 斜杠命令 handler 内：`lease.assertLease(...)` + `if (!ctx.isIdle()) 拒绝`。
+3. `fork` 会改 sessionId → 现有 `registry.sessionChanged`（`registry.ts:137`）已处理清 lease + 广播。
+4. 旧 bridge（未升级）在 UI 上自动无写操作（无 `/ls-*` 命令即无法调用），**不需要版本协商**。
+
+---
+
+## 7. 前端设计
+
+### 7.1 组件
+
+| 组件 | 职责 |
+|---|---|
+| `SessionFamilyGraph` | **独立的图谱页**（路由 `/live-sessions/graph`），渲染家族图 + 节点导航 |
+| `BranchDetailPanel` | 选中节点详情 + 动作（预览/提交分离） |
+| `ReadonlySessionView` | 无进程会话的只读转录（数据来自同一份 family 解析结果） |
+| `useSessionFamily(focus)` | 取数 + 事件失效刷新（**仅图谱页打开时订阅**） |
+| `useLiveSessionControl()` | 复用现有 claim/lease |
+
+**已移除**：v2 的 `SessionTreeList` 列表视图与 图/列表 切换（需求收敛为"只要一个 graph 页"）。
+
+### 7.2 布局（仅一种）
+
+**分层**：深度 = 分支层级（左→右），tidy tree（父节点居中于子节点）。
+
+**已取消泳道布局**（v2 曾计划 L1 加入）——需求明确不要。
+
+### 7.3 状态
+
+```ts
+interface GraphState {
+  view: 'graph' | 'list'
+  layout: 'layered' | 'lanes'
+  filter: 'all' | 'user' | 'labeled' | 'no-tools'
+  selectedId: string | null
+  pendingCommit: { kind: 'navigate'; targetId: string } | null   // ← 预览/提交分离
+  undo: { previousLeafId: string; sessionFile: string } | null   // ← 撤销
+  collapsed: Set<string>
+}
+```
+
+---
+
+## 8. UI/UX 规范（v2）
+
+### 8.1 布局
+
+三栏：侧栏森林（280px）· 树图画布（自适应）· 详情面板（320px）。
+`<1280px` 详情变浮层；`<900px` 侧栏变抽屉。
+
+### 8.2 节点视觉（区分三层状态）
+
+| 状态 | 视觉 |
+|---|---|
+| 活动路径 | 边/描边 `--accent`，opacity 1 |
+| **废弃分支**（同文件） | 边 `--border-strong`，节点 opacity **0.55** |
+| **fork 边**（跨文件） | 边 `--info` **虚线**，中点标 `fork` 小标签；子文件节点组加浅色背景带（`--info-subtle`） |
+| **未运行会话** | **会话级**徽标"未运行"（`--warn`）+ 该组写操作禁用 |
+| HEAD | 左实心点 + `HEAD` 徽标 + `--accent` 外发光（**每个会话各有一个**） |
+| 分支点 | 右缘实心三角 + 计数 |
+| 子代理子树 | 分组框，默认折叠 |
+| `branch_summary` | 切角矩形（区别于普通消息） |
+
+**每个会话一个 HEAD**：家族图里会有多个 HEAD（父会话的 + 子会话的），必须都标出来，否则"我到底在哪"会混乱。
+
+### 8.3 交互（v3：图谱 ↔ 会话 双向跳转）
+
+图谱页是**独立路由**（`/live-sessions/graph`），节点与会话页双向可达：
+
+| 交互 | 行为 |
+|---|---|
+| **单击节点（属于其他会话）** | **打开那个 agent session**，并定位到该节点（`?session=<id>&node=<entryId>`） |
+| **单击节点（属于当前会话）** | 只选中 + 右侧详情（**不跳页**，避免浏览家族时被反复弹出）；会话页同步高亮该行 |
+| 会话页「**在图谱中查看**」 | 回到图谱页，聚焦该会话（`?focus=<sessionId>&node=<entryId>`，高亮分组 + 选中节点） |
+| 详情面板「打开该会话」 | 同“单击其他会话节点”（从会话页返回后仍可用） |
+| `切到此处` | 需显式点击 → 移动 HEAD → 出现**撤销条** |
+| `编辑并重发`（user 节点） | 点击后：移到其 parent + 文本回填输入框 → 撤销条 |
+| `从此分叉` | 调 `fork_from` → 新会话加入家族图，高亮 fork 边 |
+| **撤销** | 顶部条 `HEAD 已从 X 移到 Y · [撤销]`，5s 自动消失 |
+| 拖拽 / 滚轮 | pan / zoom（0.3–2.0） |
+| `Ctrl+O` / `F` / `Esc` | 循环过滤器 / 适配 / 取消选中 |
+| 折叠子树 | 若 **HEAD 在被折叠的子树内，自动展开到 HEAD** |
+
+**为什么单击跨会话节点直接跳页**：图谱是“定位与导航面”，用户的意图是“去那个会话看”。要避免的反而是**在同家族内浏览时被反复弹出**，所以“当前会话内单击只选中”。
+
+**无进程会话怎么“打开”**：用 `ReadonlySessionView` 从其 JSONL 渲染只读转录（数据就是家族解析的同一份），顶部标“未运行 · 只读”，输入框禁用，并提供「在此会话启动 live session」（L3）。
+
+### 8.4 触屏（v1 遗漏）
+
+hover 动作在触屏不可用。**统一以"选中 → 详情面板操作"为唯一通道**；hover 浮现仅作桌面加速键，不作为功能前提。
+
+### 8.5 空 / 加载 / 错误 / 结束态
+
+| 状态 | 表现 |
+|---|---|
+| 加载 | 骨架节点（无 shimmer） |
+| **未持久化**（无 sessionFile） | 居中空态："该会话未持久化，无树可看（`--no-session` 启动）" |
+| **会话已结束**（无进程） | 树仍可浏览；会话级"未运行"标签；写操作全禁用 |
+| 仅活动分支（家族拼装失败降级） | 顶部细条 `⚠ 仅显示活动分支` |
+| navigate 失败 | 面板内 `--danger-subtle` + 重试，不弹全局 modal |
+| 超限截断 | 顶部细条 `⚠ 树已截断（超过 2000 节点）` |
+
+### 8.6 可访问性
+
+- 节点 `role="button"` + `tabIndex=0` + `aria-label`（含角色/状态）。
+- **SVG 焦点环需显式实现**（全局 `:focus-visible` 对 `<g>` 不可靠）。
+- 状态不单靠颜色：HEAD/未运行/截断都有文字。
+- 动效走全局 `prefers-reduced-motion`。
+
+### 8.7 设计令牌
+
+全部复用现有变量；字号只用 `text-2xs / text-meta / text-body-s / text-sm`。
+
+---
+
+## 9. 并发、安全与性能
+
+| 项 | 设计 |
+|---|---|
+| 写操作并发 | 强制 lease；无 lease 返回 409 |
+| **读性能** | 异步读 + `path+mtime+size` 缓存 + **仅面板打开时订阅** + 事件防抖 500ms |
+| 家族遍历性能 | sessions 目录列表 TTL 缓存 5s；祖先链深度上限 20 |
+| 节点上限 | 2000/文件，超限截断并标记 |
+| **路径安全** | 校验 `sessionFile` realpath 在 `<agentDir>/sessions/` 内（**不用** `LiveSessionPathPolicy`） |
+| 敏感内容 | 只返回截断文本，与现 `parseSessionTree` 一致 |
+| 删除分支 | v1 起即不做（append-only，删需重写 JSONL） |
+| 孤儿会话 | 标记"未运行"；L3 提供"在此分支启动 live session" |
+
+---
+
+## 10. 分期与验收（v2）
+
+### L0 — 家族树 + 图页面（**跨两个仓库，不 bump 协议**）
+
+交付：
+- bridge：`session_tree` 订阅（A2）
+- 后端：`family.ts` + `tree.ts` + `GET /api/live-sessions/:pid/tree`（异步、缓存、家族拼装、正确校验）
+- 前端：**图谱页**（`/live-sessions/graph`）`SessionFamilyGraph` + `BranchDetailPanel`（预览态）+ `ReadonlySessionView`
+- **双向跳转**：图谱节点 → 打开会话（带 `?node=` 定位）；会话页「在图谱中查看」→ 回图谱（带 `?focus=`）
+- 解析层：支持 `label` entry 与 `header.parentSession`（B1）——标签在 L0 **只读展示**，写入留 L4
+- 家族呈现：**一张图 + 文件分组带**；当非当前会话节点数 > 60 或会话数 > 3 时，自动把非当前会话折叠为"会话摘要节点"（可展开）
+
+**验收**
+- [ ] 对任一活跃 LiveSession，图能显示**家族树**：同文件分支 + 跨文件 fork 边 + 每个会话的 HEAD。
+- [ ] **双向跳转闭环**：图谱里点 A 会话的节点 → 打开 A 会话并定位到该消息；在 A 会话点「在图谱中查看」→ 回到图谱且 A 的分组与节点被高亮。
+- [ ] 同会话内单击节点**不跳页**（只选中）。
+- [ ] 无进程会话可打开**只读转录**，输入框禁用并标"未运行"。
+- [ ] 在 tmux 里执行 `/tree` 切分支，**web 在 2s 内自动刷新**新 HEAD（A2）。
+- [ ] `sessionFile` 不在 `<agentDir>/sessions/` 内时返回 403（A3）。
+- [ ] 打开 5MB / 5000 entry 的会话，树端点响应 < 500ms，且**不阻塞其他请求**（B2）。
+- [ ] 无 sessionFile 时显示"未持久化"空态；无进程时显示"未运行"且写操作禁用。
+- [ ] 触屏（无 hover）下所有操作可达（C5）。
+- [ ] 明暗主题对比度达标，`npm run check:theme-cvd` 通过。
+
+### L1 — 侧栏森林增强
+家族 + 子代理两层；点击联动画布；"展开到 HEAD"。
+
+### L2 — 原地切分支（协议 v3）
+`navigate_tree` + **v2–v3 区间兼容**（§6.2）+ 能力协商透出 + 预览/提交分离 + 撤销。
+
+**验收**
+- [ ] 持 lease 时可切分支，HEAD 移动、无新文件。
+- [ ] 无 lease → 409 + UI 提示。
+- [ ] **未升级的 v2 bridge 仍能正常连接**（不报 unsupported_protocol），只是写操作被隐藏。
+- [ ] 误操作可一键撤销回原 HEAD。
+- [ ] 回答进行中拒绝（`session_busy`）。
+
+### L3 — 任意点分叉 + 未运行会话
+`fork_from`；未运行会话"在此启动 live session"（需 launcher 支持按 sessionFile 恢复）。
+
+### L4 — 标签与临时分支
+标签写入 pi `label` entry（终端 `/tree` 同步可见）；`scratch` 过滤；折叠已完结分支。
+
+---
+
+## 11. 风险（v2）
+
+| 风险 | 等级 | 缓解 |
+|---|---|---|
+| **fork 文件的 root `parentId` 是否指向父文件 entry 未知** | **高** | L0 开工前 5 行探针；为 null 则退化为时间戳近似挂载 |
+| bridge 的 ctx 是否含 `navigateTree` 未知 | 中 | L2 前探针；不行走 `commandContextActions` 注入 |
+| 家族拼装在深链/大目录下变慢 | 中 | 祖先链深度上限 + 目录列表 TTL 缓存 |
+| ~~协议区间兼容写错导致旧 bridge 被拒~~ | — | **已消失**：不再有协议变更 |
+| 斜杠命令无结构化返回（不知道成功/失败） | 中 | 靠 `session_tree` 事件 + snapshot 变化确认；失败由 bridge `publish` + `ui.notify` 上抛 |
+| 大会话渲染（p99 4682 节点、最大 7176） | **高** | 有界读取 + 节点上限 + 长线性段折叠 + 视口裁剪；11% 的会话会碰到 |
+| 中位会话（110 节点）很短，图谱易显得空 | 中 | 接受；价值在“让分叉变容易”，不在“展示已有分支” |
+| 多 HEAD 造成认知混乱 | 中 | 每个会话明确标 HEAD；当前查看会话加高亮边框 |
+| 图节点过多 | 中 | 折叠 + 节点上限 + 简化渲染 |
+
+---
+
+## 12. 决策（已定，v2）
+
+| # | 决策 | 理由 | 影响 |
+|---|---|---|---|
+| 1 | **一张图 + 文件分组带**；非当前会话**按阈值自动折叠**（节点 > 60 或会话数 > 3），可展开 | 家族通常只有 2–3 个文件、且 fork 子文件只含 root→leaf 路径（节点少）→ 直接铺开最利于"对比分支"；大到一定程度再折叠，避免深链家族把画布撑爆 | 不引入"父为根/子可展开"的第二套导航模型 |
+| 2 | **接受 L0 跨两个仓库** | A2（`session_tree` 订阅）是正确性刚需：不修则终端 `/tree` 一操作 web 就失同步；且它只是**一个事件订阅、不 bump 协议**，成本极小 | L0 的验收因此变得可测（"tmux 切分支后 web 2s 内刷新"） |
+| 3 | **navigate 是默认主路径，fork 是显式次级动作** | navigate 分支留在同一文件 → 与"看树/对比分支"的价值主张一致，且**不产生会话泛滥**；fork 每分一次就多一个文件 + 一个"未运行"死会话，还要求并行跑两个方向才有收益 | 按钮层级：`切到此处` = primary，`从此分叉` = secondary；分期保持 **L2（navigate）先于 L3（fork）** |
+| 4 | **标签以 pi `label` entry 为唯一真源**；L0 只读、L4 写入 | 与"web 与终端是同一个会话"的既定原则一致；pi 终端已有 `Shift+L` 打标签的 UI，用 `meta.json` 会造成**双真源**且终端不可见 | L0 顺带把 `label` 解析做掉（本来就是 B1），写入留 L4 |
+| 5 | **泳道彻底取消**，只保留分层 | 需求明确不要；分层已足以理解分支结构 | 移除泳道分配 + 异形边路由的实现与测试成本 |
+| 6 | **图谱页为独立路由**，与会话页**双向跳转** | 图谱的价值是“定位与导航面”；用户的需求是“从图里点开去会话，从会话回到图” | 单击跨会话节点 = 打开会话并定位；单击同会话节点 = 只选中（不跳页）；会话页加「在图谱中查看」 |
+| 7 | **只做一个 graph 页**，不做图/列表切换 | 需求收敛为“只要一个 graph 页就行” | 移除 v2 的 `SessionTreeList` 与视图切换 |
+
+---
+
+## 13. 可复用的开源资产（已核实许可）
+
+| 工具 | 许可 | 形态 | 结论 |
+|---|---|---|---|
+| **不新增任何 npm 依赖** | — | — | ✅ **自写原生 SVG 图谱**：我们的数据是**树**（家族图仍是树），tidy-tree 布局 ~15 行（mock 已跑通两版）；pan/zoom/命中 ~250 行；全部用 pi 现成 API |
+| pi 自带 `SessionManager.getTree()/getBranch()/header.parentSession` | 内置 | API | ✅ 解析与树能力全部用 pi 现成的，**不自写解析器** |
+| `pi-session-tree-browser` | **MIT** ✅ | pi 扩展，**单文件 138KB**（扩展+内嵌 HTML/JS/CSS） | ⚠️ **只作参考/临时工具，不作依赖**：不是组件库，无法 import；且它会重写 JSONL（违背我们的 append-only 原则） |
+| `pi-context-tree` | **MIT** ✅ | TUI 浮层 + 只读 CLI（`core` 零 pi 依赖） | ️ 设计可参考；**其 web dashboard 仍在 roadmap（未做）** → 证明本功能无现成替代 |
+| `vercel/ai-elements` | **Apache-2.0** | shadcn 注册表 | ⚠️ 只有 `conversation.tsx` / `file-tree.tsx`，**没有 conversation-tree**（且是列表不是图） |
+| `tryelements.dev` 的 conversation-tree | ❓来源不明 | 第三方 shadcn 注册表 | ❌ 不引入 |
+| `tldraw` | ⚠️ source-available（非 OSS） | 无限画布 | ❌ 许可不允许，仅借鉴交互 |
+
+**确定不做的**：**不新增任何 npm 依赖**；不引 `pi-session-tree-browser` 作为依赖；不用 tldraw；不用来源不明的注册表。
+
+**为什么不用 React Flow**：它主要省的是 canvas/pan-zoom/命中测试，但对**树**这种结构，自写布局比引入通用图引擎更短；而且它自带的节点/边样式与设计令牌（HEAD 徽标、文件分组带、fork 虚线边）会打架。自写的代价是失去视口虚拟化 → 用**节点上限 + 线性段折叠 + 视口裁剪**对冲（**这些本来就因真实数据规模而必需**，见 Phase 0）。
+
+---
+
+## 14. 实施计划
+
+### Phase 0 — 零依赖数据验证（**已完成**）
+
+不装任何东西，直接扫真实会话文件（`~/.pi/agent/sessions/*/*.jsonl`，最近 336 个）：
+
+| 指标 | 结果 | 含义 |
+|---|---|---|
+| 文件由 fork 产生（有 `parentSession`） | **3 / 336** | 跨文件家族极罕见 |
+| 文件内存在分支点 | **10 / 336** | **97% 的会话是纯线性** |
+| 分支点分布 (0,1,2,3) | 326 / 7 / 2 / 1 | 树形工作目前几乎没被用起来 |
+| entries 中位数 / p90 / p99 / 最大 | **110 / 1079 / 4682 / 7176** | 中位数很小 → 自写 SVG 完全够用 |
+| 单文件体积 p50 / p90 / 最大 | **0.38MB / 5.55MB / 764MB** | 尾部极重 → **必须有界读取 + 节点上限** |
+| >1000 entries 的会话 | 38 / 336（11%） | 折叠线性段是刚需 |
+
+**两条结论**
+
+1. **只读图谱的独立价值低**（97% 情况是一条直线）→ 真正的价值在**让“分叉/切分支”变便宜**。因此 **L0 必须与最小写动作（切分支）同批交付**，否则图谱做出来没东西可看。
+2. 渲染选择被数据证实：中位数 110 节点 → **自写 SVG 足够**；11% 的大会话靠折叠 + 上限处理。
+
+### Phase 1 — 两个探针（约 30 分钟）
+
+| # | 探针 | 方法 | 若失败则 |
+|---|---|---|---|
+| 1 | fork 文件的 root entry 的 `parentId` 是否指向**父文件**的 entry id | 造一段会话 → `fork` → 读新文件首个 entry 的 `parentId` | 家族图退化为“按时间戳近似挂载”（但 fork 仅 3 个文件，影响面小） |
+| 2 | 斜杠命令的 `ctx` 是否含 `navigateTree`/`fork` | 在 bridge 打一行 `typeof ctx.navigateTree` | 退回到结构化命令（需加协议字段，但不阻塞只读图谱） |
+
+### Phase 2 — 实施（6 步，**零新增依赖 + 零协议变更**）
+
+| 步骤 | 仓库 | 产出 | 估时 |
+|---|---|---|---|
+| **2.1 解析 + 家族（纯函数，先写测试）** | pi-dashboard | `backend/live-sessions/tree/parse.ts`（**有界读取**：>20MB 只读尾部；扩 `label` 与 `header.parentSession`；派生字段）、`family.ts`、`cache.ts`（`path+mtime+size`）；`backend/__tests__/live-session-tree.test.js` | 1.5d |
+| **2.2 端点** | pi-dashboard | `GET /api/live-sessions/:pid/tree`（只读）；校验 `sessionFile` 在 `<agentDir>/sessions/` 内；节点上限 + **长线性段折叠** | 0.5d |
+| **2.3 bridge：事件 + 两个斜杠命令** | **pi-tsien-extension** | `pi.on('session_tree')` → `markChanged()` + publish；`pi.registerCommand('ls-navigate'\|'ls-fork')` → `ctx.navigateTree`/`ctx.fork` + lease 校验 | 0.5d |
+| **2.4 图谱页（原生 SVG）** | pi-dashboard | `frontend/src/features/session-tree/`：`SessionFamilyGraph.tsx`（SVG + pan/zoom）、`layout.ts`（tidy-tree ~15 行）、`GraphNode.tsx`、`BranchDetailPanel.tsx`、`useSessionFamily.ts`；`App.tsx` 加路由 | 2d |
+| **2.5 写动作接入** | pi-dashboard | 「切到此处 / 从此分叉」→ 走已有 `/commands` 端点发 `input:'/ls-navigate <id>'`；预览/提交分离 + 撤销条 | 0.5d |
+| **2.6 双向跳转 + 只读会话** | pi-dashboard | 节点→会话（`?session=&node=`）、会话→图谱（`?focus=&node=`）、`ReadonlySessionView` | 1d |
+
+合计约 **6 人日**；**无新依赖、无协议变更、无版本兼容风险**。
+
+### Phase 3 — 验收
+
+按 §10 L0 的 10 条验收逐条跑；额外必跑：
+```bash
+cd /mnt/workspace/lilong/repos/pi-dashboard && npm run typecheck && npm test
+cd frontend && npm run typecheck && npm test && npm run check:theme-cvd
+cd /mnt/workspace/lilong/repos/pi-tsien-extension && npm run check
+```
+
+### Phase 4 — 交付
+
+- pi-tsien-extension 改动属**仓库直加载**，无需构建/同步
+- ⚠️ **已运行的 live session 需 `/reload`** 才能加载新 bridge 代码
+- 前端重建 + 服务重启由**用户执行 `./run.sh`**
+
+### Phase 5+（后续，不在本次范围）
+
+L1 侧栏森林增强 → L3 fork/未运行会话启动 → L4 标签写入。（原 L2 “协议 v3 + 区间兼容”已并入 Phase 2.3/2.5，**不再需要**）
