@@ -29,11 +29,13 @@ import {
   createLiveSessionRoutes,
   registerUsageRoutes,
   registerPtyRoutes,
+  registerTaskRoutes,
   type LiveSessionRoutes,
 } from './routes/index.js'
 import { extensionBridgeRegistry } from './extension-bridge/registry.js'
 import { rpcExtensionBridgeServer } from './extension-bridge/rpc-server.js'
-import { getDashConfig } from './pi-env.js'
+import { getDashConfig, getTasksConfig } from './pi-env.js'
+import { TaskService } from './tasks/service.js'
 import { parseLiveSessionConfig } from './live-sessions/config.js'
 import { LiveSessionBrowserAuth } from './live-sessions/auth.js'
 import { LiveSessionBroker } from './live-sessions/broker.js'
@@ -890,6 +892,18 @@ registerJobsRoutes(routeDeps)
 registerIntegrationRoutes(routeDeps)
 registerUsageRoutes({ app, ledger: usageLedger })
 registerPtyRoutes({ app, auth: liveSessionAuth })
+
+const taskService = new TaskService({
+  getConfig: () => getTasksConfig(),
+  listLiveSessions: () => liveSessionRegistry.list().map(s => ({
+    sessionId: s.sessionId,
+    processInstanceId: s.processInstanceId,
+    cwd: s.canonicalCwd || s.cwd,
+    title: s.sessionName,
+    tags: [],
+  })),
+})
+registerTaskRoutes({ app, service: taskService })
 void liveSessionAuth.start().then(() => {
   console.log(`[pty] Terminal control token: ${liveSessionAuth.tokenPath}`)
 }).catch(error => console.error('[pty] Failed to init terminal auth:', error))
