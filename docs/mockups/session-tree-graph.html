@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-dashboard · 会话图谱 + 会话页双向跳转（mock v3）</title>
+<style>
+:root[data-theme="dark"]{
+  --bg:#191724;--bg-accent:#1f1d2e;--bg-elevated:#26233a;--bg-hover:#2a2740;
+  --text:#e0def4;--text-strong:#fff;--muted:#908caa;--muted-strong:#6e6a86;
+  --border:#26233a;--border-strong:#393552;--border-hover:#524f67;
+  --accent:#c4a7e7;--accent-subtle:rgba(196,167,231,.15);--accent-fg:#1b1725;
+  --ok:#9ccfd8;--ok-subtle:rgba(156,207,216,.12);--ok-fg:#12141c;
+  --warn:#f6c177;--warn-subtle:rgba(246,193,119,.12);
+  --danger:#eb6f92;--danger-subtle:rgba(235,111,146,.12);
+  --info:#31748f;--info-fg:#9ccfd8;--info-subtle:rgba(49,116,143,.16);
+  --page:#131118;--chrome:#1f1d2e;--shadow-color:268 20% 4%;
+}
+:root[data-theme="light"]{
+  --bg:#faf9ff;--bg-accent:#f1effa;--bg-elevated:#fff;--bg-hover:#e9e6f5;
+  --text:#302a41;--text-strong:#1b1725;--muted:#6e6a86;--muted-strong:#908caa;
+  --border:#e2dfef;--border-strong:#d3cfe6;--border-hover:#b9b3d1;
+  --accent:#7b5aa8;--accent-subtle:rgba(123,90,168,.12);--accent-fg:#fff;
+  --ok:#2b7a8c;--ok-subtle:rgba(43,122,140,.1);--ok-fg:#fff;
+  --warn:#b1650c;--warn-subtle:rgba(246,193,119,.18);
+  --danger:#b4405f;--danger-subtle:rgba(180,64,95,.1);
+  --info:#31748f;--info-fg:#2b6d80;--info-subtle:rgba(49,116,143,.12);
+  --page:#f5f3fb;--chrome:#f1effa;--shadow-color:268 30% 45%;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text);
+  font:14px/1.55 "Space Grotesk",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;padding:26px 22px 60px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+h1{font-size:20px;margin:0 0 4px;color:var(--text-strong);letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:13px;margin:0 0 18px;max-width:1000px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+  margin:34px 0 12px;font-weight:600;display:flex;align-items:center;gap:10px}
+h2::after{content:"";flex:1;height:1px;background:var(--border)}
+.topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
+button.theme{background:var(--bg-elevated);color:var(--text);border:1px solid var(--border-strong);
+  border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer}
+.app{display:grid;grid-template-columns:250px 1fr 300px;height:700px;
+  background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;
+  box-shadow:0 18px 50px hsl(var(--shadow-color)/.30)}
+.appbar{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:8px 12px;
+  background:var(--chrome);border-bottom:1px solid var(--border);min-width:0;flex-wrap:wrap}
+.appbar .t{font-weight:600;color:var(--text-strong);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.appbar .meta{font-size:11px;color:var(--muted);white-space:nowrap}
+.pill{font-size:10px;padding:2px 7px;border-radius:99px;border:1px solid var(--border-strong);color:var(--muted);white-space:nowrap}
+.pill.warn{color:var(--warn);border-color:var(--warn);background:var(--warn-subtle)}
+.pill.info{color:var(--info-fg);border-color:var(--info);background:var(--info-subtle)}
+.pill.ok{color:var(--ok);border-color:var(--ok);background:var(--ok-subtle)}
+.pill.on{color:var(--accent);border-color:var(--accent);background:var(--accent-subtle)}
+.lease{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 8px;border-radius:99px;
+  border:1px solid var(--border-strong);cursor:pointer;background:transparent;color:var(--muted)}
+.lease.on{color:var(--ok);border-color:var(--ok);background:var(--ok-subtle)}
+.lease .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.back{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:8px;
+  border:1px solid var(--accent);color:var(--accent);background:transparent;cursor:pointer;font-weight:600}
+.back:hover{background:var(--accent-subtle)}
+select{background:var(--bg-elevated);color:var(--text);border:1px solid var(--border-strong);
+  border-radius:8px;padding:4px 7px;font-size:11.5px}
+.spacer{flex:1}
+.sim{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);cursor:pointer;
+  border:1px dashed var(--info);border-radius:8px;padding:3px 8px}
+.sim input{accent-color:var(--accent)}
+.side{background:var(--bg-accent);border-right:1px solid var(--border);overflow-y:auto;padding:8px 6px 14px}
+.side .hd{display:flex;justify-content:space-between;padding:6px 8px 8px}
+.side .lbl{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.fam{margin:2px 0 12px}
+.famhd{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:8px;cursor:pointer}
+.famhd:hover{background:var(--bg-hover)}
+.famhd .pin{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.famhd .pin.dead{background:var(--muted-strong)}
+.famhd .nm{font-size:12.5px;color:var(--text-strong);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.famhd .cwd{font-size:10px;color:var(--muted-strong);font-family:"JetBrains Mono",monospace}
+.row{display:flex;align-items:center;gap:7px;padding:5px 8px 5px 18px;border-radius:7px;cursor:pointer;
+  border-left:2px solid transparent;min-width:0}
+.row:hover{background:var(--bg-hover)}
+.row.active{background:var(--accent-subtle);border-left-color:var(--accent)}
+.row .ic{font-size:11px;width:14px;text-align:center;flex:none;opacity:.85}
+.row .tx{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.row .bd{margin-left:auto;flex:none}
+.sub{margin:4px 0 0 22px;border-left:1px dashed var(--border-strong);padding-left:8px}
+/* graph */
+.canvas{position:relative;background:var(--bg);overflow:hidden}
+.canvas svg{width:100%;height:100%;display:block;cursor:grab}
+.canvas svg.dragging{cursor:grabbing}
+.tools{position:absolute;top:10px;left:10px;display:flex;gap:5px;align-items:center;
+  background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;padding:5px 7px;
+  box-shadow:0 6px 18px hsl(var(--shadow-color)/.22)}
+.tools button{background:transparent;border:1px solid transparent;color:var(--text);font-size:12px;
+  min-width:26px;height:24px;border-radius:6px;cursor:pointer;display:grid;place-items:center}
+.tools button:hover{border-color:var(--border-hover);background:var(--bg-hover)}
+.tools .sep{width:1px;height:18px;background:var(--border-strong)}
+.legend{position:absolute;bottom:10px;left:10px;background:var(--bg-elevated);border:1px solid var(--border);
+  border-radius:10px;padding:8px 10px;font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:5px;
+  box-shadow:0 6px 18px hsl(var(--shadow-color)/.18)}
+.legend div{display:flex;align-items:center;gap:7px}
+.legend .sw{width:20px;height:0;border-top-width:2px;border-top-style:solid;flex:none}
+.banner{position:absolute;top:10px;left:50%;transform:translateX(-50%);font-size:11px;border-radius:99px;
+  padding:4px 12px;display:none;max-width:70%;text-align:center}
+.banner.show{display:block}
+.banner.warn{background:var(--warn-subtle);color:var(--warn);border:1px solid var(--warn)}
+.banner.err{background:var(--danger-subtle);color:var(--danger);border:1px solid var(--danger)}
+.undobar{position:absolute;top:52px;left:50%;transform:translateX(-50%);font-size:11.5px;border-radius:8px;
+  padding:6px 10px;display:none;align-items:center;gap:10px;background:var(--bg-elevated);
+  border:1px solid var(--border-strong);border-left:3px solid var(--accent);
+  box-shadow:0 8px 22px hsl(var(--shadow-color)/.28)}
+.undobar.show{display:flex}
+.undobar button{background:transparent;border:1px solid var(--accent);color:var(--accent);border-radius:6px;
+  font-size:11px;padding:2px 8px;cursor:pointer}
+.toast{position:absolute;bottom:14px;right:14px;background:var(--bg-elevated);border:1px solid var(--border-strong);
+  border-left:3px solid var(--ok);border-radius:8px;padding:9px 13px;font-size:12px;color:var(--text);
+  box-shadow:0 10px 26px hsl(var(--shadow-color)/.3);opacity:0;transform:translateY(6px);
+  transition:opacity .2s,transform .2s;pointer-events:none;max-width:340px}
+.toast.show{opacity:1;transform:none}
+.toast.warn{border-left-color:var(--warn)}
+/* svg */
+.gband{fill:var(--info-subtle);stroke:var(--info);stroke-width:1;stroke-dasharray:5 4}
+.gband.current{fill:var(--accent-subtle);stroke:var(--accent)}
+.gband-label{font-size:10px;font-weight:700}
+.nd{cursor:pointer}
+.nd text{pointer-events:none}
+.nd .role{font-size:9.5px;font-weight:700;letter-spacing:.04em}
+.nd .title{font-size:11px}
+.nd-h:hover .nd-bg,.nd.sel .nd-bg{stroke:var(--accent)}
+.nd.sel .nd-bg{stroke-width:2.4}
+.edge{fill:none;stroke:var(--border-strong);stroke-width:1.6}
+.edge.on{stroke:var(--accent);stroke-width:2.2}
+.edge.fork{stroke:var(--info);stroke-width:2;stroke-dasharray:6 4}
+.edge.fork.on{stroke:var(--accent)}
+.elabel{font-size:9.5px;font-weight:700}
+.tgt{fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:3 3}
+/* session page */
+.session{position:relative;display:flex;flex-direction:column;background:var(--bg);overflow:hidden;grid-column:2/4}
+.transcript{flex:1;overflow-y:auto;padding:16px 20px 10px;display:flex;flex-direction:column;gap:12px}
+.turn{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border-radius:10px;border:1px solid transparent}
+.turn.user{background:var(--bg-accent)}
+.turn.assistant{background:transparent}
+.turn.tool{background:var(--bg-elevated);font-size:12px;color:var(--muted)}
+.turn .ic{flex:none;font-size:13px;width:18px;text-align:center;opacity:.9}
+.turn .body{min-width:0;flex:1}
+.turn .who{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.turn .txt{font-size:13px;line-height:1.6;color:var(--text)}
+.turn.focus{border-color:var(--accent);background:var(--accent-subtle)}
+.turn.focus .who{color:var(--accent)}
+.composer{border-top:1px solid var(--border);padding:10px 20px 14px;display:flex;gap:8px;align-items:center}
+.composer input{flex:1;background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:9px;
+  padding:9px 11px;color:var(--text);font-size:13px}
+.composer input:disabled{opacity:.5;cursor:not-allowed}
+.composer button{background:var(--accent);color:var(--accent-fg);border:0;border-radius:9px;padding:9px 14px;
+  font-size:12.5px;font-weight:600;cursor:pointer}
+.composer button:disabled{opacity:.42;cursor:not-allowed}
+.ro{background:var(--warn-subtle);color:var(--warn);border:1px solid var(--warn);border-radius:8px;
+  padding:7px 10px;font-size:11.5px;margin:10px 20px 0;display:flex;align-items:center;gap:8px}
+/* detail */
+.detail{background:var(--bg-accent);border-left:1px solid var(--border);padding:12px;overflow-y:auto;
+  display:flex;flex-direction:column;gap:11px}
+.detail .empty{color:var(--muted);font-size:12px;text-align:center;margin-top:40px;line-height:1.75}
+.hd{display:flex;align-items:center;gap:8px}
+.hd .ic{font-size:15px}
+.hd .rl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)}
+.hd .ts{font-size:10px;color:var(--muted-strong);margin-left:auto}
+.card{background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:10px;font-size:12px;
+  line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:190px;overflow-y:auto}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-size:10px;padding:2px 7px;border-radius:99px;border:1px solid var(--border-strong);color:var(--muted)}
+.chip.on{color:var(--accent);border-color:var(--accent);background:var(--accent-subtle)}
+.chip.warn{color:var(--warn);border-color:var(--warn);background:var(--warn-subtle)}
+.chip.info{color:var(--info-fg);border-color:var(--info);background:var(--info-subtle)}
+.acts{display:flex;flex-direction:column;gap:7px}
+.b{padding:8px 10px;border-radius:8px;font-size:12.5px;cursor:pointer;text-align:left;border:1px solid var(--border-strong);
+  background:transparent;color:var(--text);display:flex;align-items:center;gap:8px}
+.b:hover:not(:disabled){border-color:var(--border-hover);background:var(--bg-hover)}
+.b.primary{background:var(--accent);color:var(--accent-fg);border-color:transparent;font-weight:600}
+.b.nav{border-color:var(--info);color:var(--info-fg)}
+.b:disabled{opacity:.42;cursor:not-allowed}
+.b .k{margin-left:auto;font-size:9.5px;color:var(--muted-strong);font-family:"JetBrains Mono",monospace}
+.b.primary .k{color:var(--accent-fg);opacity:.75}
+.hint{font-size:10.5px;color:var(--muted);line-height:1.6}
+.hint.warn{color:var(--warn)}
+.sec{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-strong);font-weight:600}
+.kv{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);gap:8px}
+.kv b{color:var(--text);font-weight:600}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-top:16px}
+.note{background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;padding:11px 13px;
+  font-size:12px;color:var(--muted);line-height:1.65}
+.note b{color:var(--text);display:block;margin-bottom:3px}
+.note code{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>会话图谱 ↔ agent session 双向跳转 — Mock v3</h1>
+    <p class="sub">按你的要求收敛：<b>取消泳道</b>、<b>只保留一个 graph 页</b>、并加上 <b>graph ↔ agent session 双向跳转</b>。<br>
+    试：① 图谱里点 <b>file A</b> 的任意节点 → 直接打开 A 会话并定位到那条消息（A 未运行 → 只读）；② 在会话页点左上「⛶ 在图谱中查看」→ 回到图谱并高亮。③ 点 <b>file B</b>（当前会话）的节点 → 只选中，不跳页。</p>
+  </div>
+  <button class="theme" id="themeBtn">切换明/暗主题</button>
+</div>
+
+<div class="app">
+  <div class="appbar" id="appbar"></div>
+  <aside class="side">
+    <div class="hd"><span class="lbl">Families</span><span class="lbl mono">2</span></div>
+    <div id="forest"></div>
+  </aside>
+  <main id="main"></main>
+  <aside class="detail" id="detail"></aside>
+</div>
+
+<h2>关键交互（请在 mock 里试）</h2>
+<div class="notes">
+  <div class="note"><b>① 跨会话节点 = 打开会话</b>图谱上点 file A 的节点，直接跳到 A 的 agent session 并<b>定位</b>到那条消息。这是你要的“点开即打开对应 agent session”。</div>
+  <div class="note"><b>② 同会话节点 = 只选中</b>点当前会话（file B）的节点<b>不跳页</b>，只在右侧看详情。避免浏览家族图时被反复弹出。</div>
+  <div class="note"><b>③ 会话页回图谱</b>会话页左上「⛶ 在图谱中查看」，回到图谱并<b>高亮该会话分组 + 选中该节点</b>，形成闭环。</div>
+  <div class="note"><b>④ 未运行会话也能“打开”</b>file A 没有 pi 进程 → 打开的是<b>只读转录</b>（数据就是家族解析的同一份 JSONL），输入框禁用并标“未运行”。</div>
+  <div class="note"><b>⑤ 取消泳道</b>只剩<b>分层</b>布局（横轴 = 分支深度）。图/列表切换也已取消，只保留一个 graph 页。</div>
+  <div class="note"><b>⑥ 三种状态仍分离</b>废弃分支（同文件，淡化）／未运行会话（会话级徽标）／未持久化（无 sessionFile）——语义与视觉都不同。</div>
+  <div class="note"><b>⑦ 写操作仍受 lease 控制</b>「切到此处 / 从此分叉」在 L0 是置灰的；勾选「模拟 L2 写操作」后可用，并且切换后会出现<b>撤销条</b>。</div>
+  <div class="note"><b>⑧ 状态演示</b>顶栏可切 家族降级 / 截断 / 未持久化 / navigate 失败，检查边界态。</div>
+</div>
+
+<script>
+/* ═══════════ 数据 ═══════════ */
+/* 文件 A 写入顺序：u1,a1,t1,u2,a2,u2b,a2b,u3,a3 → 最后一行 a3 = HEAD_A */
+const nodes = [
+  { id:'u1',  f:'A', parent:null, seq:0,  role:'user',       text:'帮我实现 LiveSession 的会话树视图', ts:'10:02' },
+  { id:'a1',  f:'A', parent:'u1', seq:1,  role:'assistant',  text:'我先看一下现有 live-sessions 数据模型…', tools:['read','bash'], ts:'10:02' },
+  { id:'t1',  f:'A', parent:'a1', seq:2,  role:'toolResult', text:'read backend/live-sessions/registry.ts', tools:['read'], ts:'10:03' },
+  { id:'u2',  f:'A', parent:'t1', seq:3,  role:'user',       text:'方案 A：从 sessionFile 解析完整树', ts:'10:05' },
+  { id:'a2',  f:'A', parent:'u2', seq:4,  role:'assistant',  text:'可行，parseSessionTree 已存在', ts:'10:05' },
+  { id:'u2b', f:'A', parent:'t1', seq:5,  role:'user',       text:'方案 B：扩展 bridge 下发 getTree()', ts:'10:06' },
+  { id:'a2b', f:'A', parent:'u2b',seq:6,  role:'assistant',  text:'需要 bump 协议版本，payload 变大', ts:'10:06' },
+  { id:'u3',  f:'A', parent:'a2', seq:7,  role:'user',       text:'再加一个可视化图页面', ts:'10:08' },
+  { id:'a3',  f:'A', parent:'u3', seq:8,  role:'assistant',  text:'用 React Flow 做分层布局', ts:'10:09' },
+  /* fork 文件 B：root.parentId 指向 A 的 t1（跨文件） */
+  { id:'u4',  f:'B', parent:'t1', seq:9,  role:'user',       text:'（fork 自 A 的探索点）先做只读家族树', ts:'10:20' },
+  { id:'a4',  f:'B', parent:'u4', seq:10, role:'assistant',  text:'好，先出只读图页面', ts:'10:20' },
+  { id:'u5',  f:'B', parent:'a4', seq:11, role:'user',       text:'加上 graph ↔ session 双向跳转', ts:'10:24' },
+  { id:'a5',  f:'B', parent:'u5', seq:12, role:'assistant',  text:'图谱点节点即可打开对应会话，会话页可回图谱', ts:'10:25' },
+]
+const byId = new Map(nodes.map(n => [n.id, n]))
+const childMap = new Map()
+nodes.forEach(n => { const p = n.parent ?? '__root'; if (!childMap.has(p)) childMap.set(p, []); childMap.get(p).push(n.id) })
+for (const [, k] of childMap) k.sort((a,b) => byId.get(a).seq - byId.get(b).seq)
+
+const SESSIONS = {
+  A: { name:'file A · feat-session-tree', alive:false, head:'a3', cwd:'~/repos/pi-dashboard', model:'anthropic/claude-sonnet-4.5' },
+  B: { name:'file B · feat-session-tree (fork)', alive:true, head:'a5', cwd:'~/repos/pi-dashboard', model:'anthropic/claude-sonnet-4.5' },
+}
+const OTHER = { C:{ name:'file C · ocr-postprocess', alive:true, head:'c3', cwd:'~/repos/iraq-ocr-postprocess', model:'anthropic/claude-sonnet-4.5' } }
+const allSessions = { ...SESSIONS, ...OTHER }
+const activePath = new Set()
+function rebuildActivePath() {
+  activePath.clear()
+  for (const [f, s] of Object.entries(SESSIONS)) {
+    let cur = s.head
+    while (cur && byId.get(cur).f === f) { activePath.add(cur); cur = byId.get(cur).parent }
+  }
+}
+rebuildActivePath()
+const isBranchPoint = id => (childMap.get(id) || []).length > 1
+
+/* ═══════════ 状态 ═══════════ */
+const state = {
+  page:'graph',            // 'graph' | 'session'
+  openSession:'B',         // 当前打开的会话（图谱里“当前会话”的判定依据）
+  selected:null,           // 图谱选中 / 会话页定位的节点
+  lease:true, sim:false, filter:'all', demo:'normal',
+}
+const NW=196, NH=44, GX=84, GY=20
+const vp = () => document.getElementById('vp')
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+const trunc = (s,n) => s.length > n ? s.slice(0,n-1)+'…' : s
+function roleStyle(r) {
+  switch (r) {
+    case 'user':       return { ic:'', color:'var(--accent)', label:'USER' }
+    case 'assistant':  return { ic:'🤖', color:'var(--text)',   label:'ASSISTANT' }
+    case 'toolResult': return { ic:'', color:'var(--info)',   label:'TOOL' }
+    default:           return { ic:'·',  color:'var(--muted)',  label:'SYSTEM' }
+  }
+}
+const degrade = () => state.demo === 'degraded'
+/* 某会话的活动分支（根→叶），用于会话页转录 */
+function activeBranch(f) {
+  const out = []; let cur = allSessions[f].head
+  while (cur && byId.get(cur) && byId.get(cur).f === f) { out.unshift(cur); cur = byId.get(cur).parent }
+  return out
+}
+
+/* ═══════════ Appbar ═══════════ */
+function renderAppbar() {
+  const bar = document.getElementById('appbar')
+  const sess = allSessions[state.openSession]
+  const common = `
+    <button class="lease ${state.lease?'on':''}" id="leaseBtn"><span class="dot"></span>${state.lease?'可控':'只读'}</button>
+    <select id="stateSel" aria-label="状态演示">
+      <option value="normal"${state.demo==='normal'?' selected':''}>状态：正常</option>
+      <option value="degraded"${state.demo==='degraded'?' selected':''}>状态：家族降级</option>
+      <option value="truncated"${state.demo==='truncated'?' selected':''}>状态：树已截断</option>
+      <option value="ephemeral"${state.demo==='ephemeral'?' selected':''}>状态：未持久化</option>
+      <option value="error"${state.demo==='error'?' selected':''}>状态：navigate 失败</option>
+    </select>`
+  if (state.page === 'session') {
+    bar.innerHTML = `
+      <button class="back" id="backBtn" title="回到图谱（聚焦当前会话与节点）">⛶ 在图谱中查看</button>
+      <span class="t">${esc(sess.name)}</span>
+      <span class="meta mono">${esc(sess.model)}</span>
+      ${sess.alive ? `<span class="pill ok">运行中</span>` : `<span class="pill warn">未运行 · 只读</span>`}
+      <span class="spacer"></span>${common}`
+  } else {
+    bar.innerHTML = `
+      <span class="t">⛶ 会话图谱 · fam feat-session-tree</span>
+      <span class="meta mono">2 个文件 · 13 节点</span>
+      <span class="pill info" id="curPill">当前会话：${state.openSession}</span>
+      <span class="spacer"></span>
+      <label class="sim" title="L0 只读；勾选后启用模拟写操作（仅演示交互）">
+        <input type="checkbox" id="simTgl" ${state.sim?'checked':''}> 模拟 L2 写操作</label>
+      <select id="filterSel" aria-label="过滤器">
+        <option value="all"${state.filter==='all'?' selected':''}>全部节点</option>
+        <option value="user"${state.filter==='user'?' selected':''}>仅用户消息</option>
+        <option value="no-tools"${state.filter==='no-tools'?' selected':''}>隐藏工具</option>
+      </select>
+      ${common}`
+  }
+  const lb = document.getElementById('leaseBtn')
+  if (lb) lb.onclick = () => { state.lease = !state.lease; renderAll(); toast(state.lease?'已持有控制权（lease 30s）':'只读模式：写操作置灰') }
+  const bt = document.getElementById('backBtn')
+  if (bt) bt.onclick = () => { state.page='graph'; renderAll(); toast('已回到图谱，并聚焦当前会话与节点'); setTimeout(focusSelected, 30) }
+  const st = document.getElementById('stateSel')
+  if (st) st.onchange = e => { state.demo = e.target.value; renderAll() }
+  const sm = document.getElementById('simTgl')
+  if (sm) sm.onchange = e => { state.sim = e.target.checked; renderAll() }
+  const fs = document.getElementById('filterSel')
+  if (fs) fs.onchange = e => { state.filter = e.target.value; renderAll() }
+}
+
+/* ══════════ 侧栏 ═══════════ */
+function renderForest() {
+  document.getElementById('forest').innerHTML = `
+    <div class="fam">
+      <div class="famhd"><span class="pin"></span>
+        <div style="min-width:0"><div class="nm">fam · feat-session-tree</div><div class="cwd">~/repos/pi-dashboard</div></div></div>
+      <div class="row ${state.openSession==='A'?'active':''}" data-s="A"><span class="ic">⎇</span>
+        <span class="tx">file A · 主干</span><span class="bd pill warn">未运行</span></div>
+      <div class="row ${state.openSession==='B'?'active':''}" data-s="B"><span class="ic">⎇</span>
+        <span class="tx">file B · fork</span><span class="bd pill info">运行中</span></div>
+      <div class="sub"><div class="row" data-s="B"><span class="ic">🌿</span><span class="tx">subagent · wf_3f21</span><span class="bd pill">3 轮</span></div></div>
+    </div>
+    <div class="fam">
+      <div class="famhd"><span class="pin"></span>
+        <div style="min-width:0"><div class="nm">fam · ocr-postprocess</div><div class="cwd">~/repos/iraq-ocr-postprocess</div></div></div>
+      <div class="row" data-s="C"><span class="ic"></span><span class="tx">主干</span><span class="bd pill ok">运行中</span></div>
+    </div>`
+  document.querySelectorAll('#forest .row[data-s]').forEach(el =>
+    el.addEventListener('click', () => openSession(el.dataset.s, null)))
+}
+
+/* ══════════ 图谱页 ═══════════ */
+function computeLayout() {
+  const pos = new Map(); let row = 0
+  function dfs(id, depth) {
+    const kids = (childMap.get(id) || [])
+    let y
+    if (!kids.length) y = row++
+    else { const ys = kids.map(k => dfs(k, depth+1)); y = (ys[0] + ys[ys.length-1]) / 2 }
+    pos.set(id, { x: depth*(NW+GX), y: y*(NH+GY) })
+    return y
+  }
+  ;(childMap.get('__root') || []).forEach(id => dfs(id, 0))
+  return pos
+}
+function renderGraph() {
+  const main = document.getElementById('main')
+  main.className = 'canvas'
+  const showA = !degrade()
+  main.innerHTML = `
+    <svg id="svg"><g id="vp"></g></svg>
+    <div class="tools">
+      <button id="zin" title="放大">＋</button><button id="zout" title="缩小">－</button>
+      <button id="fit" title="适配视图 (F)"></button><span class="sep"></span>
+      <button id="forkTop" title="从选中节点分叉（需模拟 L2）"></button>
+    </div>
+    <div class="banner warn" id="bannerWarn"></div>
+    <div class="banner err" id="bannerErr"></div>
+    <div class="undobar ${state.undo?'show':''}" id="undobar"><span id="undoTxt">${state.undo?state.undo.text:''}</span><button id="undoBtn">撤销</button></div>
+    <div class="legend">
+      <div><span class="sw" style="border-color:var(--accent)"></span>活动路径 / 当前会话</div>
+      <div><span class="sw" style="border-color:var(--border-strong)"></span>废弃分支（同文件，淡化）</div>
+      <div><span class="sw" style="border-color:var(--info);border-top-style:dashed"></span>fork 边（跨文件）</div>
+      <div><span class="pill warn" style="font-size:9px">未运行</span>会话无进程（点开=只读）</div>
+    </div>
+    <div class="toast" id="toast"></div>`
+  const pos = computeLayout()
+  const list = nodes.filter(n => showA || n.f !== 'A')
+  const maxX = Math.max(0, ...[...pos.values()].map(p => p.x)) + NW + 90
+  const maxY = Math.max(0, ...[...pos.values()].map(p => p.y)) + NH + 90
+  const svg = document.getElementById('svg')
+  svg.setAttribute('viewBox', `0 0 ${Math.max(maxX,640)} ${Math.max(maxY,320)}`)
+  let out = ''
+  /* 分组带 */
+  for (const f of ['A','B']) {
+    const ps = list.filter(n => n.f === f).map(n => pos.get(n.id)).filter(Boolean)
+    if (!ps.length) continue
+    const x0 = Math.min(...ps.map(p=>p.x))-14, y0 = Math.min(...ps.map(p=>p.y))-28
+    const x1 = Math.max(...ps.map(p=>p.x))+NW+14, y1 = Math.max(...ps.map(p=>p.y))+NH+14
+    const cur = f === state.openSession
+    out += `<rect class="gband ${cur?'current':''}" x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" rx="12"/>
+      <text class="gband-label" x="${x0+10}" y="${y0+15}" fill="${cur?'var(--accent)':'var(--info-fg)'}">${esc(SESSIONS[f].name)}${cur?' · 当前':''}</text>`
+    if (!SESSIONS[f].alive)
+      out += `<rect x="${x1-58}" y="${y0+4}" width="52" height="13" rx="6.5" fill="var(--warn-subtle)" stroke="var(--warn)"/>
+        <text class="elabel" x="${x1-32}" y="${y0+13.5}" text-anchor="middle" fill="var(--warn)">未运行</text>`
+  }
+  /* 边 */
+  for (const n of list) {
+    if (!n.parent) continue
+    const a = pos.get(n.parent), b = pos.get(n.id)
+    if (!a || !b) continue
+    const cross = byId.get(n.parent).f !== n.f
+    const on = cross ? (n.f === state.openSession) : (activePath.has(n.id) && activePath.has(n.parent))
+    const ax = a.x+NW, ay = a.y+NH/2, bx = b.x, by = b.y+NH/2
+    out += `<path class="edge ${cross?'fork':''} ${on?'on':''}" d="M${ax},${ay} C${ax+46},${ay} ${bx-46},${by} ${bx},${by}"/>`
+    if (cross) out += `<text class="elabel" x="${(ax+bx)/2}" y="${(ay+by)/2-6}" text-anchor="middle" fill="var(--info-fg)">fork</text>`
+  }
+  /* 节点 */
+  for (const n of list) {
+    const p = pos.get(n.id); if (!p) continue
+    const st = roleStyle(n.role), on = activePath.has(n.id)
+    const isHead = SESSIONS[n.f].head === n.id
+    const dimF = state.filter !== 'all' && !(state.filter==='user' ? n.role==='user' : n.role!=='toolResult')
+    const op = dimF ? 0.16 : (on ? 1 : 0.55)
+    const x = p.x, y = p.y
+    const cur = n.f === state.openSession
+    const stroke = on ? 'var(--accent)' : (cur ? 'var(--border-hover)' : 'var(--border)')
+    let deco = ''
+    if (isHead) deco += `<rect x="${x+NW-42}" y="${y-9}" width="40" height="15" rx="7.5" fill="var(--accent)"/>
+      <text class="elabel" x="${x+NW-22}" y="${y+2}" text-anchor="middle" fill="var(--accent-fg)">HEAD</text>`
+    if (isBranchPoint(n.id)) deco += `<circle cx="${x+NW}" cy="${y+NH/2}" r="5" fill="var(--accent)"/>
+      <text class="elabel" x="${x+NW+10}" y="${y+NH/2+3.5}" fill="var(--accent)">${(childMap.get(n.id)||[]).length}</text>`
+    const ring = state.selected === n.id ? `<rect class="tgt" x="${x-5}" y="${y-5}" width="${NW+10}" height="${NH+10}" rx="13"/>` : ''
+    const sameSess = n.f === state.openSession
+    out += `<g class="nd ${state.selected===n.id?'sel':''}" data-id="${n.id}" data-f="${n.f}" tabindex="0" role="button"
+        aria-label="${esc(st.label+' · '+trunc(n.text,36)+(sameSess?' · 当前会话':' · 点击打开该会话'))}">
+      ${ring}
+      <rect class="nd-bg" x="${x}" y="${y}" width="${NW}" height="${NH}" rx="10" fill="var(--bg-elevated)" stroke="${stroke}"/>
+      <rect x="${x}" y="${y}" width="3" height="${NH}" rx="1.5" fill="${st.color}"/>
+      <text x="${x+12}" y="${y+18}" style="font-size:12px">${st.ic}</text>
+      <text class="role" x="${x+30}" y="${y+17}" fill="${st.color}">${st.label}</text>
+      ${n.tools ? `<text class="title" x="${x+NW-8}" y="${y+17}" text-anchor="end" fill="var(--muted)">${esc(n.tools.join(' · '))}</text>` : ''}
+      <text class="title" x="${x+12}" y="${y+33}" fill="var(--text)">${esc(trunc(n.text,24))}</text>
+      ${sameSess ? '' : `<rect x="${x+NW-26}" y="${y+NH-16}" width="20" height="12" rx="6" fill="var(--info-subtle)" stroke="var(--info)"/>
+        <text class="elabel" x="${x+NW-16}" y="${y+NH-7}" text-anchor="middle" fill="var(--info-fg)">↗</text>`}
+      ${deco}
+    </g>`
+  }
+  document.getElementById('vp').innerHTML = out
+  document.getElementById('vp').style.transform = `translate(0,0)`
+  bindGraphEvents()
+  bindBanners()
+}
+function bindBanners() {
+  const w = document.getElementById('bannerWarn'), e = document.getElementById('bannerErr')
+  if (!w) return
+  if (state.demo==='degraded') { w.textContent='⚠ 仅显示活动分支：无法读取父会话文件（家族降级）'; w.classList.add('show') }
+  if (state.demo==='truncated') { w.textContent='⚠ 树已截断：超过 2000 节点，仅保留活动路径 + 分支点 + 最近 200 条'; w.classList.add('show') }
+  if (state.demo==='ephemeral') { w.textContent='⚠ 该会话未持久化（--no-session 启动），无家族树可看'; w.classList.add('show') }
+  if (state.demo==='error') { e.textContent='✕ navigate 失败：session_busy — 等待当前回答结束'; e.classList.add('show') }
+}
+let gview = { x:24, y:20, k:1 }
+function applyView() {
+  const g = document.getElementById('vp'); if (!g) return
+  g.setAttribute('transform', `translate(${gview.x},${gview.y}) scale(${gview.k})`)
+}
+function bindGraphEvents() {
+  const svg = document.getElementById('svg'), g = document.getElementById('vp')
+  applyView()
+  g.addEventListener('click', ev => {
+    const el = ev.target.closest('.nd'); if (!el) return
+    onNodeClick(el.dataset.id, el.dataset.f)
+  })
+  g.addEventListener('keydown', ev => {
+    const el = ev.target.closest('.nd')
+    if (el && ev.key === 'Enter') onNodeClick(el.dataset.id, el.dataset.f)
+  })
+  let drag = null
+  svg.addEventListener('pointerdown', ev => {
+    if (ev.target.closest('.nd')) return
+    drag = { x:ev.clientX, y:ev.clientY, vx:gview.x, vy:gview.y }
+    svg.classList.add('dragging'); svg.setPointerCapture(ev.pointerId)
+  })
+  svg.addEventListener('pointermove', ev => {
+    if (!drag) return
+    gview.x = drag.vx + (ev.clientX-drag.x); gview.y = drag.vy + (ev.clientY-drag.y); applyView()
+  })
+  svg.addEventListener('pointerup', () => { drag = null; svg.classList.remove('dragging') })
+  svg.addEventListener('wheel', ev => {
+    ev.preventDefault()
+    const r = svg.getBoundingClientRect(), mx = ev.clientX-r.left, my = ev.clientY-r.top
+    const k2 = Math.min(2, Math.max(.3, gview.k * (ev.deltaY < 0 ? 1.1 : .9)))
+    gview.x = mx - (mx-gview.x)*(k2/gview.k); gview.y = my - (my-gview.y)*(k2/gview.k); gview.k = k2; applyView()
+  }, { passive:false })
+  document.getElementById('zin').onclick = () => { gview.k = Math.min(2, gview.k*1.15); applyView() }
+  document.getElementById('zout').onclick = () => { gview.k = Math.max(.3, gview.k/1.15); applyView() }
+  document.getElementById('fit').onclick = () => { gview = { x:24, y:20, k:1 }; applyView() }
+  document.getElementById('forkTop').onclick = () => {
+    if (!state.sim) { toast('需勾选「模拟 L2 写操作」', true); return }
+    doFork(state.selected ?? SESSIONS[state.openSession].head)
+  }
+  document.getElementById('undoBtn').onclick = doUndo
+}
+function focusSelected() {
+  if (!state.selected) return
+  const pos = computeLayout(), p = pos.get(state.selected), svg = document.getElementById('svg')
+  if (!p || !svg) return
+  const r = svg.getBoundingClientRect()
+  gview.x = r.width/2 - (p.x+NW/2)*gview.k
+  gview.y = r.height/2 - (p.y+NH/2)*gview.k
+  applyView()
+}
+
+/* 节点点击：同会话 → 只选中；跨会话 → 打开会话 */
+function onNodeClick(id, f) {
+  if (f === state.openSession) {
+    state.selected = id
+    renderDetail()
+    document.querySelectorAll('#vp .nd').forEach(el => el.classList.toggle('sel', el.dataset.id === id))
+    document.querySelectorAll('#vp .tgt').forEach(el => el.remove())
+    toast('已在会话内定位到该消息（未跳页）')
+  } else {
+    openSession(f, id)
+  }
+}
+function openSession(f, nodeId) {
+  state.openSession = f
+  state.selected = nodeId
+  state.page = 'session'
+  renderAll()
+  toast(`已打开 ${allSessions[f].name}${nodeId ? ' · 定位到 ' + nodeId : ''}${allSessions[f].alive ? '' : '（未运行 · 只读）'}`)
+}
+
+/* ═══ 会话页 ═══ */
+function renderSession() {
+  const main = document.getElementById('main')
+  const f = state.openSession
+  if (f === 'C') { // 独立会话：演示“不在图谱里的会话”
+    main.className = 'session'
+    main.innerHTML = `
+      <div class="ro" style="background:var(--info-subtle);color:var(--info-fg);border-color:var(--info)">
+        该会话不属于当前家族的图谱范围（独立家族）。
+        <button class="back" style="margin-left:auto" id="backBtn2">⛶ 在图谱中查看</button>
+      </div>
+      <div class="transcript"><div class="turn assistant"><div class="ic">🤖</div><div class="body">
+        <div class="who">ASSISTANT</div><div class="txt">（ocr-postprocess 会话的转录占位）</div></div></div></div>
+      <div class="composer"><input disabled placeholder="…"><button disabled>发送</button></div>`
+    const b = document.getElementById('backBtn2')
+    if (b) b.onclick = () => { state.page='graph'; renderAll() }
+    return
+  }
+  const sess = SESSIONS[f]
+  const branch = activeBranch(f)
+  const focused = state.selected
+  main.className = 'session'
+  main.innerHTML = `
+    ${sess.alive ? '' : `<div class="ro">⚠ 该会话<b style="margin:0 4px">没有运行中的 Pi 进程</b>——显示的是从 JSONL 解析的<b style="margin:0 4px">只读转录</b>（内容仍完整可读）。</div>`}
+    <div class="transcript" id="transcript">
+      ${branch.map(id => {
+        const n = byId.get(id), st = roleStyle(n.role)
+        const isFocus = id === focused
+        const cls = n.role === 'user' ? 'user' : (n.role === 'toolResult' ? 'tool' : 'assistant')
+        return `<div class="turn ${cls} ${isFocus?'focus':''}" data-id="${id}">
+          <div class="ic">${st.ic}</div>
+          <div class="body"><div class="who">${st.label}${isFocus?' · 已定位':''}${SESSIONS[f].head===id?' · HEAD':''}</div>
+          <div class="txt">${esc(n.text)}</div></div></div>`
+      }).join('')}
+    </div>
+    <div class="composer">
+      <input ${sess.alive?'':'disabled'} placeholder="${sess.alive?'继续输入…（mock 不发请求）':'会话未运行，无法输入'}">
+      <button ${sess.alive?'':'disabled'}>发送</button>
+    </div>`
+  const t = document.getElementById('transcript')
+  const el = t && t.querySelector('.turn.focus')
+  if (el && el.scrollIntoView) el.scrollIntoView({ block:'center' })
+}
+
+/* ═══ 详情面板 ═══ */
+function renderDetail() {
+  const el = document.getElementById('detail')
+  if (state.page === 'session') {
+    const f = state.openSession, sess = allSessions[f]
+    el.innerHTML = `
+      <div class="sec">会话</div>
+      <div class="kv"><span>名称</span><b>${esc(sess.name)}</b></div>
+      <div class="kv"><span>模型</span><b class="mono">${esc(sess.model)}</b></div>
+      <div class="kv"><span>cwd</span><b class="mono">${esc(sess.cwd)}</b></div>
+      <div class="kv"><span>状态</span><b>${sess.alive?'运行中':'未运行 · 只读'}</b></div>
+      <div class="sec">分支</div>
+      <div class="kv"><span>活动分支</span><b>${activeBranch(f).length} 条消息</b></div>
+      <div class="kv"><span>HEAD</span><b class="mono">${esc(sess.head)}</b></div>
+      ${SESSIONS[f] ? `<div class="hint">本会话有跨文件血缘：${f==='B'?'fork 自 file A 的 <code>t1</code>':'被 file B fork'}。</div>` : ''}
+      <div class="sec">在图谱中</div>
+      <div class="acts"><button class="b nav" id="backBtn3">⛶ 在图谱中查看${state.selected?'（定位到 '+state.selected+'）':''}</button></div>
+      ${sess.alive?'' : `<div class="hint warn">未运行会话无法切换/分叉；L3 会提供「在此会话启动 live session」。</div>`}`
+    const b = document.getElementById('backBtn3')
+    if (b) b.onclick = () => { state.page='graph'; renderAll(); setTimeout(focusSelected,30) }
+    return
+  }
+  const id = state.selected
+  if (!id || !byId.get(id)) { el.innerHTML = `<div class="empty">点一个节点<br><span style="font-size:11px">跨会话节点 = 打开该会话<br>当前会话节点 = 只选中</span></div>`; return }
+  const n = byId.get(id), st = roleStyle(n.role), on = activePath.has(id)
+  const sess = SESSIONS[n.f], isHead = sess.head === id, same = n.f === state.openSession
+  const writable = state.sim && state.lease && sess.alive
+  const chips = [
+    on ? `<span class="chip on">活动路径</span>` : `<span class="chip">废弃分支</span>`,
+    `<span class="chip info">${n.f==='A'?'file A':'file B'}</span>`,
+    isHead ? `<span class="chip on">HEAD</span>` : '',
+    isBranchPoint(id) ? `<span class="chip on">分支点 ×${(childMap.get(id)||[]).length}</span>` : '',
+    sess.alive ? '' : `<span class="chip warn">该会话未运行</span>`,
+    ...(n.tools||[]).map(t => `<span class="chip">${esc(t)}</span>`),
+  ].filter(Boolean).join('')
+  el.innerHTML = `
+    <div class="hd"><span class="ic">${st.ic}</span><span class="rl">${st.label}</span><span class="ts mono">${n.ts||''}</span></div>
+    <div class="chips">${chips}</div>
+    <div class="sec">预览</div>
+    <div class="card">${esc(n.text)}</div>
+    <div class="sec">动作</div>
+    <div class="acts">
+      ${same ? '' : `<button class="b nav" id="btnOpen">↗ 打开该会话${sess.alive?'':'（只读）'}<span class="k">单击节点</span></button>`}
+      <button class="b primary" id="btnNav" ${writable && !isHead ? '' : 'disabled'}>
+        ${n.role==='user' ? ' 编辑并重发（移到父节点 + 回填输入框）' : ' 切到此处（navigateTree）'}
+        <span class="k">${state.sim?'Enter':'L2'}</span></button>
+      <button class="b" id="btnFork" ${writable ? '' : 'disabled'}>⎇ 从此分叉（fork → 新会话文件）<span class="k">${state.sim?'F':'L3'}</span></button>
+      <button class="b" id="btnLabel" disabled># 打标签 <span class="k">L4</span></button>
+      <button class="b" id="btnDelete" disabled title="pi session 是 append-only">🗑 删除分支（不提供）</button>
+    </div>
+    ${state.sim?'' : `<div class="hint">L0 为只读图谱。写操作需 L2 协议 + lease；勾选顶栏「模拟 L2 写操作」可体验。</div>`}
+    ${sess.alive?'' : `<div class="hint">该会话无进程，写操作不可用。</div>`}
+    ${isHead?`<div class="hint">这是该会话的 HEAD。</div>`:''}
+    ${state.demo==='error'?`<div class="hint warn">⚠ navigate 失败：session_busy（等待当前回答结束）。<u>重试</u></div>`:''}`
+  const o = document.getElementById('btnOpen'); if (o) o.onclick = () => openSession(n.f, id)
+  const v = document.getElementById('btnNav'); if (v) v.onclick = () => doNavigate(id)
+  const k = document.getElementById('btnFork'); if (k) k.onclick = () => doFork(id)
+}
+
+/* ═══ 写操作（模拟） ═══ */
+function doNavigate(id) {
+  const n = byId.get(id), sess = SESSIONS[n.f]
+  if (!sess.alive) { toast('该会话没有运行中的进程，无法切换', true); return }
+  const prev = sess.head
+  const target = n.role === 'user' ? (n.parent ?? prev) : id
+  if (target === prev || byId.get(target)?.f !== n.f) { toast('已经在这个位置'); return }
+  sess.head = target; rebuildActivePath()
+  state.undo = {
+    f: n.f, previous: prev, token: Date.now(),
+    text: `<b>HEAD 已移动</b> · file ${n.f}：${esc(prev)} → ${esc(target)}${n.role==='user'?' · 文本已回填输入框':''}`,
+  }
+  renderAll(); toast(`navigateTree(${target}) · 不产生新文件`)
+  /* 自动消失只收起提示，**不回滚** HEAD（回滚只由「撤销」按钮触发） */
+  const tk = state.undo.token
+  clearTimeout(doNavigate._t)
+  doNavigate._t = setTimeout(() => {
+    if (state.undo && state.undo.token === tk) { state.undo = null; renderAll() }
+  }, 8000)
+}
+function doUndo() {
+  if (!state.undo) return
+  SESSIONS[state.undo.f].head = state.undo.previous
+  rebuildActivePath(); state.undo = null; renderAll(); toast('已撤销，HEAD 回到原位置')
+}
+function doFork(id) {
+  const n = byId.get(id), sess = SESSIONS[n.f]
+  if (!sess.alive) { toast('该会话没有运行中的进程，无法分叉', true); return }
+  toast(`fork(${id}) → 新会话文件（旧文件字节不变），图谱会新增分组与 fork 边`)
+}
+let toastTimer
+function toast(msg, warn) {
+  const t = document.getElementById('toast'); if (!t) return
+  t.textContent = msg; t.classList.toggle('warn', !!warn); t.classList.add('show')
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2800)
+}
+document.getElementById('themeBtn').onclick = () => {
+  const c = document.documentElement.dataset.theme
+  document.documentElement.dataset.theme = c==='dark' ? 'light' : 'dark'
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { state.selected = null; renderAll() }
+  if (e.key === 'f' || e.key === 'F') { gview = { x:24, y:20, k:1 }; applyView() }
+})
+
+function renderAll() { renderAppbar(); renderForest(); if (state.page==='graph') renderGraph(); else renderSession(); renderDetail() }
+renderAll()
+setTimeout(() => toast('试：点 file A 的节点 → 打开 A 会话（只读）；再点左上「在图谱中查看」回来'), 600)
+</script>
+</body>
+</html>
