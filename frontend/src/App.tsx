@@ -15,6 +15,7 @@ import ConnectionOverlay from './components/ConnectionOverlay'
 import SystemPage from './pages/SystemPage'
 import LogsPage from './pages/LogsPage'
 import JobsPage from './pages/JobsPage'
+import TasksPage from './pages/TasksPage'
 import SettingsPage from './pages/SettingsPage'
 import LiveSessionPage from './features/live-sessions/LiveSessionPage'
 import LiveSessionGalleryPage from './features/live-sessions/LiveSessionGalleryPage'
@@ -38,6 +39,7 @@ const NAV_ITEMS = [
   { path: '/chat', id: 'chat', label: 'Chat', group: 'Main', icon: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /> },
   { path: '/live-sessions', id: 'live-sessions', label: 'Live Pi', group: 'Main', icon: <><path d="M5 12h2l2-5 4 10 2-5h4" /><circle cx="12" cy="12" r="10" /></> },
   { path: '/live-sessions/gallery', id: 'live-gallery', label: 'Session Gallery', group: 'Main', icon: <><rect x="3" y="4" width="7" height="7" rx="1" /><rect x="14" y="4" width="7" height="7" rx="1" /><rect x="3" y="13" width="7" height="7" rx="1" /><rect x="14" y="13" width="7" height="7" rx="1" /></> },
+  { path: '/tasks', id: 'tasks', label: 'Tasks', group: 'Main', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="m3 6 1.5 1.5L7 5" /><path d="m3 12 1.5 1.5L7 11" /><path d="m3 18 1.5 1.5L7 17" /></> },
   { path: '/usage', id: 'usage', label: 'Token Cost', group: 'Main', icon: <><path d="M4 19V5" /><path d="M4 19h17" /><path d="m7 15 3-4 3 2 5-7" /></> },
   { path: '/system', id: 'system', label: 'System', group: 'Main', icon: <><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></> },
   { path: '/logs', id: 'logs', label: 'Logs', group: 'Tools', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></> },
@@ -78,6 +80,13 @@ export default function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
+  const [tasksEnabled, setTasksEnabled] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/dash/config').then(r => r.json()).then(c => {
+      if (c && c.tasks && c.tasks.enabled === false) setTasksEnabled(false)
+    }).catch(() => {})
+  }, [])
   const isNativeIOS = typeof navigator !== 'undefined' && navigator.userAgent.includes('PiDash-iOS')
   const isNativeAndroid = typeof navigator !== 'undefined' && navigator.userAgent.includes('PiDash-Android')
   const isNativeApp = isNativeIOS || isNativeAndroid
@@ -164,8 +173,9 @@ export default function App() {
 
   const activePath = location.pathname
   const isChat = activePath === '/chat' || activePath === '/' || activePath.startsWith('/live-sessions')
-  const isNavActive = (path: string) => activePath === path || (path === '/live-sessions' && activePath.startsWith('/live-sessions/'))
-  const groups = [...new Set(NAV_ITEMS.map(n => n.group))]
+  const isNavActive = (path: string) => activePath === path || (path === '/live-sessions' && activePath.startsWith('/live-sessions/')) || (path === '/tasks' && activePath.startsWith('/tasks/'))
+  const visibleNav = tasksEnabled ? NAV_ITEMS : NAV_ITEMS.filter(n => n.id !== 'tasks')
+  const groups = [...new Set(visibleNav.map(n => n.group))]
   const pluginRegistry = useMemo(() => {
     const registry = createSlotRegistry()
     for (const entry of PLUGIN_REGISTRY) {
@@ -292,7 +302,7 @@ export default function App() {
         {groups.map(group => (
           <div className="mb-4 grid gap-0.5" key={group}>
             <div className={`flex items-center gap-2 px-2.5 py-1.5 text-[13px] font-medium text-muted transition-all duration-200 ease-in-out ${navCollapsed ? 'opacity-0 h-0 p-0 m-0 overflow-hidden' : ''}`}>{group}</div>
-            {NAV_ITEMS.filter(n => n.group === group).map(n => (
+            {visibleNav.filter(n => n.group === group).map(n => (
               <div key={n.id}
                 className={`relative flex items-center rounded-md cursor-pointer text-sm font-medium whitespace-nowrap transition-all duration-200 ease-in-out ${navCollapsed ? 'justify-center py-2.5 gap-0' : 'gap-2.5 py-2 px-2.5'} ${isNavActive(n.path) ? 'text-text-strong bg-accent-subtle' : 'text-muted hover:text-text hover:bg-bg-hover'}`}
                 onClick={() => navigate(n.path)} title={navCollapsed ? n.label : undefined}>
@@ -329,6 +339,8 @@ export default function App() {
             <Route path="/system" element={<SystemPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
+            {tasksEnabled && <Route path="/tasks" element={<TasksPage />} />}
+            {tasksEnabled && <Route path="/tasks/:uid" element={<TasksPage />} />}
             <Route path="/plugin/:command" element={<PluginCommandPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/chat" replace />} />
@@ -338,7 +350,7 @@ export default function App() {
 
       {/* Mobile bottom tab bar — hidden when virtual keyboard is open */}
       <nav className={`md:hidden flex justify-around items-center bg-bg border-t border-border px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0.5rem))] ${keyboardOpen || isNativeApp ? 'hidden' : ''}`}>
-        {NAV_ITEMS.map(n => (
+        {visibleNav.map(n => (
           <button
             key={n.id}
             className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full min-h-[44px] bg-transparent border-none cursor-pointer transition-colors ${isNavActive(n.path) ? 'text-accent' : 'text-muted'}`}

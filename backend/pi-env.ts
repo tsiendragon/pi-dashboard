@@ -17,6 +17,7 @@ const DASH_CONFIG_PATH = join(HOME, '.pi', 'dashboard.json')
 // ── Interfaces ──
 
 import type { Lesson, Fact, Skill } from '@shared/types.js'
+import type { TasksConfig } from '@shared/tasks.js'
 
 interface VaultDirs {
   daily: string
@@ -33,6 +34,7 @@ interface VaultConfig {
 
 interface DashConfig {
   vault: VaultConfig
+  tasks?: TasksConfig
   [key: string]: unknown
 }
 
@@ -93,6 +95,71 @@ const DEFAULT_DASH_CONFIG: DashConfig = {
   },
 }
 
+const DEFAULT_TASKS_CONFIG: TasksConfig = {
+  enabled: true,
+  journal: { autoDetect: true, roots: ['~/repos/lilong-task'], enabled: true },
+  lanes: [
+    { id: 'long', label: '长期', match: { kind: ['epic'] } },
+    { id: 'short', label: '短期', match: { kind: ['task'] } },
+    { id: 'adhoc', label: '临时', match: { kind: ['todo', 'item'] } },
+  ],
+  defaultView: 'execute',
+  providers: [],
+}
+
+function sanitizeExternalProviders(raw: unknown): NonNullable<TasksConfig['providers']> {
+  if (!Array.isArray(raw)) return []
+  const out: NonNullable<TasksConfig['providers']> = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const p = item as Record<string, unknown>
+    const id = typeof p.id === 'string' ? p.id.trim() : ''
+    if (!id) continue
+    const label = typeof p.label === 'string' && p.label.trim() ? p.label.trim() : id
+    if (p.kind === 'command') {
+      const command = Array.isArray(p.command) ? p.command.filter((c): c is string => typeof c === 'string') : []
+      if (!command.length) continue
+      out.push({
+        kind: 'command', id, label, enabled: p.enabled !== false, command,
+        cwd: typeof p.cwd === 'string' ? p.cwd : undefined,
+        timeoutMs: typeof p.timeoutMs === 'number' ? p.timeoutMs : undefined,
+      })
+    } else if (p.kind === 'file') {
+      if (typeof p.file !== 'string' || !p.file.trim()) continue
+      out.push({ kind: 'file', id, label, enabled: p.enabled !== false, file: p.file })
+    }
+  }
+  return out
+}
+
+function normalizeTasksConfig(raw: unknown): TasksConfig {
+  const r = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Partial<TasksConfig> & {
+    journal?: Partial<TasksConfig['journal']>
+  }
+  const lanes = Array.isArray(r.lanes) && r.lanes.length
+    ? r.lanes
+        .filter((lane): lane is TasksConfig['lanes'][number] => !!lane && typeof (lane as { id?: unknown }).id === 'string')
+        .map(lane => ({ id: lane.id, label: lane.label || lane.id, match: lane.match || {} }))
+    : DEFAULT_TASKS_CONFIG.lanes
+  return {
+    enabled: r.enabled !== false,
+    journal: {
+      autoDetect: r.journal?.autoDetect !== false,
+      roots: Array.isArray(r.journal?.roots)
+        ? r.journal.roots.filter((x): x is string => typeof x === 'string')
+        : DEFAULT_TASKS_CONFIG.journal.roots,
+      enabled: r.journal?.enabled !== false,
+    },
+    lanes,
+    defaultView: r.defaultView === 'survey' ? 'survey' : 'execute',
+    providers: sanitizeExternalProviders(r.providers),
+  }
+}
+
+export function getTasksConfig(): TasksConfig {
+  return normalizeTasksConfig(getDashConfig().tasks)
+}
+
 let _dashConfig: DashConfig | null = null
 
 export function getDashConfig(): DashConfig {
@@ -100,18 +167,18 @@ export function getDashConfig(): DashConfig {
   try {
     if (existsSync(DASH_CONFIG_PATH)) {
       const raw = JSON.parse(readFileSync(DASH_CONFIG_PATH, 'utf-8')) as Partial<DashConfig> & { vault?: Partial<VaultConfig> & { dirs?: Partial<VaultDirs> } }
-      _dashConfig = { ...DEFAULT_DASH_CONFIG, ...raw, vault: { ...DEFAULT_DASH_CONFIG.vault, ...raw.vault, dirs: { ...DEFAULT_DASH_CONFIG.vault.dirs, ...(raw.vault?.dirs || {}) } } }
+      _dashConfig = { ...DEFAULT_DASH_CONFIG, ...raw, vault: { ...DEFAULT_DASH_CONFIG.vault, ...raw.vault, dirs: { ...DEFAULT_DASH_CONFIG.vault.dirs, ...(raw.vault?.dirs || {}) } }, tasks: normalizeTasksConfig(raw.tasks) }
     } else {
-      _dashConfig = DEFAULT_DASH_CONFIG
+      _dashConfig = { ...DEFAULT_DASH_CONFIG, tasks: normalizeTasksConfig(undefined) }
     }
   } catch {
-    _dashConfig = DEFAULT_DASH_CONFIG
+    _dashConfig = { ...DEFAULT_DASH_CONFIG, tasks: normalizeTasksConfig(undefined) }
   }
   return _dashConfig!
 }
 
 export function saveDashConfig(config: Partial<DashConfig> & { vault?: Partial<VaultConfig> & { dirs?: Partial<VaultDirs> } }): DashConfig {
-  _dashConfig = { ...DEFAULT_DASH_CONFIG, ...config, vault: { ...DEFAULT_DASH_CONFIG.vault, ...config.vault, dirs: { ...DEFAULT_DASH_CONFIG.vault.dirs, ...(config.vault?.dirs || {}) } } }
+  _dashConfig = { ...DEFAULT_DASH_CONFIG, ...config, vault: { ...DEFAULT_DASH_CONFIG.vault, ...config.vault, dirs: { ...DEFAULT_DASH_CONFIG.vault.dirs, ...(config.vault?.dirs || {}) } }, tasks: normalizeTasksConfig(config.tasks) }
   const dir = join(HOME, '.pi')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   writeFileSync(DASH_CONFIG_PATH, JSON.stringify(_dashConfig, null, 2) + '\n')

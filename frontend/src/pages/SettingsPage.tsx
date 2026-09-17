@@ -11,7 +11,7 @@ import { SettingsSectionSlot } from '../plugins/slot-consumers'
 import { ACTIONS, formatKey, setShortcut, resetShortcut, resetAllShortcuts, hasCustomShortcuts, subscribeShortcuts, eventToKeyString, type ActionCategory } from '../shortcuts'
 import { modelFullId, splitModelFullId, splitThinkingSuffix } from '../utils/modelUtils'
 
-type Tab = 'general' | 'model' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'display' | 'vault' | 'developer' | 'shortcuts'
+type Tab = 'general' | 'model' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'display' | 'vault' | 'tasks' | 'developer' | 'shortcuts'
 
 /* ── Shared form components ── */
 
@@ -883,6 +883,13 @@ interface DashConfig {
       recipes: string
     }
   }
+  tasks?: {
+    enabled: boolean
+    journal: { autoDetect: boolean; roots: string[]; enabled: boolean }
+    defaultView?: 'execute' | 'survey'
+    providers?: unknown[]
+    lanes?: unknown
+  }
 }
 
 function VaultTab() {
@@ -981,6 +988,122 @@ function VaultTab() {
 }
 
 /* ── DEVELOPER TAB ── */
+function TasksTab() {
+  const [config, setConfig] = useState<DashConfig | null>(null)
+  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [rootsText, setRootsText] = useState('')
+  const [providersText, setProvidersText] = useState('[]')
+  const [provErr, setProvErr] = useState('')
+
+  useEffect(() => {
+    fetch('/api/dash/config').then(j).then((c: DashConfig) => {
+      setConfig(c)
+      setRootsText((c.tasks?.journal?.roots ?? []).join('\n'))
+      setProvidersText(JSON.stringify(c.tasks?.providers ?? [], null, 2))
+    }).catch(() => {})
+  }, [])
+
+  const save = useCallback(async (next: DashConfig) => {
+    setSaving(true)
+    setConfig(next)
+    try {
+      const saved = await fetch('/api/dash/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
+      }).then(j) as DashConfig
+      setConfig(saved)
+      setRootsText((saved.tasks?.journal?.roots ?? []).join('\n'))
+      setProvidersText(JSON.stringify(saved.tasks?.providers ?? [], null, 2))
+      setFeedback({ type: 'ok', msg: 'Saved' })
+    } catch {
+      setFeedback({ type: 'err', msg: 'Save failed' })
+    }
+    setSaving(false)
+    setTimeout(() => setFeedback(null), 2000)
+  }, [])
+
+  if (!config) return <div className="text-muted text-body-s py-4">Loading…</div>
+
+  const tasks = config.tasks ?? { enabled: true, journal: { autoDetect: true, roots: ['~/repos/lilong-task'], enabled: true }, defaultView: 'execute' as const }
+  const journal = tasks.journal ?? { autoDetect: true, roots: [], enabled: true }
+  const setTasks = (patch: Partial<NonNullable<DashConfig['tasks']>>) => save({ ...config, tasks: { ...tasks, ...patch } })
+  const setJournal = (patch: Partial<NonNullable<DashConfig['tasks']>['journal']>) => setTasks({ journal: { ...journal, ...patch } })
+  const saveRoots = () => {
+    const roots = rootsText.split('\n').map(s => s.trim()).filter(Boolean)
+    if (JSON.stringify(roots) !== JSON.stringify(journal.roots)) setJournal({ roots })
+  }
+  const saveProviders = () => {
+    let parsed: unknown
+    try { parsed = JSON.parse(providersText || '[]') } catch (e) { setProvErr('JSON 解析失败：' + (e as Error).message); return }
+    if (!Array.isArray(parsed)) { setProvErr('必须是数组'); return }
+    setProvErr('')
+    setTasks({ providers: parsed })
+  }
+
+  return (
+    <div className="space-y-4">
+      <Feedback feedback={feedback} />
+      {saving && <div className="text-2xs text-muted">Saving…</div>}
+
+      <Card>
+        <CardTitle>Task Panel <InfoTip text="The /tasks page. Sources are auto-detected; configure only to override." /></CardTitle>
+        <div className="divide-y divide-border">
+          <Toggle label="Enable task panel" hint="Show the Tasks page in navigation" checked={tasks.enabled !== false} onChange={v => setTasks({ enabled: v })} />
+          <Toggle label="Include task journal" hint="Read an external task-journal repo (read-only)" checked={journal.enabled !== false} onChange={v => setJournal({ enabled: v })} />
+          <Toggle label="Auto-detect journal path" hint="Probe conventional locations (e.g. ~/repos/lilong-task)" checked={journal.autoDetect !== false} onChange={v => setJournal({ autoDetect: v })} />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Journal Roots <InfoTip text="One path per line. Used when auto-detect is off, or as extra candidates." /></CardTitle>
+        <textarea
+          className="w-full h-24 bg-bg-elevated border border-border rounded-md px-3 py-2 text-body-s font-mono text-text outline-none focus-ring transition-colors resize-y"
+          value={rootsText}
+          onChange={e => setRootsText(e.target.value)}
+          onBlur={saveRoots}
+          placeholder="~/repos/lilong-task"
+        />
+        <div className="text-meta text-muted mt-2">
+          Stored in <span className="font-mono">~/.pi/dashboard.json</span> · local ad-hoc tasks: <span className="font-mono">~/.pi/tasks/tasks.json</span>
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Default View</CardTitle>
+        <SelectRow
+          label="Open with"
+          hint="Used only on first visit; your last choice is remembered afterward"
+          value={tasks.defaultView ?? 'execute'}
+          options={[{ value: 'execute', label: '执行 / Execute' }, { value: 'survey', label: '鸟瞰 / Survey' }]}
+          onChange={v => setTasks({ defaultView: v as 'execute' | 'survey' })}
+        />
+      </Card>
+
+      <Card>
+        <CardTitle>External Sources <InfoTip text="Config-declared read-only sources (e.g. Jira/Lark). Add one without code change: a command printing JSON to stdout, or a JSON file." /></CardTitle>
+        <textarea
+          className="w-full h-40 bg-bg-elevated border border-border rounded-md px-3 py-2 text-meta font-mono text-text outline-none focus-ring transition-colors resize-y"
+          value={providersText}
+          onChange={e => setProvidersText(e.target.value)}
+          spellCheck={false}
+        />
+        {provErr && <div className="text-2xs text-danger mt-1">{provErr}</div>}
+        <div className="flex items-center gap-2 mt-2">
+          <button
+            onClick={saveProviders}
+            className="px-3 py-1.5 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition"
+          >保存外部来源</button>
+          <span className="text-2xs text-muted">
+            <span className="font-mono">{`[{ "kind":"file", "id":"jira", "label":"Jira", "file":"~/jira.json" }]`}</span>
+          </span>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
 function DeveloperTab() {
   const [logLevel, setLogLevel] = useState('info')
   const [rawJson, setRawJson] = useState('')
@@ -1189,6 +1312,7 @@ const SETTINGS_GROUPS: { group: string; tabs: { id: Tab; label: string; icon: st
     tabs: [
       { id: 'general', label: 'Packages', icon: '📦', hint: 'Context files & resources' },
       { id: 'vault', label: 'Vault', icon: '📁', hint: 'Knowledge vault paths' },
+      { id: 'tasks', label: 'Tasks', icon: '🗂️', hint: 'Task panel sources & defaults' },
       { id: 'developer', label: 'Developer', icon: '🔧', hint: 'Advanced & debug' },
     ],
   },
@@ -1256,6 +1380,7 @@ export default function SettingsPage() {
             {tab === 'display' && <DisplayTab />}
             {tab === 'shortcuts' && <ShortcutsTab />}
             {tab === 'vault' && <VaultTab />}
+            {tab === 'tasks' && <TasksTab />}
             {tab === 'developer' && <DeveloperTab />}
           </div>
         </div>

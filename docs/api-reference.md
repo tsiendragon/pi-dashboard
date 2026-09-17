@@ -1418,6 +1418,30 @@ When enabled:
 
 ---
 
+## Tasks
+
+Task planning panel (`/tasks`). Facts come from pluggable providers — a read-only
+"task journal" repo (auto-detected, e.g. lilong-task) plus a built-in local source —
+while the planning overlay (pin / priority / note / lane) is stored separately and
+never writes back to the source.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/tasks` | `{ tasks, planning, providers, sessionRefs, warnings, lanes, defaultView }` |
+| GET | `/api/tasks/providers` | Provider descriptors + availability |
+| GET | `/api/tasks/:uid` | Single task fact |
+| GET | `/api/tasks/planning` | Planning overlay + version |
+| GET | `/api/tasks/history` | Daily count snapshots `{ points: [{ date, total, todo, doing, done, paused, archived }] }` (`?days=` 1–365, default 30) |
+| PUT | `/api/tasks/planning` | Merge `{ patch: { <uid>: entry } }`; `409` on version conflict; non-plannable uids returned in `rejected` |
+| POST | `/api/tasks` | Create a task in the writable local inbox (`{ title, description?, status?, path?, tags? }`) |
+| PATCH | `/api/tasks/:uid` | Update a writable (local) task; `409 read_only_source` for journal tasks; local-only |
+| DELETE | `/api/tasks/:uid` | Delete a local task |
+
+Config: `~/.pi/dashboard.json` → `tasks` (see `docs/tasks-page-design.md`).
+Planning overlay: `~/.pi/tasks/planning.json`. Local tasks: `~/.pi/tasks/tasks.json`.
+
+---
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -1425,6 +1449,7 @@ When enabled:
 | `PI_DASH_PORT` | `7777` | Server listen port |
 | `WORKSPACE_DIR` | — | Additional workspace directory to scan |
 | `PI_RUNTIME` | `dashboard` | Set in pi subprocess environment |
+| `LILONG_TASK_ROOT` | — | Back-compat override for the task journal root (auto-detected otherwise) |
 
 ---
 

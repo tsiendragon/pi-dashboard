@@ -1,4 +1,5 @@
 import { authHeader } from './auth'
+import type { TasksResponse, TasksHistoryResponse, PlanningOverlay } from '@shared/tasks.js'
 
 export const j = async (r: Response) => {
   if (!r.ok) {
@@ -107,6 +108,19 @@ export const api = {
   updateJob: (id: string, body: object) => fetch('/api/jobs/' + encodeURIComponent(id), { method: 'PATCH', headers: optionalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) }).then(j),
   deleteJob: (id: string) => del('/api/jobs/' + encodeURIComponent(id)).then(j),
   runJob: (id: string) => post('/api/jobs/' + encodeURIComponent(id) + '/run').then(j),
+
+  tasks: () => get('/api/tasks').then(j) as Promise<TasksResponse>,
+  taskProviders: () => get('/api/tasks/providers').then(j),
+  taskPlanning: () => get('/api/tasks/planning').then(j),
+  saveTaskPlanning: (patch: PlanningOverlay, expectedVersion?: number) =>
+    put('/api/tasks/planning', { patch, expectedVersion }).then(j),
+  taskDetail: (uid: string) => get('/api/tasks/' + encodeURIComponent(uid)).then(j),
+  taskHistory: (days = 30) => get(`/api/tasks/history?days=${days}`).then(j) as Promise<TasksHistoryResponse>,
+  createTask: (body: { title: string; description?: string; status?: string; path?: string; tags?: string[] }) =>
+    post('/api/tasks', body).then(j),
+  updateTask: (uid: string, patch: { title?: string; description?: string; status?: string; path?: string; tags?: string[] }) =>
+    fetch('/api/tasks/' + encodeURIComponent(uid), { method: 'PATCH', headers: optionalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(patch) }).then(j),
+  deleteTask: (uid: string) => del('/api/tasks/' + encodeURIComponent(uid)).then(j),
   // Lessons
   lessons: () => get('/api/lessons').then(j),
   createLesson: (rule: string, category: string) => post('/api/lessons', { rule, category }).then(j),
