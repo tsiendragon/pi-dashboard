@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { LiveSessionImage, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
@@ -157,7 +157,7 @@ function CollapsibleMarkdown({ content, onFileOpen, showRaw = true }: { content:
   const visible = collapsed ? lines.slice(0, previewLines).join('\n').slice(0, previewChars) : content
   return (
     <div>
-      <div className={`text-[13px] leading-5 [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:text-base [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-sm [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_li]:text-[13px] [&_li]:leading-5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1 ${collapsed ? 'relative max-h-[220px] overflow-hidden' : ''}`}>
+      <div className={`text-body-s leading-5 [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:text-base [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-sm [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_li]:text-body-s [&_li]:leading-5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1 ${collapsed ? 'relative max-h-[220px] overflow-hidden' : ''}`}>
         <MarkdownRenderer content={visible} onFileOpen={onFileOpen} showRaw={showRaw} />
         {collapsed && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent" />}
       </div>
@@ -374,15 +374,15 @@ function ToolResultCard({ text, toolName, toolCallId, command, isError, timestam
         className="flex w-full min-w-0 items-center gap-2 border-none bg-bg-elevated px-2 py-1.5 text-left hover:bg-bg-hover"
       >
         <ToolSummaryLine toolName={toolName || 'tool'} command={command} timestamp={timestamp} status={isError ? 'error' : 'success'} className="flex-1" />
-        <span className="flex shrink-0 items-center gap-2 text-[10px] text-muted">
+        <span className="flex shrink-0 items-center gap-2 text-2xs text-muted">
           <span>{lines.length} 行</span>
           <span className="text-accent">{expanded ? '收起' : '展开'}</span>
         </span>
       </button>
       {expanded && (
         <div className="max-h-[320px] overflow-auto border-t border-border px-2 py-1.5">
-          {toolCallId && <div className="mb-1 text-[10px] text-muted">tool call {shortToolId(toolCallId)}</div>}
-          <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-text">{text}</pre>
+          {toolCallId && <div className="mb-1 text-2xs text-muted">tool call {shortToolId(toolCallId)}</div>}
+          <pre className="m-0 whitespace-pre-wrap break-words font-mono text-2xs leading-4 text-text">{text}</pre>
         </div>
       )}
     </article>
@@ -512,7 +512,7 @@ function ThinkingElapsed({ startedAt }: { startedAt?: number }) {
     const timer = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(timer)
   }, [startedAt])
-  return startedAt === undefined ? null : <span className="ml-1 font-mono text-[10px]">· {formatElapsed(now - startedAt)}</span>
+  return startedAt === undefined ? null : <span className="ml-1 font-mono text-2xs">· {formatElapsed(now - startedAt)}</span>
 }
 
 function formatStatusTokens(value: number | null | undefined): string {
@@ -545,7 +545,7 @@ function TuiLikeStatus({ summary }: { summary: LiveSessionSummary }) {
   const percent = usage?.percent !== null && usage?.percent !== undefined && Number.isFinite(usage.percent) ? Math.max(0, Math.min(100, usage.percent)) : undefined
   const filled = percent === undefined ? 0 : Math.round(percent / 100 * 12)
   const bar = `${'█'.repeat(filled)}${'░'.repeat(12 - filled)}│`
-  return <span className="flex min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-[10px] text-muted" title="上下文占用和 session 运行时间">
+  return <span className="flex min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-2xs text-muted" title="上下文占用和 session 运行时间">
     <span className={percent !== undefined && percent >= 85 ? 'text-warn' : 'text-muted'}>{bar}</span>
     <span>{formatStatusTokens(usage?.tokens)}/{formatStatusTokens(usage?.contextWindow)}</span>
     {percent !== undefined && <span>{Math.round(percent)}%</span>}
@@ -571,10 +571,10 @@ function ToolCallCard({ name, toolCallId, argsText, timestamp, state }: { name: 
           <ToolSummaryLine toolName={name} args={argsText} timestamp={result?.timestamp || timestamp} status={status} className="flex-1" />
         </summary>
         <div className="space-y-2 border-t border-border px-3 pb-3">
-          {toolCallId && <div className="pt-2 text-[10px] text-muted">tool call {shortToolId(toolCallId)}</div>}
-          {argsText && <pre className="m-0 max-h-[12rem] max-w-full overflow-auto whitespace-pre-wrap break-words rounded bg-bg-hover px-2 py-1.5 font-mono text-[10px] leading-4 text-muted">{argsText.slice(0, 100_000)}</pre>}
+          {toolCallId && <div className="pt-2 text-2xs text-muted">tool call {shortToolId(toolCallId)}</div>}
+          {argsText && <pre className="m-0 max-h-[12rem] max-w-full overflow-auto whitespace-pre-wrap break-words rounded bg-bg-hover px-2 py-1.5 font-mono text-2xs leading-4 text-muted">{argsText.slice(0, 100_000)}</pre>}
           {!result && state?.partialText && (
-            <pre className="m-0 max-h-[150px] overflow-auto whitespace-pre-wrap break-words rounded bg-bg-hover px-2 py-1.5 font-mono text-[11px] leading-4 text-text">{state.partialText}</pre>
+            <pre className="m-0 max-h-[150px] overflow-auto whitespace-pre-wrap break-words rounded bg-bg-hover px-2 py-1.5 font-mono text-2xs leading-4 text-text">{state.partialText}</pre>
           )}
           {result && <ToolResultCard text={result.text} toolName={result.toolName || name} toolCallId={toolCallId} command={state?.command} isError={result.isError} timestamp={result.timestamp} revealOnMount />}
         </div>
@@ -639,9 +639,9 @@ function LiveCommandBar({ toolStates, features }: { toolStates: ToolStateMap; fe
   return <>
     <div className="shrink-0 border-t border-border bg-bg px-2 py-1.5">
       <div className="flex min-w-0 items-center gap-1.5">
-        <span className="shrink-0 text-[10px] font-medium text-accent">运行中</span>
+        <span className="shrink-0 text-2xs font-medium text-accent">运行中</span>
         <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
-          {commands.map(command => <button key={command.key} type="button" aria-expanded={selected?.key === command.key} onClick={() => setSelectedKey(command.key)} className="max-w-[min(320px,60vw)] shrink-0 truncate rounded border border-border bg-card px-2 py-1 text-left text-[10px] text-muted hover:border-accent/40 hover:text-accent" title={`${command.detail}\n${command.command}`}>
+          {commands.map(command => <button key={command.key} type="button" aria-expanded={selected?.key === command.key} onClick={() => setSelectedKey(command.key)} className="max-w-[min(320px,60vw)] shrink-0 truncate rounded border border-border bg-card px-2 py-1 text-left text-2xs text-muted hover:border-accent/40 hover:text-accent" title={`${command.detail}\n${command.command}`}>
             <span className="mr-1 text-accent">●</span>{command.kind === 'background' ? '后台' : '前台'} · {command.label}
           </button>)}
         </div>
@@ -650,7 +650,7 @@ function LiveCommandBar({ toolStates, features }: { toolStates: ToolStateMap; fe
     {selected && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-4" role="presentation" onClick={() => setSelectedKey(undefined)}>
       <section className="w-full max-w-4xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl" role="dialog" aria-modal="true" aria-label={`${selected.kind === 'background' ? '后台' : '前台'}命令输出`} onClick={event => event.stopPropagation()}>
         <header className="flex items-center gap-3 border-b border-border bg-bg-elevated px-3 py-2">
-          <div className="min-w-0 flex-1"><div className="text-xs font-semibold text-text-strong">{selected.kind === 'background' ? '后台命令' : '前台命令'} · {selected.detail}</div><div className="mt-0.5 truncate font-mono text-[11px] text-muted" title={selected.command}>{selected.command}</div></div>
+          <div className="min-w-0 flex-1"><div className="text-xs font-semibold text-text-strong">{selected.kind === 'background' ? '后台命令' : '前台命令'} · {selected.detail}</div><div className="mt-0.5 truncate font-mono text-2xs text-muted" title={selected.command}>{selected.command}</div></div>
           <button type="button" onClick={() => setSelectedKey(undefined)} className="shrink-0 rounded border border-border bg-bg px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button>
         </header>
         <pre className="m-0 max-h-[65vh] overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-5 text-text">{selected.output}</pre>
@@ -663,7 +663,7 @@ function MessageContent({ content, onFileOpen, toolStates, timestamp, showRaw = 
   const parts = mergeThinkingParts(contentParts(content))
   if (parts.length === 0) return null
   return (
-    <div className="space-y-1 text-[13px] leading-5 [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:text-base [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-sm [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_li]:text-[13px] [&_li]:leading-5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+    <div className="space-y-1 text-body-s leading-5 [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:text-base [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-sm [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_li]:text-body-s [&_li]:leading-5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
       {parts.map((part, index) => {
         switch (part.type) {
           case 'thinking': {
@@ -675,8 +675,8 @@ function MessageContent({ content, onFileOpen, toolStates, timestamp, showRaw = 
             }
             return (
               <details key={index} className="rounded-md border border-border border-l-[3px] border-l-[#a78bfa] bg-bg-elevated">
-                <summary className="px-2 py-1 cursor-pointer text-[11px] text-muted font-mono hover:text-text">思考过程（{thinking.length.toLocaleString()} chars）</summary>
-                <pre className="px-2 pb-2 text-[11px] text-muted leading-4 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto font-body">{thinking}</pre>
+                <summary className="px-2 py-1 cursor-pointer text-2xs text-muted font-mono hover:text-text">思考过程（{thinking.length.toLocaleString()} chars）</summary>
+                <pre className="px-2 pb-2 text-2xs text-muted leading-4 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto font-body">{thinking}</pre>
               </details>
             )
           }
@@ -742,12 +742,12 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
     const user = message.role === 'user'
     return (
       <article className={`rounded-lg border ${user ? 'ml-4 w-fit max-w-[78%] self-end border-[#bfdbfe] bg-[#eff6ff] p-1.5 shadow-sm md:ml-10 md:max-w-[70%]' : assistant ? 'w-fit max-w-[96%] border-[#bfdbfe] bg-[#eff6ff] p-1.5' : 'border-accent/25 bg-accent-subtle p-2.5'}`}>
-        <div className={`mb-1 flex items-center justify-between gap-2 px-1 text-[10px] uppercase tracking-wide text-slate-500 ${user ? 'text-right' : ''}`}>
+        <div className={`mb-1 flex items-center justify-between gap-2 px-1 text-2xs uppercase tracking-wide text-slate-500 ${user ? 'text-right' : ''}`}>
           <span>
             {message.role}
             {message.channel && <span className="ml-2 normal-case text-blue-600">来自 {channelLabel(message.channel)}</span>}
           </span>
-          <time className="shrink-0 normal-case text-[10px] font-normal text-slate-400">{timestamp || '—'}</time>
+          <time className="shrink-0 normal-case text-2xs font-normal text-slate-400">{timestamp || '—'}</time>
         </div>
         <div className="rounded-md border border-[#dbeafe] bg-white px-2 py-1.5 text-slate-900 [&_h1]:text-slate-900 [&_h2]:text-slate-900 [&_h3]:text-slate-900 [&_p]:text-slate-900 [&_strong]:text-slate-900">
           {assistant
@@ -781,7 +781,7 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
           <summary className="flex min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left hover:bg-bg-hover">
             <ToolSummaryLine toolName={toolName} command={typeof data.command === 'string' ? data.command : undefined} timestamp={timestamp} status={isError ? 'error' : 'success'} className="flex-1" />
           </summary>
-          {toolCallId && <div className="border-t border-border px-2.5 py-2 text-[10px] text-muted">tool call {shortToolId(toolCallId)}</div>}
+          {toolCallId && <div className="border-t border-border px-2.5 py-2 text-2xs text-muted">tool call {shortToolId(toolCallId)}</div>}
         </details>
       )
     }
@@ -804,7 +804,7 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
   if (type === 'custom_message') {
     return <details className="rounded-lg border border-border bg-card"><summary className="px-3 py-2 cursor-pointer text-xs text-text">custom message</summary><pre className="p-3 pt-1 text-xs text-text whitespace-pre-wrap">{JSON.stringify(record.data, null, 2).slice(0, 100_000)}</pre></details>
   }
-  return <div className="text-[11px] text-muted border-l-2 border-border pl-3 py-1">{type.split('_').join(' ')}</div>
+  return <div className="text-2xs text-muted border-l-2 border-border pl-3 py-1">{type.split('_').join(' ')}</div>
 }
 
 function LiveToolGroup({ items, thinking, onFileOpen, toolStates }: { items: LiveToolItem[]; thinking: { index: number; entry: unknown }[]; onFileOpen: (path: string) => void; toolStates: ToolStateMap }) {
@@ -815,7 +815,7 @@ function LiveToolGroup({ items, thinking, onFileOpen, toolStates }: { items: Liv
   const names = new Map<string, number>()
   for (const item of items) names.set(item.toolName, (names.get(item.toolName) || 0) + 1)
   const nameSummary = [...names.entries()].map(([name, count]) => count > 1 ? `${name}×${count}` : name).join(', ')
-  const progress = errors > 0 ? `${done} done · ${errors} failed` : done === items.length ? `${done} done` : `${done} done · ${items.length - done} running`
+  const progress = errors > 0 ? `${done} 完成 · ${errors} 失败` : done === items.length ? `${done} 完成` : `${done} 完成 · ${items.length - done} 运行中`
   const tone = errors > 0 ? 'border-danger/40 bg-danger-subtle/10' : done === items.length ? 'border-ok/35 bg-ok-subtle/10' : 'border-accent/35 bg-accent-subtle/10'
 
   return (
@@ -824,10 +824,10 @@ function LiveToolGroup({ items, thinking, onFileOpen, toolStates }: { items: Liv
         type="button"
         aria-expanded={expanded}
         onClick={() => { setExpanded(value => !value); setSelectedKey(null) }}
-        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-left text-[11px] transition-all hover:border-border-strong ${tone}`}
+        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-left text-2xs transition hover:border-border-strong ${tone}`}
       >
         <span className={`h-2 w-2 shrink-0 rounded-full ${errors > 0 ? 'bg-danger' : done === items.length ? 'bg-ok' : 'bg-accent'}`} />
-        <span className="shrink-0 font-semibold text-text-strong">Multiple Tools: {progress}</span>
+        <span className="shrink-0 font-semibold text-text-strong">工具组：{progress}</span>
         <span className="shrink-0 text-muted/60">•</span>
         <span className="min-w-0 flex-1 truncate text-muted">{nameSummary}</span>
         <span className="shrink-0 text-muted/50">• 点击展开</span>
@@ -844,7 +844,7 @@ function LiveToolGroup({ items, thinking, onFileOpen, toolStates }: { items: Liv
                     type="button"
                     aria-expanded={active}
                     onClick={() => setSelectedKey(active ? null : item.key)}
-                    className={`flex w-full min-w-0 rounded px-1 py-0.5 text-left text-[11px] transition-colors hover:bg-bg-hover ${active ? 'bg-bg-hover' : ''}`}
+                    className={`flex w-full min-w-0 rounded px-1 py-0.5 text-left text-2xs transition-colors hover:bg-bg-hover ${active ? 'bg-bg-hover' : ''}`}
                   >
                     <ToolSummaryLine toolName={item.toolName} args={item.argsText} command={item.argsText ? undefined : item.detail} timestamp={item.timestamp} status={status} className="flex-1" />
                   </button>
@@ -893,7 +893,7 @@ export function AuthPanel({ onAuthenticated }: { onAuthenticated: (browserClient
         <code className="block mt-3 p-2 rounded bg-bg text-xs text-text break-all">~/.pi/agent/run/pi-dashboard/live-control-token</code>
         <input type="password" value={token} onChange={event => setToken(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void submit() }} className="mt-4 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text outline-none focus:border-accent" placeholder="64 位控制 token" />
         {error && <div className="mt-2 text-xs text-danger">{error}</div>}
-        <button type="button" disabled={!token.trim() || busy} onClick={() => void submit()} className="mt-4 w-full rounded-lg bg-accent text-white py-2 border-none disabled:opacity-50">{busy ? '验证中…' : '验证'}</button>
+        <button type="button" disabled={!token.trim() || busy} onClick={() => void submit()} className="mt-4 w-full rounded-lg bg-accent text-accent-fg py-2 border-none disabled:opacity-50">{busy ? '验证中…' : '验证'}</button>
       </div>
     </div>
   )
@@ -920,7 +920,10 @@ export default function LiveSessionPage() {
   const [busy, setBusy] = useState(false)
   const [commandNotice, setCommandNotice] = useState<string>()
   const [sessionSidebarVisible, setSessionSidebarVisible] = useState(() => typeof window === 'undefined' || localStorage.getItem('live-session-sidebar') !== 'hidden')
-  const timelineEnd = useRef<HTMLDivElement>(null)
+  const timelineScrollRef = useRef<HTMLDivElement>(null)
+  // Whether the timeline is pinned to the newest message. Flipped to false when
+  // the user scrolls up to read history, so streaming updates never yank them.
+  const timelineAtBottom = useRef(true)
   const panel = usePanelState()
   const [documentPreview, setDocumentPreview] = useState<{ filePath: string; content: string; loading: boolean; error: string | null } | null>(null)
   const [focusedSubagentId, setFocusedSubagentId] = useState<string>()
@@ -994,7 +997,37 @@ export default function LiveSessionPage() {
     else if (sessions[0]) navigate(`/live-sessions/${encodeURIComponent(sessions[0].processInstanceId)}`, { replace: true })
   }, [activeId, dispatch, navigate, sessions])
 
-  useEffect(() => { timelineEnd.current?.scrollIntoView({ block: 'end' }) }, [detail?.entries.length])
+  const scrollTimelineToBottom = useCallback(() => {
+    const el = timelineScrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [])
+
+  const handleTimelineScroll = useCallback(() => {
+    const el = timelineScrollRef.current
+    if (!el) return
+    timelineAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+  }, [])
+
+  // Follow content growth while pinned. Depends on the entries array itself, not
+  // its length: streaming `message_update` / `tool_execution_update` events replace
+  // the last entry in place, so the length alone would miss every later chunk.
+  useEffect(() => {
+    if (!timelineAtBottom.current) return
+    scrollTimelineToBottom()
+  }, [detail?.entries, scrollTimelineToBottom])
+
+  const timelineReady = Boolean(summary && detail)
+  // A freshly mounted timeline (session switch, reconnect re-render) starts at
+  // scrollTop 0; reset the pin and jump to the newest message.
+  useLayoutEffect(() => {
+    if (!timelineReady) return
+    timelineAtBottom.current = true
+    scrollTimelineToBottom()
+  }, [timelineReady, scrollTimelineToBottom])
+
+  // Switching between two already-loaded sessions reuses the same scroll
+  // container, so reset the pin for the newly selected session.
+  useLayoutEffect(() => { timelineAtBottom.current = true }, [activeId])
 
   useEffect(() => {
     if (!focusedSubagentId || state.auth !== 'authenticated') return
@@ -1158,10 +1191,10 @@ export default function LiveSessionPage() {
     <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
       {sessionSidebarVisible && <LiveSessionsList sessions={sessions} sessionTitles={sessionTitles} subagentStatuses={subagentStatuses} activeId={activeId} onRefresh={refresh} onSelect={id => navigate(`/live-sessions/${encodeURIComponent(id)}`)} />}
       <main className="min-w-0 flex-1 flex flex-col bg-bg">
-        <div className="flex h-8 min-w-0 items-center justify-between gap-2 border-b border-border bg-card/60 px-2 text-[10px] text-muted">
+        <div className="flex h-8 min-w-0 items-center justify-between gap-2 border-b border-border bg-card/60 px-2 text-2xs text-muted">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            {summary?.parentSessionId && <button type="button" onClick={() => parentSession ? navigate(`/live-sessions/${encodeURIComponent(parentSession.processInstanceId)}`) : navigate('/live-sessions/gallery')} className="shrink-0 rounded border border-accent/40 bg-accent-subtle px-2 py-0.5 text-[10px] text-accent hover:border-accent">← 返回主 Agent</button>}
-            <button type="button" onClick={toggleSessionSidebar} className="shrink-0 rounded border border-border bg-bg px-2 py-0.5 text-[10px] text-muted hover:border-accent hover:text-accent" title={sessionSidebarVisible ? '隐藏 Session 列表' : '显示 Session 列表'}>
+            {summary?.parentSessionId && <button type="button" onClick={() => parentSession ? navigate(`/live-sessions/${encodeURIComponent(parentSession.processInstanceId)}`) : navigate('/live-sessions/gallery')} className="shrink-0 rounded border border-accent/40 bg-accent-subtle px-2 py-0.5 text-2xs text-accent hover:border-accent">← 返回主 Agent</button>}
+            <button type="button" onClick={toggleSessionSidebar} className="shrink-0 rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent" title={sessionSidebarVisible ? '隐藏 Session 列表' : '显示 Session 列表'}>
               {sessionSidebarVisible ? '隐藏列表' : '显示列表'}
             </button>
             <span className="shrink-0">{state.wsConnected ? '● 实时连接' : '◐ 正在重连'}</span>
@@ -1169,7 +1202,7 @@ export default function LiveSessionPage() {
               <span className={`shrink-0 ${agentState.tone === 'danger' ? 'text-danger' : agentState.tone === 'accent' ? 'text-accent' : agentState.tone === 'ok' ? 'text-ok' : 'text-muted'}`} title={`Agent 状态：${agentState.label}`}>
                 ● {agentState.label}{agentState.label === '思考中' && <ThinkingElapsed startedAt={agentState.thinkingStartedAt} />}
               </span>
-              {(agentState.activeTools.length > 0 || agentState.doneTools > 0) && <span className="shrink-0 text-[10px] text-muted" title={`运行中工具：${agentState.activeTools.join('、') || '无'}；已完成工具：${agentState.doneTools}个`}>
+              {(agentState.activeTools.length > 0 || agentState.doneTools > 0) && <span className="shrink-0 text-2xs text-muted" title={`运行中工具：${agentState.activeTools.join('、') || '无'}；已完成工具：${agentState.doneTools}个`}>
                 工具 {agentState.activeTools.length} 运行 · {agentState.doneTools} 完成
               </span>}
             </>}
@@ -1179,20 +1212,20 @@ export default function LiveSessionPage() {
             </span>}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {summary?.status === 'running' && ownedLeaseId && <button type="button" disabled={busy} onClick={() => { void abort().catch(() => {}) }} className="rounded border border-danger/40 bg-danger-subtle px-2 py-0.5 text-[10px] text-danger disabled:opacity-50">中止</button>}
-            {summary && (ownedLeaseId ? <button type="button" disabled={busy} onClick={() => { void release().catch(() => {}) }} className="rounded border border-border bg-bg px-2 py-0.5 text-[10px] text-muted disabled:opacity-50">释放控制</button> : <button type="button" disabled={busy || summary.status === 'reconnecting'} onClick={() => { void perform(async () => { await claim() }).catch(() => {}) }} className="rounded border border-accent bg-accent px-2 py-0.5 text-[10px] text-white disabled:opacity-50">取得控制</button>)}
-            <button type="button" onClick={() => void refresh()} className="rounded border border-border bg-bg px-2 py-0.5 text-[10px] text-muted hover:border-accent hover:text-accent">刷新</button>
+            {summary?.status === 'running' && ownedLeaseId && <button type="button" disabled={busy} onClick={() => { void abort().catch(() => {}) }} className="rounded border border-danger/40 bg-danger-subtle px-2 py-0.5 text-2xs text-danger disabled:opacity-50">中止</button>}
+            {summary && (ownedLeaseId ? <button type="button" disabled={busy} onClick={() => { void release().catch(() => {}) }} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted disabled:opacity-50">释放控制</button> : <button type="button" disabled={busy || summary.status === 'reconnecting'} onClick={() => { void perform(async () => { await claim() }).catch(() => {}) }} className="rounded border border-accent bg-accent px-2 py-0.5 text-2xs text-accent-fg disabled:opacity-50">取得控制</button>)}
+            <button type="button" onClick={() => void refresh()} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent">刷新</button>
           </div>
         </div>
         {childSessions.length > 0 && <div className="shrink-0 border-b border-border bg-card/30 px-3 py-2">
-          <div className="mb-1 text-[10px] font-medium text-muted">子 Agent · {childSessions.length}</div>
+          <div className="mb-1 text-2xs font-medium text-muted">子 Agent · {childSessions.length}</div>
           <div className="flex gap-1.5 overflow-x-auto pb-0.5">
             {childSessions.map(child => {
               const title = sessionTitles[child.processInstanceId] || child.sessionName || `子 Agent · PID ${child.pid}`
               const focused = focusedSubagentId === child.processInstanceId
               return <button key={child.processInstanceId} type="button" onClick={() => setFocusedSubagentId(child.processInstanceId)} className={`min-w-[150px] max-w-[220px] rounded border px-2 py-1.5 text-left transition-colors ${focused ? 'border-accent bg-accent-subtle' : 'border-border bg-card hover:border-accent/60'}`} title={`打开子 Agent：${title}`}>
-                <div className="flex items-center gap-1.5"><span className="shrink-0 text-[12px] leading-none" aria-label={`Session 状态：${child.status === 'running' ? '工作中' : child.status === 'reconnecting' ? '重连中' : '等待输入'}`}>{child.status === 'running' ? '🔨' : child.status === 'reconnecting' ? '🔄' : '💤'}</span><span className="min-w-0 flex-1 truncate text-[11px] font-medium text-text-strong">{title}</span><span className="text-[9px] text-muted">{child.status === 'running' ? '工作中' : child.status === 'reconnecting' ? '重连中' : '等待'}</span></div>
-                <div className="mt-0.5 truncate font-mono text-[9px] text-muted">sid {child.sessionId.slice(0, 8)}… · PID {child.pid}</div>
+                <div className="flex items-center gap-1.5"><span className="shrink-0 text-meta leading-none" aria-label={`Session 状态：${child.status === 'running' ? '工作中' : child.status === 'reconnecting' ? '重连中' : '等待输入'}`}>{child.status === 'running' ? '🔨' : child.status === 'reconnecting' ? '🔄' : '💤'}</span><span className="min-w-0 flex-1 truncate text-2xs font-medium text-text-strong">{title}</span><span className="text-2xs text-muted">{child.status === 'running' ? '工作中' : child.status === 'reconnecting' ? '重连中' : '等待'}</span></div>
+                <div className="mt-0.5 truncate font-mono text-2xs text-muted">sid {child.sessionId.slice(0, 8)}… · PID {child.pid}</div>
               </button>
             })}
           </div>
@@ -1201,11 +1234,11 @@ export default function LiveSessionPage() {
         {commandNotice && !state.error && <div className="px-4 py-2 bg-accent-subtle text-accent text-xs border-b border-accent/20">{commandNotice}</div>}
         {activeId && notifications.length > 0 && <div className="shrink-0 border-b border-border bg-bg-elevated px-3 py-2">
           <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-[10px] font-medium text-muted">扩展通知 · {notifications.length}</span>
-            <button type="button" onClick={() => dispatch(dismissSessionNotifications(activeId))} className="rounded border border-border bg-bg px-2 py-0.5 text-[10px] text-muted hover:border-accent hover:text-accent">全部清除</button>
+            <span className="text-2xs font-medium text-muted">扩展通知 · {notifications.length}</span>
+            <button type="button" onClick={() => dispatch(dismissSessionNotifications(activeId))} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent">全部清除</button>
           </div>
           <div className="max-h-[180px] space-y-1 overflow-y-auto">
-            {notifications.map((note, index) => <pre key={index} className={`m-0 whitespace-pre-wrap break-words rounded border px-2 py-1 font-mono text-[10px] leading-4 ${note.notifyType === 'error' ? 'border-danger/40 bg-danger-subtle text-danger' : note.notifyType === 'warning' ? 'border-warn/40 bg-warn-subtle text-warn' : 'border-border bg-card text-text'}`}>{note.message}</pre>)}
+            {notifications.map((note, index) => <pre key={index} className={`m-0 whitespace-pre-wrap break-words rounded border px-2 py-1 font-mono text-2xs leading-4 ${note.notifyType === 'error' ? 'border-danger/40 bg-danger-subtle text-danger' : note.notifyType === 'warning' ? 'border-warn/40 bg-warn-subtle text-warn' : 'border-border bg-card text-text'}`}>{note.message}</pre>)}
           </div>
         </div>}
         {!summary || !detail ? (
@@ -1214,14 +1247,13 @@ export default function LiveSessionPage() {
           <>
             <div className="flex min-h-0 flex-1">
               <div className="flex min-w-0 flex-1 flex-col">
-                <div className="flex flex-1 flex-col overflow-y-auto p-3 space-y-2">
+                <div ref={timelineScrollRef} onScroll={handleTimelineScroll} className="flex flex-1 flex-col overflow-y-auto p-3 space-y-2">
                   {workflowItems.map(workflow => <LiveWorkflowProgressCard key={String(workflow.id)} workflow={workflow} sessions={sessions} onOpen={workflowValue => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflowValue) }} />)}
                   {detail.entries.length === 0 && workflowItems.length === 0 && <div className="text-sm text-muted text-center py-10">该 session 暂无可显示消息。</div>}
                   {timelineItems.map(item => item.type === 'toolGroup'
                     ? <LiveToolGroup key={`tool-group-${item.items[0]?.index ?? 0}`} items={item.items} thinking={item.thinking} onFileOpen={path => { void handleDocumentLink(path) }} toolStates={toolStates} />
                     : <TimelineEntry key={`${item.index}-${typeof item.entry === 'object' && item.entry ? String((item.entry as Record<string, unknown>).type || '') : ''}`} entry={item.entry} onFileOpen={path => { void handleDocumentLink(path) }} toolStates={toolStates} />
                   )}
-                  <div ref={timelineEnd} />
                 </div>
                 <LiveCommandBar toolStates={toolStates} features={features} />
                 <LiveSessionComposer
@@ -1259,7 +1291,7 @@ export default function LiveSessionPage() {
         <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]" aria-hidden="true" />
         <ErrorBoundary
           key={`panel:${panel.filePath}`}
-          fallback={<div className="fixed inset-3 z-[60] flex flex-col items-center justify-center gap-3 rounded-xl border border-danger/40 bg-bg p-6 text-center shadow-2xl md:inset-8"><div className="text-sm text-danger">文件渲染失败</div><div className="max-w-full truncate text-xs text-muted" title={panel.filePath}>{panel.filePath}</div><button type="button" onClick={panel.closePanel} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button></div>}
+          fallback={<div className="fixed inset-3 z-[60] flex flex-col items-center justify-center gap-3 rounded-xl border border-danger/40 bg-bg p-6 text-center shadow-2xl md:inset-8"><div className="text-sm text-danger">文件渲染失败</div><div className="max-w-full truncate text-xs text-muted" title={panel.filePath}>{panel.filePath}</div><div className="flex items-center gap-2"><a href={`/api/local-file/download?path=${encodeURIComponent(panel.filePath)}`} download className="rounded border border-accent px-3 py-1 text-xs text-accent no-underline hover:bg-accent hover:text-accent-fg">下载原文件</a><button type="button" onClick={() => window.location.reload()} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">重新加载</button><button type="button" onClick={panel.closePanel} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button></div></div>}
         >
           <Suspense fallback={<div className="fixed inset-3 z-50 flex items-center justify-center rounded-xl border border-border bg-bg text-sm text-muted md:inset-8">加载文件…</div>}>
           <DocumentPanel

@@ -45,7 +45,7 @@ export default function ConnectionOverlay() {
               <span className="inline-block w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
               <span className="text-sm font-semibold text-text-strong">Reconnecting…</span>
             </div>
-            <div className="text-[13px] text-muted">
+            <div className="text-body-s text-muted">
               Lost connection to Pi Dashboard. Retrying automatically…
               <span className="font-mono text-muted/60 ml-1">{elapsed}s</span>
             </div>
@@ -54,38 +54,38 @@ export default function ConnectionOverlay() {
           <>
             <div className="text-2xl mb-3">🔌</div>
             <div className="text-sm font-semibold text-text-strong mb-2">Connection Lost</div>
-            <div className="text-[13px] text-muted mb-4">
+            <div className="text-body-s text-muted mb-4">
               Can't reach the Pi Dashboard server. This usually means the SSH tunnel dropped or the server stopped.
               <span className="font-mono text-muted/60 ml-1">({elapsed}s)</span>
             </div>
 
-            <div className="space-y-3 text-[13px]">
+            <div className="space-y-3 text-body-s">
               <div className="bg-bg-elevated rounded-lg p-3 border border-border">
                 <div className="font-medium text-text mb-1">🔑 Check SSH access</div>
-                <code className="text-[12px] text-accent font-mono">ssh user@your-remote-host echo ok</code>
-                <div className="text-[12px] text-muted mt-1">Verify you can reach the remote host</div>
+                <code className="text-meta text-accent font-mono">ssh user@your-remote-host echo ok</code>
+                <div className="text-meta text-muted mt-1">Verify you can reach the remote host</div>
               </div>
 
               <div className="bg-bg-elevated rounded-lg p-3 border border-border">
                 <div className="font-medium text-text mb-1">🔗 Restart SSH tunnel</div>
-                <code className="text-[12px] text-accent font-mono block break-all">ssh -f -N -L 7777:localhost:7777 user@your-remote-host</code>
+                <code className="text-meta text-accent font-mono block break-all">ssh -f -N -L 7777:localhost:7777 user@your-remote-host</code>
               </div>
 
               <div className="bg-bg-elevated rounded-lg p-3 border border-border">
                 <div className="font-medium text-text mb-1">🥧 Restart dashboard</div>
-                <code className="text-[12px] text-accent font-mono block break-all">ssh user@your-remote-host 'tmux new-session -d -s pi-dash "cd ~/pi-dashboard && node backend/server.js"'</code>
+                <code className="text-meta text-accent font-mono block break-all">ssh user@your-remote-host 'tmux new-session -d -s pi-dash "cd ~/pi-dashboard && node backend/server.js"'</code>
               </div>
             </div>
 
             <div className="mt-4 flex gap-2">
               <button
-                className="flex-1 py-2 rounded-lg text-[13px] font-medium cursor-pointer bg-accent text-white border-none hover:opacity-90 transition-opacity"
+                className="flex-1 py-2 rounded-lg text-body-s font-medium cursor-pointer bg-accent text-accent-fg border-none hover:opacity-90 transition-opacity"
                 onClick={() => window.location.reload()}
               >
                 🔄 Retry Now
               </button>
               <button
-                className="px-4 py-2 rounded-lg text-[13px] font-medium cursor-pointer bg-transparent text-muted border border-border hover:text-text hover:border-border-strong transition-all"
+                className="px-4 py-2 rounded-lg text-body-s font-medium cursor-pointer bg-transparent text-muted border border-border hover:text-text hover:border-border-strong transition"
                 onClick={() => {
                   navigator.clipboard.writeText('ssh -f -N -L 7777:localhost:7777 user@your-remote-host')
                 }}
@@ -95,7 +95,7 @@ export default function ConnectionOverlay() {
             </div>
 
             <div className="mt-3 text-center">
-              <span className="inline-flex items-center gap-1.5 text-[12px] text-muted">
+              <span className="inline-flex items-center gap-1.5 text-meta text-muted">
                 <span className="w-1.5 h-1.5 rounded-full bg-danger animate-pulse" />
                 Auto-retrying in background
               </span>

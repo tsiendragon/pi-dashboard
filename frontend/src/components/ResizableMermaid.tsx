@@ -19,18 +19,18 @@ function initMermaid(instance: { initialize: (config: object) => void }): void {
     startOnLoad: false,
     theme: dark ? 'dark' : 'default',
     themeVariables: dark ? {
-      primaryColor: '#f59e32',
+      primaryColor: '#3d5a80',
       primaryTextColor: '#e8e6e3',
       primaryBorderColor: '#3a3a3a',
       lineColor: '#888',
       secondaryColor: '#2a2a2a',
       tertiaryColor: '#1a1a1a',
     } : {
-      primaryColor: '#f59e32',
+      primaryColor: '#c7d9f5',
       primaryTextColor: '#1a1a1a',
       primaryBorderColor: '#ccc',
       lineColor: '#666',
-      secondaryColor: '#fff3e0',
+      secondaryColor: '#eaf1fc',
       tertiaryColor: '#f5f5f5',
     },
     securityLevel: 'loose',
@@ -148,7 +148,7 @@ export const ResizableMermaid = memo(function ResizableMermaid({ code }: Props) 
         if (cancelled || !containerRef.current) return
         svgRef.current = null
         const pre = document.createElement('pre')
-        pre.className = 'text-danger text-[13px]'
+        pre.className = 'text-danger text-body-s'
         pre.textContent = code
         containerRef.current.textContent = ''
         containerRef.current.appendChild(pre)
@@ -268,7 +268,7 @@ export const ResizableMermaid = memo(function ResizableMermaid({ code }: Props) 
       </div>
 
       {error && (
-        <div className="text-[12px] text-danger mt-1">{error}</div>
+        <div className="text-meta text-danger mt-1">{error}</div>
       )}
     </div>
   )
@@ -291,7 +291,7 @@ function ToolbarButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="px-2 py-0.5 text-[11px] font-medium rounded bg-bg-elevated/95 border border-border text-muted hover:text-text hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer backdrop-blur-sm"
+      className="px-2 py-0.5 text-2xs font-medium rounded bg-bg-elevated/95 border border-border text-muted hover:text-text hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer backdrop-blur-sm"
     >
       {children}
     </button>

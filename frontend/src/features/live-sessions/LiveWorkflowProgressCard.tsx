@@ -64,9 +64,9 @@ export default function LiveWorkflowProgressCard({ workflow, sessions, onOpen }:
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <strong className="min-w-0 flex-1 truncate text-xs text-text-strong">Workflow · {stringValue(workflow.label, stringValue(workflow.id, '未命名'))}</strong>
-          <span className={`shrink-0 text-[10px] ${statusClass(workflowStatus)}`}>{statusLabel(workflowStatus)}</span>
+          <span className={`shrink-0 text-2xs ${statusClass(workflowStatus)}`}>{statusLabel(workflowStatus)}</span>
         </div>
-        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted">
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-2xs text-muted">
           <span>{totalTasks > 0 ? `${doneTasks} / ${totalTasks} 个任务` : `${stages.length} 个阶段`}</span>
           {currentStage && <span>当前：{stringValue(currentStage.label, stringValue(currentStage.id, '阶段'))}</span>}
           {linkedSessions.length > 0 && <span>{linkedSessions.length} 个子 Agent</span>}
@@ -78,9 +78,9 @@ export default function LiveWorkflowProgressCard({ workflow, sessions, onOpen }:
         {!terminal && stages.length > 0 && <div className="mt-2 space-y-1">
           {stages.slice(0, 4).map(stage => {
             const status = stringValue(stage.status)
-            return <div key={String(stage.id || stage.label)} className="flex items-center gap-1.5 text-[10px] text-muted"><span className={statusClass(status)}>{statusIcon(status)}</span><span className="truncate">{stringValue(stage.label, String(stage.id || '阶段'))}</span></div>
+            return <div key={String(stage.id || stage.label)} className="flex items-center gap-1.5 text-2xs text-muted"><span className={statusClass(status)}>{statusIcon(status)}</span><span className="truncate">{stringValue(stage.label, String(stage.id || '阶段'))}</span></div>
           })}
-          {stages.length > 4 && <div className="text-[10px] text-muted/70">还有 {stages.length - 4} 个阶段 · 点击查看详情</div>}
+          {stages.length > 4 && <div className="text-2xs text-muted/70">还有 {stages.length - 4} 个阶段 · 点击查看详情</div>}
         </div>}
       </div>
       <span className="shrink-0 text-xs text-muted">›</span>

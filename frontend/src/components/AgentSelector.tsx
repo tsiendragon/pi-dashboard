@@ -34,14 +34,14 @@ export default function AgentSelector({ agents, value, onChange, exclude = [] }:
     <div className="relative">
       <button
         ref={btnRef}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-mono font-medium border border-border bg-bg-elevated text-text hover:border-border-strong transition-all cursor-pointer"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-body-s font-mono font-medium border border-border bg-bg-elevated text-text hover:border-border-strong transition cursor-pointer"
         onClick={() => setOpen(!open)}
         aria-label="Switch agent"
         aria-expanded={open}
         aria-haspopup="listbox"
       >
         <span className="text-accent">⚡</span> {active}
-        <span className="text-muted text-[11px] ml-1">▾</span>
+        <span className="text-muted text-2xs ml-1">▾</span>
       </button>
       {open && btnRef.current && createPortal(
         <div
@@ -63,16 +63,16 @@ export default function AgentSelector({ agents, value, onChange, exclude = [] }:
                 key={a.name}
                 role="option"
                 aria-selected={isCurrent}
-                className={`w-full text-left px-3 py-2 flex items-center gap-2 min-w-0 border-b border-border last:border-0 cursor-pointer transition-all ${isCurrent ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}
+                className={`w-full text-left px-3 py-2 flex items-center gap-2 min-w-0 border-b border-border last:border-0 cursor-pointer transition ${isCurrent ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}
                 onClick={() => { onChange(a.name === 'pi' ? '' : a.name); setOpen(false) }}
               >
-                <span className={`text-[13px] font-mono font-semibold truncate ${isCurrent ? 'text-accent' : 'text-text'}`}>{a.name}</span>
+                <span className={`text-body-s font-mono font-semibold truncate ${isCurrent ? 'text-accent' : 'text-text'}`}>{a.name}</span>
                 <AimBadge source={a.source || 'built-in'} />
-                {isCurrent && <span className="text-accent text-[11px] ml-auto">✓</span>}
+                {isCurrent && <span className="text-accent text-2xs ml-auto">✓</span>}
               </button>
             )
           })}
-          {items.length === 0 && <div className="px-3 py-2 text-[13px] text-muted italic">No agents found</div>}
+          {items.length === 0 && <div className="px-3 py-2 text-body-s text-muted italic">No agents found</div>}
         </div>,
         document.body
       )}

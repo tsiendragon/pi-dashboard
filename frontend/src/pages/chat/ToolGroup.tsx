@@ -45,8 +45,8 @@ const ToolGroup = memo(function ToolGroup({ tools, renderTool }: ToolGroupProps)
     .map(([name, count]) => count > 1 ? `${name}×${count}` : name)
     .join(', ')
   const progress = summary.completed === summary.total
-    ? `${summary.total} done`
-    : `${summary.completed} done · ${summary.total - summary.completed} running`
+    ? `${summary.total} 完成`
+    : `${summary.completed} 完成 · ${summary.total - summary.completed} 运行中`
   const groupTone = summary.errors > 0
     ? 'border-danger/40 bg-danger-subtle/10'
     : summary.completed === summary.total
@@ -56,13 +56,13 @@ const ToolGroup = memo(function ToolGroup({ tools, renderTool }: ToolGroupProps)
   return (
     <div className="animate-scale-in font-mono">
       <button
-        className={`w-full min-w-0 flex items-center gap-1.5 rounded-md border px-2 py-1 text-left text-[11px] transition-all cursor-pointer hover:border-border-strong ${groupTone}`}
+        className={`w-full min-w-0 flex items-center gap-1.5 rounded-md border px-2 py-1 text-left text-2xs transition cursor-pointer hover:border-border-strong ${groupTone}`}
         onClick={() => { setExpanded(value => !value); setSelectedIndex(null) }}
         aria-expanded={expanded}
         aria-label={expanded ? 'Collapse tool calls' : 'Expand tool calls'}
       >
         <span className={`h-2 w-2 shrink-0 rounded-full ${summary.errors > 0 ? 'bg-danger' : summary.completed === summary.total ? 'bg-ok' : 'bg-accent'}`} />
-        <span className="shrink-0 font-semibold text-text-strong">Multiple Tools: {progress}</span>
+        <span className="shrink-0 font-semibold text-text-strong">工具组：{progress}</span>
         <span className="shrink-0 text-muted/60">•</span>
         <span className="min-w-0 flex-1 truncate text-muted">{nameStr}</span>
         <span className="shrink-0 text-muted/50">• 点击展开</span>
@@ -80,7 +80,7 @@ const ToolGroup = memo(function ToolGroup({ tools, renderTool }: ToolGroupProps)
                 <div key={tool.index}>
                   <button
                     type="button"
-                    className={`flex w-full min-w-0 items-center rounded px-1 py-0.5 text-left text-[11px] transition-colors hover:bg-bg-hover ${active ? 'bg-bg-hover' : ''}`}
+                    className={`flex w-full min-w-0 items-center rounded px-1 py-0.5 text-left text-2xs transition-colors hover:bg-bg-hover ${active ? 'bg-bg-hover' : ''}`}
                     onClick={() => setSelectedIndex(active ? null : tool.index)}
                     aria-expanded={active}
                   >

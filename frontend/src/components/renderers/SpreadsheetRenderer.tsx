@@ -5,8 +5,8 @@ interface SpreadsheetRendererProps {
   filePath: string
 }
 
-const BTN = 'px-2 py-1 rounded-md text-[12px] font-medium border border-border text-muted hover:text-text cursor-pointer disabled:opacity-40'
-const ACTIVE_TAB = 'px-2 py-1 rounded-md text-[12px] font-medium border border-accent text-accent bg-accent-subtle cursor-pointer'
+const BTN = 'px-2 py-1 rounded-md text-meta font-medium border border-border text-muted hover:text-text cursor-pointer disabled:opacity-40'
+const ACTIVE_TAB = 'px-2 py-1 rounded-md text-meta font-medium border border-accent text-accent bg-accent-subtle cursor-pointer'
 
 export default function SpreadsheetRenderer({ filePath }: SpreadsheetRendererProps) {
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null)
@@ -62,7 +62,7 @@ export default function SpreadsheetRenderer({ filePath }: SpreadsheetRendererPro
     <div className="flex flex-col w-full h-full">
       {/* Sheet tabs (only if multiple sheets) */}
       {workbook && workbook.SheetNames.length > 1 && (
-        <div className="flex items-center gap-1 px-3 py-2 border-b border-border bg-chrome text-[12px] shrink-0 overflow-x-auto">
+        <div className="flex items-center gap-1 px-3 py-2 border-b border-border bg-chrome text-meta shrink-0 overflow-x-auto">
           {workbook.SheetNames.map(name => (
             <button
               key={name}
@@ -81,7 +81,7 @@ export default function SpreadsheetRenderer({ filePath }: SpreadsheetRendererPro
             <thead className="sticky top-0 z-10">
               <tr>
                 {data[0].map((cell, i) => (
-                  <th key={i} className="text-left text-muted text-[13px] font-medium px-3 py-2 border-b border-border bg-chrome whitespace-nowrap">
+                  <th key={i} className="text-left text-muted text-body-s font-medium px-3 py-2 border-b border-border bg-chrome whitespace-nowrap">
                     {String(cell)}
                   </th>
                 ))}

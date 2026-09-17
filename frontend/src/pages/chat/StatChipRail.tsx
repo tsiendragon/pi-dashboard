@@ -59,8 +59,8 @@ const StatChipRail = memo(function StatChipRail({ stats, contextUsage }: Props) 
           className="stat-rail-bar"
           title={`Context: ${currentContextTokens != null ? fmt(currentContextTokens) : '?'} / ${fmt(contextWindow)} (${usedPct.toFixed(1)}%)`}
         >
-          {usedPct > 0 && <div className="h-full transition-all duration-500" style={{ width: `${usedPct}%`, backgroundColor: ctxColor }} />}
-          {availPct > 0 && <div className="h-full transition-all duration-500" style={{ width: `${availPct}%`, backgroundColor: 'var(--border)' }} />}
+          {usedPct > 0 && <div className="h-full transition-[width] duration-500" style={{ width: `${usedPct}%`, backgroundColor: ctxColor }} />}
+          {availPct > 0 && <div className="h-full transition-[width] duration-500" style={{ width: `${availPct}%`, backgroundColor: 'var(--border)' }} />}
         </div>
       )}
 
@@ -106,7 +106,7 @@ const StatChipRail = memo(function StatChipRail({ stats, contextUsage }: Props) 
             <span className="stat-chip-sub">/ {fmt(contextWindow)}</span>
 
             {showDetail && (
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-card border border-border rounded-lg shadow-xl p-3 min-w-[260px] text-[12px] font-mono pointer-events-none">
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-card border border-border rounded-lg shadow-xl p-3 min-w-[260px] text-meta font-mono pointer-events-none">
                 <div className="font-semibold text-text-strong mb-2 font-body">Context Window</div>
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2">
@@ -123,7 +123,7 @@ const StatChipRail = memo(function StatChipRail({ stats, contextUsage }: Props) 
                   </div>
                 </div>
                 <div className="border-t border-border mt-2 pt-2 space-y-1">
-                  <div className="text-[11px] text-muted font-semibold uppercase tracking-wide mb-1">Session totals</div>
+                  <div className="text-2xs text-muted font-semibold uppercase tracking-wide mb-1">Session totals</div>
                   {totalInputTokens > 0 && (
                     <div className="flex justify-between"><span className="text-muted">↑ Fresh input</span><span className="text-text tabular-nums">{fmt(totalInputTokens)}</span></div>
                   )}
@@ -144,7 +144,7 @@ const StatChipRail = memo(function StatChipRail({ stats, contextUsage }: Props) 
                   )}
                 </div>
                 {usedPct >= 80 && (
-                  <div className="mt-2 text-[11px] text-warn font-body">
+                  <div className="mt-2 text-2xs text-warn font-body">
                     ⚠ Context is {usedPct >= 90 ? 'nearly full' : 'getting full'} — consider /compact
                   </div>
                 )}

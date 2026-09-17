@@ -182,37 +182,37 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
   return (
     <div ref={ref} className={isModal ? 'fixed inset-3 z-50 flex flex-col overflow-hidden rounded-xl border border-border bg-bg shadow-2xl shadow-black/40 md:inset-8' : 'fixed inset-0 z-30 flex flex-col bg-bg md:relative md:inset-auto md:z-auto md:border-l md:border-border'} style={!isModal && typeof window !== 'undefined' && window.innerWidth >= 768 ? { width, minWidth: 300 } : undefined}>
       <div className={`${isModal ? 'hidden' : 'hidden md:flex'} absolute left-[-2px] top-0 bottom-0 w-[5px] cursor-col-resize z-20 group/drag items-center justify-center`} onMouseDown={onDragStart}>
-        <div className="w-[2px] h-full bg-transparent group-hover/drag:bg-orange-400 group-active/drag:bg-orange-500 transition-colors duration-200" />
+        <div className="w-[2px] h-full bg-transparent group-hover/drag:bg-accent group-active/drag:bg-accent-hover transition-colors duration-200" />
       </div>
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-chrome">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[13px] font-mono font-semibold text-text truncate" title={filePath}>{fileName}</span>
+          <span className="text-body-s font-mono font-semibold text-text truncate" title={filePath}>{fileName}</span>
           {versions.length > 0 && (
-            <select aria-label="version" className="text-[11px] bg-bg border border-border rounded px-1 py-0.5 text-muted" value={selectedVersion ?? 'current'} onChange={handleVersionChange}>
+            <select aria-label="version" className="text-2xs bg-bg border border-border rounded px-1 py-0.5 text-muted" value={selectedVersion ?? 'current'} onChange={handleVersionChange}>
               {versions.map(v => <option key={v.version} value={v.version}>v{v.version}</option>)}
               <option value="current">Current</option>
             </select>
           )}
-          {isOldVersion && <span className="text-[11px] text-warning font-medium">Read-only</span>}
+          {isOldVersion && <span className="text-2xs text-warning font-medium">Read-only</span>}
         </div>
         <div className="flex gap-1.5 shrink-0">
           {mode === 'edit' && (
-            <button className={`px-2 py-1 rounded-md text-[12px] font-medium border cursor-pointer transition-all ${lineNums ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text'}`} onClick={() => setLineNums(!lineNums)} title="Toggle line numbers">#</button>
+            <button className={`px-2 py-1 rounded-md text-meta font-medium border cursor-pointer transition ${lineNums ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text'}`} onClick={() => setLineNums(!lineNums)} title="Toggle line numbers">#</button>
           )}
           {!isBinary && (['preview', 'edit'] as const).map(m => (
-            <button key={m} className={`px-2 py-1 rounded-md text-[12px] font-medium border cursor-pointer transition-all ${mode === m ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong'}`} onClick={() => setMode(m)}>{m === 'edit' ? (fileType === 'html' ? 'Source' : 'Edit') : 'Preview'}</button>
+            <button key={m} className={`px-2 py-1 rounded-md text-meta font-medium border cursor-pointer transition ${mode === m ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong'}`} onClick={() => setMode(m)}>{m === 'edit' ? (fileType === 'html' ? 'Source' : 'Edit') : 'Preview'}</button>
           ))}
           {!isBinary && versions.length > 0 && (
-            <button className={`px-2 py-1 rounded-md text-[12px] font-medium border cursor-pointer transition-all ${diffMode ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong'}`} onClick={onToggleDiff} aria-label="Diff">Diff</button>
+            <button className={`px-2 py-1 rounded-md text-meta font-medium border cursor-pointer transition ${diffMode ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong'}`} onClick={onToggleDiff} aria-label="Diff">Diff</button>
           )}
-          {!isBinary && <button className={`px-2 py-1 rounded-md text-[12px] font-medium border transition-all disabled:opacity-40 ${dirty ? 'border-accent text-white bg-accent cursor-pointer hover:bg-accent-hover' : 'border-border text-muted cursor-default'}`} disabled={saving || !dirty} onClick={handleSave}>{saving ? 'Saving…' : 'Save'}</button>}
-          <a href={`/api/local-file/download?path=${encodeURIComponent(filePath)}`} download={fileName} className="px-2 py-1 rounded-md text-[12px] text-muted border border-border hover:text-accent hover:border-accent transition-all cursor-pointer no-underline" title="Download">⬇</a>
-          <button className="px-2 py-1 rounded-md text-[12px] text-muted border border-border hover:text-danger hover:border-danger transition-all cursor-pointer" onClick={guardedClose}>✕</button>
+          {!isBinary && <button className={`px-2 py-1 rounded-md text-meta font-medium border transition disabled:opacity-40 ${dirty ? 'border-accent text-accent-fg bg-accent cursor-pointer hover:bg-accent-hover' : 'border-border text-muted cursor-default'}`} disabled={saving || !dirty} onClick={handleSave}>{saving ? 'Saving…' : 'Save'}</button>}
+          <a href={`/api/local-file/download?path=${encodeURIComponent(filePath)}`} download={fileName} className="px-2 py-1 rounded-md text-meta text-muted border border-border hover:text-accent hover:border-accent transition cursor-pointer no-underline" title="Download">⬇</a>
+          <button className="px-2 py-1 rounded-md text-meta text-muted border border-border hover:text-danger hover:border-danger transition cursor-pointer" onClick={guardedClose}>✕</button>
         </div>
       </div>
-      {saveError && <div className="px-3 py-1 text-[11px] text-danger bg-bg-elevated border-b border-border">{saveError}</div>}
+      {saveError && <div className="px-3 py-1 text-2xs text-danger bg-bg-elevated border-b border-border">{saveError}</div>}
       {!isBinary && conflictContent != null && (
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-warning/10 text-warning text-[12px]">
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-warning/10 text-warning text-meta">
           <span className="font-medium">File changed on disk</span>
           <div className="flex gap-1 ml-auto">
             <button className="px-2 py-0.5 rounded border border-warning/40 hover:bg-warning/20 cursor-pointer" onClick={() => onResolveConflict('reload')}>Reload</button>
@@ -250,9 +250,9 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
       </div>
       {/* Review Comments button — visible when comments exist */}
       {filteredComments.length > 0 && !diffMode && onReviewComments && (
-        <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border bg-chrome text-[11px] text-muted">
+        <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border bg-chrome text-2xs text-muted">
           <span>💬 {filteredComments.length} comment{filteredComments.length !== 1 ? 's' : ''}</span>
-          <button className="px-2 py-0.5 rounded border border-accent text-accent text-[11px] cursor-pointer hover:bg-accent-subtle ml-auto" onClick={onReviewComments}>Review Comments</button>
+          <button className="px-2 py-0.5 rounded border border-accent text-accent text-2xs cursor-pointer hover:bg-accent-subtle ml-auto" onClick={onReviewComments}>Review Comments</button>
         </div>
       )}
       {/* Floating comment input triggered by right-click → Add Comment */}
@@ -273,12 +273,12 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
           onMouseDown={e => e.stopPropagation()}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-[13px] text-text hover:bg-bg-hover cursor-pointer bg-transparent border-none font-body flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-body-s text-text hover:bg-bg-hover cursor-pointer bg-transparent border-none font-body flex items-center gap-2"
             onClick={() => { setActiveInputRange({ start: contextMenu.startLine, end: contextMenu.endLine }); setContextMenu(null) }}
           >💬 Add Comment</button>
         </div>
       )}
-      <div className="px-3 py-1.5 border-t border-border text-[11px] text-muted font-mono truncate" title={filePath}>{filePath}</div>
+      <div className="px-3 py-1.5 border-t border-border text-2xs text-muted font-mono truncate" title={filePath}>{filePath}</div>
     </div>
   )
 })

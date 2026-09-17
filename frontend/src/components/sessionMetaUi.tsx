@@ -15,7 +15,7 @@ export function TagChip({ tag, active, onClick, title }: {
   onClick?: (tag: string) => void
   title?: string
 }) {
-  const cls = `shrink-0 max-w-[78px] truncate rounded-full border px-1.5 py-px text-[10px] font-semibold leading-[14px] ${tagColorClass(tag)} ${active ? 'ring-1 ring-accent opacity-100' : 'opacity-90'}`
+  const cls = `shrink-0 max-w-[78px] truncate rounded-full border px-1.5 py-px text-2xs font-semibold leading-[14px] ${tagColorClass(tag)} ${active ? 'ring-1 ring-accent opacity-100' : 'opacity-90'}`
   if (!onClick) return <span className={cls} title={title || `#${tag}`}>{tag}</span>
   return (
     <button
@@ -55,7 +55,7 @@ export function TagEditor({ tags: rawTags, allTags, onTags, onClose }: {
     <div className="mx-1 mb-1.5 rounded-md border border-accent bg-bg p-1.5" onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
       <div className="flex flex-wrap items-center gap-1">
         {tags.map(t => (
-          <span key={t} className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-px text-[10px] font-semibold ${tagColorClass(t)}`}>
+          <span key={t} className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-px text-2xs font-semibold ${tagColorClass(t)}`}>
             {t}
             <button type="button" aria-label={`remove tag ${t}`} className="opacity-60 hover:text-danger hover:opacity-100" onMouseDown={e => { e.preventDefault(); onTags(tags.filter(x => x !== t)) }}>×</button>
           </span>
@@ -74,7 +74,7 @@ export function TagEditor({ tags: rawTags, allTags, onTags, onClose }: {
             else if (e.key === 'ArrowUp') { e.preventDefault(); setPick(i => Math.max(0, i - 1)) }
             else if (e.key === 'Backspace' && !draft && tags.length) { onTags(tags.slice(0, -1)) }
           }}
-          className="min-w-[80px] flex-1 bg-transparent px-1 text-[11px] text-text outline-none placeholder:text-muted-strong"
+          className="min-w-[80px] flex-1 bg-transparent px-1 text-2xs text-text outline-none placeholder:text-muted-strong"
         />
       </div>
       {matches.length > 0 && (
@@ -83,7 +83,7 @@ export function TagEditor({ tags: rawTags, allTags, onTags, onClose }: {
             <button
               key={t}
               type="button"
-              className={`flex w-full items-center gap-2 px-2 py-1 text-left text-[11px] ${i === pick ? 'bg-bg-hover text-text-strong' : 'text-muted hover:bg-bg-hover'}`}
+              className={`flex w-full items-center gap-2 px-2 py-1 text-left text-2xs ${i === pick ? 'bg-bg-hover text-text-strong' : 'text-muted hover:bg-bg-hover'}`}
               onMouseEnter={() => setPick(i)}
               // mousedown + preventDefault: the input's onBlur closes this editor,
               // which would swallow a plain click on the suggestion.
@@ -142,7 +142,7 @@ export function RowMenu({ items, up = false, ariaLabel = 'Session actions', onCl
             <button
               type="button"
               role="menuitem"
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-bg-hover ${armedHere ? 'bg-danger-subtle font-semibold text-danger' : item.danger ? 'text-danger' : 'text-text'}`}
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-meta hover:bg-bg-hover ${armedHere ? 'bg-danger-subtle font-semibold text-danger' : item.danger ? 'text-danger' : 'text-text'}`}
               onClick={() => {
                 if (item.confirmLabel && !armedHere) { setArmed(item.label); return }
                 setArmed(null)
@@ -160,5 +160,5 @@ export function RowMenu({ items, up = false, ariaLabel = 'Session actions', onCl
 
 /** Muted single-line hint row (e.g. a cwd) to place under a menu. */
 export function MenuHint({ text, title }: { text: string; title?: string }) {
-  return <div className="truncate px-2 pb-1 pt-0.5 font-mono text-[10px] text-muted-strong" title={title || text}>{text}</div>
+  return <div className="truncate px-2 pb-1 pt-0.5 font-mono text-2xs text-muted-strong" title={title || text}>{text}</div>
 }
