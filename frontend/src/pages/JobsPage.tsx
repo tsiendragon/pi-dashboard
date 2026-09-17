@@ -118,11 +118,11 @@ export default function JobsPage() {
     <div className="p-6 max-w-6xl w-full mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <div className="text-[12px] uppercase tracking-[.14em] text-accent font-semibold mb-2">Automation</div>
+          <div className="text-meta uppercase tracking-[.14em] text-accent font-semibold mb-2">Automation</div>
           <h1 className="text-2xl md:text-3xl font-bold text-text-strong">Scheduled Jobs</h1>
           <p className="text-sm text-muted mt-1 max-w-2xl">Cron for pi: run prompts on a schedule, spawn a fresh slot per run, and keep a visible run history.</p>
         </div>
-        <button className="bg-accent text-white border-none rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer hover:bg-accent-hover transition-colors" onClick={() => setFormOpen(v => !v)}>
+        <button className="bg-accent text-accent-fg border-none rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer hover:bg-accent-hover transition-colors" onClick={() => setFormOpen(v => !v)}>
           {formOpen ? 'Close' : '+ New Job'}
         </button>
       </div>
@@ -133,29 +133,29 @@ export default function JobsPage() {
         <div className="rounded-xl border border-border bg-card p-4 space-y-3 animate-scale-in">
           <div className="grid md:grid-cols-[1fr_180px] gap-3">
             <label className="space-y-1">
-              <span className="text-[12px] font-medium text-muted">Name</span>
+              <span className="text-meta font-medium text-muted">Name</span>
               <input className="w-full bg-bg-elevated border border-border rounded-lg px-3 py-2 text-sm text-text focus-ring" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Daily standup prep" />
             </label>
             <label className="space-y-1">
-              <span className="text-[12px] font-medium text-muted">Cron (UTC)</span>
+              <span className="text-meta font-medium text-muted">Cron (UTC)</span>
               <input className="w-full bg-bg-elevated border border-border rounded-lg px-3 py-2 text-sm font-mono text-text focus-ring" value={form.cron} onChange={e => setForm(f => ({ ...f, cron: e.target.value }))} placeholder="0 16 * * 1-5" />
             </label>
           </div>
           <label className="block space-y-1">
-            <span className="text-[12px] font-medium text-muted">Working directory</span>
+            <span className="text-meta font-medium text-muted">Working directory</span>
             <input className="w-full bg-bg-elevated border border-border rounded-lg px-3 py-2 text-sm font-mono text-text focus-ring" value={form.cwd} onChange={e => setForm(f => ({ ...f, cwd: e.target.value }))} placeholder="optional, e.g. ~/pi-dashboard" />
           </label>
           <label className="block space-y-1">
-            <span className="text-[12px] font-medium text-muted">Prompt</span>
+            <span className="text-meta font-medium text-muted">Prompt</span>
             <textarea className="w-full min-h-[120px] bg-bg-elevated border border-border rounded-lg px-3 py-2 text-sm text-text focus-ring resize-y" value={form.prompt} onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))} placeholder="What should pi do when this job runs?" />
           </label>
           <div className="flex flex-wrap gap-2 items-center justify-between">
             <div className="flex gap-1.5 flex-wrap">
               {EXAMPLES.map(ex => (
-                <button key={ex.name} className="text-[12px] px-2.5 py-1 rounded-full bg-bg-elevated border border-border text-muted hover:text-text hover:border-border-strong cursor-pointer" onClick={() => setForm({ ...ex, cwd: '' })}>{ex.name}</button>
+                <button key={ex.name} className="text-meta px-2.5 py-1 rounded-full bg-bg-elevated border border-border text-muted hover:text-text hover:border-border-strong cursor-pointer" onClick={() => setForm({ ...ex, cwd: '' })}>{ex.name}</button>
               ))}
             </div>
-            <button className="bg-accent text-white border-none rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer disabled:opacity-50" disabled={saving || !form.name || !form.prompt || !form.cron} onClick={submit}>{saving ? 'Saving…' : 'Create job'}</button>
+            <button className="bg-accent text-accent-fg border-none rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer disabled:opacity-50" disabled={saving || !form.name || !form.prompt || !form.cron} onClick={submit}>{saving ? 'Saving…' : 'Create job'}</button>
           </div>
         </div>
       )}
@@ -175,10 +175,10 @@ export default function JobsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
                     <h2 className="text-base font-semibold text-text-strong">{job.name}</h2>
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full border ${job.enabled ? 'bg-ok/10 text-ok border-ok/25' : 'bg-bg-elevated text-muted border-border'}`}>{job.enabled ? 'enabled' : 'paused'}</span>
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full border ${statusClass(job.lastStatus)}`}>{job.lastStatus || 'never run'}</span>
+                    <span className={`text-2xs px-2 py-0.5 rounded-full border ${job.enabled ? 'bg-ok/10 text-ok border-ok/25' : 'bg-bg-elevated text-muted border-border'}`}>{job.enabled ? 'enabled' : 'paused'}</span>
+                    <span className={`text-2xs px-2 py-0.5 rounded-full border ${statusClass(job.lastStatus)}`}>{job.lastStatus || 'never run'}</span>
                   </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted mb-2">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-muted mb-2">
                     <span className="font-mono">{job.cron} UTC</span>
                     <span>next {fmt(job.nextRunAt)}</span>
                     <span>last {fmt(job.lastRunAt)}</span>
@@ -194,14 +194,14 @@ export default function JobsPage() {
               </div>
               {jobRuns.length > 0 && (
                 <div className="border-t border-border bg-bg/40 px-4 py-3">
-                  <div className="text-[12px] uppercase tracking-wide text-muted font-semibold mb-2">Recent runs</div>
+                  <div className="text-meta uppercase tracking-wide text-muted font-semibold mb-2">Recent runs</div>
                   <div className="grid gap-1.5">
                     {jobRuns.slice(0, 5).map(run => (
                       <button key={run.id} className="w-full text-left flex items-center gap-2 rounded-lg bg-bg-elevated/70 border border-border px-2.5 py-2 cursor-pointer hover:border-border-strong" onClick={() => navigate(`/chat?slot=${encodeURIComponent(run.slotKey)}`)}>
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full border ${statusClass(run.status)}`}>{run.status}</span>
-                        <span className="text-[12px] text-muted">{fmt(run.startedAt)}</span>
-                        <span className="text-[12px] font-mono text-accent">{run.slotKey}</span>
-                        {run.error && <span className="text-[12px] text-danger truncate">{run.error}</span>}
+                        <span className={`text-2xs px-2 py-0.5 rounded-full border ${statusClass(run.status)}`}>{run.status}</span>
+                        <span className="text-meta text-muted">{fmt(run.startedAt)}</span>
+                        <span className="text-meta font-mono text-accent">{run.slotKey}</span>
+                        {run.error && <span className="text-meta text-danger truncate">{run.error}</span>}
                       </button>
                     ))}
                   </div>

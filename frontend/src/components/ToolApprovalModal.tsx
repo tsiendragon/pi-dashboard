@@ -85,19 +85,19 @@ export default function ToolApprovalModal() {
         <div className="mb-1 text-sm font-semibold text-text-strong">
           Approve tool call
         </div>
-        <div className="mb-3 text-[13px] text-muted">
+        <div className="mb-3 text-body-s text-muted">
           The agent wants to run{' '}
           <span className="font-mono font-semibold text-accent">{req.toolName}</span>
         </div>
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Arguments (editable)</div>
+        <div className="mb-1 text-2xs font-semibold uppercase tracking-wider text-muted">Arguments (editable)</div>
         <textarea
-          className="mb-1 h-48 w-full resize-y rounded-lg border border-border bg-bg px-3 py-2 font-mono text-[12px] text-text outline-none focus:border-accent"
+          className="mb-1 h-48 w-full resize-y rounded-lg border border-border bg-bg px-3 py-2 font-mono text-meta text-text outline-none focus:border-accent"
           value={argsText}
           onChange={(e) => { setArgsText(e.target.value); setParseError(null) }}
           spellCheck={false}
         />
         {parseError && (
-          <div className="mb-2 text-[12px] text-danger">JSON error: {parseError}</div>
+          <div className="mb-2 text-meta text-danger">JSON error: {parseError}</div>
         )}
         <div className="mt-3 flex justify-end gap-2">
           <button
@@ -111,7 +111,7 @@ export default function ToolApprovalModal() {
             disabled={submitting}
           >Edit &amp; approve</button>
           <button
-            className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-40"
+            className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-40"
             onClick={approve}
             disabled={submitting}
           >Approve</button>

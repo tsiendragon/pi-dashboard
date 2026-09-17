@@ -4,7 +4,7 @@ import type React from 'react'
 
 export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`card-glow border border-border bg-card rounded-lg p-5 mb-4 animate-rise shadow-sm hover:border-border-strong hover:shadow-md transition-all ${className}`}>
+    <div className={`card-glow border border-border bg-card rounded-lg p-5 mb-4 animate-rise shadow-sm hover:border-border-strong hover:shadow-md transition ${className}`}>
       {children}
     </div>
   )
@@ -17,7 +17,7 @@ export function CardTitle({ children }: { children: React.ReactNode }) {
 export function Btn({ children, onClick, danger, disabled, className = '' }: { children: React.ReactNode; onClick: () => void; danger?: boolean; disabled?: boolean; className?: string }) {
   return (
     <button
-      className={`px-2.5 py-1 rounded-md border border-border bg-transparent text-muted text-[13px] cursor-pointer font-body transition-all disabled:opacity-30 disabled:cursor-not-allowed ${danger ? 'hover:text-danger hover:border-danger' : 'hover:text-text hover:border-border-strong hover:bg-bg-hover'} ${className}`}
+      className={`px-2.5 py-1 rounded-md border border-border bg-transparent text-muted text-body-s cursor-pointer font-body transition disabled:opacity-30 disabled:cursor-not-allowed ${danger ? 'hover:text-danger hover:border-danger' : 'hover:text-text hover:border-border-strong hover:bg-bg-hover'} ${className}`}
       onClick={onClick}
       disabled={disabled}
     >
@@ -29,7 +29,7 @@ export function Btn({ children, onClick, danger, disabled, className = '' }: { c
 export function SendBtn({ children, onClick, disabled, style }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; style?: React.CSSProperties }) {
   return (
     <button
-      className="btn-sweep bg-accent text-white border-none rounded-lg px-4 h-9 text-sm font-semibold cursor-pointer hover:bg-accent-hover hover:shadow-[0_0_20px_var(--accent-glow)] disabled:opacity-30 disabled:cursor-not-allowed transition-all font-body"
+      className="btn-sweep bg-accent text-accent-fg border-none rounded-lg px-4 h-9 text-sm font-semibold cursor-pointer hover:bg-accent-hover hover:shadow-[0_0_20px_var(--accent-glow)] disabled:opacity-30 disabled:cursor-not-allowed transition font-body"
       onClick={onClick}
       disabled={disabled}
       style={style}
@@ -51,9 +51,9 @@ export function Input({ className = '', ...props }: React.InputHTMLAttributes<HT
 export function SearchInput({ className = '', ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className={`relative ${className}`}>
-      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-[12px] pointer-events-none">🔍</span>
+      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-meta pointer-events-none">🔍</span>
       <input
-        className="w-full bg-bg-elevated border border-border rounded-md pl-7 pr-3 py-1.5 text-text text-[16px] md:text-[13px] font-body outline-none transition-all focus-ring placeholder:text-muted/50"
+        className="w-full bg-bg-elevated border border-border rounded-md pl-7 pr-3 py-1.5 text-text text-base md:text-body-s font-body outline-none transition focus-ring placeholder:text-muted/50"
         {...props}
       />
     </div>
@@ -67,7 +67,7 @@ export function Badge({ variant, children }: { variant: 'ok' | 'err' | 'warn' | 
     : variant === 'aim' ? 'bg-aim-subtle text-aim'
     : 'bg-warn-subtle text-warn'
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[13px] font-medium font-mono hover:scale-105 transition-transform ${cls}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-body-s font-medium font-mono hover:scale-105 transition-transform ${cls}`}>
       {children}
     </span>
   )
@@ -78,17 +78,17 @@ export function AimBadge({ source }: { source: string }) {
     source === 'aim' ? 'bg-aim-subtle text-aim border-aim/30'
     : source === 'pi' ? 'bg-accent-subtle text-accent border-accent/30'
     : 'bg-bg-elevated text-muted border-border'
-  return <span className={`px-1.5 py-[2px] rounded-full text-[11px] font-bold border shrink-0 ${cls}`}>{source}</span>
+  return <span className={`px-1.5 py-[2px] rounded-full text-2xs font-bold border shrink-0 ${cls}`}>{source}</span>
 }
 
 export function StatCard({ label, value, accent, colorClass, delay }: { label: string; value?: string | number | null; accent?: boolean; colorClass?: string; delay?: number }) {
   const loading = value === undefined || value === null
   return (
     <div
-      className="stat-accent relative overflow-hidden bg-card rounded-md px-4 py-3.5 border border-border shadow-[inset_0_1px_0_var(--card-hl)] animate-rise hover:border-border-strong hover:-translate-y-0.5 hover:shadow-md transition-all"
+      className="stat-accent relative overflow-hidden bg-card rounded-md px-4 py-3.5 border border-border shadow-[inset_0_1px_0_var(--card-hl)] animate-rise hover:border-border-strong hover:-translate-y-0.5 hover:shadow-md transition"
       style={delay ? { animationDelay: `${delay}ms` } : undefined}
     >
-      <div className="text-muted text-[13px] font-medium uppercase tracking-[.04em]">{label}</div>
+      <div className="text-muted text-body-s font-medium uppercase tracking-[.04em]">{label}</div>
       {loading
         ? <div className="skeleton h-7 w-16 mt-1.5 rounded" />
         : <div className={`text-2xl font-bold mt-1.5 tracking-tight leading-none ${accent ? 'text-accent' : colorClass || ''}`}>{value ?? '—'}</div>
@@ -106,7 +106,7 @@ export function EmptyState({ icon, title, subtitle }: { icon: string; title: str
     <div className="flex flex-col items-center justify-center py-12 gap-2 animate-rise">
       <div className="text-[40px] opacity-[.12] select-none">{icon}</div>
       <div className="text-muted text-sm font-medium">{title}</div>
-      {subtitle && <div className="text-muted/60 text-[13px]">{subtitle}</div>}
+      {subtitle && <div className="text-muted/60 text-body-s">{subtitle}</div>}
     </div>
   )
 }
@@ -119,7 +119,7 @@ export function PageHeader({ title, subtitle }: { title: string; subtitle: strin
       <div className="flex items-center gap-3 min-w-0">
         {isNativeApp && (
           <button
-            className="shrink-0 flex items-center gap-1 text-accent text-[15px] font-medium bg-transparent border-none cursor-pointer p-0 hover:opacity-70 transition-opacity"
+            className="shrink-0 flex items-center gap-1 text-accent text-sm font-medium bg-transparent border-none cursor-pointer p-0 hover:opacity-70 transition-opacity"
             onClick={() => window.history.back()}
           >
             <svg viewBox="0 0 24 24" className="w-5 h-5 stroke-current fill-none" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>

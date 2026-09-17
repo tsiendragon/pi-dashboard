@@ -121,12 +121,12 @@ export default memo(function DiffView({ oldContent, newContent, oldLabel, newLab
     return (
       <div className="flex flex-col h-full">
         <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-chrome">
-          <div className="flex items-center gap-3 text-[12px] text-muted">
+          <div className="flex items-center gap-3 text-meta text-muted">
             <span>{oldLabel}</span>
             <span>→</span>
             <span>{newLabel}</span>
           </div>
-          <button className="px-2 py-1 rounded-md text-[12px] text-muted border border-border hover:text-danger hover:border-danger transition-all cursor-pointer" onClick={onClose} aria-label="Close">✕</button>
+          <button className="px-2 py-1 rounded-md text-meta text-muted border border-border hover:text-danger hover:border-danger transition cursor-pointer" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div data-diff-empty className="flex-1 flex items-center justify-center text-muted text-sm">No changes</div>
       </div>
@@ -137,7 +137,7 @@ export default memo(function DiffView({ oldContent, newContent, oldLabel, newLab
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-chrome">
-        <div className="flex items-center gap-3 text-[12px]">
+        <div className="flex items-center gap-3 text-meta">
           <span className="text-muted">{oldLabel}</span>
           <span className="text-muted">→</span>
           <span className="text-muted">{newLabel}</span>
@@ -150,16 +150,16 @@ export default memo(function DiffView({ oldContent, newContent, oldLabel, newLab
         <div className="flex items-center gap-1.5">
           {hunkIndices.length > 0 && (
             <>
-              <span className="text-[11px] text-muted">{currentHunk + 1}/{hunkIndices.length}</span>
-              <button data-diff-nav-prev className="px-1.5 py-0.5 rounded text-[12px] text-muted border border-border hover:text-text cursor-pointer" onClick={navPrev} aria-label="Previous hunk">↑</button>
-              <button data-diff-nav-next className="px-1.5 py-0.5 rounded text-[12px] text-muted border border-border hover:text-text cursor-pointer" onClick={navNext} aria-label="Next hunk">↓</button>
+              <span className="text-2xs text-muted">{currentHunk + 1}/{hunkIndices.length}</span>
+              <button data-diff-nav-prev className="px-1.5 py-0.5 rounded text-meta text-muted border border-border hover:text-text cursor-pointer" onClick={navPrev} aria-label="Previous hunk">↑</button>
+              <button data-diff-nav-next className="px-1.5 py-0.5 rounded text-meta text-muted border border-border hover:text-text cursor-pointer" onClick={navNext} aria-label="Next hunk">↓</button>
             </>
           )}
-          <button className="px-2 py-1 rounded-md text-[12px] text-muted border border-border hover:text-danger hover:border-danger transition-all cursor-pointer" onClick={onClose} aria-label="Close">✕</button>
+          <button className="px-2 py-1 rounded-md text-meta text-muted border border-border hover:text-danger hover:border-danger transition cursor-pointer" onClick={onClose} aria-label="Close">✕</button>
         </div>
       </div>
       {/* Diff lines */}
-      <div className="flex-1 overflow-auto font-mono text-[13px] leading-relaxed">
+      <div className="flex-1 overflow-auto font-mono text-body-s leading-relaxed">
         {lines.map((line, i) => {
           const isHunkStart = hunkIndices.includes(i)
           return (

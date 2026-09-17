@@ -39,26 +39,26 @@ const AssistantMessage = memo(function AssistantMessage({ content, isStreaming, 
     : undefined
 
   return <>
-    <div className={`pidash-msg-content msg-content px-3.5 py-2.5 text-sm leading-relaxed rounded-lg bg-card border border-border text-text rounded-bl-[4px] shadow-[inset_0_1px_0_var(--card-hl)] select-text ${isStreaming ? 'streaming-cursor' : ''}`}>
+    <div className={`pidash-msg-content msg-content px-3.5 py-2.5 text-sm leading-relaxed rounded-lg bg-card border border-border/60 text-text rounded-bl-[4px] shadow-[inset_0_1px_0_var(--card-hl)] select-text ${isStreaming ? 'streaming-cursor' : ''}`}>
       <MarkdownRenderer content={text} streaming={isStreaming} onFileOpen={onFileOpen} />
     </div>
     {costLabel && (
       <div className="flex items-center gap-1 px-1">
         <span
-          className="text-[11px] font-mono text-muted/50 tabular-nums select-none"
+          className="text-2xs font-mono text-muted/50 tabular-nums select-none"
           title={costTitle}
         >{costLabel}</span>
       </div>
     )}
     {planSteps && onApplyPlan && !applied && (
-      <button className="mt-1 px-3 py-1.5 rounded-md text-[13px] font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-white transition-all" onClick={() => { setApplied(true); onApplyPlan(planSteps) }}>
+      <button className="mt-1 px-3 py-1.5 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition" onClick={() => { setApplied(true); onApplyPlan(planSteps) }}>
         📋 Use as Plan ({planSteps.length} steps)
       </button>
     )}
-    {applied && <div className="mt-1 text-[13px] text-ok">✅ Applied to Tasks</div>}
+    {applied && <div className="mt-1 text-body-s text-ok">✅ Applied to Tasks</div>}
     {options.length > 0 && !isStreaming && <div className="flex gap-1.5 flex-wrap mt-1 items-center">
-      {options.map(o => <button key={o} disabled={submitted} onClick={() => { if (submitted) return; setPicked(prev => { const next = new Set(prev); if (next.has(o)) next.delete(o); else next.add(o); return next }) }} className={`px-3 py-1.5 rounded-md text-[13px] font-medium border cursor-pointer transition-all ${picked.has(o) ? 'bg-accent text-white border-accent' : submitted ? 'opacity-30 border-border text-muted cursor-default' : 'border-accent text-accent bg-transparent hover:bg-accent hover:text-white'}`}>{o}</button>)}
-      {picked.size > 0 && !submitted && <button onClick={() => { setSubmitted(true); onOption(Array.from(picked).join(', ')) }} className="px-3 py-1.5 rounded-md text-[13px] font-medium bg-accent text-white border border-accent cursor-pointer hover:brightness-110 transition-all">Send{picked.size > 1 ? ` (${picked.size})` : ''} →</button>}
+      {options.map(o => <button key={o} disabled={submitted} onClick={() => { if (submitted) return; setPicked(prev => { const next = new Set(prev); if (next.has(o)) next.delete(o); else next.add(o); return next }) }} className={`px-3 py-1.5 rounded-md text-body-s font-medium border cursor-pointer transition ${picked.has(o) ? 'bg-accent text-accent-fg border-accent' : submitted ? 'opacity-30 border-border text-muted cursor-default' : 'border-accent text-accent bg-transparent hover:bg-accent hover:text-accent-fg'}`}>{o}</button>)}
+      {picked.size > 0 && !submitted && <button onClick={() => { setSubmitted(true); onOption(Array.from(picked).join(', ')) }} className="px-3 py-1.5 rounded-md text-body-s font-medium bg-accent text-accent-fg border border-accent cursor-pointer hover:brightness-110 transition">Send{picked.size > 1 ? ` (${picked.size})` : ''} →</button>}
     </div>}
   </>
 })

@@ -73,23 +73,23 @@ export default function MessageSearch({ messages, onJumpToIndex, onClose }: Mess
           }
         }}
       />
-      <span className="text-[12px] text-muted font-mono shrink-0 min-w-[60px] text-center">
+      <span className="text-meta text-muted font-mono shrink-0 min-w-[60px] text-center">
         {query.trim() ? `${matches.length > 0 ? currentMatch + 1 : 0}/${matches.length}` : ''}
       </span>
       <button
-        className="w-7 h-7 rounded-md border border-border bg-transparent text-muted text-[13px] cursor-pointer hover:text-text hover:border-border-strong transition-all flex items-center justify-center disabled:opacity-30"
+        className="w-7 h-7 rounded-md border border-border bg-transparent text-muted text-body-s cursor-pointer hover:text-text hover:border-border-strong transition flex items-center justify-center disabled:opacity-30"
         onClick={goPrev}
         disabled={matches.length === 0}
         aria-label="Previous match"
       >↑</button>
       <button
-        className="w-7 h-7 rounded-md border border-border bg-transparent text-muted text-[13px] cursor-pointer hover:text-text hover:border-border-strong transition-all flex items-center justify-center disabled:opacity-30"
+        className="w-7 h-7 rounded-md border border-border bg-transparent text-muted text-body-s cursor-pointer hover:text-text hover:border-border-strong transition flex items-center justify-center disabled:opacity-30"
         onClick={goNext}
         disabled={matches.length === 0}
         aria-label="Next match"
       >↓</button>
       <button
-        className="w-7 h-7 rounded-md border border-border bg-transparent text-muted text-[13px] cursor-pointer hover:text-text hover:border-border-strong transition-all flex items-center justify-center"
+        className="w-7 h-7 rounded-md border border-border bg-transparent text-muted text-body-s cursor-pointer hover:text-text hover:border-border-strong transition flex items-center justify-center"
         onClick={onClose}
         aria-label="Close search"
       >✕</button>

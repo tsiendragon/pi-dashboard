@@ -206,22 +206,22 @@ export default function App() {
             <div className="bg-card border border-border rounded-xl p-6 w-full max-w-sm mx-4 shadow-xl" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-4">
                 <div className="text-sm font-bold text-text-strong">⌨ Keyboard Shortcuts</div>
-                <button className="text-muted text-[13px] cursor-pointer hover:text-text bg-transparent border-none font-body" onClick={() => setShowShortcuts(false)}>✕</button>
+                <button className="text-muted text-body-s cursor-pointer hover:text-text bg-transparent border-none font-body" onClick={() => setShowShortcuts(false)}>✕</button>
               </div>
               <div className="space-y-1">
                 {Object.entries(byCategory).map(([cat, actions]) => actions.length > 0 && (
                   <div key={cat}>
-                    <div className="text-[11px] text-muted font-medium uppercase tracking-wider mt-3 mb-1">{categoryLabels[cat] || cat}</div>
+                    <div className="text-2xs text-muted font-medium uppercase tracking-wider mt-3 mb-1">{categoryLabels[cat] || cat}</div>
                     {actions.map(a => (
                       <div key={a.id} className="flex items-center justify-between py-1.5">
-                        <span className="text-[13px] text-text">{a.description}</span>
-                        {a.keys && <kbd className="px-1.5 py-0.5 rounded text-[12px] font-mono bg-bg-elevated border border-border text-muted min-w-[24px] text-center">{formatKey(a.keys)}</kbd>}
+                        <span className="text-body-s text-text">{a.description}</span>
+                        {a.keys && <kbd className="px-1.5 py-0.5 rounded text-meta font-mono bg-bg-elevated border border-border text-muted min-w-[24px] text-center">{formatKey(a.keys)}</kbd>}
                       </div>
                     ))}
                   </div>
                 ))}
               </div>
-              <div className="mt-4 pt-3 border-t border-border text-[12px] text-muted text-center">
+              <div className="mt-4 pt-3 border-t border-border text-meta text-muted text-center">
                 Ctrl = ⌘ on Mac
               </div>
             </div>
@@ -232,19 +232,19 @@ export default function App() {
       {/* Changelog modal */}
       {showChangelog && !updating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/60 backdrop-blur-sm animate-rise" role="dialog" aria-modal="true" aria-label="Changelog" onClick={() => { setShowChangelog(false); setShowFull(false) }}>
-          <div className={`bg-card border border-border rounded-xl p-6 w-full mx-4 shadow-xl transition-all duration-300 ${showFull ? 'max-w-2xl' : 'max-w-md'}`} onClick={e => e.stopPropagation()}>
+          <div className={`bg-card border border-border rounded-xl p-6 w-full mx-4 shadow-xl transition duration-300 ${showFull ? 'max-w-2xl' : 'max-w-md'}`} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <div className="text-sm font-bold text-text-strong">📦 v{version}</div>
-              <button className="text-muted text-[13px] cursor-pointer hover:text-text" onClick={() => { setShowChangelog(false); setShowFull(false) }}>✕</button>
+              <button className="text-muted text-body-s cursor-pointer hover:text-text" onClick={() => { setShowChangelog(false); setShowFull(false) }}>✕</button>
             </div>
             {changes ? (
               <>
-                <div className="text-[13px] font-medium text-muted uppercase tracking-wider mb-2">What's new</div>
+                <div className="text-body-s font-medium text-muted uppercase tracking-wider mb-2">What's new</div>
                 <div className="p-3 bg-bg rounded-lg border border-border max-h-56 overflow-y-auto mb-4">
-                  <div className="text-[13px] text-text leading-relaxed"><MarkdownRenderer content={changes} /></div>
+                  <div className="text-body-s text-text leading-relaxed"><MarkdownRenderer content={changes} /></div>
                 </div>
                 {updateAvailable && (
-                  <button className="w-full py-2 rounded-lg text-[13px] font-medium cursor-pointer bg-accent text-white border-none hover:opacity-90 transition-opacity" onClick={handleUpdate}>
+                  <button className="w-full py-2 rounded-lg text-body-s font-medium cursor-pointer bg-accent text-accent-fg border-none hover:opacity-90 transition-opacity" onClick={handleUpdate}>
                     Update Now
                   </button>
                 )}
@@ -253,19 +253,19 @@ export default function App() {
               <div className="text-sm text-muted py-4 text-center">✅ You're on the latest version</div>
             )}
             <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
-              <span className="text-[13px] text-muted">Auto-update on restart</span>
+              <span className="text-body-s text-muted">Auto-update on restart</span>
               <button className={`w-9 h-5 rounded-full transition-colors cursor-pointer border-none ${autoUpdate ? 'bg-accent' : 'bg-border'}`}
                 onClick={async () => { const next = !autoUpdate; setAutoUpdate(next); await api.setAutoUpdate(next) }}>
                 <span className={`block w-3.5 h-3.5 rounded-full bg-white shadow transition-transform ${autoUpdate ? 'translate-x-4' : 'translate-x-0.5'}`} />
               </button>
             </div>
             <div className="mt-3 pt-3 border-t border-border">
-              <button className="text-[13px] text-muted cursor-pointer hover:text-text transition-colors bg-transparent border-none p-0 font-body" onClick={async () => {
+              <button className="text-body-s text-muted cursor-pointer hover:text-text transition-colors bg-transparent border-none p-0 font-body" onClick={async () => {
                 if (!showFull) { if (!fullChangelog) { const d = await api.changelog(); setFullChangelog(d.content || '') }; setShowFull(true) } else { setShowFull(false) }
               }}>{showFull ? '▾ Hide Full Changelog' : '▸ View Full Changelog'}</button>
               {showFull && fullChangelog && (
                 <div className="mt-2 p-3 bg-bg rounded-lg border border-border max-h-72 overflow-y-auto">
-                  <div className="text-[13px] text-text leading-relaxed"><MarkdownRenderer content={fullChangelog} /></div>
+                  <div className="text-body-s text-text leading-relaxed"><MarkdownRenderer content={fullChangelog} /></div>
                 </div>
               )}
             </div>
@@ -280,7 +280,7 @@ export default function App() {
             <div className="text-4xl mb-4 animate-pulse">🔄</div>
             <div className="text-lg font-bold text-text-strong mb-2">Updating Pi Dashboard…</div>
             <div className="text-sm text-muted mb-4">Pulling latest changes and rebuilding. The server will restart automatically.</div>
-            <div className="mt-4 text-[13px] text-muted">Page will reconnect when ready…</div>
+            <div className="mt-4 text-body-s text-muted">Page will reconnect when ready…</div>
           </div>
         </div>
       )}
@@ -293,26 +293,26 @@ export default function App() {
           </svg>
         </button>
 
-        <div className={`nav-brand-glow relative flex flex-col items-center text-center overflow-hidden transition-all duration-[350ms] ease-in-out ${navCollapsed ? 'h-0 p-0 m-0 opacity-0 pointer-events-none' : 'pt-7 px-3 pb-[22px] mb-3'}`}>
-          <div className="relative z-[1] w-20 h-20 grid place-items-center mb-3.5 hover:scale-[1.12] hover:rotate-[-4deg] transition-transform duration-300 drop-shadow-[0_4px_24px_rgba(245,158,50,.35)]">
-            <img src="/logo.png" alt="Pi" className="w-20 h-20 drop-shadow-[0_0_20px_rgba(245,158,50,.4)]" />
+        <div className={`nav-brand-glow relative flex flex-col items-center text-center overflow-hidden transition duration-[350ms] ease-in-out ${navCollapsed ? 'h-0 p-0 m-0 opacity-0 pointer-events-none' : 'pt-7 px-3 pb-[22px] mb-3'}`}>
+          <div className="relative z-[1] w-20 h-20 grid place-items-center mb-3.5 hover:scale-[1.12] hover:rotate-[-4deg] transition-transform duration-300 drop-shadow-[0_4px_24px_rgba(122,162,247,.35)]">
+            <img src="/logo.png" alt="Pi" className="w-20 h-20 drop-shadow-[0_0_20px_rgba(122,162,247,.4)]" />
           </div>
           <div className="text-sm font-bold tracking-[.08em] text-text-strong">Pi Dashboard</div>
-          <div className="text-[12px] font-medium text-muted tracking-[.06em] mt-0.5">Powered by pi coding agent</div>
+          <div className="text-meta font-medium text-muted tracking-[.06em] mt-0.5">Powered by pi coding agent</div>
         </div>
 
         {groups.map(group => (
           <div className="mb-4 grid gap-0.5" key={group}>
-            <div className={`flex items-center gap-2 px-2.5 py-1.5 text-[13px] font-medium text-muted transition-all duration-200 ease-in-out ${navCollapsed ? 'opacity-0 h-0 p-0 m-0 overflow-hidden' : ''}`}>{group}</div>
+            <div className={`flex items-center gap-2 px-2.5 py-1.5 text-body-s font-medium text-muted transition duration-200 ease-in-out ${navCollapsed ? 'opacity-0 h-0 p-0 m-0 overflow-hidden' : ''}`}>{group}</div>
             {visibleNav.filter(n => n.group === group).map(n => (
               <div key={n.id}
-                className={`relative flex items-center rounded-md cursor-pointer text-sm font-medium whitespace-nowrap transition-all duration-200 ease-in-out ${navCollapsed ? 'justify-center py-2.5 gap-0' : 'gap-2.5 py-2 px-2.5'} ${isNavActive(n.path) ? 'text-text-strong bg-accent-subtle' : 'text-muted hover:text-text hover:bg-bg-hover'}`}
+                className={`relative flex items-center rounded-md cursor-pointer text-sm font-medium whitespace-nowrap transition duration-200 ease-in-out ${navCollapsed ? 'justify-center py-2.5 gap-0' : 'gap-2.5 py-2 px-2.5'} ${isNavActive(n.path) ? 'text-text-strong bg-accent-subtle' : 'text-muted hover:text-text hover:bg-bg-hover'}`}
                 onClick={() => navigate(n.path)} title={navCollapsed ? n.label : undefined}>
 
                 <span className={`w-4 h-4 flex items-center justify-center shrink-0 transition-opacity ${isNavActive(n.path) ? 'opacity-100 text-accent' : 'opacity-70'}`}>
                   <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-current fill-none" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">{n.icon}</svg>
                 </span>
-                <span className={`transition-all duration-200 ease-in-out whitespace-nowrap overflow-hidden ${navCollapsed ? 'opacity-0 w-0' : ''}`}>
+                <span className={`transition duration-200 ease-in-out whitespace-nowrap overflow-hidden ${navCollapsed ? 'opacity-0 w-0' : ''}`}>
                   {n.label}
 
                 </span>
@@ -322,9 +322,9 @@ export default function App() {
         ))}
 
         {/* Watermark */}
-        <div className={`mt-auto pt-4 pb-2 border-t border-border/50 transition-all duration-[350ms] ${navCollapsed ? 'opacity-0 h-0 overflow-hidden p-0 m-0' : ''}`}>
+        <div className={`mt-auto pt-4 pb-2 border-t border-border/50 transition duration-[350ms] ${navCollapsed ? 'opacity-0 h-0 overflow-hidden p-0 m-0' : ''}`}>
           <div className="px-1">
-            <div className="text-[13px] font-medium text-accent/70 tracking-wide italic">🥧 Pi Dashboard</div>
+            <div className="text-body-s font-medium text-accent/70 tracking-wide italic">🥧 Pi Dashboard</div>
           </div>
         </div>
       </aside>
@@ -363,7 +363,7 @@ export default function App() {
               <svg viewBox="0 0 24 24" className="w-5 h-5 stroke-current fill-none" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">{n.icon}</svg>
 
             </span>
-            <span className="text-[11px] font-medium">{n.label}</span>
+            <span className="text-2xs font-medium">{n.label}</span>
           </button>
         ))}
       </nav>

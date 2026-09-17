@@ -25,16 +25,16 @@ function FeatureIcon({ kind }: { kind: 'btw' | 'schedule' | 'subagent' | 'comman
 
 function Feature({ title, icon, count, children }: { title: string; icon: 'btw' | 'schedule' | 'subagent' | 'commands'; count?: number; children: React.ReactNode }) {
   return <details className="relative w-11 shrink-0">
-    <summary className="flex min-h-12 cursor-pointer list-none flex-col items-center justify-center gap-1 rounded-md border border-border bg-card px-1 py-1.5 text-center text-[10px] font-semibold text-text-strong shadow-sm transition-colors hover:border-accent hover:bg-accent-subtle" title={title} aria-label={title}>
+    <summary className="flex min-h-12 cursor-pointer list-none flex-col items-center justify-center gap-1 rounded-md border border-border bg-card px-1 py-1.5 text-center text-2xs font-semibold text-text-strong shadow-sm transition-colors hover:border-accent hover:bg-accent-subtle" title={title} aria-label={title}>
       <FeatureIcon kind={icon} />
-      {count !== undefined && <span className="rounded-full bg-bg px-1.5 py-0.5 text-[9px] font-medium leading-none text-muted">{count}</span>}
+      {count !== undefined && <span className="rounded-full bg-bg px-1.5 py-0.5 text-2xs font-medium leading-none text-muted">{count}</span>}
     </summary>
     <div className="absolute right-full top-0 z-40 mr-2 max-h-[70vh] w-[min(560px,calc(100vw-4rem))] overflow-auto rounded-lg border border-border bg-card p-3 shadow-xl">{children}</div>
   </details>
 }
 
 function SessionAction({ label, disabled, danger, onClick, title }: { label: string; disabled?: boolean; danger?: boolean; onClick: () => void; title?: string }) {
-  return <button type="button" onClick={onClick} disabled={disabled} title={title || label} aria-label={title || label} className={`flex min-h-11 w-11 shrink-0 items-center justify-center rounded-lg border px-1 py-1.5 text-center text-[10px] font-semibold shadow-sm transition-all disabled:opacity-40 ${danger ? 'border-danger/40 bg-danger-subtle text-danger hover:border-danger' : 'border-border bg-card text-text-strong hover:border-accent/70 hover:bg-accent-subtle'}`}>
+  return <button type="button" onClick={onClick} disabled={disabled} title={title || label} aria-label={title || label} className={`flex min-h-11 w-11 shrink-0 items-center justify-center rounded-lg border px-1 py-1.5 text-center text-2xs font-semibold transition disabled:opacity-40 ${danger ? 'border-danger/40 bg-danger-subtle text-danger hover:border-danger' : 'border-border bg-card text-text-strong hover:border-accent/70 hover:bg-accent-subtle'}`}>
     {label}
   </button>
 }
@@ -66,7 +66,7 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, onFil
   const [filesOpen, setFilesOpen] = useState(false)
 
   return <aside className="relative z-30 flex w-14 shrink-0 flex-col items-center gap-2 overflow-visible border-l border-border bg-card/60 px-1.5 py-2">
-    <button type="button" onClick={() => setFilesOpen(value => !value)} className={`group flex min-h-12 w-11 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-center text-[10px] font-semibold shadow-sm transition-all ${filesOpen ? 'border-accent bg-accent-subtle text-accent shadow-accent/10' : 'border-border bg-card text-text-strong hover:-translate-x-0.5 hover:border-accent/70 hover:bg-accent-subtle'}`} title="浏览当前工作目录" aria-label="浏览当前工作目录">
+    <button type="button" onClick={() => setFilesOpen(value => !value)} className={`group flex min-h-12 w-11 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-center text-2xs font-semibold shadow-sm transition ${filesOpen ? 'border-accent bg-accent-subtle text-accent shadow-accent/10' : 'border-border bg-card text-text-strong hover:-translate-x-0.5 hover:border-accent/70 hover:bg-accent-subtle'}`} title="浏览当前工作目录" aria-label="浏览当前工作目录">
       <span className={`rounded-md p-1 transition-colors ${filesOpen ? 'bg-accent/15' : 'bg-bg group-hover:bg-accent/10'}`}><FeatureIcon kind="files" /></span>
       <span>文件</span>
     </button>
@@ -91,11 +91,11 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, onFil
         <span className="text-xs text-muted">状态：{String(btw?.status || 'closed')}</span>
         {btw?.status === 'ready' || btw?.status === 'busy'
           ? <button type="button" disabled={busy} onClick={onCloseBtw} className="ml-auto text-xs text-muted border border-border rounded px-2 py-1 disabled:opacity-50">关闭 BTW</button>
-          : <button type="button" disabled={busy || btw?.status === 'starting'} onClick={onOpenBtw} className="ml-auto text-xs text-white bg-accent rounded px-2 py-1 disabled:opacity-50">{btw?.status === 'starting' ? '正在打开…' : '打开 BTW'}</button>}
+          : <button type="button" disabled={busy || btw?.status === 'starting'} onClick={onOpenBtw} className="ml-auto text-xs text-accent-fg bg-accent rounded px-2 py-1 disabled:opacity-50">{btw?.status === 'starting' ? '正在打开…' : '打开 BTW'}</button>}
       </div>
       {!btw || btw.status === 'closed' || conversation.length === 0 ? <div className="text-xs text-muted">BTW 暂无对话；可直接从这里打开。</div> : <div className="space-y-2">
         {conversation.map((entry, index) => <div key={index} className={`rounded border p-2 text-xs ${entry.role === 'user' ? 'border-accent/30 bg-accent/10' : 'border-border bg-card'}`}>
-          <div className="mb-1 text-[10px] uppercase text-muted">{String(entry.role || 'notice')}</div>
+          <div className="mb-1 text-2xs uppercase text-muted">{String(entry.role || 'notice')}</div>
           <MarkdownRenderer content={String(entry.text || '')} />
         </div>)}
       </div>}
@@ -107,9 +107,9 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, onFil
           const status = String(task.status || 'unknown')
           const output = typeof task.outputTail === 'string' ? task.outputTail : ''
           return <div key={String(task.taskId || task.id)} className="rounded border border-border bg-card p-2">
-            <div className="flex items-center gap-2 text-[11px]"><span className={status === 'running' ? 'text-accent' : status === 'succeeded' ? 'text-ok' : 'text-muted'}>{status}</span><strong className="min-w-0 truncate">{String(task.title || task.taskId || '')}</strong></div>
-            <div className="mt-1 truncate font-mono text-[10px] text-muted">{String(task.taskId || '')} · PID {String(task.pid || '—')} · {String(task.outputBytes || 0)} bytes</div>
-            {output ? <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-bg p-1.5 font-mono text-[10px] leading-4 text-text">{output}</pre> : <div className="mt-1 text-[10px] text-muted">等待输出…</div>}
+            <div className="flex items-center gap-2 text-2xs"><span className={status === 'running' ? 'text-accent' : status === 'succeeded' ? 'text-ok' : 'text-muted'}>{status}</span><strong className="min-w-0 truncate">{String(task.title || task.taskId || '')}</strong></div>
+            <div className="mt-1 truncate font-mono text-2xs text-muted">{String(task.taskId || '')} · PID {String(task.pid || '—')} · {String(task.outputBytes || 0)} bytes</div>
+            {output ? <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-bg p-1.5 font-mono text-2xs leading-4 text-text">{output}</pre> : <div className="mt-1 text-2xs text-muted">等待输出…</div>}
           </div>
         })}
       </div>}
@@ -119,7 +119,7 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, onFil
       {tasks.length === 0 ? <div className="text-xs text-muted">当前 session 没有 schedule。</div> : <div className="space-y-2">
         {tasks.map(task => <div key={String(task.id)} className="rounded border border-border bg-card p-2">
           <div className="flex gap-2 text-xs"><span className="font-mono text-accent">{String(task.id)}</span><strong className="truncate">{String(task.title || '')}</strong></div>
-          <div className="mt-1 text-[11px] text-muted">下次执行：{typeof task.nextRunAt === 'number' ? new Date(task.nextRunAt).toLocaleString() : '—'}{typeof task.intervalMs === 'number' ? ` · 每 ${Math.round(task.intervalMs / 60_000)} 分钟` : ''}</div>
+          <div className="mt-1 text-2xs text-muted">下次执行：{typeof task.nextRunAt === 'number' ? new Date(task.nextRunAt).toLocaleString() : '—'}{typeof task.intervalMs === 'number' ? ` · 每 ${Math.round(task.intervalMs / 60_000)} 分钟` : ''}</div>
           <div className="mt-1 text-xs whitespace-pre-wrap">{String(task.instruction || '')}</div>
         </div>)}
       </div>}
