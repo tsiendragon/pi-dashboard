@@ -146,7 +146,7 @@ describe('buildSessionFamilyGraph', () => {
     expect(folded.nodes.some(candidate => candidate.expanded)).toBe(false)
   })
 
-  it('caps the steps returned for a very long run and flags the truncation', async () => {
+  it('pages a long run: the per-run step window is respected and can be raised', async () => {
     const lines = [header('long-id'), user('u0', null)]
     let previous = 'u0'
     for (let index = 1; index <= 450; index += 1) {
@@ -158,12 +158,29 @@ describe('buildSessionFamilyGraph', () => {
 
     const folded = await buildSessionFamilyGraph({ sessionFile: file })
     const runId = folded.nodes.find(node => node.kind === 'collapsed')?.id as string
-    const expanded = await buildSessionFamilyGraph({ sessionFile: file, expandRuns: new Set([runId]) })
-    const node = expanded.nodes.find(candidate => candidate.id === runId)
-    expect(node?.steps).toHaveLength(400)
-    expect(node?.stepsTruncated).toBe(true)
-    // The fold still reports the true size (the chain is s1..s449; s450 is the head).
-    expect(node?.collapsedCount).toBe(449)
+    const at = async (limit: number) => {
+      const graph = await buildSessionFamilyGraph({ sessionFile: file, expandRuns: new Set([runId]), expandStepLimit: limit })
+      return graph.nodes.find(candidate => candidate.id === runId)
+    }
+
+    // Default window is 400; the run's real size stays reported by collapsedCount
+    // (the chain is s1..s449; s450 is the head).
+    const first = await at(400)
+    expect(first?.steps).toHaveLength(400)
+    expect(first?.stepsTruncated).toBe(true)
+    expect(first?.collapsedCount).toBe(449)
+    expect(first?.steps?.[0]?.id).toBe('s1')
+
+    // “加载更多” just raises the window for the same run.
+    const more = await at(800)
+    expect(more?.steps).toHaveLength(449)
+    expect(more?.stepsTruncated).toBeUndefined()
+    expect(more?.steps?.at(-1)?.id).toBe('s449')
+    expect(more?.steps?.[0]?.id).toBe('s1')
+
+    // Absurd values are clamped rather than honoured (server-side ceiling).
+    expect((await at(Number.MAX_SAFE_INTEGER))?.steps).toHaveLength(449)
+    expect((await at(0))?.steps).toHaveLength(1)
   })
 
   it('renders a purely linear session as start -> folded run -> end', async () => {

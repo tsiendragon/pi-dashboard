@@ -339,7 +339,8 @@
     <p class="panel-note">
       展开是<b>原地</b>的：那一段仍然是图上的<b>一个节点</b>，只是卡片变高、把真实的步骤列在里面
       （可滚动），<b>拓扑与缩放完全不变</b>——不会因为展开 418 步又把画布拉成一条长条。
-      列表里的<b>每一行都可点</b>，直接选中那一步就能「切到此处 / 从此分叉」。
+      列表里的<b>每一行都可点</b>，直接选中那一步就能「切到此处 / 从此分叉」；
+      卡片底部可以「<b>加载更多</b>」逐批拉出这一段剩下的步骤。
     </p>
 
     <div class="canvas" style="height:310px">
@@ -365,14 +366,16 @@
         <span style="position:absolute;right:10px;top:8px;font-size:11px;color:var(--muted)">▼ 收起</span>
         <span class="title">+418 步</span>
         <span class="prev">418 步（卡片内滚动）</span>
-        <div class="steprow" style="top:60px"><span class="n">1</span>System · Thinking → high</div>
-        <div class="steprow" style="top:84px;border-left-color:var(--accent)"><span class="n">2</span>User · 帮我看一下…</div>
-        <div class="steprow" style="top:108px;border-left-color:var(--warn)"><span class="n">3</span>Tool · bash</div>
-        <div class="steprow" style="top:132px"><span class="n">4</span>Assistant · bash</div>
-        <div class="steprow" style="top:156px;border-left-color:var(--accent)"><span class="n">5</span>User · 那…</div>
-        <div class="steprow" style="top:204px"><span class="n">418</span>Assistant · 完成</div>
-        <div class="scrollbar" style="right:7px;top:60px;height:196px;background:var(--border)"></div>
-        <div class="scrollthumb" style="right:7px;top:60px;height:48px"></div>
+        <div class="steprow" style="top:62px"><span class="n">1</span>System · Thinking → high</div>
+        <div class="steprow" style="top:86px;border-left-color:var(--accent)"><span class="n">2</span>User · 帮我看一下…</div>
+        <div class="steprow" style="top:110px;border-left-color:var(--warn)"><span class="n">3</span>Tool · bash</div>
+        <div class="steprow" style="top:134px"><span class="n">4</span>Assistant · bash</div>
+        <div class="steprow" style="top:158px;border-left-color:var(--accent)"><span class="n">5</span>User · 那…</div>
+        <div class="steprow" style="top:206px"><span class="n">400</span>Assistant · 完成</div>
+        <div class="scrollbar" style="right:7px;top:62px;height:186px;background:var(--border)"></div>
+        <div class="scrollthumb" style="right:7px;top:62px;height:56px"></div>
+        <span style="position:absolute;left:6px;right:6px;bottom:4px;height:18px;border-radius:4px;background:var(--accent-subtle);
+                     display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent)">已加载 400/868 步 · 加载更多</span>
       </div>
 
       <!-- 终点 -->
@@ -388,7 +391,7 @@
 
     <ul>
       <li>展开是<b>嵌套数据</b>（<code>node.steps</code>），不进布局：所以 <code>fit()</code> 缩放、分组带、边都不会因为展开而变。</li>
-      <li>一段最长返回 <b>400</b> 步（<code>stepsTruncated</code> 会标出），需要看全部就整图切「显示步骤」。</li>
+      <li>单段默认返回 <b>400</b> 步；卡片底部「<b>加载更多</b>」每次再拉 400 步（硬上限 3000），分母用真实总步数 <code>collapsedCount</code>。</li>
       <li>折叠段的详情面板里也有「▶ 展开这 N 步」，以及折叠范围 <code>from → to</code>。</li>
     </ul>
   </div>
