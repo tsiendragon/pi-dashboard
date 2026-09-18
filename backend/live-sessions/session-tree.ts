@@ -19,6 +19,7 @@ import { basename, join, sep } from 'node:path'
 import { extractText, stripInjectedBlocks } from '../session-store.js'
 import {
   SESSION_TREE_INDEX_TTL_MS,
+  SESSION_TREE_EXPAND_MAX,
   SESSION_TREE_LINEAR_RUN_MIN,
   SESSION_TREE_MAX_NODES,
   SESSION_TREE_MAX_PARSE_BYTES,
@@ -70,6 +71,12 @@ export interface BuildSessionFamilyOptions {
    * exposes this as a “显示步骤” toggle.
    */
   expandLinearRuns?: boolean
+  /**
+   * Head ids (`run:<headId>`) of folded runs that should be expanded IN PLACE:
+   * the folded node stays a single graph node but carries its real entries in
+   * `steps`,so the UI can list them inside the card without blowing up the layout.
+   */
+  expandRuns?: Set<string>
 }
 
 interface ParsedEntry {
@@ -524,7 +531,7 @@ export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions
     focusKey: ordered.includes(focusFile) ? sessionKeyForFile(focusFile) : '',
     sessions,
     detail: options.expandLinearRuns ? 'full' : 'collapsed',
-    nodes: options.expandLinearRuns ? nodes : collapseLinearRuns(nodes, firstNodeIds),
+    nodes: options.expandLinearRuns ? nodes : collapseLinearRuns(nodes, firstNodeIds, options.expandRuns),
     truncated,
     generatedAt,
   }
@@ -549,7 +556,7 @@ export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions
  * @param keepIds ids that must stay visible even when structurally foldable
  *                (used for each session's start node).
  */
-export function collapseLinearRuns(nodes: SessionTreeNode[], keepIds?: Set<string>): SessionTreeNode[] {
+export function collapseLinearRuns(nodes: SessionTreeNode[], keepIds?: Set<string>, expandRuns?: Set<string>): SessionTreeNode[] {
   const byId = new Map(nodes.map(node => [node.id, node]))
   const children = new Map<string, SessionTreeNode[]>()
   for (const node of nodes) {
@@ -589,6 +596,7 @@ export function collapseLinearRuns(nodes: SessionTreeNode[], keepIds?: Set<strin
       const head = chain[0]
       const tail = chain[chain.length - 1]
       const collapsedId = `run:${head.id}`
+      const expanded = expandRuns?.has(collapsedId) === true
       out.push({
         id: collapsedId,
         parentId: start.id,
@@ -602,6 +610,14 @@ export function collapseLinearRuns(nodes: SessionTreeNode[], keepIds?: Set<strin
         isHead: false,
         collapsedCount: chain.length,
         collapsedRange: { from: head.id, to: tail.id },
+        // In-place expansion: keep ONE graph node, carry the real entries as
+        // nested data so the canvas layout stays small. The steps keep their own
+        // ids so clicking a row can select/navigate that exact entry.
+        ...(expanded ? {
+          expanded: true,
+          steps: chain.slice(0, SESSION_TREE_EXPAND_MAX),
+          ...(chain.length > SESSION_TREE_EXPAND_MAX ? { stepsTruncated: true } : {}),
+        } : {}),
       })
       for (const kid of children.get(tail.id) ?? []) visit(kid, collapsedId)
     } else {

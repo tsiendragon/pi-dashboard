@@ -1,9 +1,23 @@
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionTreeGraph, SessionTreeNode, SessionTreeSessionEntry } from '@shared/session-tree'
-import { NODE_H, NODE_W, activePathOf, sessionBounds, tidyLayout } from './layout'
+import {
+  EXPANDED_HEADER_H,
+  EXPANDED_VIEWPORT_H,
+  NODE_W,
+  STEP_ROW_H,
+  activePathOf,
+  defaultHeightOf,
+  sessionBounds,
+  tidyLayout,
+} from './layout'
 
 export type GraphDetail = 'collapsed' | 'full'
+
+/** Sanitize an entry id into something usable inside an SVG `url(#...)` reference. */
+function cssId(nodeId: string): string {
+  return `clip-${nodeId.replace(/[^A-Za-z0-9_-]/g, '_')}`
+}
 
 interface RoleStyle {
   /** Complete Tailwind utility (dynamic class names are not detected by Tailwind). */
@@ -14,8 +28,8 @@ interface RoleStyle {
 
 const ROLE_STYLES: Record<string, RoleStyle> = {
   user: { fill: 'fill-accent', label: 'User', icon: '👤' },
-  assistant: { fill: 'fill-info', label: 'Assistant', icon: '🤖' },
-  tool: { fill: 'fill-warn', label: 'Tool', icon: '🛠' },
+  assistant: { fill: 'fill-info', label: 'Assistant', icon: '' },
+  tool: { fill: 'fill-warn', label: 'Tool', icon: '' },
   system: { fill: 'fill-muted', label: 'System', icon: '⚙' },
   compaction: { fill: 'fill-ok', label: 'Compaction', icon: '📦' },
   branchSummary: { fill: 'fill-clarify', label: 'Branch summary', icon: '📋' },
@@ -52,11 +66,13 @@ const MAX_ZOOM = 2
  */
 const MIN_FIT_ZOOM = 0.4
 
-export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpenSession }: {
+export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpenSession, onToggleExpand }: {
   graph: SessionTreeGraph
   selectedId: string | null
   onSelect: (node: SessionTreeNode) => void
   onOpenSession: (session: SessionTreeSessionEntry) => void
+  /** Expand/collapse one folded run in place (`?expand=<run id>`). */
+  onToggleExpand: (node: SessionTreeNode) => void
 }) {
   const layout = useMemo(() => tidyLayout(graph.nodes), [graph.nodes])
   const activePath = useMemo(() => activePathOf(graph.nodes, graph.focusKey), [graph.nodes, graph.focusKey])
@@ -73,6 +89,8 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   const fittedFor = useRef<string | null>(null)
   const [view, setView] = useState<ViewState>({ x: 24, y: 20, k: 1 })
   const [dragging, setDragging] = useState(false)
+  /** Per-expanded-card step-list scroll offset, in px. */
+  const [scroll, setScroll] = useState<Record<string, number>>({})
 
   const fit = useCallback(() => {
     const svg = svgRef.current
@@ -95,13 +113,32 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
     })
   }, [layout.width, layout.height])
 
+  const maxScrollOf = useCallback((node: SessionTreeNode): number => {
+    const rows = node.steps?.length ?? 0
+    return Math.max(0, rows * STEP_ROW_H - EXPANDED_VIEWPORT_H)
+  }, [])
+
   // Native wheel listener: React's synthetic onWheel is passive at the root, so
-  // preventDefault() there does not stop the page from scrolling.
+  // preventDefault() there does not stop the page from scrolling. Wheeling over an
+  // expanded card scrolls its step list instead of zooming the canvas.
   useEffect(() => {
     const svg = svgRef.current
     if (!svg) return
     const onWheel = (event: WheelEvent) => {
       event.preventDefault()
+      const card = (event.target as Element | null)?.closest?.('[data-steps]')
+      const cardId = card?.getAttribute('data-steps')
+      if (cardId) {
+        const node = nodeById.get(cardId)
+        if (node?.expanded) {
+          const limit = maxScrollOf(node)
+          setScroll(current => {
+            const next = Math.max(0, Math.min(limit, (current[cardId] ?? 0) + (event.deltaY > 0 ? STEP_ROW_H : -STEP_ROW_H)))
+            return next === (current[cardId] ?? 0) ? current : { ...current, [cardId]: next }
+          })
+          return
+        }
+      }
       const rect = svg.getBoundingClientRect()
       const pointerX = event.clientX - rect.left
       const pointerY = event.clientY - rect.top
@@ -117,7 +154,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
     }
     svg.addEventListener('wheel', onWheel, { passive: false })
     return () => svg.removeEventListener('wheel', onWheel)
-  }, [])
+  }, [nodeById, maxScrollOf])
 
   // Fit once per focused session, not on every revision bump: a live session
   // re-stamps generatedAt on each refetch, and re-fitting would fight the user's
@@ -155,10 +192,12 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   const onNodeKeyDown = useCallback((event: ReactKeyboardEvent<SVGGElement>, node: SessionTreeNode) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
-    onSelect(node)
-  }, [onSelect])
+    if (node.kind === 'collapsed') onToggleExpand(node)
+    else onSelect(node)
+  }, [onSelect, onToggleExpand])
 
   const focusSession = sessionByKey.get(graph.focusKey)
+  const expandedCount = graph.nodes.filter(node => node.expanded).length
 
   return (
     <div className="relative h-full w-full min-h-0">
@@ -204,16 +243,16 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           {/* Edges */}
           {graph.nodes.map(node => {
             if (!node.parentId) return null
+            const fromNode = nodeById.get(node.parentId)
             const from = layout.positions.get(node.parentId)
             const to = layout.positions.get(node.id)
-            const parent = nodeById.get(node.parentId)
-            if (!from || !to || !parent) return null
-            const crossSession = parent.sessionKey !== node.sessionKey
+            if (!from || !to || !fromNode) return null
+            const crossSession = fromNode.sessionKey !== node.sessionKey
             const onActivePath = activePath.has(node.id) && activePath.has(node.parentId)
             const ax = from.x + NODE_W
-            const ay = from.y + NODE_H / 2
+            const ay = from.y + defaultHeightOf(fromNode) / 2
             const bx = to.x
-            const by = to.y + NODE_H / 2
+            const by = to.y + defaultHeightOf(node) / 2
             return (
               <g key={`edge-${node.id}`}>
                 <path
@@ -241,29 +280,38 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
             const isCurrentSession = node.sessionKey === graph.focusKey
             const onActivePath = activePath.has(node.id)
             const { x, y } = position
+            const height = defaultHeightOf(node)
             const branchCount = childCounts.get(node.id) ?? 0
+            const isFolded = node.kind === 'collapsed'
+            const steps = node.steps ?? []
+            const scrolled = scroll[node.id] ?? 0
+            const scrollLimit = maxScrollOf(node)
+            const selected = node.id === selectedId
             const title = node.title || node.type
-            const subtitle = node.kind === 'collapsed'
-              ? node.preview
-              : node.label ?? node.preview
+            const subtitle = isFolded ? node.preview : node.label ?? node.preview
             return (
               <g
                 key={node.id}
                 data-node
+                {...(node.expanded ? { 'data-steps': node.id } : {})}
                 tabIndex={0}
                 role="button"
-                aria-label={`${style.label} · ${truncate(title, 40)}${isCurrentSession ? ' · 当前会话' : ' · 点击打开该会话'}`}
+                aria-label={
+                  `${style.label} · ${truncate(title, 40)}`
+                  + (isFolded ? (node.expanded ? ' · 点击收起' : ' · 点击展开这段步骤') : '')
+                  + (isCurrentSession ? ' · 当前会话' : ' · 点击打开该会话')
+                }
                 className="cursor-pointer outline-none"
                 opacity={onActivePath || !isCurrentSession ? 0.6 : 1}
-                onClick={() => onSelect(node)}
+                onClick={() => { if (isFolded) onToggleExpand(node); else onSelect(node) }}
                 onKeyDown={event => onNodeKeyDown(event, node)}
               >
-                {node.id === selectedId && (
+                {selected && (
                   <rect
                     x={x - 5}
                     y={y - 5}
                     width={NODE_W + 10}
-                    height={NODE_H + 10}
+                    height={height + 10}
                     rx={13}
                     fill="none"
                     strokeDasharray="4 3"
@@ -275,48 +323,100 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                   x={x}
                   y={y}
                   width={NODE_W}
-                  height={NODE_H}
+                  height={height}
                   rx={10}
                   className={onActivePath ? 'fill-card stroke-accent' : 'fill-card stroke-border'}
                   strokeWidth={1}
                 />
-                <rect x={x} y={y + 9} width={3} height={NODE_H - 18} rx={1.5} className={style.fill} />
-                <text x={x + 13} y={y + 19} className="text-2xs">
-                  {style.icon}
-                </text>
-                <text x={x + 32} y={y + 19} className={`text-2xs font-medium ${style.fill}`}>
-                  {style.label}
-                </text>
+                <rect x={x} y={y + 9} width={3} height={Math.min(42, height - 18)} rx={1.5} className={style.fill} />
+                <text x={x + 13} y={y + 19} className="text-2xs">{style.icon}</text>
+                <text x={x + 32} y={y + 19} className={`text-2xs font-medium ${style.fill}`}>{style.label}</text>
                 {node.tools?.length ? (
                   <text x={x + NODE_W - 10} y={y + 19} textAnchor="end" className="text-2xs fill-muted">
                     {truncate(node.tools.join(' · '), 16)}
                   </text>
                 ) : null}
-                <text x={x + 13} y={y + 36} className="text-meta fill-text-strong">
-                  {truncate(title, 24)}
-                </text>
-                {subtitle ? (
-                  <text x={x + 13} y={y + 52} className="text-2xs fill-muted">
-                    {truncate(subtitle, 26)}
+                {/* Folded node: the affordance on the right says 展开 / 收起. */}
+                {isFolded && (
+                  <text x={x + NODE_W - 10} y={y + 19} textAnchor="end" className="text-2xs fill-muted">
+                    {node.expanded ? '▼ 收起' : '▶ 展开'}
                   </text>
+                )}
+                <text x={x + 13} y={y + 36} className="text-meta fill-text-strong">{truncate(title, 24)}</text>
+                {subtitle && !isFolded ? (
+                  <text x={x + 13} y={y + 52} className="text-2xs fill-muted">{truncate(subtitle, 26)}</text>
                 ) : null}
+                {isFolded && !node.expanded ? (
+                  <text x={x + 13} y={y + 52} className="text-2xs fill-muted">{truncate(subtitle ?? '', 26)}</text>
+                ) : null}
+
+                {/* Expanded in place: the run's real steps, scrolling INSIDE the card
+                    so the canvas layout never grows. */}
+                {isFolded && node.expanded ? (
+                  <g>
+                    <text x={x + 13} y={y + 52} className="text-2xs fill-muted">
+                      {steps.length} 步{node.stepsTruncated ? `（仅前 ${steps.length} 步，整图切「显示步骤」看全部）` : ''}
+                    </text>
+                    <clipPath id={cssId(node.id)}>
+                      <rect x={x + 1} y={y + EXPANDED_HEADER_H + 26} width={NODE_W - 2} height={EXPANDED_VIEWPORT_H} rx={6} />
+                    </clipPath>
+                    <g clipPath={`url(#${cssId(node.id)})`}>
+                      <g transform={`translate(0, ${-scrolled})`}>
+                        {steps.map((step, index) => {
+                          const rowY = y + EXPANDED_HEADER_H + 26 + index * STEP_ROW_H
+                          const stepStyle = styleFor(step)
+                          return (
+                            <g
+                              key={step.id}
+                              className="cursor-pointer"
+                              onClick={event => { event.stopPropagation(); onSelect(step) }}
+                            >
+                              <rect
+                                x={x + 6}
+                                y={rowY}
+                                width={NODE_W - 12}
+                                height={STEP_ROW_H - 3}
+                                rx={4}
+                                className={step.id === selectedId ? 'fill-accent-subtle' : 'fill-bg-elevated'}
+                              />
+                              <rect x={x + 6} y={rowY} width={2} height={STEP_ROW_H - 3} rx={1} className={stepStyle.fill} />
+                              <text x={x + 14} y={rowY + 15} className="text-2xs fill-muted">{index + 1}</text>
+                              <text x={x + 32} y={rowY + 15} className="text-2xs fill-text">
+                                {truncate(`${step.title}${step.preview ? ` · ${step.preview}` : ''}`, 30)}
+                              </text>
+                            </g>
+                          )
+                        })}
+                      </g>
+                    </g>
+                    {/* scrollbar */}
+                    {scrollLimit > 0 ? (
+                      <>
+                        <rect x={x + NODE_W - 6} y={y + EXPANDED_HEADER_H + 26} width={3} height={EXPANDED_VIEWPORT_H} rx={1.5} className="fill-border" />
+                        <rect
+                          x={x + NODE_W - 6}
+                          y={y + EXPANDED_HEADER_H + 26 + (scrolled / (scrollLimit + EXPANDED_VIEWPORT_H)) * EXPANDED_VIEWPORT_H}
+                          width={3}
+                          height={Math.max(18, (EXPANDED_VIEWPORT_H / (steps.length * STEP_ROW_H)) * EXPANDED_VIEWPORT_H)}
+                          rx={1.5}
+                          className="fill-border-strong"
+                        />
+                      </>
+                    ) : null}
+                  </g>
+                ) : null}
+
                 {node.isHead && (
                   <>
                     <rect x={x + NODE_W - 48} y={y - 8} width={44} height={15} rx={7.5} className="fill-accent" />
-                    <text x={x + NODE_W - 26} y={y + 3} textAnchor="middle" className="text-2xs font-semibold fill-accent-fg">
-                      HEAD
-                    </text>
+                    <text x={x + NODE_W - 26} y={y + 3} textAnchor="middle" className="text-2xs font-semibold fill-accent-fg">HEAD</text>
                   </>
                 )}
                 {branchCount > 1 && (
-                  <text x={x + NODE_W + 4} y={y + NODE_H / 2 + 4} className="text-2xs font-semibold fill-accent">
-                    {branchCount}
-                  </text>
+                  <text x={x + NODE_W + 4} y={y + height / 2 + 4} className="text-2xs font-semibold fill-accent">{branchCount}</text>
                 )}
                 {!isCurrentSession && (
-                  <text x={x + NODE_W - 10} y={y + NODE_H - 5} textAnchor="end" className="text-2xs fill-info">
-                    ↗
-                  </text>
+                  <text x={x + NODE_W - 10} y={y + height - 5} textAnchor="end" className="text-2xs fill-info">↗</text>
                 )}
               </g>
             )
@@ -338,7 +438,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
         <button
           onClick={fit}
           className="h-7 cursor-pointer rounded border-none bg-transparent px-2 text-2xs text-muted transition-colors hover:bg-bg-hover hover:text-text"
-          title="适配视图"
+          title="适配视图（缩放下限 0.4，避免缩到不可读）"
         >适配</button>
       </div>
 
@@ -350,7 +450,8 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           <span className="inline-block w-4 border-t border-dashed border-info" />fork 边（跨文件）
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
-          <span className="inline-block h-3 w-4 rounded-sm border border-border bg-card" />会话分组带
+          <span className="inline-block h-3 w-4 rounded-sm border border-border bg-card" />点 <code className="text-2xs">+N 步</code> 就地展开
+          {expandedCount ? `（已展开 ${expandedCount}）` : ''}
         </div>
       </div>
     </div>
