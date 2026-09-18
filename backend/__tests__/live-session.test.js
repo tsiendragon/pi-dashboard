@@ -12,6 +12,7 @@ import { validateLiveSessionCommand } from '../live-sessions/protocol.js'
 import { LiveSessionBroker } from '../live-sessions/broker.js'
 import { LiveSessionBrowserAuth } from '../live-sessions/auth.js'
 import { createLiveSessionRoutes } from '../routes/live-sessions.js'
+import { resetSessionTreeCaches } from '../live-sessions/session-tree.js'
 
 const cleanups = []
 afterEach(async () => {
@@ -364,5 +365,75 @@ describe('LiveSessionBroker', () => {
     socket.destroy()
     await broker.stop()
     await expect(stat(broker.socketPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('serves the session-family graph only to an authenticated browser, and only inside the pi sessions dir', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pi-live-tree-routes-'))
+    const sessionsRoot = path.join(base, 'sessions')
+    const projectDir = path.join(sessionsRoot, '--tmp-tree-route--')
+    await mkdir(projectDir, { recursive: true })
+    const sessionHeader = JSON.stringify({
+      type: 'session', version: 3, id: 'child-id', timestamp: '2026-01-01T00:00:00.000Z', cwd: '/tmp/tree-route',
+    })
+    const userEntry = JSON.stringify({
+      type: 'message', id: 'u1', parentId: null, timestamp: '2026-01-01T00:00:00.000Z',
+      message: { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+    })
+    const sessionFile = path.join(projectDir, 'child.jsonl')
+    await writeFile(sessionFile, `${sessionHeader}\n${userEntry}\n`)
+
+    const previousRoot = process.env.PI_DASH_SESSIONS_DIR
+    process.env.PI_DASH_SESSIONS_DIR = sessionsRoot
+    resetSessionTreeCaches()
+
+    const registry = new LiveSessionRegistry()
+    const auth = new LiveSessionBrowserAuth({ tokenPath: path.join(base, 'live-control-token') })
+    const app = express()
+    app.use(express.json())
+    const routes = createLiveSessionRoutes({ app, registry, auth })
+    await routes.start()
+    const server = app.listen(0, '127.0.0.1')
+    cleanups.push(async () => {
+      await routes.stop(); await auth.stop(); await registry.stop()
+      await new Promise(resolve => server.close(resolve))
+      if (previousRoot === undefined) delete process.env.PI_DASH_SESSIONS_DIR
+      else process.env.PI_DASH_SESSIONS_DIR = previousRoot
+      resetSessionTreeCaches()
+      await rm(base, { recursive: true, force: true })
+    })
+    await new Promise(resolve => server.once('listening', resolve))
+    const origin = `http://127.0.0.1:${server.address().port}`
+    const treeUrl = `${origin}/api/session-tree?file=${encodeURIComponent(sessionFile)}`
+
+    // Mounted (not 404) and gated like every other live-session read route.
+    expect((await fetch(treeUrl)).status).toBe(401)
+
+    const token = (await readFile(auth.tokenPath, 'utf8')).trim()
+    const login = await fetch(`${origin}/api/live-sessions/auth`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ token }),
+    })
+    expect(login.status).toBe(200)
+    const cookie = login.headers.get('set-cookie')?.split(';')[0]
+
+    const missingParam = await fetch(`${origin}/api/session-tree`, { headers: { cookie } })
+    expect(missingParam.status).toBe(400)
+    await expect(missingParam.json()).resolves.toMatchObject({ error: 'session_file_unavailable' })
+
+    const outside = path.join(base, 'outside.jsonl')
+    await writeFile(outside, `${sessionHeader}\n`)
+    const escaped = await fetch(`${origin}/api/session-tree?file=${encodeURIComponent(outside)}`, { headers: { cookie } })
+    expect(escaped.status).toBe(403)
+    await expect(escaped.json()).resolves.toMatchObject({ error: 'session_file_out_of_scope' })
+
+    const absent = await fetch(`${origin}/api/session-tree?file=${encodeURIComponent(path.join(projectDir, 'nope.jsonl'))}`, { headers: { cookie } })
+    expect(absent.status).toBe(404)
+    await expect(absent.json()).resolves.toMatchObject({ error: 'session_file_not_found' })
+
+    const ok = await fetch(treeUrl, { headers: { cookie } })
+    expect(ok.status).toBe(200)
+    await expect(ok.json()).resolves.toMatchObject({
+      ok: true,
+      result: { focusKey: 'child', sessions: [{ key: 'child', isFocus: true }], nodes: [{ id: 'u1', isHead: true }] },
+    })
   })
 })
