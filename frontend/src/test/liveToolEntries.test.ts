@@ -43,7 +43,7 @@ describe('mergeThinkingParts', () => {
 
 describe('groupLiveToolEntries', () => {
   it('keeps separate tool calls as separate timeline rows', () => {
-    const timeline = groupLiveToolEntries([
+    const { items: timeline } = groupLiveToolEntries([
       assistant('assistant-1', [{ id: 'call-1', name: 'bash' }]),
       result('call-1', 'bash'),
       assistant('assistant-2', [{ id: 'call-2', name: 'read' }]),
@@ -57,7 +57,7 @@ describe('groupLiveToolEntries', () => {
   })
 
   it('groups multiple tool calls emitted in one assistant message', () => {
-    const timeline = groupLiveToolEntries([
+    const { items: timeline } = groupLiveToolEntries([
       assistant('assistant-batch', [
         { id: 'call-1', name: 'read' },
         { id: 'call-2', name: 'bash' },
@@ -70,5 +70,46 @@ describe('groupLiveToolEntries', () => {
     expect(timeline).toHaveLength(1)
     expect(timeline[0]?.type).toBe('toolGroup')
     if (timeline[0]?.type === 'toolGroup') expect(timeline[0].items).toHaveLength(2)
+  })
+})
+
+describe('groupLiveToolEntries compact reading', () => {
+  it('drops thinking and tool/script rows while keeping the reply body', () => {
+    const { items, hidden } = groupLiveToolEntries([
+      assistant('assistant-1', [{ id: 'call-1', name: 'bash' }]),
+      result('call-1', 'bash'),
+      {
+        type: 'message',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'thinking', thinking: 'reasoning' }, { type: 'text', text: 'the answer' }],
+        },
+      },
+      { type: 'message', message: { role: 'user', content: 'what changed?' } },
+    ], false)
+
+    // Nothing is rendered as a tool row, and the pure-tool entries are gone.
+    expect(items.every(item => item.type === 'entry')).toBe(true)
+    expect(items).toHaveLength(2)
+    expect(hidden.tools).toBe(2)      // one tool call + its result
+    expect(hidden.thinking).toBe(1)   // the thinking part on the mixed message
+  })
+
+  it('also drops extension telemetry rows while reading', () => {
+    const { items, hidden } = groupLiveToolEntries([
+      { type: 'custom', customType: 'compact-thinking-duration', data: { ms: 12 } },
+      { type: 'message', message: { role: 'user', content: 'only this should remain' } },
+    ], false)
+    expect(items).toHaveLength(1)
+    expect(hidden.other).toBe(1)
+  })
+
+  it('keeps the auxiliary rows when reading in full', () => {
+    const { items, hidden } = groupLiveToolEntries([
+      assistant('assistant-1', [{ id: 'call-1', name: 'bash' }]),
+      result('call-1', 'bash'),
+    ])
+    expect(hidden).toEqual({ tools: 0, thinking: 0, other: 0 })
+    expect(items.length).toBeGreaterThan(0)
   })
 })
