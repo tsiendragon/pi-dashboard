@@ -23,6 +23,8 @@ export function useSessionTree(
   detail: 'collapsed' | 'full' = 'collapsed',
   /** Folded-run ids (`run:<headId>`) to expand in place. */
   expandRuns: string[] = [],
+  /** Per-run step window (`?steps=`); the card's “加载更多” raises it. */
+  stepLimit = 0,
 ): SessionTreeState {
   const [graph, setGraph] = useState<SessionTreeGraph | null>(null)
   const [loading, setLoading] = useState(false)
@@ -48,7 +50,7 @@ export function useSessionTree(
     let cancelled = false
     setLoading(true)
     setError(null)
-    liveSessionApi.sessionTree(file, detail, expandRuns)
+    liveSessionApi.sessionTree(file, detail, expandRuns, stepLimit)
       .then(result => { if (!cancelled) setGraph(result) })
       .catch((cause: unknown) => {
         if (cancelled) return
@@ -58,7 +60,7 @@ export function useSessionTree(
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   // `expandRuns` is passed as a stable key so a new array identity does not refetch.
-  }, [file, detail, expandKey, revision, nonce])
+  }, [file, detail, expandKey, stepLimit, revision, nonce])
 
   const refresh = useCallback(() => setNonce(value => value + 1), [])
   return { graph, loading, error, refresh }
