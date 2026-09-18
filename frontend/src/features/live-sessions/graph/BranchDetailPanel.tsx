@@ -139,8 +139,8 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
             >{node.expanded ? `▼ 收起这 ${node.collapsedCount} 步` : `▶ 展开这 ${node.collapsedCount} 步（就地，卡片内可滚）`}</button>
             {node.expanded && node.steps?.length ? (
               <div className="text-2xs leading-relaxed text-muted">
-                已列出 {node.steps.length} 步，点其中一行可直接选中/切到那一步。
-                {node.stepsTruncated ? '（本段过长，只返回了前若干步；整图切「显示步骤」看全部）' : ''}
+                已加载 {node.steps.length} / {node.collapsedCount} 步，点其中一行可直接选中/切到那一步。
+                {node.stepsTruncated ? '卡片底部「加载更多」可继续加载下一批。' : ''}
               </div>
             ) : null}
             {node.steps?.length ? (

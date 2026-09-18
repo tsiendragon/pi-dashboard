@@ -16,6 +16,11 @@ function baseName(file: string): string {
   return tail.replace(/\.jsonl$/, '')
 }
 
+/** One “加载更多” click loads this many more steps per expanded run. */
+const STEP_BATCH = 400
+/** Mirrors the server's `SESSION_TREE_STEPS_MAX`. */
+const STEP_LIMIT_MAX = 3000
+
 export default function SessionGraphPage() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
@@ -31,18 +36,26 @@ export default function SessionGraphPage() {
   const [detail, setDetail] = useState<GraphDetail>('collapsed')
   /** Folded runs expanded in place (their steps render inside the card). */
   const [expandedRuns, setExpandedRuns] = useState<string[]>([])
-  const { graph, loading, error, refresh: reload } = useSessionTree(file, detail, expandedRuns)
+  /** Per-run step window; “加载更多” raises it by one batch (server clamps to 3000). */
+  const [stepLimit, setStepLimit] = useState(STEP_BATCH)
+  const { graph, loading, error, refresh: reload } = useSessionTree(file, detail, expandedRuns, stepLimit)
 
   const [selectedId, setSelectedId] = useState<string | null>(nodeParam)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>(undefined)
 
   // In-place expansions belong to one session file: drop them when the focus moves.
-  useEffect(() => { setExpandedRuns([]) }, [file])
+  useEffect(() => { setExpandedRuns([]); setStepLimit(STEP_BATCH) }, [file])
 
   const toggleExpand = useCallback((node: SessionTreeNode) => {
     setSelectedId(node.id)
     setExpandedRuns(list => list.includes(node.id) ? list.filter(id => id !== node.id) : [...list, node.id])
+    setStepLimit(STEP_BATCH)
+  }, [])
+
+  const loadMoreSteps = useCallback((node: SessionTreeNode) => {
+    setSelectedId(node.id)
+    setStepLimit(current => Math.min(STEP_LIMIT_MAX, Math.max(current, node.steps?.length ?? 0) + STEP_BATCH))
   }, [])
   const [toast, setToast] = useState<string | null>(null)
   const [undo, setUndo] = useState<{ headId: string; label: string } | null>(null)
@@ -251,6 +264,7 @@ export default function SessionGraphPage() {
               onSelect={node => setSelectedId(node.id)}
               onOpenSession={handleOpenSession}
               onToggleExpand={toggleExpand}
+              onLoadMore={loadMoreSteps}
             />
           ) : (
             // Never leave the canvas silently blank: a failed fetch (e.g. a backend

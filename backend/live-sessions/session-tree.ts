@@ -19,7 +19,8 @@ import { basename, join, sep } from 'node:path'
 import { extractText, stripInjectedBlocks } from '../session-store.js'
 import {
   SESSION_TREE_INDEX_TTL_MS,
-  SESSION_TREE_EXPAND_MAX,
+  SESSION_TREE_STEPS_DEFAULT,
+  SESSION_TREE_STEPS_MAX,
   SESSION_TREE_LINEAR_RUN_MIN,
   SESSION_TREE_MAX_NODES,
   SESSION_TREE_MAX_PARSE_BYTES,
@@ -77,6 +78,12 @@ export interface BuildSessionFamilyOptions {
    * `steps`,so the UI can list them inside the card without blowing up the layout.
    */
   expandRuns?: Set<string>
+  /**
+   * How many steps to return per expanded run. The UI's “加载更多” raises this
+   * (clamped to [1, SESSION_TREE_STEPS_MAX]); `collapsedCount` still reports the
+   * run's real size so the card can show `已加载 400 / 868`.
+   */
+  expandStepLimit?: number
 }
 
 interface ParsedEntry {
@@ -137,6 +144,12 @@ function clip(text: string): string | undefined {
 
 function asRole(value: unknown): SessionTreeNodeRole | undefined {
   return value === 'user' || value === 'assistant' || value === 'system' || value === 'tool' ? value : undefined
+}
+
+/** Clamp the per-run step window requested by `?steps=` into a safe range. */
+function clampStepLimit(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return SESSION_TREE_STEPS_DEFAULT
+  return Math.max(1, Math.min(SESSION_TREE_STEPS_MAX, Math.floor(value)))
 }
 
 // ── path scope guard ──
@@ -531,7 +544,9 @@ export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions
     focusKey: ordered.includes(focusFile) ? sessionKeyForFile(focusFile) : '',
     sessions,
     detail: options.expandLinearRuns ? 'full' : 'collapsed',
-    nodes: options.expandLinearRuns ? nodes : collapseLinearRuns(nodes, firstNodeIds, options.expandRuns),
+    nodes: options.expandLinearRuns
+      ? nodes
+      : collapseLinearRuns(nodes, firstNodeIds, options.expandRuns, clampStepLimit(options.expandStepLimit)),
     truncated,
     generatedAt,
   }
@@ -556,7 +571,12 @@ export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions
  * @param keepIds ids that must stay visible even when structurally foldable
  *                (used for each session's start node).
  */
-export function collapseLinearRuns(nodes: SessionTreeNode[], keepIds?: Set<string>, expandRuns?: Set<string>): SessionTreeNode[] {
+export function collapseLinearRuns(
+  nodes: SessionTreeNode[],
+  keepIds?: Set<string>,
+  expandRuns?: Set<string>,
+  stepLimit: number = SESSION_TREE_STEPS_DEFAULT,
+): SessionTreeNode[] {
   const byId = new Map(nodes.map(node => [node.id, node]))
   const children = new Map<string, SessionTreeNode[]>()
   for (const node of nodes) {
@@ -615,8 +635,8 @@ export function collapseLinearRuns(nodes: SessionTreeNode[], keepIds?: Set<strin
         // ids so clicking a row can select/navigate that exact entry.
         ...(expanded ? {
           expanded: true,
-          steps: chain.slice(0, SESSION_TREE_EXPAND_MAX),
-          ...(chain.length > SESSION_TREE_EXPAND_MAX ? { stepsTruncated: true } : {}),
+          steps: chain.slice(0, stepLimit),
+          ...(chain.length > stepLimit ? { stepsTruncated: true } : {}),
         } : {}),
       })
       for (const kid of children.get(tail.id) ?? []) visit(kid, collapsedId)

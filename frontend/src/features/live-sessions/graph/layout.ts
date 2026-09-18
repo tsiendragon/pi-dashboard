@@ -9,8 +9,12 @@ export const NODE_H_EXPANDED = 268
 export const STEP_ROW_H = 24
 /** Height of the expanded card's header (the part that stays visible while the list scrolls). */
 export const EXPANDED_HEADER_H = 34
-/** Max height of the expanded card's step viewport. */
-export const EXPANDED_VIEWPORT_H = NODE_H_EXPANDED - EXPANDED_HEADER_H - 8
+/** Top offset of the step viewport inside the expanded card. */
+export const EXPANDED_VIEWPORT_TOP = 62
+/** Bottom strip of the expanded card: “已加载 N/M 步 · 加载更多”. */
+export const EXPANDED_FOOTER_H = 20
+/** Height of the expanded card's step viewport. */
+export const EXPANDED_VIEWPORT_H = NODE_H_EXPANDED - EXPANDED_VIEWPORT_TOP - EXPANDED_FOOTER_H
 export const GAP_X = 76
 export const GAP_Y = 12
 /** Padding added around a session's nodes when drawing its group band. */

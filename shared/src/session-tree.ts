@@ -24,8 +24,10 @@ export const SESSION_TREE_MAX_PARSE_BYTES = 20 * 1024 * 1024
 export const SESSION_TREE_TAIL_BYTES = 8 * 1024 * 1024
 /** Preview text length kept per node. */
 export const SESSION_TREE_PREVIEW_CHARS = 160
-/** Max steps returned for one in-place expanded run (the rest are reported via `stepsTruncated`). */
-export const SESSION_TREE_EXPAND_MAX = 400
+/** Steps returned per expanded run by default (the UI offers “加载更多” to raise this). */
+export const SESSION_TREE_STEPS_DEFAULT = 400
+/** Hard ceiling for `?steps=`; above this the whole-graph `detail=full` mode is the tool. */
+export const SESSION_TREE_STEPS_MAX = 3000
 /** Header index (one line read per session file) freshness window. */
 export const SESSION_TREE_INDEX_TTL_MS = 30_000
 
@@ -75,7 +77,7 @@ export interface SessionTreeNode {
    * are NOT part of the graph layout (that is what keeps the canvas readable).
    */
   steps?: SessionTreeNode[]
-  /** True when `steps` was cut at {@link SESSION_TREE_EXPAND_MAX}. */
+  /** True when `steps` was cut short of the run's real size (`collapsedCount` is the truth). */
   stepsTruncated?: boolean
   /** True when a forked child session hangs off this entry. */
   isForkAnchor?: boolean

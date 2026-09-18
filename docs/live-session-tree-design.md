@@ -686,7 +686,8 @@ L1 侧栏森林增强 → L3 fork/未运行会话启动 → L4 标签写入。�
 | 顶层 `nodes` / 拓扑 / `fit()` 缩放 / 分组带 / 边 | **完全不变**（否则展开 418 步又会把画布拉成一条长条） |
 | 卡片 | 变高到 `NODE_H_EXPANDED = 268`，句部固定、步骤列表在卡内**滚动**（SVG `clipPath` + 偏移；滚轮在卡内滚动而不缩放画布） |
 | 步骤行 | **可点** → 选中那一步（真实 entry id），于是「切到此处 / 从此分叉」能直接作用于具体 entry |
-| 长度上限 | 单段最多返回 `SESSION_TREE_EXPAND_MAX = 400` 步，超出置 `stepsTruncated` |
+| 长度上限 | 单段默认返回 `SESSION_TREE_STEPS_DEFAULT = 400` 步（超出置 `stepsTruncated`）；硬上限 `SESSION_TREE_STEPS_MAX = 3000` |
+| 分页 | 卡片底部页脚：`已加载 400/868 步 · 加载更多`；点一下把 `?steps=` 提升一批（+400），已加载步数用 `collapsedCount` 作分母 |
 | 布局侧 | `tidyLayout(nodes, heightOf)` 新增每节点高度；同一深度列做**不重叠推挤**（高卡片不会压住邻行） |
 | 收起 | 再点卡片或详情面板的「收起」，或切「显示步骤」（会清空展开集） |
 
