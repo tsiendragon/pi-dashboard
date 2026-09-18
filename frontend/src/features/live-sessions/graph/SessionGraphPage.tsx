@@ -226,8 +226,11 @@ export default function SessionGraphPage() {
           {loading && !graph ? (
             <div className="flex h-full items-center justify-center text-body-s text-muted">加载会话家族图谱…</div>
           ) : graph && graph.nodes.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-body-s text-muted">
-              该会话还没有可显示的节点（可能是 --no-session 启动或文件为空）。
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+              <div className="text-body-s text-text">该会话还没有可显示的节点</div>
+              <div className="text-2xs text-muted">
+                可能是 --no-session 启动、文件为空，或该会话只写了文件头。
+              </div>
             </div>
           ) : graph ? (
             <SessionFamilyGraph
@@ -237,7 +240,26 @@ export default function SessionGraphPage() {
               onOpenSession={handleOpenSession}
               filter={filter}
             />
-          ) : null}
+          ) : (
+            // Never leave the canvas silently blank: a failed fetch (e.g. a backend
+            // that predates /api/session-tree) must say so here, not just in a banner.
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+              <div className="text-body-s font-medium text-text">无法加载会话图谱</div>
+              <div className="max-w-md text-2xs leading-relaxed text-muted">{error ?? '未知错误'}</div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={reload}
+                  className="rounded border border-border bg-card px-3 py-1.5 text-2xs text-muted transition-colors hover:border-accent hover:text-accent"
+                >重试</button>
+                <button
+                  type="button"
+                  onClick={() => { setParams({}) }}
+                  className="rounded border border-border bg-card px-3 py-1.5 text-2xs text-muted transition-colors hover:border-accent hover:text-accent"
+                >换会话</button>
+              </div>
+            </div>
+          )}
 
           {toast ? (
             <div className="pointer-events-none absolute bottom-16 left-1/2 -translate-x-1/2 rounded-md border border-border bg-panel px-3 py-1.5 text-2xs text-text shadow-lg">
