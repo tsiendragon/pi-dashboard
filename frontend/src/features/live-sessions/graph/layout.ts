@@ -3,6 +3,14 @@ import type { SessionTreeNode } from '@shared/session-tree'
 /** Card size + gutters for the layered (tidy-tree) layout, in SVG units. */
 export const NODE_W = 212
 export const NODE_H = 60
+/** Height of a folded node that was expanded in place (it lists its steps inside). */
+export const NODE_H_EXPANDED = 268
+/** Row height of one step inside an expanded folded node. */
+export const STEP_ROW_H = 24
+/** Height of the expanded card's header (the part that stays visible while the list scrolls). */
+export const EXPANDED_HEADER_H = 34
+/** Max height of the expanded card's step viewport. */
+export const EXPANDED_VIEWPORT_H = NODE_H_EXPANDED - EXPANDED_HEADER_H - 8
 export const GAP_X = 76
 export const GAP_Y = 12
 /** Padding added around a session's nodes when drawing its group band. */
@@ -22,14 +30,27 @@ export interface TreeLayout {
 }
 
 /**
+ * A node's rendered height. Folded nodes expanded in place are taller, so the
+ * layout has to reserve the space (otherwise the card would overlap its row).
+ */
+export function defaultHeightOf(node: Pick<SessionTreeNode, 'expanded'>): number {
+  return node.expanded ? NODE_H_EXPANDED : NODE_H
+}
+
+/**
  * Layered tree layout: depth drives x, leaf order drives y, a parent sits at the
  * vertical midpoint of its children. Our data is a tree (cross-file fork edges
  * are still tree edges), so no general graph engine is needed.
  *
  * Orphans (a `parentId` pointing outside the payload, e.g. a truncated family or
  * a tail-only parse) are laid out as extra roots instead of being dropped.
+ *
+ * @param heightOf per-node height; defaults to {@link defaultHeightOf}.
  */
-export function tidyLayout(nodes: Pick<SessionTreeNode, 'id' | 'parentId'>[]): TreeLayout {
+export function tidyLayout(
+  nodes: SessionTreeNode[],
+  heightOf: (node: SessionTreeNode) => number = defaultHeightOf,
+): TreeLayout {
   const ids = new Set(nodes.map(node => node.id))
   const children = new Map<string | null, string[]>()
   for (const node of nodes) {
@@ -62,11 +83,36 @@ export function tidyLayout(nodes: Pick<SessionTreeNode, 'id' | 'parentId'>[]): T
   for (const root of children.get(null) ?? []) walk(root, 0)
   for (const node of nodes) if (!visited.has(node.id)) walk(node.id, 0)
 
+  // A tall card only risks overlapping nodes in the SAME depth column, so resolve
+  // vertical overlap per column and leave the tree shape alone.
+  const byNode = new Map(nodes.map(node => [node.id, node]))
+  const columns = new Map<number, string[]>()
+  for (const node of nodes) {
+    const position = positions.get(node.id)
+    if (!position) continue
+    const list = columns.get(position.x)
+    if (list) list.push(node.id)
+    else columns.set(position.x, [node.id])
+  }
+  for (const column of columns.values()) {
+    column.sort((a, b) => (positions.get(a)?.y ?? 0) - (positions.get(b)?.y ?? 0))
+    for (let index = 1; index < column.length; index += 1) {
+      const previous = positions.get(column[index - 1])
+      const current = positions.get(column[index])
+      const previousNode = byNode.get(column[index - 1])
+      if (!previous || !current || !previousNode) continue
+      const minimum = previous.y + heightOf(previousNode) + GAP_Y
+      if (current.y < minimum) positions.set(column[index], { x: current.x, y: minimum })
+    }
+  }
+
   let width = 0
   let height = 0
-  for (const position of positions.values()) {
+  for (const node of nodes) {
+    const position = positions.get(node.id)
+    if (!position) continue
     width = Math.max(width, position.x + NODE_W)
-    height = Math.max(height, position.y + NODE_H)
+    height = Math.max(height, position.y + heightOf(node))
   }
   return { positions, width, height }
 }
@@ -92,6 +138,7 @@ export function sessionBounds(
   nodes: SessionTreeNode[],
   positions: Map<string, LayoutPosition>,
   sessionKey: string,
+  heightOf: (node: SessionTreeNode) => number = defaultHeightOf,
 ): { x: number; y: number; width: number; height: number } | null {
   let minX = Infinity
   let minY = Infinity
@@ -106,7 +153,7 @@ export function sessionBounds(
     minX = Math.min(minX, position.x)
     minY = Math.min(minY, position.y)
     maxX = Math.max(maxX, position.x + NODE_W)
-    maxY = Math.max(maxY, position.y + NODE_H)
+    maxY = Math.max(maxY, position.y + heightOf(node))
   }
   if (!found) return null
   return {

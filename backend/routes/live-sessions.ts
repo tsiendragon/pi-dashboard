@@ -285,10 +285,13 @@ export class LiveSessionRoutes {
       await this.respond(res, async () => {
         const file = typeof req.query.file === 'string' ? req.query.file.trim() : ''
         if (!file) throw new SessionTreeError('session_file_unavailable', 'file query parameter is required')
+        const expandParam = typeof req.query.expand === 'string' ? req.query.expand : ''
         const graph = await buildSessionFamilyGraph({
           sessionFile: file,
           liveSessionIds: new Set(this.registry.list().map(summary => summary.sessionId)),
           expandLinearRuns: req.query.detail === 'full',
+          // `expand` carries folded-run ids (`run:<headId>`), optionally comma-separated.
+          ...(expandParam ? { expandRuns: new Set(expandParam.split(',').map(value => value.trim()).filter(Boolean)) } : {}),
         })
         return { ok: true, result: graph }
       })

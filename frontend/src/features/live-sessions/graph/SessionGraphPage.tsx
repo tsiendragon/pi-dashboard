@@ -29,11 +29,21 @@ export default function SessionGraphPage() {
   // `collapsed` (default) folds linear runs so a conversation reads as
   // start → +N 步 → end; `full` returns every entry for step-level inspection.
   const [detail, setDetail] = useState<GraphDetail>('collapsed')
-  const { graph, loading, error, refresh: reload } = useSessionTree(file, detail)
+  /** Folded runs expanded in place (their steps render inside the card). */
+  const [expandedRuns, setExpandedRuns] = useState<string[]>([])
+  const { graph, loading, error, refresh: reload } = useSessionTree(file, detail, expandedRuns)
 
   const [selectedId, setSelectedId] = useState<string | null>(nodeParam)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>(undefined)
+
+  // In-place expansions belong to one session file: drop them when the focus moves.
+  useEffect(() => { setExpandedRuns([]) }, [file])
+
+  const toggleExpand = useCallback((node: SessionTreeNode) => {
+    setSelectedId(node.id)
+    setExpandedRuns(list => list.includes(node.id) ? list.filter(id => id !== node.id) : [...list, node.id])
+  }, [])
   const [toast, setToast] = useState<string | null>(null)
   const [undo, setUndo] = useState<{ headId: string; label: string } | null>(null)
   const [manualPath, setManualPath] = useState('')
@@ -185,7 +195,7 @@ export default function SessionGraphPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setDetail(current => current === 'collapsed' ? 'full' : 'collapsed')}
+            onClick={() => { setDetail(current => current === 'collapsed' ? 'full' : 'collapsed'); setExpandedRuns([]) }}
             className={`rounded border px-2.5 py-1 text-2xs transition-colors ${detail === 'full' ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-card text-muted hover:border-accent'}`}
             title={detail === 'full' ? '当前显示每一条步骤' : '当前只显示起点、终点、分叉点与标签，中间步骤已折叠'}
           >{detail === 'full' ? '⋯ 显示步骤' : '⋯ 仅关键节点'}</button>
@@ -240,6 +250,7 @@ export default function SessionGraphPage() {
               selectedId={selectedId}
               onSelect={node => setSelectedId(node.id)}
               onOpenSession={handleOpenSession}
+              onToggleExpand={toggleExpand}
             />
           ) : (
             // Never leave the canvas silently blank: a failed fetch (e.g. a backend
@@ -299,6 +310,7 @@ export default function SessionGraphPage() {
             onNavigate={handleNavigate}
             onFork={handleFork}
             onOpenSession={handleOpenSession}
+            onToggleExpand={toggleExpand}
             onClose={() => setSelectedId(null)}
           />
         ) : null}
