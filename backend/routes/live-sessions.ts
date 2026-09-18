@@ -10,6 +10,7 @@ import { LiveSessionOrderStore } from '../live-sessions/order.js'
 import { LivePiLauncher } from '../live-sessions/launcher.js'
 import { LiveSessionProtocolError } from '../live-sessions/protocol.js'
 import { LiveSessionRegistry, LiveSessionRegistryError } from '../live-sessions/registry.js'
+import { SessionTreeError, buildSessionFamilyGraph } from '../live-sessions/session-tree.js'
 
 export interface LiveSessionRouteOptions {
   app: Express
@@ -25,12 +26,15 @@ export interface LiveSessionRouteOptions {
 type AuthenticatedRequest = Request & { liveSessionIdentity?: LiveSessionBrowserIdentity }
 
 function errorStatus(error: unknown): number {
-  const code = error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError ? error.code : ''
+  const code = error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError ? error.code : ''
   if (code === 'live_session_not_found') return 404
   if (code === 'session_already_claimed') return 423
   if (code === 'command_timeout') return 504
   if (code === 'out_of_scope') return 403
   if (code === 'invalid_lease' || code === 'deliver_as_required' || code === 'live_session_unavailable') return 409
+  if (code === 'session_file_out_of_scope') return 403
+  if (code === 'session_file_not_found') return 404
+  if (code === 'session_file_unavailable') return 400
   if (code.startsWith('invalid_') || code === 'unsupported_command' || code === 'command_too_large') return 400
   if (error instanceof Error && error.message === 'group_not_found') return 404
   if (error instanceof Error && (error.message === 'group_name_required' || error.message === 'invalid_thinking_level' || error.message === 'model_id_required' || error.message === 'model_provider_required')) return 400
@@ -41,7 +45,7 @@ function errorStatus(error: unknown): number {
 
 function errorBody(error: unknown): { error: string; message: string } {
   return {
-    error: error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError ? error.code : 'live_session_error',
+    error: error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError ? error.code : 'live_session_error',
     message: error instanceof Error ? error.message : String(error),
   }
 }
@@ -270,6 +274,23 @@ export class LiveSessionRoutes {
       const detail = this.registry.get(req.params.processInstanceId as string)
       if (!detail) return res.status(404).json({ error: 'live_session_not_found' })
       res.json(detail)
+    })
+
+    // Session-family graph (read-only). The focused file plus every session
+    // linked through `header.parentSession`, so forked/cloned sessions show up as
+    // one tree. Keyed by absolute session file path (not processInstanceId) so a
+    // session that is no longer running can still be inspected. No broker
+    // round-trip: the files on disk are the truth.
+    this.app.get('/api/session-tree', requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => {
+        const file = typeof req.query.file === 'string' ? req.query.file.trim() : ''
+        if (!file) throw new SessionTreeError('session_file_unavailable', 'file query parameter is required')
+        const graph = await buildSessionFamilyGraph({
+          sessionFile: file,
+          liveSessionIds: new Set(this.registry.list().map(summary => summary.sessionId)),
+        })
+        return { ok: true, result: graph }
+      })
     })
 
     this.app.post('/api/live-sessions/:processInstanceId/claim', requireMutationOrigin, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
