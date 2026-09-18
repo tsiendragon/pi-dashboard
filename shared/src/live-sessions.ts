@@ -64,6 +64,17 @@ export interface LiveSessionSummary {
     contextWindow: number
     percent: number | null
   }
+  /**
+   * Additive, optional capability list advertised by the bridge. Absent = older
+   * bridge. Adding values is backward compatible in both directions and does NOT
+   * change {@link LIVE_SESSION_PROTOCOL_VERSION}.
+   *
+   * `session_tree` = the bridge registers the `/ls-navigate` and `/ls-fork`
+   * extension commands. The dashboard must NOT send those commands without it:
+   * pi falls back to submitting an unrecognized `/command` text as a normal model
+   * prompt, which would pollute the conversation.
+   */
+  capabilities?: string[]
   git?: {
     root?: string
     branch?: string
