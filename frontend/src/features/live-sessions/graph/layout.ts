@@ -34,6 +34,13 @@ export interface TreeLayout {
 }
 
 /**
+ * Which way the tree grows. A long conversation reads much better top→bottom on a
+ * portrait phone and left→right on a wide desktop, so the caller can let
+ * {@link chooseOrientation} decide instead of hard-coding one.
+ */
+export type GraphOrientation = 'horizontal' | 'vertical'
+
+/**
  * A node's rendered height. Folded nodes expanded in place are taller, so the
  * layout has to reserve the space (otherwise the card would overlap its row).
  */
@@ -42,18 +49,20 @@ export function defaultHeightOf(node: Pick<SessionTreeNode, 'expanded'>): number
 }
 
 /**
- * Layered tree layout: depth drives x, leaf order drives y, a parent sits at the
- * vertical midpoint of its children. Our data is a tree (cross-file fork edges
- * are still tree edges), so no general graph engine is needed.
+ * Layered tree layout: depth drives the main axis, leaf order the cross axis, and a
+ * parent sits at the midpoint of its children. Our data is a tree (cross-file fork
+ * edges are still tree edges), so no general graph engine is needed.
  *
  * Orphans (a `parentId` pointing outside the payload, e.g. a truncated family or
  * a tail-only parse) are laid out as extra roots instead of being dropped.
  *
  * @param heightOf per-node height; defaults to {@link defaultHeightOf}.
+ * @param orientation `horizontal` = depth→x (default), `vertical` = depth→y.
  */
 export function tidyLayout(
   nodes: SessionTreeNode[],
   heightOf: (node: SessionTreeNode) => number = defaultHeightOf,
+  orientation: GraphOrientation = 'horizontal',
 ): TreeLayout {
   const ids = new Set(nodes.map(node => node.id))
   const children = new Map<string | null, string[]>()
@@ -64,49 +73,82 @@ export function tidyLayout(
     else children.set(parent, [node.id])
   }
 
-  const positions = new Map<string, LayoutPosition>()
+  const depthOf = new Map<string, number>()
+  const slotOf = new Map<string, number>()
   const visited = new Set<string>()
-  let row = 0
+  let slot = 0
 
   const walk = (id: string, depth: number): number => {
-    if (visited.has(id)) return Math.max(0, row - 1)
+    if (visited.has(id)) return Math.max(0, slot - 1)
     visited.add(id)
+    depthOf.set(id, depth)
     const kids = children.get(id) ?? []
-    let y: number
+    let row: number
     if (!kids.length) {
-      y = row
-      row += 1
+      row = slot
+      slot += 1
     } else {
       const childRows = kids.map(kid => walk(kid, depth + 1))
-      y = (childRows[0] + childRows[childRows.length - 1]) / 2
+      row = (childRows[0] + childRows[childRows.length - 1]) / 2
     }
-    positions.set(id, { x: depth * (NODE_W + GAP_X), y: y * (NODE_H + GAP_Y) })
-    return y
+    slotOf.set(id, row)
+    return row
   }
 
   for (const root of children.get(null) ?? []) walk(root, 0)
   for (const node of nodes) if (!visited.has(node.id)) walk(node.id, 0)
 
-  // A tall card only risks overlapping nodes in the SAME depth column, so resolve
-  // vertical overlap per column and leave the tree shape alone.
   const byNode = new Map(nodes.map(node => [node.id, node]))
-  const columns = new Map<number, string[]>()
-  for (const node of nodes) {
-    const position = positions.get(node.id)
-    if (!position) continue
-    const list = columns.get(position.x)
-    if (list) list.push(node.id)
-    else columns.set(position.x, [node.id])
-  }
-  for (const column of columns.values()) {
-    column.sort((a, b) => (positions.get(a)?.y ?? 0) - (positions.get(b)?.y ?? 0))
-    for (let index = 1; index < column.length; index += 1) {
-      const previous = positions.get(column[index - 1])
-      const current = positions.get(column[index])
-      const previousNode = byNode.get(column[index - 1])
-      if (!previous || !current || !previousNode) continue
-      const minimum = previous.y + heightOf(previousNode) + GAP_Y
-      if (current.y < minimum) positions.set(column[index], { x: current.x, y: minimum })
+  const positions = new Map<string, LayoutPosition>()
+
+  if (orientation === 'horizontal') {
+    // depth → x, leaf slot → y
+    for (const node of nodes) {
+      positions.set(node.id, {
+        x: (depthOf.get(node.id) ?? 0) * (NODE_W + GAP_X),
+        y: (slotOf.get(node.id) ?? 0) * (NODE_H + GAP_Y),
+      })
+    }
+    // A tall card only risks overlapping nodes in the SAME depth column, so resolve
+    // vertical overlap per column and leave the tree shape alone.
+    const columns = new Map<number, string[]>()
+    for (const node of nodes) {
+      const position = positions.get(node.id)
+      if (!position) continue
+      const list = columns.get(position.x)
+      if (list) list.push(node.id)
+      else columns.set(position.x, [node.id])
+    }
+    for (const column of columns.values()) {
+      column.sort((a, b) => (positions.get(a)?.y ?? 0) - (positions.get(b)?.y ?? 0))
+      for (let index = 1; index < column.length; index += 1) {
+        const previous = positions.get(column[index - 1])
+        const current = positions.get(column[index])
+        const previousNode = byNode.get(column[index - 1])
+        if (!previous || !current || !previousNode) continue
+        const minimum = previous.y + heightOf(previousNode) + GAP_Y
+        if (current.y < minimum) positions.set(column[index], { x: current.x, y: minimum })
+      }
+    }
+  } else {
+    // depth → y, leaf slot → x. Each depth level is a horizontal band whose height
+    // is the tallest card in it (an expanded folded run is 268px, not 60px).
+    const levelHeight = new Map<number, number>()
+    for (const node of nodes) {
+      const depth = depthOf.get(node.id) ?? 0
+      levelHeight.set(depth, Math.max(levelHeight.get(depth) ?? NODE_H, heightOf(node)))
+    }
+    const levelY = new Map<number, number>()
+    let cursor = 0
+    for (const depth of [...levelHeight.keys()].sort((a, b) => a - b)) {
+      levelY.set(depth, cursor)
+      cursor += (levelHeight.get(depth) ?? NODE_H) + GAP_Y
+    }
+    for (const node of nodes) {
+      positions.set(node.id, {
+        x: (slotOf.get(node.id) ?? 0) * (NODE_W + GAP_X),
+        y: levelY.get(depthOf.get(node.id) ?? 0) ?? 0,
+      })
     }
   }
 
@@ -119,6 +161,40 @@ export function tidyLayout(
     height = Math.max(height, position.y + heightOf(node))
   }
   return { positions, width, height }
+}
+
+/** Padding `fit()` leaves around the content, mirrored here for scoring. */
+export const FIT_PADDING = 56
+
+/** Biggest scale at which a layout still fits inside a container (clamped to 1). */
+export function fitScale(layout: TreeLayout, containerWidth: number, containerHeight: number): number {
+  if (!containerWidth || !containerHeight || !layout.width || !layout.height) return 1
+  return Math.max(0.05, Math.min(
+    1,
+    (containerWidth - FIT_PADDING * 2) / layout.width,
+    (containerHeight - FIT_PADDING * 2) / layout.height,
+  ))
+}
+
+/**
+ * Pick the orientation that renders BIGGER in this container — i.e. the one whose
+ * `fit` scale is higher. A 5-node chain is 1440px wide but 60px tall, so a portrait
+ * phone scores the vertical layout far better and the line stops shrinking into
+ * unreadable cards.
+ *
+ * `hysteresis` (>1) makes the comparison prefer the incumbent/horizontal on close
+ * calls, so the graph does not flip-flop while the user resizes a window.
+ */
+export function chooseOrientation(
+  horizontal: TreeLayout,
+  vertical: TreeLayout,
+  containerWidth: number,
+  containerHeight: number,
+  hysteresis = 1.08,
+): GraphOrientation {
+  const horizontalScale = fitScale(horizontal, containerWidth, containerHeight)
+  const verticalScale = fitScale(vertical, containerWidth, containerHeight)
+  return verticalScale > horizontalScale * hysteresis ? 'vertical' : 'horizontal'
 }
 
 /** Ids on the focus session's active branch (leaf → root), used to highlight the live path. */
