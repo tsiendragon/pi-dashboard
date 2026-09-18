@@ -650,6 +650,8 @@ L1 侧栏森林增强 → L3 fork/未运行会话启动 → L4 标签写入。�
 
 ### 16.2 修订
 
+> 示意图（自包含 HTML，可浏览器打开）：`docs/mockups/session-tree-fold-before-after.html`
+
 | # | 内容 |
 |---|---|
 | 1 | **折叠规则改为只保留结构节点**：会话起点（每个文件第一个节点）、终点（`isHead`/`isLeaf`）、fork 锚点、分支点（`childCount !== 1`）、pi `label`、`compaction`/`branchSummary`。其余（普通问答与工具步骤）全部折入一个 `collapsed` 节点 |
