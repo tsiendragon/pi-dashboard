@@ -18,7 +18,7 @@ export interface SessionTreeState {
  * `/ls-navigate`) and pushes a fresh snapshot, so a branch switch anywhere is
  * reflected here without polling.
  */
-export function useSessionTree(file: string | null): SessionTreeState {
+export function useSessionTree(file: string | null, detail: 'collapsed' | 'full' = 'collapsed'): SessionTreeState {
   const [graph, setGraph] = useState<SessionTreeGraph | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,7 +41,7 @@ export function useSessionTree(file: string | null): SessionTreeState {
     let cancelled = false
     setLoading(true)
     setError(null)
-    liveSessionApi.sessionTree(file)
+    liveSessionApi.sessionTree(file, detail)
       .then(result => { if (!cancelled) setGraph(result) })
       .catch((cause: unknown) => {
         if (cancelled) return
@@ -50,7 +50,7 @@ export function useSessionTree(file: string | null): SessionTreeState {
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [file, revision, nonce])
+  }, [file, detail, revision, nonce])
 
   const refresh = useCallback(() => setNonce(value => value + 1), [])
   return { graph, loading, error, refresh }
