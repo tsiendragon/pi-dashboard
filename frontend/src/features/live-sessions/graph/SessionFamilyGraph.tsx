@@ -2,8 +2,10 @@ import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerE
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionTreeGraph, SessionTreeNode, SessionTreeSessionEntry } from '@shared/session-tree'
 import {
-  EXPANDED_HEADER_H,
+  EXPANDED_FOOTER_H,
   EXPANDED_VIEWPORT_H,
+  EXPANDED_VIEWPORT_TOP,
+  NODE_H_EXPANDED,
   NODE_W,
   STEP_ROW_H,
   activePathOf,
@@ -66,13 +68,15 @@ const MAX_ZOOM = 2
  */
 const MIN_FIT_ZOOM = 0.4
 
-export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpenSession, onToggleExpand }: {
+export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpenSession, onToggleExpand, onLoadMore }: {
   graph: SessionTreeGraph
   selectedId: string | null
   onSelect: (node: SessionTreeNode) => void
   onOpenSession: (session: SessionTreeSessionEntry) => void
   /** Expand/collapse one folded run in place (`?expand=<run id>`). */
   onToggleExpand: (node: SessionTreeNode) => void
+  /** Raise the per-run step window (`?steps=`) so a truncated run loads its next batch. */
+  onLoadMore: (node: SessionTreeNode) => void
 }) {
   const layout = useMemo(() => tidyLayout(graph.nodes), [graph.nodes])
   const activePath = useMemo(() => activePathOf(graph.nodes, graph.focusKey), [graph.nodes, graph.focusKey])
@@ -355,15 +359,15 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                 {isFolded && node.expanded ? (
                   <g>
                     <text x={x + 13} y={y + 52} className="text-2xs fill-muted">
-                      {steps.length} 步{node.stepsTruncated ? `（仅前 ${steps.length} 步，整图切「显示步骤」看全部）` : ''}
+                      {steps.length}/{node.collapsedCount} 步{node.stepsTruncated ? '' : ' · 全部加载'}（卡内滚动，点某一行可选中）
                     </text>
                     <clipPath id={cssId(node.id)}>
-                      <rect x={x + 1} y={y + EXPANDED_HEADER_H + 26} width={NODE_W - 2} height={EXPANDED_VIEWPORT_H} rx={6} />
+                      <rect x={x + 1} y={y + EXPANDED_VIEWPORT_TOP} width={NODE_W - 2} height={EXPANDED_VIEWPORT_H} rx={6} />
                     </clipPath>
                     <g clipPath={`url(#${cssId(node.id)})`}>
                       <g transform={`translate(0, ${-scrolled})`}>
                         {steps.map((step, index) => {
-                          const rowY = y + EXPANDED_HEADER_H + 26 + index * STEP_ROW_H
+                          const rowY = y + EXPANDED_VIEWPORT_TOP + index * STEP_ROW_H
                           const stepStyle = styleFor(step)
                           return (
                             <g
@@ -392,10 +396,10 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                     {/* scrollbar */}
                     {scrollLimit > 0 ? (
                       <>
-                        <rect x={x + NODE_W - 6} y={y + EXPANDED_HEADER_H + 26} width={3} height={EXPANDED_VIEWPORT_H} rx={1.5} className="fill-border" />
+                        <rect x={x + NODE_W - 6} y={y + EXPANDED_VIEWPORT_TOP} width={3} height={EXPANDED_VIEWPORT_H} rx={1.5} className="fill-border" />
                         <rect
                           x={x + NODE_W - 6}
-                          y={y + EXPANDED_HEADER_H + 26 + (scrolled / (scrollLimit + EXPANDED_VIEWPORT_H)) * EXPANDED_VIEWPORT_H}
+                          y={y + EXPANDED_VIEWPORT_TOP + (scrolled / (scrollLimit + EXPANDED_VIEWPORT_H)) * EXPANDED_VIEWPORT_H}
                           width={3}
                           height={Math.max(18, (EXPANDED_VIEWPORT_H / (steps.length * STEP_ROW_H)) * EXPANDED_VIEWPORT_H)}
                           rx={1.5}
@@ -403,6 +407,37 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                         />
                       </>
                     ) : null}
+
+                    {/* footer: how much of this run is loaded, and the next-batch action */}
+                    {node.stepsTruncated ? (
+                      <g className="cursor-pointer" onClick={event => { event.stopPropagation(); onLoadMore(node) }}>
+                        <rect
+                          x={x + 6}
+                          y={y + NODE_H_EXPANDED - EXPANDED_FOOTER_H}
+                          width={NODE_W - 12}
+                          height={EXPANDED_FOOTER_H - 2}
+                          rx={4}
+                          className="fill-accent-subtle"
+                        />
+                        <text
+                          x={x + NODE_W / 2}
+                          y={y + NODE_H_EXPANDED - EXPANDED_FOOTER_H + 13}
+                          textAnchor="middle"
+                          className="text-2xs fill-accent"
+                        >
+                          已加载 {steps.length}/{node.collapsedCount} 步 · 加载更多
+                        </text>
+                      </g>
+                    ) : (
+                      <text
+                        x={x + NODE_W / 2}
+                        y={y + NODE_H_EXPANDED - EXPANDED_FOOTER_H + 13}
+                        textAnchor="middle"
+                        className="text-2xs fill-muted"
+                      >
+                        已加载全部 {steps.length} 步
+                      </text>
+                    )}
                   </g>
                 ) : null}
 
