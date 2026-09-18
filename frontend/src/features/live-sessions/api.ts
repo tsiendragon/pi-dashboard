@@ -91,9 +91,20 @@ export const liveSessionApi = {
   /**
    * Session-family graph for the graph page. Keyed by absolute session file path
    * so sessions that are no longer running can be inspected too.
+   *
+   * The response is validated because a backend that predates this route does not
+   * 404: the SPA static fallback answers 200 with index.html, which would
+   * otherwise silently yield `undefined` and render an empty canvas.
    */
   sessionTree: (file: string) => fetch(`/api/session-tree?file=${encodeURIComponent(file)}`, { credentials: 'same-origin' })
-    .then(json<{ ok: true; result: SessionTreeGraph }>).then(result => result.result),
+    .then(json<{ ok: true; result: SessionTreeGraph }>)
+    .then(payload => {
+      const graph = payload?.result
+      if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.sessions)) {
+        throw new LiveSessionApiError(502, 'session_tree_unavailable', '会话图谱接口不可用：后端可能是旧版本，请重启 dashboard（./run.sh）')
+      }
+      return graph
+    }),
   /**
    * Session-tree write actions. These ride the EXISTING `input` command channel
    * (the bridge registers `/ls-navigate` and `/ls-fork` extension commands), so
