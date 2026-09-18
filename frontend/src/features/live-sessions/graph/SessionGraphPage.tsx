@@ -8,7 +8,7 @@ import { liveSessionApi } from '../api'
 import { useLiveSessionsRuntime } from '../useLiveSessions'
 import { buildSessionTitles } from '../sessionTitle'
 import BranchDetailPanel from './BranchDetailPanel'
-import SessionFamilyGraph, { type GraphFilter } from './SessionFamilyGraph'
+import SessionFamilyGraph, { type GraphDetail } from './SessionFamilyGraph'
 import { useSessionTree } from './useSessionTree'
 
 function baseName(file: string): string {
@@ -26,10 +26,12 @@ export default function SessionGraphPage() {
 
   const file = params.get('file')
   const nodeParam = params.get('node')
-  const { graph, loading, error, refresh: reload } = useSessionTree(file)
+  // `collapsed` (default) folds linear runs so a conversation reads as
+  // start → +N 步 → end; `full` returns every entry for step-level inspection.
+  const [detail, setDetail] = useState<GraphDetail>('collapsed')
+  const { graph, loading, error, refresh: reload } = useSessionTree(file, detail)
 
   const [selectedId, setSelectedId] = useState<string | null>(nodeParam)
-  const [filter, setFilter] = useState<GraphFilter>('all')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>(undefined)
   const [toast, setToast] = useState<string | null>(null)
@@ -183,10 +185,10 @@ export default function SessionGraphPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setFilter(current => current === 'all' ? 'user' : 'all')}
-            className={`rounded border px-2.5 py-1 text-2xs transition-colors ${filter === 'user' ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-card text-muted hover:border-accent'}`}
-            title="只高亮用户消息"
-          >{filter === 'user' ? '👤 只看用户' : ' 全部'}</button>
+            onClick={() => setDetail(current => current === 'collapsed' ? 'full' : 'collapsed')}
+            className={`rounded border px-2.5 py-1 text-2xs transition-colors ${detail === 'full' ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-card text-muted hover:border-accent'}`}
+            title={detail === 'full' ? '当前显示每一条步骤' : '当前只显示起点、终点、分叉点与标签，中间步骤已折叠'}
+          >{detail === 'full' ? '⋯ 显示步骤' : '⋯ 仅关键节点'}</button>
           <button
             type="button"
             onClick={reload}
@@ -238,7 +240,6 @@ export default function SessionGraphPage() {
               selectedId={selectedId}
               onSelect={node => setSelectedId(node.id)}
               onOpenSession={handleOpenSession}
-              filter={filter}
             />
           ) : (
             // Never leave the canvas silently blank: a failed fetch (e.g. a backend
