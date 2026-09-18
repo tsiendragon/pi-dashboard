@@ -288,6 +288,7 @@ export class LiveSessionRoutes {
         const graph = await buildSessionFamilyGraph({
           sessionFile: file,
           liveSessionIds: new Set(this.registry.list().map(summary => summary.sessionId)),
+          expandLinearRuns: req.query.detail === 'full',
         })
         return { ok: true, result: graph }
       })

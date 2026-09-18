@@ -104,8 +104,10 @@ describe('buildSessionFamilyGraph', () => {
     expect(focus.forkAnchorId).toBe('u5')
     expect(focus.leafId).toBe('a7')
 
-    // Parent prefix rendered once (5 nodes) + child-only tail (2 nodes).
-    expect(graph.nodes.map(node => node.id)).toEqual(['u1', 'a2', 'u3', 'a4', 'u5', 'u6', 'a7'])
+    // Parent prefix rendered once + child-only tail, with the middle of the
+    // parent's chain folded into one segment (folding keeps start / fork anchor /
+    // child start / head as the only survivors).
+    expect(graph.nodes.map(node => node.id)).toEqual(['u1', 'run:a2', 'u5', 'u6', 'a7'])
     const anchor = graph.nodes.find(node => node.id === 'u5')
     expect(anchor?.isForkAnchor).toBe(true)
     expect(anchor?.childCount).toBe(1)
@@ -113,6 +115,35 @@ describe('buildSessionFamilyGraph', () => {
     expect(graph.nodes.find(node => node.id === 'u5')?.sessionKey).toBe(sessionKeyForFile(parentFile))
     expect(graph.nodes.find(node => node.id === 'u6')?.sessionKey).toBe(sessionKeyForFile(childFile))
     expect(graph.nodes.find(node => node.id === 'a7')?.isHead).toBe(true)
+    // Every real entry is either rendered or accounted for by a folded range.
+    const folded = graph.nodes.filter(node => node.kind === 'collapsed')
+    expect(folded.reduce((total, node) => total + (node.collapsedCount ?? 0), 0)).toBe(3)
+  })
+
+  it('renders a purely linear session as start -> folded run -> end', async () => {
+    const file = writeSession('linear', [
+      header('linear-id'),
+      user('u1', null),
+      assistant('a2', 'u1'),
+      user('u3', 'a2'),
+      assistant('a4', 'u3'),
+      user('u5', 'a4'),
+      assistant('a6', 'u5'),
+    ])
+
+    const folded = await buildSessionFamilyGraph({ sessionFile: file })
+    expect(folded.detail).toBe('collapsed')
+    expect(folded.nodes.map(node => node.id)).toEqual(['u1', 'run:a2', 'a6'])
+    const segment = folded.nodes.find(node => node.kind === 'collapsed')
+    expect(segment?.title).toBe('+4 步')
+    expect(segment?.collapsedRange).toEqual({ from: 'a2', to: 'u5' })
+    expect(folded.nodes.find(node => node.id === 'a6')?.parentId).toBe('run:a2')
+
+    // The “显示步骤” escape hatch returns every entry.
+    const expanded = await buildSessionFamilyGraph({ sessionFile: file, expandLinearRuns: true })
+    expect(expanded.detail).toBe('full')
+    expect(expanded.nodes.map(node => node.id)).toEqual(['u1', 'a2', 'u3', 'a4', 'u5', 'a6'])
+    expect(expanded.nodes.some(node => node.kind === 'collapsed')).toBe(false)
   })
 
   it('chains multi-level forks (A -> B -> C) without duplicating any prefix', async () => {
@@ -272,16 +303,18 @@ describe('collapseLinearRuns', () => {
     nodes[ids.length - 1] = { ...nodes[ids.length - 1], isHead: true, isLeaf: true }
     nodes.forEach(candidate => { candidate.childCount = candidate.isLeaf ? 0 : 1 })
 
-    const out = collapseLinearRuns(nodes)
+    const out = collapseLinearRuns(nodes, new Set(['a1']))
     const collapsed = out.filter(candidate => candidate.kind === 'collapsed')
     expect(collapsed).toHaveLength(1)
-    expect(collapsed[0].collapsedCount).toBe(7)
-    expect(collapsed[0].collapsedRange).toEqual({ from: 'a2', to: 'a8' })
-    expect(out.map(candidate => candidate.id)).toEqual(['a1', 'run:a2', 'a9', 'a10'])
+    expect(collapsed[0].collapsedCount).toBe(8)
+    expect(collapsed[0].collapsedRange).toEqual({ from: 'a2', to: 'a9' })
+    // start → folded run → end, with the run's children re-hung off the fold.
+    expect(out.map(candidate => candidate.id)).toEqual(['a1', 'run:a2', 'a10'])
+    expect(out.find(candidate => candidate.id === 'a10')?.parentId).toBe('run:a2')
   })
 
   it('keeps short runs unfolded and never folds structural nodes', () => {
     const nodes = [node('a1', null, { childCount: 1 }), node('a2', 'a1', { isLeaf: true, isHead: true })]
-    expect(collapseLinearRuns(nodes).map(candidate => candidate.id)).toEqual(['a1', 'a2'])
+    expect(collapseLinearRuns(nodes, new Set(['a1'])).map(candidate => candidate.id)).toEqual(['a1', 'a2'])
   })
 })

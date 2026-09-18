@@ -65,6 +65,11 @@ export interface BuildSessionFamilyOptions {
   sessionFile: string
   /** pi sessionIds that currently have an attached live process (drives `isLive`). */
   liveSessionIds?: Set<string>
+  /**
+   * `true` returns every entry instead of folding linear runs. The graph page
+   * exposes this as a “显示步骤” toggle.
+   */
+  expandLinearRuns?: boolean
 }
 
 interface ParsedEntry {
@@ -338,7 +343,7 @@ function lastLeadingSharedIndex(entries: ParsedEntry[], parentIds: Set<string>):
 
 export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions): Promise<SessionTreeGraph> {
   const generatedAt = Date.now()
-  const empty: SessionTreeGraph = { focusKey: '', sessions: [], nodes: [], truncated: false, generatedAt }
+  const empty: SessionTreeGraph = { focusKey: '', sessions: [], detail: options.expandLinearRuns ? 'full' : 'collapsed', nodes: [], truncated: false, generatedAt }
 
   let focusFile: string
   try {
@@ -416,6 +421,7 @@ export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions
   const sessions: SessionTreeSessionEntry[] = []
   const nodes: SessionTreeNode[] = []
   const anchorIds = new Set<string>()
+  const firstNodeIds = new Set<string>()
   const childFirstNodeId = new Map<string, string>() // child file → its first rendered node id
   const firstNodeOf = new Map<string, string>()      // file → first rendered node id
 
@@ -459,6 +465,8 @@ export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions
     if (sessionNodes.length) {
       if (fallbackAnchor && localIds.has(fallbackAnchor) === false) sessionNodes[0].parentId = fallbackAnchor
       firstNodeOf.set(file, sessionNodes[0].id)
+      // The session's start point must survive linear folding (see collapseLinearRuns).
+      firstNodeIds.add(sessionNodes[0].id)
       if (parentFile) childFirstNodeId.set(parentFile, sessionNodes[0].id)
     }
     if (anchorId) anchorIds.add(anchorId)
@@ -515,7 +523,8 @@ export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions
   return {
     focusKey: ordered.includes(focusFile) ? sessionKeyForFile(focusFile) : '',
     sessions,
-    nodes: collapseLinearRuns(nodes),
+    detail: options.expandLinearRuns ? 'full' : 'collapsed',
+    nodes: options.expandLinearRuns ? nodes : collapseLinearRuns(nodes, firstNodeIds),
     truncated,
     generatedAt,
   }
@@ -524,12 +533,23 @@ export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions
 // ── linear-run collapsing ──
 
 /**
- * Fold long linear stretches into a single `collapsed` node so that a 7000-entry
- * session does not become a 7000-node spine. A node survives unfolding if it is
- * structural: a leaf, the session head, a labeled entry, a branch point, a fork
- * anchor, a user turn, or a compaction/branch-summary marker.
+ * Fold linear stretches so a conversation does not turn into hundreds of cards.
+ *
+ * A node survives only when it is STRUCTURAL — navigation-relevant:
+ * - the first node of a session (the start point) and its head/leaf (the end point)
+ * - a branch point (`childCount !== 1`): where the tree actually forks
+ * - a fork anchor (where a child session was forked off)
+ * - a pi `label` bookmark
+ * - a compaction / branch-summary marker (context boundaries)
+ *
+ * Everything else (plain user/assistant turns and tool steps) is absorbed into a
+ * single `collapsed` node, so a purely linear session renders as exactly
+ * start → +N 步 → end.
+ *
+ * @param keepIds ids that must stay visible even when structurally foldable
+ *                (used for each session's start node).
  */
-export function collapseLinearRuns(nodes: SessionTreeNode[]): SessionTreeNode[] {
+export function collapseLinearRuns(nodes: SessionTreeNode[], keepIds?: Set<string>): SessionTreeNode[] {
   const byId = new Map(nodes.map(node => [node.id, node]))
   const children = new Map<string, SessionTreeNode[]>()
   for (const node of nodes) {
@@ -540,16 +560,16 @@ export function collapseLinearRuns(nodes: SessionTreeNode[]): SessionTreeNode[] 
   }
   const structural = (node: SessionTreeNode): boolean =>
     node.childCount !== 1 || node.isLeaf || node.isHead || node.isForkAnchor === true ||
-    node.label !== undefined || node.role === 'user' ||
+    node.label !== undefined || keepIds?.has(node.id) === true ||
     node.kind === 'branchSummary' || node.kind === 'compaction' || node.kind === 'collapsed'
 
   const out: SessionTreeNode[] = []
   const consumed = new Set<string>()
 
-  const visit = (start: SessionTreeNode): void => {
+  const visit = (start: SessionTreeNode, parentOverride?: string): void => {
     if (consumed.has(start.id)) return
     consumed.add(start.id)
-    out.push(start)
+    out.push(parentOverride ? { ...start, parentId: parentOverride } : start)
 
     const chain: SessionTreeNode[] = []
     let current = start
@@ -564,24 +584,26 @@ export function collapseLinearRuns(nodes: SessionTreeNode[]): SessionTreeNode[] 
     }
 
     if (chain.length >= SESSION_TREE_LINEAR_RUN_MIN) {
-      const folded = chain.slice(0, -1)
+      // Fold the WHOLE run into one node and hang the run's children off it, so a
+      // linear session becomes start → +N 步 → end instead of start → +N → step → end.
+      const head = chain[0]
       const tail = chain[chain.length - 1]
+      const collapsedId = `run:${head.id}`
       out.push({
-        id: `run:${folded[0].id}`,
+        id: collapsedId,
         parentId: start.id,
         kind: 'collapsed',
         sessionKey: start.sessionKey,
         type: 'collapsed',
-        title: `+${folded.length} 步`,
-        preview: `${folded[0].title} → ${folded[folded.length - 1].title}`,
+        title: `+${chain.length} 步`,
+        preview: `${head.title} → ${tail.title}`,
         childCount: 1,
         isLeaf: false,
         isHead: false,
-        collapsedCount: folded.length,
-        collapsedRange: { from: folded[0].id, to: folded[folded.length - 1].id },
+        collapsedCount: chain.length,
+        collapsedRange: { from: head.id, to: tail.id },
       })
-      out.push({ ...tail, parentId: `run:${folded[0].id}` })
-      for (const kid of children.get(tail.id) ?? []) visit(kid)
+      for (const kid of children.get(tail.id) ?? []) visit(kid, collapsedId)
     } else {
       out.push(...chain)
       const last = chain.length ? chain[chain.length - 1] : start

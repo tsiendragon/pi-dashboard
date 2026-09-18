@@ -95,6 +95,8 @@ export interface SessionTreeGraph {
   focusKey: string
   sessions: SessionTreeSessionEntry[]
   nodes: SessionTreeNode[]
+  /** `collapsed` = linear runs folded (default); `full` = every entry returned. */
+  detail: 'collapsed' | 'full'
   /** True when sessions or nodes were dropped because a cap was hit. */
   truncated: boolean
   generatedAt: number

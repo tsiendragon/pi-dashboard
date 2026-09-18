@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionTreeGraph, SessionTreeNode, SessionTreeSessionEntry } from '@shared/session-tree'
 import { NODE_H, NODE_W, activePathOf, sessionBounds, tidyLayout } from './layout'
 
-export type GraphFilter = 'all' | 'user'
+export type GraphDetail = 'collapsed' | 'full'
 
 interface RoleStyle {
   /** Complete Tailwind utility (dynamic class names are not detected by Tailwind). */
@@ -20,7 +20,7 @@ const ROLE_STYLES: Record<string, RoleStyle> = {
   compaction: { fill: 'fill-ok', label: 'Compaction', icon: '📦' },
   branchSummary: { fill: 'fill-clarify', label: 'Branch summary', icon: '📋' },
   custom: { fill: 'fill-muted', label: 'Custom', icon: '✦' },
-  collapsed: { fill: 'fill-border-strong', label: '折叠步骤', icon: '⋯' },
+  collapsed: { fill: 'fill-border-strong', label: '已折叠的步骤', icon: '⋯' },
 }
 
 function styleFor(node: SessionTreeNode): RoleStyle {
@@ -45,13 +45,18 @@ interface ViewState {
 
 const MIN_ZOOM = 0.25
 const MAX_ZOOM = 2
+/**
+ * `fit` will not zoom out past this. Fitting 55 cards into one screen meant ~0.10
+ * scale, i.e. unreadable 21px cards; better to floor the zoom and let the user
+ * pan (folding keeps families small enough that this rarely triggers).
+ */
+const MIN_FIT_ZOOM = 0.4
 
-export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpenSession, filter }: {
+export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpenSession }: {
   graph: SessionTreeGraph
   selectedId: string | null
   onSelect: (node: SessionTreeNode) => void
   onOpenSession: (session: SessionTreeSessionEntry) => void
-  filter: GraphFilter
 }) {
   const layout = useMemo(() => tidyLayout(graph.nodes), [graph.nodes])
   const activePath = useMemo(() => activePathOf(graph.nodes, graph.focusKey), [graph.nodes, graph.focusKey])
@@ -78,7 +83,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
       return
     }
     const padding = 56
-    const scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(
+    const scale = Math.max(MIN_FIT_ZOOM, Math.min(MAX_ZOOM, Math.min(
       1,
       (rect.width - padding * 2) / layout.width,
       (rect.height - padding * 2) / layout.height,
@@ -154,7 +159,6 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   }, [onSelect])
 
   const focusSession = sessionByKey.get(graph.focusKey)
-  const showAll = filter === 'all'
 
   return (
     <div className="relative h-full w-full min-h-0">
@@ -236,7 +240,6 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
             const style = styleFor(node)
             const isCurrentSession = node.sessionKey === graph.focusKey
             const onActivePath = activePath.has(node.id)
-            const dimmed = !showAll && node.role !== 'user' && node.kind !== 'collapsed'
             const { x, y } = position
             const branchCount = childCounts.get(node.id) ?? 0
             const title = node.title || node.type
@@ -251,7 +254,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                 role="button"
                 aria-label={`${style.label} · ${truncate(title, 40)}${isCurrentSession ? ' · 当前会话' : ' · 点击打开该会话'}`}
                 className="cursor-pointer outline-none"
-                opacity={dimmed ? 0.16 : (onActivePath || !isCurrentSession ? 0.6 : 1)}
+                opacity={onActivePath || !isCurrentSession ? 0.6 : 1}
                 onClick={() => onSelect(node)}
                 onKeyDown={event => onNodeKeyDown(event, node)}
               >
