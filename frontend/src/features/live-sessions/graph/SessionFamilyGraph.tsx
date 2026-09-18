@@ -9,12 +9,41 @@ import {
   NODE_W,
   STEP_ROW_H,
   activePathOf,
+  chooseOrientation,
   defaultHeightOf,
+  fitScale,
   sessionBounds,
   tidyLayout,
+  type GraphOrientation,
 } from './layout'
 
 export type GraphDetail = 'collapsed' | 'full'
+/** `auto` picks the orientation that renders bigger in the current container. */
+export type OrientationPreference = 'auto' | GraphOrientation
+
+/** Track an element's box so the graph can react to the container it sits in. */
+function useElementSize<T extends Element>(ref: React.RefObject<T | null>): { width: number; height: number } {
+  const [size, setSize] = useState({ width: 0, height: 0 })
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const measure = (): void => {
+      const rect = element.getBoundingClientRect()
+      setSize(current => current.width === rect.width && current.height === rect.height
+        ? current
+        : { width: rect.width, height: rect.height })
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure)
+      return () => window.removeEventListener('resize', measure)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [ref])
+  return size
+}
 
 /** Sanitize an entry id into something usable inside an SVG `url(#...)` reference. */
 function cssId(nodeId: string): string {
@@ -78,7 +107,19 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   /** Raise the per-run step window (`?steps=`) so a truncated run loads its next batch. */
   onLoadMore: (node: SessionTreeNode) => void
 }) {
-  const layout = useMemo(() => tidyLayout(graph.nodes), [graph.nodes])
+  // Refs first: the layout choice below measures the SVG box.
+  const svgRef = useRef<SVGSVGElement>(null)
+  const layoutOf = useMemo(() => ({
+    horizontal: tidyLayout(graph.nodes, defaultHeightOf, 'horizontal'),
+    vertical: tidyLayout(graph.nodes, defaultHeightOf, 'vertical'),
+  }), [graph.nodes])
+  const containerSize = useElementSize(svgRef)
+  /** Manual override; `auto` defers to the container's aspect ratio. */
+  const [orientationPreference, setOrientationPreference] = useState<OrientationPreference>('auto')
+  const orientation: GraphOrientation = orientationPreference === 'auto'
+    ? chooseOrientation(layoutOf.horizontal, layoutOf.vertical, containerSize.width, containerSize.height)
+    : orientationPreference
+  const layout = layoutOf[orientation]
   const activePath = useMemo(() => activePathOf(graph.nodes, graph.focusKey), [graph.nodes, graph.focusKey])
   const sessionByKey = useMemo(() => new Map(graph.sessions.map(session => [session.key, session])), [graph.sessions])
   const nodeById = useMemo(() => new Map(graph.nodes.map(node => [node.id, node])), [graph.nodes])
@@ -88,7 +129,6 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
     return counts
   }, [graph.nodes])
 
-  const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<{ pointerX: number; pointerY: number; view: ViewState } | null>(null)
   const fittedFor = useRef<string | null>(null)
   const [view, setView] = useState<ViewState>({ x: 24, y: 20, k: 1 })
@@ -104,18 +144,13 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
       setView({ x: 24, y: 20, k: 1 })
       return
     }
-    const padding = 56
-    const scale = Math.max(MIN_FIT_ZOOM, Math.min(MAX_ZOOM, Math.min(
-      1,
-      (rect.width - padding * 2) / layout.width,
-      (rect.height - padding * 2) / layout.height,
-    )))
+    const scale = Math.max(MIN_FIT_ZOOM, Math.min(MAX_ZOOM, fitScale(layout, rect.width, rect.height)))
     setView({
       x: Math.max(12, (rect.width - layout.width * scale) / 2),
       y: Math.max(12, (rect.height - layout.height * scale) / 2),
       k: scale,
     })
-  }, [layout.width, layout.height])
+  }, [layout])
 
   const maxScrollOf = useCallback((node: SessionTreeNode): number => {
     const rows = node.steps?.length ?? 0
@@ -164,10 +199,11 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   // re-stamps generatedAt on each refetch, and re-fitting would fight the user's
   // pan/zoom.
   useEffect(() => {
-    if (fittedFor.current === graph.focusKey) return
-    fittedFor.current = graph.focusKey
+    const key = `${graph.focusKey}|${orientation}`
+    if (fittedFor.current === key) return
+    fittedFor.current = key
     fit()
-  }, [graph.focusKey, fit])
+  }, [graph.focusKey, orientation, fit])
 
   const onPointerDown = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
     if ((event.target as Element).closest('[data-node]')) return
@@ -244,7 +280,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
             )
           })}
 
-          {/* Edges */}
+          {/* Edges — routed along whichever axis the tree grows on */}
           {graph.nodes.map(node => {
             if (!node.parentId) return null
             const fromNode = nodeById.get(node.parentId)
@@ -253,14 +289,32 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
             if (!from || !to || !fromNode) return null
             const crossSession = fromNode.sessionKey !== node.sessionKey
             const onActivePath = activePath.has(node.id) && activePath.has(node.parentId)
-            const ax = from.x + NODE_W
-            const ay = from.y + defaultHeightOf(fromNode) / 2
-            const bx = to.x
-            const by = to.y + defaultHeightOf(node) / 2
+            const fromHeight = defaultHeightOf(fromNode)
+            const toHeight = defaultHeightOf(node)
+            let d: string
+            let labelX: number
+            let labelY: number
+            if (orientation === 'horizontal') {
+              const ax = from.x + NODE_W
+              const ay = from.y + fromHeight / 2
+              const bx = to.x
+              const by = to.y + toHeight / 2
+              d = `M${ax},${ay} C${ax + 52},${ay} ${bx - 52},${by} ${bx},${by}`
+              labelX = (ax + bx) / 2
+              labelY = (ay + by) / 2 - 7
+            } else {
+              const ax = from.x + NODE_W / 2
+              const ay = from.y + fromHeight
+              const bx = to.x + NODE_W / 2
+              const by = to.y
+              d = `M${ax},${ay} C${ax},${ay + 44} ${bx},${by - 44} ${bx},${by}`
+              labelX = (ax + bx) / 2 + 8
+              labelY = (ay + by) / 2
+            }
             return (
               <g key={`edge-${node.id}`}>
                 <path
-                  d={`M${ax},${ay} C${ax + 52},${ay} ${bx - 52},${by} ${bx},${by}`}
+                  d={d}
                   fill="none"
                   strokeWidth={crossSession ? 2 : 1.5}
                   strokeDasharray={crossSession ? '5 4' : undefined}
@@ -268,7 +322,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                   opacity={onActivePath ? 1 : 0.45}
                 />
                 {crossSession && (
-                  <text x={(ax + bx) / 2} y={(ay + by) / 2 - 7} textAnchor="middle" className="text-2xs fill-info">
+                  <text x={labelX} y={labelY} textAnchor="middle" className="text-2xs fill-info">
                     fork
                   </text>
                 )}
@@ -475,6 +529,11 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           className="h-7 cursor-pointer rounded border-none bg-transparent px-2 text-2xs text-muted transition-colors hover:bg-bg-hover hover:text-text"
           title="适配视图（缩放下限 0.4，避免缩到不可读）"
         >适配</button>
+        <button
+          onClick={() => setOrientationPreference(current => current === 'auto' ? 'horizontal' : current === 'horizontal' ? 'vertical' : 'auto')}
+          className="h-7 cursor-pointer rounded border-none bg-transparent px-2 text-2xs text-muted transition-colors hover:bg-bg-hover hover:text-text"
+          title="布局方向：自动比较横排/竖排在本页的适配缩放，选看着更大的一种"
+        >{orientationPreference === 'auto' ? `⇄ 自动（${orientation === 'vertical' ? '竖排' : '横排'}）` : orientationPreference === 'horizontal' ? '⇄ 横排' : '⇅ 竖排'}</button>
       </div>
 
       <div className="absolute bottom-3 left-3 grid gap-1 rounded-lg border border-border bg-panel px-3 py-2 shadow-md">

@@ -8,9 +8,11 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionTreeNode } from '@shared/session-tree'
 import {
+  GAP_Y,
   NODE_H,
   NODE_H_EXPANDED,
   NODE_W,
+  chooseOrientation,
   defaultHeightOf,
   sessionBounds,
   tidyLayout,
@@ -84,5 +86,64 @@ describe('sessionBounds', () => {
     const bounds = sessionBounds(nodes, layout.positions, 's')
     expect(bounds).not.toBeNull()
     expect(bounds?.height ?? 0).toBeGreaterThan(NODE_H_EXPANDED)
+  })
+})
+
+/** A linear chain of `size` nodes, ids n0..n{size-1}, last one being the head. */
+function chain(size: number): SessionTreeNode[] {
+  return Array.from({ length: size }, (_, index) => node(
+    `n${index}`,
+    index === 0 ? null : `n${index - 1}`,
+    index === size - 1 ? { isLeaf: true, isHead: true } : { childCount: 1 },
+  ))
+}
+
+describe('vertical orientation', () => {
+  it('grows depth downward and keeps a chain in one column', () => {
+    const layout = tidyLayout(chain(3), defaultHeightOf, 'vertical')
+    expect(layout.positions.get('n0')).toEqual({ x: 0, y: 0 })
+    expect(layout.positions.get('n1')).toEqual({ x: 0, y: NODE_H + GAP_Y })
+    expect(layout.positions.get('n2')).toEqual({ x: 0, y: (NODE_H + GAP_Y) * 2 })
+    expect(layout.width).toBe(NODE_W)
+    expect(layout.height).toBe((NODE_H + GAP_Y) * 2 + NODE_H)
+  })
+
+  it('grows a depth level by the tallest card in it', () => {
+    // n1..n3 sit in the same depth level in this shape; make one of them expanded.
+    const nodes = [
+      node('root', null, { childCount: 3 }),
+      node('expanded', 'root', { kind: 'collapsed', expanded: true, childCount: 1 }),
+      node('plain', 'root', { isLeaf: true }),
+      node('tail', 'expanded', { isLeaf: true, isHead: true }),
+    ]
+    const layout = tidyLayout(nodes, defaultHeightOf, 'vertical')
+    const levelOne = layout.positions.get('expanded')?.y ?? 0
+    const levelTwo = layout.positions.get('tail')?.y ?? 0
+    expect(levelTwo).toBeGreaterThanOrEqual(levelOne + NODE_H_EXPANDED + GAP_Y)
+    // Siblings in the same level sit side by side instead of overlapping.
+    expect(layout.positions.get('plain')?.x).toBeGreaterThan(layout.positions.get('expanded')?.x ?? 0)
+  })
+})
+
+describe('chooseOrientation', () => {
+  const horizontal = tidyLayout(chain(5), defaultHeightOf, 'horizontal')
+  const vertical = tidyLayout(chain(5), defaultHeightOf, 'vertical')
+
+  it('turns a long chain vertical on a portrait phone (it renders far bigger)', () => {
+    expect(chooseOrientation(horizontal, vertical, 390, 700)).toBe('vertical')
+  })
+
+  it('keeps the familiar left-to-right reading on a wide desktop when scores are close', () => {
+    expect(chooseOrientation(horizontal, vertical, 1400, 800)).toBe('horizontal')
+  })
+
+  it('turns even a desktop-wide chain vertical once horizontal would shrink too much', () => {
+    const longHorizontal = tidyLayout(chain(20), defaultHeightOf, 'horizontal')
+    const longVertical = tidyLayout(chain(20), defaultHeightOf, 'vertical')
+    expect(chooseOrientation(longHorizontal, longVertical, 1600, 900)).toBe('vertical')
+  })
+
+  it('has no opinion before the container is measured', () => {
+    expect(chooseOrientation(horizontal, vertical, 0, 0)).toBe('horizontal')
   })
 })
