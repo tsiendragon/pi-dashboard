@@ -1,12 +1,19 @@
-# LiveSession 会话树 + 树图页面 — 完整设计方案（v4）
+# LiveSession 会话树 + 树图页面 — 完整设计方案（v5）
 
-**状态**：待 review（v4：零新增 npm 依赖 + 零协议变更；Phase 0 已用真实数据完成验证）
+**状态**：**L0.1 已落地**（Phase 2.1–2.6 实现完成；待用户 `/reload` + `./run.sh` 做端到端验证）
 **关联**：`docs/research/agent-tree-branching-feasibility.md`、`docs/research/live-session-tree-and-graph-page.md`
 **Mock**：`docs/mockups/session-tree-graph.html`
 
 ---
 
 ## 0. 修订记录
+
+### v4 → v5（L0.1 落地）
+
+新增 §15 落地记录（交付物、探针结论、与计划的 5 处偏差、验证证据、未验证项）。关键修正：
+- **必须加能力字段**：pi 对未知斜杠命令会回退成普通 prompt（已在 bundle 里确认）
+- **路由改为按文件路径键控**（`GET /api/session-tree?file=`）
+- **`frontend npm run typecheck` 是空操作**，真实门禁是 `tsc -b`
 
 ### v3 → v4（零依赖 + 零协议 + 数据验证）
 
@@ -550,3 +557,80 @@ cd /mnt/workspace/lilong/repos/pi-tsien-extension && npm run check
 ### Phase 5+（后续，不在本次范围）
 
 L1 侧栏森林增强 → L3 fork/未运行会话启动 → L4 标签写入。（原 L2 “协议 v3 + 区间兼容”已并入 Phase 2.3/2.5，**不再需要**）
+
+---
+
+## 15. 落地记录（v5，L0.1 已实现）
+
+### 15.1 交付物
+
+| 文件 | 变更 |
+|---|---|
+| `shared/src/session-tree.ts` | **新增**：图类型 + 上限常量（`SESSION_TREE_MAX_NODES=3000`、`MAX_SESSIONS=40`、`LINEAR_RUN_MIN=3`、`MAX_PARSE_BYTES=20MB`、`TAIL_BYTES=8MB`） |
+| `backend/live-sessions/session-tree.ts` | **新增**：头部索引（只读每文件首行）· 有界异步解析（mtime+size 缓存）· 家族拼装（祖先+后代 BFS）· 前缀去重· 线性段折叠 |
+| `backend/routes/live-sessions.ts` | **改**：`GET /api/session-tree?file=` + `SessionTreeError` 错误码映射 |
+| `backend/__tests__/session-tree.test.ts` | **新增**：9 个用例（fork 去重/标签/工具/能力/越界/超大会话尾读/折叠） |
+| `extensions/live-session.ts` | **改**：`session_tree` 订阅（`markChanged` + `sendSnapshot` + publish）· `/ls-navigate` · `/ls-fork` · 能力声明 |
+| `extensions/live-session/protocol.ts` | **改**：`LiveSessionSummary.capabilities?`（附加可选字段） |
+| `test/live-session.test.ts` | **新增** 3 个用例（能力/快照、命令调用、拒绝路径） |
+| `frontend/src/features/live-sessions/graph/*` | **新增** 6 个文件：`layout.ts`（tidy-tree ~60 行）· `useSessionTree.ts` · `SessionFamilyGraph.tsx`（原生 SVG + pan/zoom + 分组带 + fork 边）· `BranchDetailPanel.tsx` · `SessionGraphPage.tsx` |
+| `frontend/src/App.tsx` | **改**：路由 `/live-sessions/graph` + 侧栏入口 |
+| `frontend/src/features/live-sessions/api.ts` | **改**：`sessionTree()` · `sessionTreeAction()` |
+| `frontend/src/features/live-sessions/LiveSessionPage.tsx` | **改**：「在图谱中查看」按钮 + `?node=` 定位条 |
+
+### 15.2 两个探针（均通过）
+
+| 探针 | 结果 | 证据 |
+|---|---|---|
+| `ctx.navigateTree`/`ctx.fork` 在斜杠命令里可用 | ✅ | `dist/bundle/...chunk-MU3PTSMJ.js` 的 `createCommandContext()` 显式挂 `context.navigateTree/fork/reload` |
+| fork 文件 root `parentId` 是否指向父文件 | ✅ **结论比预期更简单** | 真实 fork 文件 **root `parentId = null`**，但**复制了父文件的前导前缀且 entry id 完全相同**（验证：父子共享 id 且同序）→ 锚点 = **最后一个共享 id** |
+
+### 15.3 与计划的偏差（全部已实测确认）
+
+| # | 计划 | 实际 | 原因 |
+|---|---|---|---|
+| 1 | `GET /api/live-sessions/:pid/tree` | `GET /api/session-tree?file=` | 按**文件路径**键控，未运行会话也能看；且避免与 `/api/live-sessions/:processInstanceId` 单段路由冲突 |
+| 2 | `ReadonlySessionView` 渲染未运行会话转录 | **未实现**：改为把图谱**重新聚焦**到该文件 | 诚实缩减：转录渲染器是新组件，价值低于写路径；已在 UI 里明说 |
+| 3 | bridge 内 `lease.assertLease` | **未宣称的规则**：未占用 → 允许；已占用 → **必须带匹配 leaseId** | `input` 通道不携带 browserClientId，无法鉴定调用方；与已有 `input` 同一信任模型 |
+| 4 | 无协议变） | **新增** `summary.capabilities: ["session_tree"]` | ️ **必需**：`_tryExecuteExtensionCommand` 对未知命令 `return false` → pi 会**把 `/ls-navigate` 当普通 prompt 发给模型**。该字段是可选的、纯追加的，**不 bump 协议版本** |
+| 5 | 长线性段折叠在 UI 做 | **改为服务端**（`kind:'collapsed'`, id `run:<headId>`） | 否则 7000 条的会话先得传 7000 个节点；L0 不提供展开 |
+
+### 15.4 验证证据
+
+| 检查 | 结果 |
+|---|---|
+| `backend` 全套（含新增 14 例） | **26 files / 351 passed**，1 skipped |
+| `pi-tsien-extension` 全套（含新 3 例） | **239 passed**，1 failed —— `conversation-workbench.test.ts`，**已用 `git stash` 验证为既有失败** |
+| `frontend` 全套 | **662 passed**，6 failed —— 已用 `git stash` 验证**同样是既有失败** |
+| `frontend` typecheck（修后真实门禁 `tsc -b --noEmit`） | ✅ 通过，且能用探针拦下故意插入的错误 |
+| `frontend` `npm run build`（`tsc -b` + vite） | ✅ 通过（built in 32.51s） |
+| `check:theme-cvd` | ✅ 未改主题色，结论与改动前一致 |
+| 真实数据冒烟 | 764MB 会话 **198ms / 325 节点 / partial=true**；中位会话 5ms；真实 fork 家族 6 节点（父 4 + 子 2，**无重复**）；缓存命中 3ms |
+
+### 15.5 既有问题（本次已修 1 项）
+
+- ⚠️ **`frontend` 的 `npm run typecheck` 原本是空操作，已修**。`tsconfig.json` 是 solution-style（`files: []` + `references`），旧 `tsc --noEmit` 编译 0 个文件 → 始终通过。
+  - 实证：故意插入 `export const broken: string = 42`，`tsc --noEmit` 退出码 0 不报错；`tsc -b` 正确报 TS2322。
+  - 已改为 **`tsc -b --noEmit`**（TS 5.9 支持），修后同一探针能被正确拦下。
+  - 影响：之前任何“前端 typecheck 通过”都是**空洞结论**；真正的首次代码检查发生在 `npm run build`（也正是它招出我 2 个类型错误）。
+- `frontend/src/test/dbg2.test.tsx` 是未跟踪的遗留文件（非本次新增）。
+- 两个仓库都有大量本次之外的未提交改动，已保留未动。
+
+### 15.6 收尾修复（同一轮补完）
+
+| # | 问题 | 修复 |
+|---|---|---|
+| 1 | 会话页「在图谱中查看」传了 `&node=<processInstanceId>` —— 那不是 entry id | 去掉该参数（dashboard 侧拿不到当前 leaf entry id） |
+| 2 | 选中**折叠节点**后点「打开会话/定位」，会把合成 id `run:<headId>` 传给 `/ls-navigate` | 新增 `actionableNodeId`，过滤 `run:` 前缀 |
+| 3 | 多级 fork 缺单测（上轮列为“未覆盖”） | **已补A→B→C 测试**：7 节点、无重复、B 锚 u3 / C 锚 a5；另补“父文件已删”用例（`forkOf` 保留、`forkAnchorId=null`） |
+| 4 | `frontend` typecheck 空操作 | 见 §15.5 |
+| 5 | **路径不存在时返回 200 + 空图**（会误导用户以为是空会话） | 拆开语义：不存在 → **404 `session_file_not_found`**；越界 → **403 `session_file_out_of_scope`**；缺参数 → **400 `session_file_unavailable`** |
+| 6 | **HTTP 路由本身无测试**（只测了 builder） | 新增路由级测试：未鉴权 401 / 缺参 400 / 越界 403 / 不存在 404 / 正常 200（含 payload 断言） |
+
+### 15.7 未验证 / 后续
+
+- ❗ **端到端未跑**：需要用户在会话里 `/reload`（否则命中 §15.3 #4 的能力守卫，写按钮会禁用）+ `./run.sh` 重建重启后，实际点一次「切到此处」/「从此分叉」。
+- ❗ **折叠节点不可展开**（L0 范围）；折叠范围已在 payload 里（`collapsedRange`），展开是下一期。
+- ❗ **多级 fork 已有单测覆盖但真实数据未验**：已补 A→B→C 用例（绿）；真实环境只有 3 个 fork 且父文件是 pi 测试夹具，没有真实的多级家族可看。
+- **未运行会话的转录视图**（原 `ReadonlySessionView`）未做。
+- 大会话下**视口裁剪**未做：节点已在服务端限到 ≤3000 + 折叠，但 SVG 仍会渲染全部节点（当前真实最大 325）。
