@@ -23,13 +23,14 @@ export interface BranchActionState {
   blockedReason?: string
 }
 
-export default function BranchDetailPanel({ node, graph, action, onNavigate, onFork, onOpenSession, onClose }: {
+export default function BranchDetailPanel({ node, graph, action, onNavigate, onFork, onOpenSession, onToggleExpand, onClose }: {
   node: SessionTreeNode | null
   graph: SessionTreeGraph
   action: BranchActionState
   onNavigate: (node: SessionTreeNode) => void
   onFork: (node: SessionTreeNode) => void
   onOpenSession: (session: SessionTreeSessionEntry) => void
+  onToggleExpand: (node: SessionTreeNode) => void
   onClose: () => void
 }) {
   if (!node) {
@@ -127,6 +128,27 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
         ) : null}
         {action.error ? (
           <div className="rounded-md bg-danger-subtle px-3 py-2 text-2xs leading-relaxed text-text">{action.error}</div>
+        ) : null}
+
+        {node.kind === 'collapsed' ? (
+          <div className="grid gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => onToggleExpand(node)}
+              className="h-8 cursor-pointer rounded-md border border-border bg-transparent text-body-s font-medium text-text transition-colors hover:bg-bg-hover"
+            >{node.expanded ? `▼ 收起这 ${node.collapsedCount} 步` : `▶ 展开这 ${node.collapsedCount} 步（就地，卡片内可滚）`}</button>
+            {node.expanded && node.steps?.length ? (
+              <div className="text-2xs leading-relaxed text-muted">
+                已列出 {node.steps.length} 步，点其中一行可直接选中/切到那一步。
+                {node.stepsTruncated ? '（本段过长，只返回了前若干步；整图切「显示步骤」看全部）' : ''}
+              </div>
+            ) : null}
+            {node.steps?.length ? (
+              <div className="text-2xs text-muted">
+                折叠范围：<span className="font-mono">{node.collapsedRange?.from}</span> → <span className="font-mono">{node.collapsedRange?.to}</span>
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         <div className="grid gap-2 pt-1">

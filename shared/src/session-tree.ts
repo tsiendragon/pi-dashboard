@@ -24,6 +24,8 @@ export const SESSION_TREE_MAX_PARSE_BYTES = 20 * 1024 * 1024
 export const SESSION_TREE_TAIL_BYTES = 8 * 1024 * 1024
 /** Preview text length kept per node. */
 export const SESSION_TREE_PREVIEW_CHARS = 160
+/** Max steps returned for one in-place expanded run (the rest are reported via `stepsTruncated`). */
+export const SESSION_TREE_EXPAND_MAX = 400
 /** Header index (one line read per session file) freshness window. */
 export const SESSION_TREE_INDEX_TTL_MS = 30_000
 
@@ -65,6 +67,16 @@ export interface SessionTreeNode {
   collapsedCount?: number
   /** `kind === 'collapsed'` only: the folded entry-id range, for a later expansion pass. */
   collapsedRange?: { from: string; to: string }
+  /** `kind === 'collapsed'` only: the run was expanded in place (`?expand=`), see `steps`. */
+  expanded?: boolean
+  /**
+   * `kind === 'collapsed'` only: the real entries of the run, in order, so the UI
+   * can list them inside the expanded card. They are carried as nested data and
+   * are NOT part of the graph layout (that is what keeps the canvas readable).
+   */
+  steps?: SessionTreeNode[]
+  /** True when `steps` was cut at {@link SESSION_TREE_EXPAND_MAX}. */
+  stepsTruncated?: boolean
   /** True when a forked child session hangs off this entry. */
   isForkAnchor?: boolean
 }

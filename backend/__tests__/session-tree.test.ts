@@ -120,6 +120,52 @@ describe('buildSessionFamilyGraph', () => {
     expect(folded.reduce((total, node) => total + (node.collapsedCount ?? 0), 0)).toBe(3)
   })
 
+  it('expands one folded run in place without changing the graph topology', async () => {
+    const file = writeSession('expandable', [
+      header('expand-id'),
+      user('u1', null),
+      assistant('a2', 'u1'),
+      user('u3', 'a2'),
+      assistant('a4', 'u3'),
+      user('u5', 'a4'),
+      assistant('a6', 'u5'),
+    ])
+
+    const folded = await buildSessionFamilyGraph({ sessionFile: file })
+    const runId = folded.nodes.find(node => node.kind === 'collapsed')?.id as string
+    expect(runId).toBe('run:a2')
+
+    const expanded = await buildSessionFamilyGraph({ sessionFile: file, expandRuns: new Set([runId]) })
+    // The canvas topology is identical: expansion is nested data, not new nodes.
+    expect(expanded.nodes.map(node => node.id)).toEqual(folded.nodes.map(node => node.id))
+    const node = expanded.nodes.find(candidate => candidate.id === runId)
+    expect(node?.expanded).toBe(true)
+    expect(node?.steps?.map(step => step.id)).toEqual(['a2', 'u3', 'a4', 'u5'])
+    expect(node?.stepsTruncated).toBeUndefined()
+    // A run that was not requested stays folded.
+    expect(folded.nodes.some(candidate => candidate.expanded)).toBe(false)
+  })
+
+  it('caps the steps returned for a very long run and flags the truncation', async () => {
+    const lines = [header('long-id'), user('u0', null)]
+    let previous = 'u0'
+    for (let index = 1; index <= 450; index += 1) {
+      const id = `s${index}`
+      lines.push(assistant(id, previous))
+      previous = id
+    }
+    const file = writeSession('long', lines)
+
+    const folded = await buildSessionFamilyGraph({ sessionFile: file })
+    const runId = folded.nodes.find(node => node.kind === 'collapsed')?.id as string
+    const expanded = await buildSessionFamilyGraph({ sessionFile: file, expandRuns: new Set([runId]) })
+    const node = expanded.nodes.find(candidate => candidate.id === runId)
+    expect(node?.steps).toHaveLength(400)
+    expect(node?.stepsTruncated).toBe(true)
+    // The fold still reports the true size (the chain is s1..s449; s450 is the head).
+    expect(node?.collapsedCount).toBe(449)
+  })
+
   it('renders a purely linear session as start -> folded run -> end', async () => {
     const file = writeSession('linear', [
       header('linear-id'),

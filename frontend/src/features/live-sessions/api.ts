@@ -96,8 +96,13 @@ export const liveSessionApi = {
    * 404: the SPA static fallback answers 200 with index.html, which would
    * otherwise silently yield `undefined` and render an empty canvas.
    */
-  sessionTree: (file: string, detail: 'collapsed' | 'full' = 'collapsed') =>
-    fetch(`/api/session-tree?file=${encodeURIComponent(file)}${detail === 'full' ? '&detail=full' : ''}`, { credentials: 'same-origin' })
+  sessionTree: (file: string, detail: 'collapsed' | 'full' = 'collapsed', expand: string[] = []) =>
+    fetch(
+      `/api/session-tree?file=${encodeURIComponent(file)}`
+      + (detail === 'full' ? '&detail=full' : '')
+      + (expand.length ? `&expand=${encodeURIComponent(expand.join(','))}` : ''),
+      { credentials: 'same-origin' },
+    )
     .then(json<{ ok: true; result: SessionTreeGraph }>)
     .then(payload => {
       const graph = payload?.result

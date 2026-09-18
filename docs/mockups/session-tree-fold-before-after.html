@@ -103,6 +103,14 @@
   .wire.fork { stroke:var(--info); stroke-width:2; stroke-dasharray:5 4; opacity:.9; }
   .wlabel { font:11px var(--mono); fill:var(--info); }
 
+  .steprow { position:absolute; left:12px; width:188px; height:21px; border-radius:4px;
+             background:var(--bg-elevated); border-left:2px solid var(--info);
+             display:flex; align-items:center; gap:6px; padding:0 8px;
+             font-size:11px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .steprow .n { color:var(--muted); font:11px var(--mono); flex:0 0 auto; }
+  .scrollbar { position:absolute; width:3px; border-radius:1.5px; background:var(--border); }
+  .scrollthumb { position:absolute; width:3px; border-radius:1.5px; background:var(--border-strong); }
+
   /* ── tables / legend ── */
   table { border-collapse:collapse; font-size:12.5px; width:100%; }
   th, td { text-align:left; padding:6px 10px 6px 0; border-bottom:1px solid var(--border); }
@@ -325,7 +333,67 @@
     </div>
   </div>
 
-  <!-- ══════════ 数据 ═════════ -->
+  <!-- ═════════ E. 就地展开 ══════════ -->
+  <div class="panel">
+    <h2>点 <code>+N 步</code> 就地展开 <span class="tag good">卡片内可滚</span></h2>
+    <p class="panel-note">
+      展开是<b>原地</b>的：那一段仍然是图上的<b>一个节点</b>，只是卡片变高、把真实的步骤列在里面
+      （可滚动），<b>拓扑与缩放完全不变</b>——不会因为展开 418 步又把画布拉成一条长条。
+      列表里的<b>每一行都可点</b>，直接选中那一步就能「切到此处 / 从此分叉」。
+    </p>
+
+    <div class="canvas" style="height:310px">
+      <div class="band current" style="left:16px; top:24px; right:16px; height:262px;">
+        <span class="bl" style="color:var(--accent)">当前会话</span>
+      </div>
+      <svg class="wires">
+        <path class="wire on" d="M210,80 C262,80 258,80 310,80" />
+        <path class="wire on" d="M700,80 C748,80 744,80 796,80" />
+      </svg>
+
+      <!-- 起点 -->
+      <div class="node on" style="left:150px; top:50px">
+        <span class="bar f-system"></span><span class="ico r-system">⚙</span>
+        <span class="role r-system">System</span><span class="title">起点</span>
+        <span class="prev">Model → deepseek-v4.1-flash</span>
+      </div>
+
+      <!-- 已展开的折叠段：一张高卡，内部自己滚 -->
+      <div class="node on" style="left:310px; top:12px; height:268px">
+        <span class="bar f-fold"></span><span class="ico r-fold">⋯</span>
+        <span class="role r-fold">已折叠的步骤</span>
+        <span style="position:absolute;right:10px;top:8px;font-size:11px;color:var(--muted)">▼ 收起</span>
+        <span class="title">+418 步</span>
+        <span class="prev">418 步（卡片内滚动）</span>
+        <div class="steprow" style="top:60px"><span class="n">1</span>System · Thinking → high</div>
+        <div class="steprow" style="top:84px;border-left-color:var(--accent)"><span class="n">2</span>User · 帮我看一下…</div>
+        <div class="steprow" style="top:108px;border-left-color:var(--warn)"><span class="n">3</span>Tool · bash</div>
+        <div class="steprow" style="top:132px"><span class="n">4</span>Assistant · bash</div>
+        <div class="steprow" style="top:156px;border-left-color:var(--accent)"><span class="n">5</span>User · 那…</div>
+        <div class="steprow" style="top:204px"><span class="n">418</span>Assistant · 完成</div>
+        <div class="scrollbar" style="right:7px;top:60px;height:196px;background:var(--border)"></div>
+        <div class="scrollthumb" style="right:7px;top:60px;height:48px"></div>
+      </div>
+
+      <!-- 终点 -->
+      <div class="node on" style="left:796px; top:50px">
+        <span class="head">HEAD</span>
+        <span class="bar f-user"></span><span class="ico r-user">👤</span>
+        <span class="role r-user">User</span><span class="title">终点</span>
+        <span class="prev">当前活动叶子</span>
+      </div>
+
+      <div class="measure">顶层节点数不变 · 只有卡片变高 · 滚轮在卡内滚动列表</div>
+    </div>
+
+    <ul>
+      <li>展开是<b>嵌套数据</b>（<code>node.steps</code>），不进布局：所以 <code>fit()</code> 缩放、分组带、边都不会因为展开而变。</li>
+      <li>一段最长返回 <b>400</b> 步（<code>stepsTruncated</code> 会标出），需要看全部就整图切「显示步骤」。</li>
+      <li>折叠段的详情面板里也有「▶ 展开这 N 步」，以及折叠范围 <code>from → to</code>。</li>
+    </ul>
+  </div>
+
+  <!-- ══════════ 数据 ════════ -->
   <div class="panel">
     <h2>真实数据：同一批会话的节点数</h2>
     <table>

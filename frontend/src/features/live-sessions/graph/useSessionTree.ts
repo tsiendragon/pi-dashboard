@@ -18,7 +18,12 @@ export interface SessionTreeState {
  * `/ls-navigate`) and pushes a fresh snapshot, so a branch switch anywhere is
  * reflected here without polling.
  */
-export function useSessionTree(file: string | null, detail: 'collapsed' | 'full' = 'collapsed'): SessionTreeState {
+export function useSessionTree(
+  file: string | null,
+  detail: 'collapsed' | 'full' = 'collapsed',
+  /** Folded-run ids (`run:<headId>`) to expand in place. */
+  expandRuns: string[] = [],
+): SessionTreeState {
   const [graph, setGraph] = useState<SessionTreeGraph | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -32,6 +37,8 @@ export function useSessionTree(file: string | null, detail: 'collapsed' | 'full'
     return -1
   })
 
+  const expandKey = expandRuns.join(',')
+
   useEffect(() => {
     if (!file) {
       setGraph(null)
@@ -41,7 +48,7 @@ export function useSessionTree(file: string | null, detail: 'collapsed' | 'full'
     let cancelled = false
     setLoading(true)
     setError(null)
-    liveSessionApi.sessionTree(file, detail)
+    liveSessionApi.sessionTree(file, detail, expandRuns)
       .then(result => { if (!cancelled) setGraph(result) })
       .catch((cause: unknown) => {
         if (cancelled) return
@@ -50,7 +57,8 @@ export function useSessionTree(file: string | null, detail: 'collapsed' | 'full'
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [file, detail, revision, nonce])
+  // `expandRuns` is passed as a stable key so a new array identity does not refetch.
+  }, [file, detail, expandKey, revision, nonce])
 
   const refresh = useCallback(() => setNonce(value => value + 1), [])
   return { graph, loading, error, refresh }
