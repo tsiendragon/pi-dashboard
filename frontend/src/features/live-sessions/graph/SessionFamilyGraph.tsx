@@ -9,21 +9,29 @@ import {
   NODE_W,
   STEP_ROW_H,
   activePathOf,
-  chooseOrientation,
   defaultHeightOf,
   fitScale,
+  layoutCandidates,
+  pickBestLayout,
+  MAX_FIT_ZOOM,
   sessionBounds,
-  tidyLayout,
   type GraphOrientation,
+  type LayoutCandidate,
 } from './layout'
 
 export type GraphDetail = 'collapsed' | 'full'
-/** `auto` picks the orientation that renders bigger in the current container. */
-export type OrientationPreference = 'auto' | GraphOrientation
+/** `auto` scores every shape and keeps whichever fills the canvas best. */
+export type LayoutPreference = 'auto' | GraphOrientation
+
+const LAYOUT_CYCLE: LayoutPreference[] = ['auto', 'horizontal', 'vertical', 'serpentine']
+
+function layoutPreferenceLabel(preference: LayoutPreference, picked: LayoutCandidate): string {
+  const shape = picked.orientation === 'serpentine' ? `蛇形×${picked.columns}` : picked.orientation === 'vertical' ? '竖排' : '横排'
+  return preference === 'auto' ? ` 自动（${shape}）` : shape
+}
 
 /** Track an element's box so the graph can react to the container it sits in. */
-function useElementSize<T extends Element>(ref: React.RefObject<T | null>): { width: number; height: number } {
-  const [size, setSize] = useState({ width: 0, height: 0 })
+function useElementSize<T extends Element>(ref: React.RefObject<T | null>): { width: number; height: number } {  const [size, setSize] = useState({ width: 0, height: 0 })
   useEffect(() => {
     const element = ref.current
     if (!element) return
@@ -43,6 +51,20 @@ function useElementSize<T extends Element>(ref: React.RefObject<T | null>): { wi
     return () => observer.disconnect()
   }, [ref])
   return size
+}
+
+/**
+ * Score a layout for the canvas size that has stopped changing. Picking a shape is
+ * ~30ms on a 1600-node graph, so following every resize frame would jank a window
+ * drag; the drawn content still re-fits live.
+ */
+function useSettledSize(size: { width: number; height: number }, delayMs = 150): { width: number; height: number } {
+  const [settled, setSettled] = useState(size)
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(size), delayMs)
+    return () => clearTimeout(timer)
+  }, [size.width, size.height, delayMs])
+  return settled
 }
 
 /** Sanitize an entry id into something usable inside an SVG `url(#...)` reference. */
@@ -109,17 +131,25 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
 }) {
   // Refs first: the layout choice below measures the SVG box.
   const svgRef = useRef<SVGSVGElement>(null)
-  const layoutOf = useMemo(() => ({
-    horizontal: tidyLayout(graph.nodes, defaultHeightOf, 'horizontal'),
-    vertical: tidyLayout(graph.nodes, defaultHeightOf, 'vertical'),
-  }), [graph.nodes])
   const containerSize = useElementSize(svgRef)
-  /** Manual override; `auto` defers to the container's aspect ratio. */
-  const [orientationPreference, setOrientationPreference] = useState<OrientationPreference>('auto')
-  const orientation: GraphOrientation = orientationPreference === 'auto'
-    ? chooseOrientation(layoutOf.horizontal, layoutOf.vertical, containerSize.width, containerSize.height)
-    : orientationPreference
-  const layout = layoutOf[orientation]
+  const settledSize = useSettledSize(containerSize)
+  const canvasWidth = settledSize.width || 1200
+  const canvasHeight = settledSize.height || 720
+  const candidates = useMemo(
+    () => layoutCandidates(graph.nodes, defaultHeightOf, canvasWidth, canvasHeight),
+    [graph.nodes, canvasWidth, canvasHeight],
+  )
+  /** Manual override; `auto` keeps whichever candidate fills this canvas best. */
+  const [layoutPreference, setLayoutPreference] = useState<LayoutPreference>('auto')
+  const picked = useMemo(() => {
+    if (layoutPreference === 'auto') return pickBestLayout(candidates)
+    if (layoutPreference === 'serpentine') {
+      // Any wrap is valid; take the wrap that fills this canvas best.
+      return pickBestLayout(candidates.filter(candidate => candidate.orientation === 'serpentine'), 1)
+    }
+    return candidates.find(candidate => candidate.orientation === layoutPreference) ?? candidates[0]
+  }, [layoutPreference, candidates])
+  const layout = picked.layout
   const activePath = useMemo(() => activePathOf(graph.nodes, graph.focusKey), [graph.nodes, graph.focusKey])
   const sessionByKey = useMemo(() => new Map(graph.sessions.map(session => [session.key, session])), [graph.sessions])
   const nodeById = useMemo(() => new Map(graph.nodes.map(node => [node.id, node])), [graph.nodes])
@@ -144,7 +174,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
       setView({ x: 24, y: 20, k: 1 })
       return
     }
-    const scale = Math.max(MIN_FIT_ZOOM, Math.min(MAX_ZOOM, fitScale(layout, rect.width, rect.height)))
+    const scale = Math.max(MIN_FIT_ZOOM, Math.min(MAX_FIT_ZOOM, fitScale(layout, rect.width, rect.height, MAX_FIT_ZOOM)))
     setView({
       x: Math.max(12, (rect.width - layout.width * scale) / 2),
       y: Math.max(12, (rect.height - layout.height * scale) / 2),
@@ -199,11 +229,11 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   // re-stamps generatedAt on each refetch, and re-fitting would fight the user's
   // pan/zoom.
   useEffect(() => {
-    const key = `${graph.focusKey}|${orientation}`
+    const key = `${graph.focusKey}|${picked.orientation}|${picked.columns ?? ''}|${layout.width}x${layout.height}`
     if (fittedFor.current === key) return
     fittedFor.current = key
     fit()
-  }, [graph.focusKey, orientation, fit])
+  }, [graph.focusKey, picked, layout, fit])
 
   const onPointerDown = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
     if ((event.target as Element).closest('[data-node]')) return
@@ -291,23 +321,29 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
             const onActivePath = activePath.has(node.id) && activePath.has(node.parentId)
             const fromHeight = defaultHeightOf(fromNode)
             const toHeight = defaultHeightOf(node)
+            // Route along whichever axis the two nodes are actually separated on:
+            // within a row it is right→left, across a serpentine wrap it is down→up.
+            const dx = (to.x + NODE_W / 2) - (from.x + NODE_W / 2)
+            const dy = (to.y + toHeight / 2) - (from.y + fromHeight / 2)
             let d: string
             let labelX: number
             let labelY: number
-            if (orientation === 'horizontal') {
-              const ax = from.x + NODE_W
+            if (Math.abs(dx) >= Math.abs(dy)) {
+              const rightwards = dx >= 0
+              const ax = rightwards ? from.x + NODE_W : from.x
+              const bx = rightwards ? to.x : to.x + NODE_W
               const ay = from.y + fromHeight / 2
-              const bx = to.x
               const by = to.y + toHeight / 2
-              d = `M${ax},${ay} C${ax + 52},${ay} ${bx - 52},${by} ${bx},${by}`
+              d = `M${ax},${ay} C${ax + (rightwards ? 52 : -52)},${ay} ${bx + (rightwards ? -52 : 52)},${by} ${bx},${by}`
               labelX = (ax + bx) / 2
               labelY = (ay + by) / 2 - 7
             } else {
+              const downwards = dy >= 0
+              const ay = downwards ? from.y + fromHeight : from.y
+              const by = downwards ? to.y : to.y + toHeight
               const ax = from.x + NODE_W / 2
-              const ay = from.y + fromHeight
               const bx = to.x + NODE_W / 2
-              const by = to.y
-              d = `M${ax},${ay} C${ax},${ay + 44} ${bx},${by - 44} ${bx},${by}`
+              d = `M${ax},${ay} C${ax},${ay + (downwards ? 44 : -44)} ${bx},${by + (downwards ? -44 : 44)} ${bx},${by}`
               labelX = (ax + bx) / 2 + 8
               labelY = (ay + by) / 2
             }
@@ -530,10 +566,13 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           title="适配视图（缩放下限 0.4，避免缩到不可读）"
         >适配</button>
         <button
-          onClick={() => setOrientationPreference(current => current === 'auto' ? 'horizontal' : current === 'horizontal' ? 'vertical' : 'auto')}
+          onClick={() => setLayoutPreference(current => {
+            const index = LAYOUT_CYCLE.indexOf(current)
+            return LAYOUT_CYCLE[(index + 1) % LAYOUT_CYCLE.length]
+          })}
           className="h-7 cursor-pointer rounded border-none bg-transparent px-2 text-2xs text-muted transition-colors hover:bg-bg-hover hover:text-text"
-          title="布局方向：自动比较横排/竖排在本页的适配缩放，选看着更大的一种"
-        >{orientationPreference === 'auto' ? `⇄ 自动（${orientation === 'vertical' ? '竖排' : '横排'}）` : orientationPreference === 'horizontal' ? '⇄ 横排' : '⇅ 竖排'}</button>
+          title="布局形状：自动会逐一给 横排 / 竖排 / 蛇形×N 打分（能否把卡片渲染得更大），选最优；蛇形把长链折成多行"
+        >{layoutPreferenceLabel(layoutPreference, picked)}</button>
       </div>
 
       <div className="absolute bottom-3 left-3 grid gap-1 rounded-lg border border-border bg-panel px-3 py-2 shadow-md">

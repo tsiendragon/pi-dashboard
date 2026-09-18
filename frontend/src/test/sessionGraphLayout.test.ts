@@ -12,8 +12,11 @@ import {
   NODE_H,
   NODE_H_EXPANDED,
   NODE_W,
-  chooseOrientation,
+  canvasFill,
   defaultHeightOf,
+  layoutCandidates,
+  pickBestLayout,
+  serpentineLayout,
   sessionBounds,
   tidyLayout,
 } from '../features/live-sessions/graph/layout'
@@ -125,25 +128,103 @@ describe('vertical orientation', () => {
   })
 })
 
-describe('chooseOrientation', () => {
-  const horizontal = tidyLayout(chain(5), defaultHeightOf, 'horizontal')
-  const vertical = tidyLayout(chain(5), defaultHeightOf, 'vertical')
-
-  it('turns a long chain vertical on a portrait phone (it renders far bigger)', () => {
-    expect(chooseOrientation(horizontal, vertical, 390, 700)).toBe('vertical')
+describe('serpentine layout', () => {
+  it('wraps a chain into rows that each run the other way', () => {
+    const layout = serpentineLayout(chain(7), defaultHeightOf, 3)
+    const at = (id: string) => layout.positions.get(id)!
+    // Row 0 left→right: n0 n1 n2
+    expect(at('n0').x).toBe(0)
+    expect(at('n1').x).toBe(NODE_W + 76)
+    expect(at('n2').x).toBe((NODE_W + 76) * 2)
+    // Row 1 right→left, so n3 (the next depth) starts at the SAME column n2 ended in:
+    // the wrap edge is a short vertical hop, not a loop across the whole row.
+    expect(at('n3').x).toBe(at('n2').x)
+    expect(at('n3').y).toBeGreaterThan(at('n2').y)
+    expect(at('n4').x).toBe(at('n1').x)
+    // Row 2 runs left→right again: n6 sits under n5 and under n0's column.
+    expect(at('n6').x).toBe(0)
+    expect(at('n6').y).toBeGreaterThan(at('n3').y)
   })
 
-  it('keeps the familiar left-to-right reading on a wide desktop when scores are close', () => {
-    expect(chooseOrientation(horizontal, vertical, 1400, 800)).toBe('horizontal')
+  it('keeps every consecutive pair adjacent (3 rows of 3 for 9 nodes)', () => {
+    const layout = serpentineLayout(chain(9), defaultHeightOf, 3)
+    const at = (id: string) => layout.positions.get(id)!
+    for (let index = 0; index < 8; index += 1) {
+      const from = at(`n${index}`)
+      const to = at(`n${index + 1}`)
+      if (from.y === to.y) {
+        // Same row: the next step is the horizontal neighbour.
+        expect(Math.abs(from.x - to.x)).toBe(NODE_W + 76)
+      } else {
+        // Row wrap: the next step is directly below in the SAME column, which is
+        // exactly why no curved “return” edge is needed.
+        expect(from.x).toBe(to.x)
+        expect(to.y).toBeGreaterThan(from.y)
+      }
+    }
+    expect(layout.width).toBe((NODE_W + 76) * 3 - 76)
   })
 
-  it('turns even a desktop-wide chain vertical once horizontal would shrink too much', () => {
-    const longHorizontal = tidyLayout(chain(20), defaultHeightOf, 'horizontal')
-    const longVertical = tidyLayout(chain(20), defaultHeightOf, 'vertical')
-    expect(chooseOrientation(longHorizontal, longVertical, 1600, 900)).toBe('vertical')
+  it('centres a parent on its children inside its row band', () => {
+    const nodes = [
+      node('root', null, { childCount: 2 }),
+      node('left', 'root', { childCount: 1 }),
+      node('right', 'root', { isLeaf: true }),
+      node('tail', 'left', { isLeaf: true, isHead: true }),
+    ]
+    const layout = serpentineLayout(nodes, defaultHeightOf, 2)
+    const root = layout.positions.get('root')!
+    const left = layout.positions.get('left')!
+    const right = layout.positions.get('right')!
+    // Both children share depth 1, so they stack in one column and the parent sits
+    // between them.
+    expect(left.x).toBe(right.x)
+    expect(root.y).toBeGreaterThan(left.y)
+    expect(root.y).toBeLessThan(right.y)
+  })
+
+  it('gives a tall expanded card its own band height', () => {
+    const nodes = [
+      node('a', null, { childCount: 1 }),
+      node('b', 'a', { kind: 'collapsed', expanded: true, childCount: 1 }),
+      node('c', 'b', { isLeaf: true, isHead: true }),
+    ]
+    const layout = serpentineLayout(nodes, defaultHeightOf, 2)
+    expect(layout.positions.get('c')!.y).toBeGreaterThanOrEqual(NODE_H_EXPANDED + GAP_Y)
+  })
+})
+
+describe('automatic layout choice', () => {
+  const pick = (nodes: ReturnType<typeof chain>, width: number, height: number) =>
+    pickBestLayout(layoutCandidates(nodes, defaultHeightOf, width, height))
+
+  it('wraps a long chain into rows on a wide desktop instead of leaving it a thin line', () => {
+    const chosen = pick(chain(12), 1400, 800)
+    expect(chosen.orientation).toBe('serpentine')
+    expect(chosen.columns).toBeGreaterThanOrEqual(3)
+  })
+
+  it('turns the same chain top→down on a portrait phone', () => {
+    expect(pick(chain(12), 390, 700).orientation).toBe('vertical')
+  })
+
+  it('lays a shallow wide tree out as one wide row (depth on y matches a wide canvas)', () => {
+    // Root with 8 leaves. “vertical” here means depth→y, so the 8 leaves become one
+    // wide row — which is what a 2600x700 canvas wants; the classic left→right tree
+    // would instead be 500x564 and waste the width.
+    const nodes = [node('root', null, { childCount: 8 })]
+    for (let index = 0; index < 8; index += 1) nodes.push(node(`leaf${index}`, 'root', { isLeaf: true }))
+    expect(pick(nodes, 2600, 700).orientation).toBe('vertical')
+  })
+
+  it('scores fill by aspect-ratio match', () => {
+    const wide = tidyLayout(chain(4), defaultHeightOf, 'horizontal')
+    const square = tidyLayout(chain(4), defaultHeightOf, 'vertical')
+    expect(canvasFill(wide, 2600, 400)).toBeGreaterThan(canvasFill(square, 2600, 400))
+    expect(canvasFill(square, 400, 2600)).toBeGreaterThan(canvasFill(wide, 400, 2600))
   })
 
   it('has no opinion before the container is measured', () => {
-    expect(chooseOrientation(horizontal, vertical, 0, 0)).toBe('horizontal')
+    expect(pickBestLayout(layoutCandidates(chain(4), defaultHeightOf, 0, 0)).orientation).toBe('horizontal')
   })
 })
