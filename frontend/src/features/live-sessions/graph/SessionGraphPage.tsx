@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { SessionTreeNode, SessionTreeSessionEntry } from '@shared/session-tree'
 import { useAppDispatch, useAppSelector } from '../../../store'
@@ -44,6 +44,24 @@ export default function SessionGraphPage() {
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>(undefined)
 
+  // After `/ls-fork` the bridge swaps to a NEW session file, so the URL's `file`
+  // goes stale: the graph would neither refresh nor keep its write actions. Follow
+  // the process we were watching to whatever session file it now reports.
+  const followedProcess = useRef<string | null>(null)
+  useEffect(() => {
+    if (!file) { followedProcess.current = null; return }
+    const owner = Object.values(state.sessions).find(session => session.sessionFile === file)
+    if (owner) followedProcess.current = owner.processInstanceId
+  }, [file, state.sessions])
+  useEffect(() => {
+    const processInstanceId = followedProcess.current
+    if (!processInstanceId) return
+    const nextFile = state.sessions[processInstanceId]?.sessionFile
+    if (!nextFile || nextFile === file) return
+    setParams({ file: nextFile })
+    setToast(`已跟随到新会话：${nextFile.split('/').pop() ?? nextFile}`)
+  }, [state.sessions, file, setParams])
+
   // In-place expansions belong to one session file: drop them when the focus moves.
   useEffect(() => { setExpandedRuns([]); setStepLimit(STEP_BATCH) }, [file])
 
@@ -61,12 +79,19 @@ export default function SessionGraphPage() {
   const [undo, setUndo] = useState<{ headId: string; label: string } | null>(null)
   const [manualPath, setManualPath] = useState('')
 
-  // The live process (if any) that owns the focused file: needed for write
-  // actions, the lease, and "open that session".
+  // The live process (if any) that owns the focused file. Matching by sessionId
+  // first is deliberate: the URL carries the path exactly as the bridge reported
+  // it, which can differ from the realpath spelling the graph payload returns, and
+  // a path mismatch would wrongly disable every write action.
   const live = useMemo(() => {
     if (!file) return undefined
+    const focusSessionId = graph?.sessions.find(session => session.isFocus)?.sessionId
+    if (focusSessionId) {
+      const bySessionId = Object.values(state.sessions).find(session => session.sessionId === focusSessionId)
+      if (bySessionId) return bySessionId
+    }
     return Object.values(state.sessions).find(session => session.sessionFile === file)
-  }, [file, state.sessions])
+  }, [file, graph, state.sessions])
 
   const ownedLease = live ? state.ownedLeases[live.processInstanceId] : undefined
   const claimedByOther = live?.claim.state === 'claimed' && !ownedLease

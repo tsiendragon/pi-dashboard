@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { SessionTreeGraph, SessionTreeNode, SessionTreeSessionEntry } from '@shared/session-tree'
 import { NODE_H } from './layout'
 
@@ -23,8 +24,7 @@ export interface BranchActionState {
   blockedReason?: string
 }
 
-export default function BranchDetailPanel({ node, graph, action, onNavigate, onFork, onOpenSession, onToggleExpand, onClose }: {
-  node: SessionTreeNode | null
+export default function BranchDetailPanel({ node, graph, action, onNavigate, onFork, onOpenSession, onToggleExpand, onClose }: {  node: SessionTreeNode | null
   graph: SessionTreeGraph
   action: BranchActionState
   onNavigate: (node: SessionTreeNode) => void
@@ -33,6 +33,12 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
   onToggleExpand: (node: SessionTreeNode) => void
   onClose: () => void
 }) {
+  /**
+   * Folded segments are the bulk of the default view, and a segment is not a real
+   * entry, so it cannot be a write target. Let the reader pick the segment's start
+   * or end entry right here instead of expanding and hunting in the canvas.
+   */
+  const [foldTarget, setFoldTarget] = useState<'from' | 'to'>('to')
   if (!node) {
     return (
       <aside className="flex h-full w-72 shrink-0 flex-col border-l border-border bg-panel p-4">
@@ -56,6 +62,19 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
   const session = graph.sessions.find(candidate => candidate.key === node.sessionKey) ?? null
   const isCurrentSession = session?.isFocus === true
   const forkParentPresent = session?.forkOf ? graph.sessions.some(candidate => candidate.key === session.forkOf) : false
+  const isFolded = node.kind === 'collapsed'
+  /**
+   * Why the write buttons are greyed out. The old code disabled them silently for
+   * folded segments (which are the bulk of the default view), so "从此分叉" looked
+   * permanently un-clickable with no explanation.
+   */
+  const writeUnavailableReason = !isCurrentSession ? null
+    : !action.processInstanceId ? '写操作不可用：该会话没有运行中的 Pi 进程（历史会话只能查看）。请在 Dashboard 里启动它，或先 /reload 后重试。'
+    : action.blockedReason ? null // already rendered above
+    : !isFolded ? null
+    : node.expanded
+      ? '已展开：直接点卡片列表里的某一步，就能对它「切到此处 / 从此分叉」。'
+      : '折叠段不是一条真实 entry，无法直接切分支/分叉。先点下面的「▶ 展开这 N 步」，再点列表里的具体某一步。'
   const canWrite = Boolean(action.processInstanceId) && !action.blockedReason
   const isHead = node.isHead
 
@@ -126,6 +145,9 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
         {action.blockedReason ? (
           <div className="rounded-md bg-warn-subtle px-3 py-2 text-2xs leading-relaxed text-text">{action.blockedReason}</div>
         ) : null}
+        {writeUnavailableReason ? (
+          <div className="rounded-md bg-bg-elevated px-3 py-2 text-2xs leading-relaxed text-muted">{writeUnavailableReason}</div>
+        ) : null}
         {action.error ? (
           <div className="rounded-md bg-danger-subtle px-3 py-2 text-2xs leading-relaxed text-text">{action.error}</div>
         ) : null}
@@ -143,9 +165,37 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
                 {node.stepsTruncated ? '卡片底部「加载更多」可继续加载下一批。' : ''}
               </div>
             ) : null}
-            {node.steps?.length ? (
-              <div className="text-2xs text-muted">
-                折叠范围：<span className="font-mono">{node.collapsedRange?.from}</span> → <span className="font-mono">{node.collapsedRange?.to}</span>
+            {node.collapsedRange ? (
+              <div className="grid gap-1.5 rounded-md border border-border bg-bg-elevated p-2">
+                <div className="text-2xs text-muted">这一段不是 entry，选一个真实 entry 作为写操作目标：</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFoldTarget('from')}
+                    className={`cursor-pointer rounded border px-2 py-1 text-2xs font-mono transition-colors ${foldTarget === 'from' ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-card text-muted hover:border-accent'}`}
+                    title={`起点 entry：${node.collapsedRange.from}`}
+                  >起点 {node.collapsedRange.from.slice(0, 8)}</button>
+                  <button
+                    type="button"
+                    onClick={() => setFoldTarget('to')}
+                    className={`cursor-pointer rounded border px-2 py-1 text-2xs font-mono transition-colors ${foldTarget === 'to' ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-card text-muted hover:border-accent'}`}
+                    title={`终点 entry：${node.collapsedRange.to}`}
+                  >终点 {node.collapsedRange.to.slice(0, 8)}</button>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    disabled={!canWrite || action.busy}
+                    onClick={() => onNavigate({ ...node, id: foldTarget === 'from' ? node.collapsedRange!.from : node.collapsedRange!.to, kind: 'message' })}
+                    className="cursor-pointer rounded border border-border bg-transparent px-2 py-1 text-2xs text-text transition-colors hover:bg-bg-hover disabled:cursor-not-allowed disabled:opacity-40"
+                  >切到该处</button>
+                  <button
+                    type="button"
+                    disabled={!canWrite || action.busy}
+                    onClick={() => onFork({ ...node, id: foldTarget === 'from' ? node.collapsedRange!.from : node.collapsedRange!.to, kind: 'message' })}
+                    className="cursor-pointer rounded border border-accent bg-transparent px-2 py-1 text-2xs text-accent transition-colors hover:bg-accent hover:text-accent-fg disabled:cursor-not-allowed disabled:opacity-40"
+                  >从此分叉</button>
+                </div>
               </div>
             ) : null}
           </div>
@@ -156,17 +206,17 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
             <>
               <button
                 onClick={() => onNavigate(node)}
-                disabled={!canWrite || action.busy || isHead || node.kind === 'collapsed'}
+                disabled={!canWrite || action.busy || isHead || isFolded}
                 className="h-8 cursor-pointer rounded-md border-none bg-accent text-body-s font-medium text-accent-fg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-                title={isHead ? '已经是活动叶子' : '把会话的活动分支切到这个节点（原地，不新建会话）'}
+                title={isHead ? '已经是活动叶子' : isFolded ? '折叠段不是真实 entry，先展开再点具体某一步' : '把会话的活动分支切到这个节点（原地，不新建会话）'}
               >
                 {action.busy ? '处理中…' : isHead ? '已是当前位置' : '切到此处'}
               </button>
               <button
                 onClick={() => onFork(node)}
-                disabled={!canWrite || action.busy || node.kind === 'collapsed'}
+                disabled={!canWrite || action.busy || isFolded}
                 className="h-8 cursor-pointer rounded-md border border-border bg-transparent text-body-s font-medium text-text transition-colors hover:bg-bg-hover disabled:cursor-not-allowed disabled:opacity-40"
-                title="从这个节点分叉出一个新会话文件（后写会把本会话的前缀复制过去）"
+                title={isFolded ? '折叠段不是真实 entry，先展开再点具体某一步' : '从这个节点分叉出一个新会话文件（后写会把本会话的前缀复制过去）'}
               >
                 从此分叉
               </button>
