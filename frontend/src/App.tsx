@@ -19,6 +19,7 @@ import TasksPage from './pages/TasksPage'
 import SettingsPage from './pages/SettingsPage'
 import LiveSessionPage from './features/live-sessions/LiveSessionPage'
 import LiveSessionGalleryPage from './features/live-sessions/LiveSessionGalleryPage'
+import SessionGraphPage from './features/live-sessions/graph/SessionGraphPage'
 import UsagePage from './pages/UsagePage'
 import TimePage from './pages/TimePage'
 import CommandPalette from './components/CommandPalette'
@@ -40,6 +41,7 @@ const NAV_ITEMS = [
   { path: '/chat', id: 'chat', label: 'Chat', group: 'Main', icon: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /> },
   { path: '/live-sessions', id: 'live-sessions', label: 'Live Pi', group: 'Main', icon: <><path d="M5 12h2l2-5 4 10 2-5h4" /><circle cx="12" cy="12" r="10" /></> },
   { path: '/live-sessions/gallery', id: 'live-gallery', label: 'Session Gallery', group: 'Main', icon: <><rect x="3" y="4" width="7" height="7" rx="1" /><rect x="14" y="4" width="7" height="7" rx="1" /><rect x="3" y="13" width="7" height="7" rx="1" /><rect x="14" y="13" width="7" height="7" rx="1" /></> },
+  { path: '/live-sessions/graph', id: 'live-graph', label: 'Session Graph', group: 'Main', icon: <><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="12" cy="18" r="2.5" /><path d="M6 8.5v2a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2" /><path d="M12 12.5v3" /></> },
   { path: '/tasks', id: 'tasks', label: 'Tasks', group: 'Main', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="m3 6 1.5 1.5L7 5" /><path d="m3 12 1.5 1.5L7 11" /><path d="m3 18 1.5 1.5L7 17" /></> },
   { path: '/usage', id: 'usage', label: 'Token Cost', group: 'Main', icon: <><path d="M4 19V5" /><path d="M4 19h17" /><path d="m7 15 3-4 3 2 5-7" /></> },
   { path: '/time', id: 'time', label: 'Time Analysis', group: 'Main', icon: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /><path d="M3.5 5.5 6 3" /></> },
@@ -336,6 +338,7 @@ export default function App() {
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/live-sessions" element={<LiveSessionPage />} />
             <Route path="/live-sessions/gallery" element={<LiveSessionGalleryPage />} />
+            <Route path="/live-sessions/graph" element={<SessionGraphPage />} />
             <Route path="/live-sessions/:processInstanceId" element={<LiveSessionPage />} />
             <Route path="/usage" element={<UsagePage />} />
             <Route path="/time" element={<TimePage />} />
