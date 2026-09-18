@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>会话家族图谱 · 折叠前后对比示意图（v6）</title>
+<style>
+  :root {
+    --bg:#fafafa; --bg-elevated:#ffffff; --card:#ffffff;
+    --text:#3f3f46; --text-strong:#18181b; --muted:#71717a; --muted-strong:#52525b;
+    --border:#e4e4e7; --border-strong:#d4d4d8;
+    --accent:#1d5aaf; --accent-fg:#ffffff; --accent-subtle:rgba(29,90,175,.12);
+    --ok:#11695e; --ok-subtle:rgba(17,105,94,.1);
+    --warn:#935b06; --warn-subtle:rgba(147,91,6,.1);
+    --info:#2563eb; --clarify:#d97706; --danger:#c8196a;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#18181b; --bg-elevated:#27272a; --card:#27272a;
+      --text:#d4d4d8; --text-strong:#fafafa; --muted:#a1a1aa; --muted-strong:#d4d4d8;
+      --border:#3f3f46; --border-strong:#52525b;
+      --accent:#6aa6f5; --accent-fg:#0b1220; --accent-subtle:rgba(106,166,245,.16);
+      --ok:#4ec9b0; --ok-subtle:rgba(78,201,176,.14);
+      --warn:#e5b567; --warn-subtle:rgba(229,181,103,.14);
+      --info:#60a5fa; --clarify:#f0a35e; --danger:#f471b5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:28px 24px 48px; background:var(--bg); color:var(--text);
+    font: 14px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size:20px; line-height:1.35; color:var(--text-strong); margin:0 0 6px; }
+  h2 { font-size:15px; color:var(--text-strong); margin:0 0 2px; display:flex; align-items:center; gap:8px; }
+  .lead { color:var(--muted); font-size:13px; margin:0 0 22px; }
+  .panel {
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:14px;
+    padding:16px 16px 14px; margin:0 0 18px;
+  }
+  .panel-note { font-size:12px; color:var(--muted); margin:2px 0 14px; }
+  .tag {
+    font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; white-space:nowrap;
+  }
+  .tag.bad  { background:var(--warn-subtle); color:var(--warn); }
+  .tag.good { background:var(--accent-subtle); color:var(--accent); }
+  .tag.gray { background:var(--bg); color:var(--muted); border:1px solid var(--border); }
+
+  /* ── canvas area ── */
+  .canvas {
+    position:relative; border:1px dashed var(--border-strong); border-radius:10px;
+    background:
+      linear-gradient(0deg, transparent 23px, var(--border) 24px) 0 0/24px 24px,
+      linear-gradient(90deg, transparent 23px, var(--border) 24px) 0 0/24px 24px;
+    background-color: color-mix(in srgb, var(--bg) 60%, var(--bg-elevated));
+    overflow:hidden;
+  }
+  .canvas.tall { height:210px; }
+  .measure {
+    position:absolute; right:8px; bottom:6px; font:11px var(--mono); color:var(--muted);
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:6px; padding:1px 6px;
+  }
+
+  /* ── node card (mirrors SessionFamilyGraph.tsx) ── */
+  .node {
+    position:absolute; width:212px; height:60px; border-radius:10px; background:var(--card);
+    border:1px solid var(--border); overflow:hidden;
+  }
+  .node.on { border-color:var(--accent); }
+  .node .bar { position:absolute; left:0; top:9px; width:3px; height:42px; border-radius:1.5px; }
+  .node .role { position:absolute; left:32px; top:8px; font-size:11px; font-weight:600; }
+  .node .ico  { position:absolute; left:13px; top:7px; font-size:11px; }
+  .node .title{ position:absolute; left:13px; right:12px; top:26px; font-size:12px; color:var(--text-strong);
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .node .prev { position:absolute; left:13px; right:12px; top:44px; font-size:11px; color:var(--muted);
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .node .head { position:absolute; right:6px; top:-8px; font-size:10px; font-weight:600; padding:1px 7px;
+                border-radius:999px; background:var(--accent); color:var(--accent-fg); }
+  .node .out  { position:absolute; right:8px; bottom:3px; font-size:11px; color:var(--info); }
+  .node.sel  { box-shadow:0 0 0 5px var(--card), 0 0 0 6px var(--accent); }
+  /* role colours */
+  .r-system   { color:var(--muted); }      .f-system   { background:var(--muted); }
+  .r-user     { color:var(--accent); }     .f-user     { background:var(--accent); }
+  .r-assistant{ color:var(--info); }       .f-assistant{ background:var(--info); }
+  .r-tool     { color:var(--warn); }       .f-tool     { background:var(--warn); }
+  .r-compaction{color:var(--ok); }         .f-compaction{background:var(--ok); }
+  .r-fold     { color:var(--border-strong);} .f-fold   { background:var(--border-strong); }
+
+  /* ── group band ── */
+  .band {
+    position:absolute; border-radius:14px; border:1px solid var(--border);
+    background:var(--bg-elevated); opacity:.75;
+  }
+  .band.current { background:var(--accent-subtle); border-color:var(--accent); opacity:.9; }
+  .band .bl { position:absolute; left:12px; top:4px;  font-size:11px; font-weight:600; }
+  .band .br { position:absolute; right:12px; top:4px; font-size:11px; color:var(--muted); }
+
+  /* ── edges ── */
+  svg.wires { position:absolute; inset:0; overflow:visible; pointer-events:none; }
+  .wire { fill:none; stroke:var(--border-strong); stroke-width:1.5; opacity:.45; }
+  .wire.on { stroke:var(--accent); opacity:1; }
+  .wire.fork { stroke:var(--info); stroke-width:2; stroke-dasharray:5 4; opacity:.9; }
+  .wlabel { font:11px var(--mono); fill:var(--info); }
+
+  /* ── tables / legend ── */
+  table { border-collapse:collapse; font-size:12.5px; width:100%; }
+  th, td { text-align:left; padding:6px 10px 6px 0; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; }
+  td.num { font:12px var(--mono); font-variant-numeric:tabular-nums; }
+  .now { color:var(--accent); font-weight:700; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; color:var(--muted); margin-top:10px; }
+  .legend i { display:inline-block; vertical-align:middle; }
+  .sw { width:16px; height:3px; border-radius:2px; margin-right:6px; }
+  .sw.dash { height:0; border-top:2px dashed var(--info); }
+  ul { margin:6px 0 0; padding-left:20px; font-size:12.5px; color:var(--muted); }
+  li { margin:2px 0; }
+  code { font:12px var(--mono); background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:0 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>会话家族图谱 · 折叠前后对比（v6）</h1>
+  <p class="lead">
+    示例是<b>真实会话</b>：<code>2026-09-17T07-32-32-474Z_01a0ae48…</code>（就是画出这张图的那次对话本身）。
+    它没有 fork，展开后共 <b>1289</b> 条 entry。
+  </p>
+
+  <!-- ══════════ A. 改动前 ══════════ -->
+  <div class="panel">
+    <h2>改动前 <span class="tag bad">不可读</span></h2>
+    <p class="panel-note">
+      布局把<b>深度放在 X 轴</b>：线性会话于是排成一条长线。这张图画的就是它真实的缩放结果——
+      内容宽 <span class="num">15,840px</span> 要装进 <span class="num">~1750px</span> 画布，所以
+      <code>fit()</code> 把缩放压到 <b>k≈0.10</b>，每个卡片只剩 <b>22px</b> 宽，文字完全糊掉。
+    </p>
+    <div class="canvas tall">
+      <div class="band current" style="left:10px; top:14px; right:10px; bottom:34px;">
+        <span class="bl" style="color:var(--accent)">01a0ae48 · 当前</span>
+        <span class="br">55 条 · 运行中</span>
+      </div>
+      <svg class="wires">
+        <line class="wire" x1="30" y1="112" x2="1140" y2="112" stroke-width="0.6" />
+      </svg>
+      <div id="strip" style="position:absolute; left:22px; top:96px; height:22px; width:1130px;"></div>
+      <div class="measure">fit() → k ≈ 0.10 · 卡片 22px × 6px</div>
+    </div>
+    <p class="panel-note" style="margin:12px 0 0">
+      可见问题不在「节点太多」本身，而在<b>「什么该显示」</b>：旧规则把 <code>role === 'user'</code>
+      也当作必须保留的结构节点，一问一答的会话几乎全被留下。
+    </p>
+  </div>
+
+  <!-- ═════════ B. 改动后（默认） ══════════ -->
+  <div class="panel">
+    <h2>改动后 · 默认「仅关键节点」 <span class="tag good">可读</span></h2>
+    <p class="panel-note">
+      只保留<b>结构节点</b>（会话起点、终点、fork 锚点、分支点、pi <code>label</code>、
+      <code>compaction</code> / <code>branchSummary</code>），其余全部折成一个 <code>+N 步</code> 段落。
+      同一个会话现在只剩 <b>5 个卡片</b>，<code>fit()</code> 停在 <b>k=1</b>，字号正常。
+    </p>
+
+    <div class="canvas" style="height:250px">
+      <!-- group band -->
+      <div class="band current" style="left:16px; top:40px; width:96px; height:170px;">
+        <span class="bl" style="color:var(--accent); left:6px; font-size:10px;">当前会话</span>
+      </div>
+      <div class="band" style="left:150px; top:40px; right:16px; height:170px;">
+        <span class="bl" style="left:10px;">01a0ae48 · 1289 条</span>
+        <span class="br">未截断</span>
+      </div>
+
+      <svg class="wires">
+        <!-- 起点 → 折叠 -->
+        <path class="wire on" d="M210,100 C262,100 258,100 310,100" />
+        <!-- 折叠 → compaction -->
+        <path class="wire on" d="M522,100 C574,100 570,100 158,160" style="display:none" />
+        <path class="wire on" d="M522,100 C574,100 566,160 618,160" />
+        <!-- compaction → 折叠2 -->
+        <path class="wire" d="M830,160 C882,160 874,130 926,130" />
+        <!-- 折叠2 → 终点 -->
+        <path class="wire" d="M1138,130 C1186,130 1178,100 1230,100" />
+      </svg>
+
+      <!-- 起点 -->
+      <div class="node on" style="left:150px; top:70px">
+        <span class="bar f-system"></span><span class="ico r-system">⚙</span>
+        <span class="role r-system">System</span>
+        <span class="title">Model → deepseek-v4.1-flash</span>
+        <span class="prev">起点 · 会话的第一个 entry</span>
+      </div>
+
+      <!-- 折叠段 1 -->
+      <div class="node" style="left:310px; top:70px">
+        <span class="bar f-fold"></span><span class="ico r-fold">⋯</span>
+        <span class="role r-fold">已折叠的步骤</span>
+        <span class="title">+418 步</span>
+        <span class="prev">Thinking → high → compact-transcript-sum…</span>
+      </div>
+
+      <!-- compaction（结构节点：上下文边界） -->
+      <div class="node on" style="left:618px; top:130px">
+        <span class="bar f-compaction"></span><span class="ico r-compaction">📦</span>
+        <span class="role r-compaction">Compaction</span>
+        <span class="title">Compaction</span>
+        <span class="prev">## Goal 1. 为 pi-dashboard 设计「LiveSession…</span>
+      </div>
+
+      <!-- 折叠段 2 -->
+      <div class="node" style="left:926px; top:100px">
+        <span class="bar f-fold"></span><span class="ico r-fold">⋯</span>
+        <span class="role r-fold">已折叠的步骤</span>
+        <span class="title">+868 步</span>
+        <span class="prev">User → compact-thinking-duration…</span>
+      </div>
+
+      <!-- 终点 / HEAD -->
+      <div class="node on" style="left:1230px; top:70px">
+        <span class="head">HEAD</span>
+        <span class="bar f-tool"></span><span class="ico r-tool">🛠</span>
+        <span class="role r-tool">Assistant · bash</span>
+        <span class="title">Assistant · bash</span>
+        <span class="prev">终点 · 当前活动分支的叶子</span>
+      </div>
+
+      <div class="measure">fit() → k = 1 · 5 个节点 · 内容宽 ≈ 1650px</div>
+    </div>
+
+    <div class="legend">
+      <span><i class="sw" style="background:var(--accent)"></i>结构节点（起点/终点/边界）</span>
+      <span><i class="sw" style="background:var(--border-strong)"></i><code>+N 步</code> 折叠段</span>
+      <span><i class="sw dash"></i>fork 边（跨文件）</span>
+    </div>
+  </div>
+
+  <!-- ═════════ C. 有 fork 时保留什么 ══════════ -->
+  <div class="panel">
+    <h2>有 fork 的家族：关键节点一个都不丢</h2>
+    <p class="panel-note">
+      折叠只吃掉「过程步骤」。真正需要做决策/导航的位置全部保留：
+      <b>fork 锚点</b>（有子会话由此分出）、<b>分支点</b>（≥2 个子节点）、
+      <b>pi <code>label</code> 书签</b>、以及每个会话的<b>起点与终点</b>。
+    </p>
+
+    <div class="canvas" style="height:280px">
+      <div class="band" style="left:16px; top:36px; width:1040px; height:110px;">
+        <span class="bl" style="left:10px;">父会话 A · 1204 条</span>
+      </div>
+      <div class="band current" style="left:430px; top:172px; width:626px; height:96px;">
+        <span class="bl" style="left:10px; color:var(--accent)">子会话 B · 当前 · 418 条</span>
+      </div>
+
+      <svg class="wires">
+        <path class="wire on" d="M210,92 C262,92 258,92 310,92" />
+        <path class="wire on" d="M522,92 C574,92 566,92 618,92" />
+        <!-- fork 边：锚点 → 子会话起点 -->
+        <path class="wire fork" d="M830,102 C888,102 880,200 936,200" />
+        <text class="wlabel" x="852" y="152">fork</text>
+        <path class="wire on" d="M1148,200 C1196,200 1188,200 1236,200" />
+        <!-- 父会话上的一条废弃分支 -->
+        <path class="wire" d="M724,102 C724,150 660,160 660,206" />
+        <path class="wire" d="M830,162 C830,200 780,196 780,226" />
+      </svg>
+
+      <!-- 父会话：起点 -->
+      <div class="node on" style="left:150px; top:62px">
+        <span class="bar f-user"></span><span class="ico r-user">👤</span>
+        <span class="role r-user">User</span><span class="title">起点</span>
+        <span class="prev">保留</span>
+      </div>
+      <div class="node" style="left:310px; top:62px">
+        <span class="bar f-fold"></span><span class="ico r-fold">⋯</span>
+        <span class="role r-fold">已折叠的步骤</span><span class="title">+402 步</span>
+      </div>
+      <div class="node on" style="left:618px; top:62px">
+        <span class="bar f-user"></span><span class="ico r-user"></span>
+        <span class="role r-user">User</span>
+        <span class="title">★ 打了 label 的节点</span><span class="prev">保留（pi <code>label</code> 书签）</span>
+      </div>
+      <!-- 父会话：fork 锚点（子会话由此分出） -->
+      <div class="node on" style="left:830px; top:62px">
+        <span class="bar f-assistant"></span><span class="ico r-assistant">🤖</span>
+        <span class="role r-assistant">Assistant</span>
+        <span class="title">分叉锚点</span><span class="prev">保留（有子会话由此分出）</span>
+      </div>
+      <!-- 父会话：废弃分支的两个叶子 -->
+      <div class="node" style="left:660px; top:206px">
+        <span class="bar f-user"></span><span class="ico r-user">👤</span>
+        <span class="role r-user">User</span><span class="title">废弃分支的叶子</span>
+        <span class="prev">保留（是分支的终点）</span>
+      </div>
+      <div class="node" style="left:780px; top:226px">
+        <span class="bar f-user"></span><span class="ico r-user">👤</span>
+        <span class="role r-user">User</span><span class="title">另一条废弃分支</span>
+        <span class="prev">保留</span>
+      </div>
+
+      <!-- 子会话：起点 / 终点 -->
+      <div class="node on" style="left:936px; top:170px">
+        <span class="bar f-assistant"></span><span class="ico r-assistant">🤖</span>
+        <span class="role r-assistant">Assistant</span><span class="title">子会话起点</span>
+        <span class="prev">父前缀只渲染一次，不重复</span>
+      </div>
+      <div class="node on" style="left:1236px; top:170px">
+        <span class="head">HEAD</span>
+        <span class="bar f-user"></span><span class="ico r-user">👤</span>
+        <span class="role r-user">User</span><span class="title">子会话终点</span>
+        <span class="prev">当前活动叶子</span>
+      </div>
+      <div class="measure">跨文件 fork 用虚线边走锚点；父前缀不重复渲染</div>
+    </div>
+  </div>
+
+  <!-- ═════════ D. 需要逐条时 ══════════ -->
+  <div class="panel">
+    <h2>「显示步骤」开关 <span class="tag gray">detail=full</span></h2>
+    <p class="panel-note">
+      需要逐条排查时点工具栏的 <code>⋯ 仅关键节点 / ⋯ 显示步骤</code>：切换会带
+      <code>?detail=full</code> 重新请求，返回每一条 entry（上限 3000 节点，超出会提示已截断）。
+    </p>
+    <div class="canvas" style="height:120px">
+      <div id="fullstrip" style="position:absolute; left:18px; top:34px; height:52px; width:1130px;"></div>
+      <div class="measure">detail=full · 该会话 1289 个节点（示意）</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 数据 ═════════ -->
+  <div class="panel">
+    <h2>真实数据：同一批会话的节点数</h2>
+    <table>
+      <thead><tr><th>会话大小</th><th>改动前</th><th>改动后（默认）</th><th>detail=full</th></tr></thead>
+      <tbody>
+        <tr><td class="num">764.6 MB</td><td class="num">325</td><td class="num now">8</td><td class="num">2126</td></tr>
+        <tr><td class="num">49.9 MB</td><td class="num">96</td><td class="num now">13</td><td class="num">2816</td></tr>
+        <tr><td class="num">3.4 MB</td><td class="num">46</td><td class="num now">5</td><td class="num">1688</td></tr>
+        <tr><td class="num">0.6 MB</td><td class="num">21</td><td class="num now">3</td><td class="num">150</td></tr>
+        <tr><td class="num">本图示例（01a0ae48）</td><td class="num">55</td><td class="num now">5</td><td class="num">1289</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>折叠段是<b>可点</b>的：详情面板会显示折了哪一段（<code>+418 步</code>、范围 <code>f46aa332 → …</code>、首尾标题）。</li>
+      <li>默认视图看不到逐条步骤——要看就切「显示步骤」，或点「打开会话」看完整转录。</li>
+      <li>只有<b>文件里只有一行头、没有任何 entry</b> 的会话才会是 0 个节点（画布会说明原因）。</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+  // 改动前：55 个被压到 22px 宽的卡片，忠实再现 fit() 的缩放结果。
+  const strip = document.getElementById('strip')
+  for (let i = 0; i < 55; i += 1) {
+    const c = document.createElement('span')
+    const color = i % 5 === 0 ? 'var(--accent)' : 'var(--info)'
+    c.style.cssText = `position:absolute;left:${i * 20.6}px;top:0;width:18px;height:22px;border-radius:2px;` +
+      `background:var(--card);border:1px solid var(--border);border-left:3px solid ${color}`
+    strip.appendChild(c)
+  }
+  // 显示步骤：1289 个节点的示意（截取前 220 个画出来，其余用渐变表示）。
+  const full = document.getElementById('fullstrip')
+  for (let i = 0; i < 220; i += 1) {
+    const c = document.createElement('span')
+    const color = i % 7 === 0 ? 'var(--accent)' : i % 3 === 0 ? 'var(--warn)' : 'var(--info)'
+    c.style.cssText = `position:absolute;left:${i * 5.15}px;top:0;width:4px;height:52px;border-radius:1px;` +
+      `background:var(--card);border:1px solid var(--border);border-left:2px solid ${color}`
+    full.appendChild(c)
+  }
+  const fade = document.createElement('span')
+  fade.style.cssText = 'position:absolute;right:0;top:0;width:150px;height:52px;' +
+    'background:linear-gradient(90deg, transparent, var(--bg-elevated))'
+  full.appendChild(fade)
+</script>
+</body>
+</html>
