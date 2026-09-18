@@ -9,6 +9,7 @@ import ErrorBoundary from '../../components/ErrorBoundary'
 import ToolCallBlock from '../../pages/chat/ToolCallBlock'
 import { ToolSummaryLine, type ToolSummaryStatus } from '../../components/ToolSummary'
 import { detectFileType, usePanelState } from '../../hooks/usePanelState'
+import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { resolvePath } from '../../utils/resolvePath'
 import {
@@ -287,7 +288,43 @@ function thinkingText(entry: unknown): string | undefined {
   return parts.map(part => typeof part.thinking === 'string' ? part.thinking : '').join('\\n')
 }
 
-export function groupLiveToolEntries(entries: unknown[]): LiveTimelineItem[] {
+/**
+ * Compact-reading filter: drop the entries that carry no readable body text.
+ * Used when the transcript hides thinking + tool/script output.
+ */
+function hasReadableBody(entry: unknown): boolean {
+  const message = messageFromEntry(entry)
+  if (!message) return true
+  if (message.role === 'toolResult') return false
+  const parts = contentParts(message.content)
+  return parts.some(part =>
+    (part.type === 'text' && typeof part.text === 'string' && part.text.trim().length > 0)
+    || part.type === 'image',
+  )
+}
+
+export interface LiveTimelineHidden {
+  /** Tool call/result rows folded away. */
+  tools: number
+  /** Thinking entries folded away. */
+  thinking: number
+  /** Extension telemetry rows (`custom` entries, mostly thinking-duration ticks). */
+  other: number
+}
+
+/**
+ * Group live entries into timeline items.
+ *
+ * @param auxiliary when false, thinking and tool/script execution are left out
+ *                  entirely (they are not even rendered as collapsed one-liners),
+ *                  so the reader sees the agent's reply body plus user turns.
+ *                  Entries that would render nothing are dropped, not blanked.
+ */
+export function groupLiveToolEntries(
+  entries: unknown[],
+  auxiliary = true,
+): { items: LiveTimelineItem[]; hidden: LiveTimelineHidden } {
+  const hidden: LiveTimelineHidden = { tools: 0, thinking: 0, other: 0 }
   const result: LiveTimelineItem[] = []
   let current: LiveToolItem[] = []
   let currentBatch = false
@@ -327,6 +364,31 @@ export function groupLiveToolEntries(entries: unknown[]): LiveTimelineItem[] {
   }
 
   entries.forEach((entry, index) => {
+    // Compact reading: nothing auxiliary is rendered — not even a collapsed
+    // one-liner — so the reader sees the reply body and the user turns.
+    if (!auxiliary) {
+      const message = messageFromEntry(entry)
+      const record = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : undefined
+      // Extension telemetry (`custom` entries) is pure noise while reading: e.g. one
+      // real session had 434 `compact-thinking-duration` rows against 1008 messages.
+      if (record?.type === 'custom') {
+        hidden.other += 1
+        return
+      }
+      const parts = contentParts(message?.content)
+      const thinkingParts = parts.filter(part => part.type === 'thinking').length
+      const toolParts = parts.filter(part => part.type === 'toolCall').length
+      hidden.thinking += thinkingParts > 0 ? thinkingParts : (thinkingText(entry) !== undefined ? 1 : 0)
+      hidden.tools += toolParts > 0
+        ? toolParts
+        : (message?.role === 'toolResult' ? 1 : liveToolItems(index, entry).length)
+      // Entries that would render nothing are dropped rather than blanked.
+      if (message?.role === 'toolResult' || !hasReadableBody(entry)) return
+      if (current.length > 0 || pendingThinking.length > 0) flush()
+      result.push({ type: 'entry', index, entry })
+      return
+    }
+
     const tools = liveToolItems(index, entry)
     if (tools.length > 0) {
       const calls = tools.filter(item => item.source === 'call')
@@ -358,7 +420,7 @@ export function groupLiveToolEntries(entries: unknown[]): LiveTimelineItem[] {
   })
 
   if (current.length > 0 || pendingThinking.length > 0) flush()
-  return result
+  return { items: result, hidden }
 }
 
 function ToolResultCard({ text, toolName, toolCallId, command, isError, timestamp, revealOnMount = false }: { text: string; toolName?: string; toolCallId?: string; command?: string; isError?: boolean; timestamp?: string; revealOnMount?: boolean }) {
@@ -659,8 +721,11 @@ function LiveCommandBar({ toolStates, features }: { toolStates: ToolStateMap; fe
   </>
 }
 
-function MessageContent({ content, onFileOpen, toolStates, timestamp, showRaw = true }: { content: unknown; onFileOpen: (path: string) => void; toolStates?: ToolStateMap; timestamp?: string; showRaw?: boolean }) {
-  const parts = mergeThinkingParts(contentParts(content))
+function MessageContent({ content, onFileOpen, toolStates, timestamp, auxiliary = true, showRaw = true }: { content: unknown; onFileOpen: (path: string) => void; toolStates?: ToolStateMap; timestamp?: string; auxiliary?: boolean; showRaw?: boolean }) {
+  const allParts = mergeThinkingParts(contentParts(content))
+  // Compact reading hides thinking and tool/script output even inside a message
+  // that also carries the reply text.
+  const parts = auxiliary ? allParts : allParts.filter(part => part.type !== 'thinking' && part.type !== 'toolCall')
   if (parts.length === 0) return null
   return (
     <div className="space-y-1 text-body-s leading-5 [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:text-base [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-sm [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_li]:text-body-s [&_li]:leading-5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
@@ -717,7 +782,7 @@ function MessageContent({ content, onFileOpen, toolStates, timestamp, showRaw = 
   )
 }
 
-function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFileOpen: (path: string) => void; toolStates: ToolStateMap }) {
+function TimelineEntry({ entry, onFileOpen, toolStates, auxiliary = true }: { entry: unknown; onFileOpen: (path: string) => void; toolStates: ToolStateMap; auxiliary?: boolean }) {
   const timestamp = entryTimestamp(entry)
   const entryRecord = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : undefined
   const eventData = entryRecord?.data && typeof entryRecord.data === 'object' && !Array.isArray(entryRecord.data)
@@ -751,8 +816,8 @@ function TimelineEntry({ entry, onFileOpen, toolStates }: { entry: unknown; onFi
         </div>
         <div className="rounded-md border border-[#dbeafe] bg-white px-2 py-1.5 text-slate-900 [&_h1]:text-slate-900 [&_h2]:text-slate-900 [&_h3]:text-slate-900 [&_p]:text-slate-900 [&_strong]:text-slate-900">
           {assistant
-            ? <MessageContent content={message.content} onFileOpen={onFileOpen} toolStates={toolStates} timestamp={timestamp} />
-            : <MessageContent content={message.content} onFileOpen={onFileOpen} toolStates={toolStates} timestamp={timestamp} showRaw={false} />}
+            ? <MessageContent content={message.content} onFileOpen={onFileOpen} toolStates={toolStates} timestamp={timestamp} auxiliary={auxiliary} />
+            : <MessageContent content={message.content} onFileOpen={onFileOpen} toolStates={toolStates} timestamp={timestamp} auxiliary={auxiliary} showRaw={false} />}
         </div>
       </article>
     )
@@ -923,7 +988,28 @@ export default function LiveSessionPage() {
   const notifications = activeId ? state.notifications[activeId] ?? [] : []
   const features = useMemo(() => collectLiveFeatures(detail?.entries || []), [detail?.entries])
   const toolStates = useMemo(() => collectToolStates(detail?.entries || []), [detail?.entries])
-  const timelineItems = useMemo(() => groupLiveToolEntries(detail?.entries || []), [detail?.entries])
+  const compactViewport = useMediaQuery('(max-width: 767px)')
+  /**
+   * Show thinking + tool/script execution in the transcript. Defaults to OFF on a
+   * phone (the reply body is what matters there) and ON elsewhere; an explicit
+   * toggle is remembered in localStorage.
+   */
+  const [auxiliary, setAuxiliary] = useState<boolean>(() => {
+    const stored = localStorage.getItem('live-session-auxiliary')
+    if (stored === 'show') return true
+    if (stored === 'hide') return false
+    return !compactViewport
+  })
+  const toggleAuxiliary = useCallback(() => {
+    setAuxiliary(value => {
+      const next = !value
+      localStorage.setItem('live-session-auxiliary', next ? 'show' : 'hide')
+      return next
+    })
+  }, [])
+
+  const timeline = useMemo(() => groupLiveToolEntries(detail?.entries || [], auxiliary), [detail?.entries, auxiliary])
+  const timelineItems = timeline.items
   const agentState = useMemo(() => deriveAgentState(summary?.status, detail?.entries || [], toolStates), [summary?.status, detail?.entries, toolStates])
   const [busy, setBusy] = useState(false)
   const [commandNotice, setCommandNotice] = useState<string>()
@@ -1232,6 +1318,9 @@ export default function LiveSessionPage() {
             {summary?.status === 'running' && ownedLeaseId && <button type="button" disabled={busy} onClick={() => { void abort().catch(() => {}) }} className="rounded border border-danger/40 bg-danger-subtle px-2 py-0.5 text-2xs text-danger disabled:opacity-50">中止</button>}
             {summary && (ownedLeaseId ? <button type="button" disabled={busy} onClick={() => { void release().catch(() => {}) }} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted disabled:opacity-50">释放控制</button> : <button type="button" disabled={busy || summary.status === 'reconnecting'} onClick={() => { void perform(async () => { await claim() }).catch(() => {}) }} className="rounded border border-accent bg-accent px-2 py-0.5 text-2xs text-accent-fg disabled:opacity-50">取得控制</button>)}
             <button type="button" onClick={() => navigate(summary?.sessionFile ? `/live-sessions/graph?file=${encodeURIComponent(summary.sessionFile)}` : '/live-sessions/graph')} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent" title="在会话家族图谱中查看该会话">◈ 在图谱中查看</button>
+            <button type="button" onClick={toggleAuxiliary} className={`shrink-0 rounded border px-2 py-0.5 text-2xs ${auxiliary ? 'border-border bg-bg text-muted hover:border-accent hover:text-accent' : 'border-accent bg-accent-subtle text-accent'}`} title={auxiliary ? '当前显示思路与工具/脚本执行；点一下切换为精简阅读' : '精简阅读：只留正文（思路与工具/脚本已隐去）'}>
+              {auxiliary ? '👁 显示全部' : ' 精简阅读'}
+            </button>
             <button type="button" onClick={() => void refresh()} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent">刷新</button>
           </div>
         </div>
@@ -1277,9 +1366,21 @@ export default function LiveSessionPage() {
                 <div ref={timelineScrollRef} onScroll={handleTimelineScroll} className="flex flex-1 flex-col overflow-y-auto p-3 space-y-2">
                   {workflowItems.map(workflow => <LiveWorkflowProgressCard key={String(workflow.id)} workflow={workflow} sessions={sessions} onOpen={workflowValue => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflowValue) }} />)}
                   {detail.entries.length === 0 && workflowItems.length === 0 && <div className="text-sm text-muted text-center py-10">该 session 暂无可显示消息。</div>}
+                  {!auxiliary && (timeline.hidden.tools > 0 || timeline.hidden.thinking > 0 || timeline.hidden.other > 0) ? (
+                    <div className="flex items-center gap-2 rounded-md border border-border bg-bg-elevated px-3 py-2 text-2xs text-muted">
+                      <span className="min-w-0 flex-1">
+                        精简阅读：已隐去思路 {timeline.hidden.thinking} 片段 · 工具/脚本 {timeline.hidden.tools} 处 · 遥测 {timeline.hidden.other} 条
+                      </span>
+                      <button
+                        type="button"
+                        onClick={toggleAuxiliary}
+                        className="shrink-0 cursor-pointer rounded border border-border bg-card px-2 py-0.5 text-2xs text-muted transition-colors hover:border-accent hover:text-accent"
+                      >显示思路与工具</button>
+                    </div>
+                  ) : null}
                   {timelineItems.map(item => item.type === 'toolGroup'
                     ? <LiveToolGroup key={`tool-group-${item.items[0]?.index ?? 0}`} items={item.items} thinking={item.thinking} onFileOpen={path => { void handleDocumentLink(path) }} toolStates={toolStates} />
-                    : <TimelineEntry key={`${item.index}-${typeof item.entry === 'object' && item.entry ? String((item.entry as Record<string, unknown>).type || '') : ''}`} entry={item.entry} onFileOpen={path => { void handleDocumentLink(path) }} toolStates={toolStates} />
+                    : <TimelineEntry key={`${item.index}-${typeof item.entry === 'object' && item.entry ? String((item.entry as Record<string, unknown>).type || '') : ''}`} entry={item.entry} onFileOpen={path => { void handleDocumentLink(path) }} toolStates={toolStates} auxiliary={auxiliary} />
                   )}
                 </div>
                 <LiveCommandBar toolStates={toolStates} features={features} />
