@@ -1,6 +1,7 @@
 # Tasks 页面设计 v2（第一性原理重构 · 通用任务面板）
 
-> 状态：P1 已实现（后端聚合 + 两视图 + 规划层 + session 关联 + 本地临时任务增删改）· 目标版本：P1
+> 状态：**P1/P2/P3 主体已实现并提交，WIP 暂停（2026-09-18）**——收尾交接见 [§17](#17-收尾交接wip-暂停)。
+> 已实现：后端聚合 + 两视图 + 规划层 + session 关联 + 本地临时任务增删改 + 深链 + 拖拽 + 趋势 + provider 插件化。
 > 取代 v1（v1 的 bucket 字段、单一 status、三栏主视图已被本版修正）
 > 关联：`backend/pi-env.ts`（`~/.pi/dashboard.json`）、`shared/src/live-sessions.ts`（session cwd/tags）
 
@@ -309,3 +310,41 @@ TasksPage
 8. **外部来源**：写一个 `~/jira.json`=`[{"id":"ABC-1","title":"x","status":"in_progress"}]`，在外部来源 JSON 里加 `file` 类型，刷新应出现 `jira:ABC-1`。
 
 运行时产物：`~/.pi/tasks/tasks.json`（本地任务）、`planning.json`（规划层）、`history.json`（趋势）。
+
+## 17. 收尾交接（WIP 暂停）
+
+**状态**：P1/P2/P3 主体已实现、已提交、已跑通验证；**代码工作到此为止**，剩下的是真机/真人验收与几条遗留测试。
+
+### 17.1 提交记录
+
+| 提交 | 说明 |
+|---|---|
+| `38d04fb` | `feat(design): 语义字号与前景色 token`（**前置依赖**：本页用到 `text-2xs`/`text-meta`/`text-body-s`/`--accent-fg`，HEAD 之外无此 token） |
+| `ebec1bf` | `feat(tasks): 通用任务规划面板`（26 文件，+3082/−10） |
+
+### 17.2 已验证（可复现）
+
+- 后端 `tsc` 0 错、前端 `tsc` 0 错、`vite build` 成功。
+- 后端 vitest：**25 文件 / 338 passed, 1 skipped**。
+- 真实数据 smoke：**304 条**（62 epic / 239 task / 3 todo），`providers: task-journal:true, local:true(writable)`，无 warning。
+- HTTP smoke 全覆盖：`GET/PUT/POST/PATCH/DELETE`，含 `409 read_only_source`、`400 title_required`、`404`。
+- 外部来源（`kind:'command'`）node 冒烟：`wip→doing` 正确映射、`archived` 保留、`writable:false`。
+
+### 17.3 未验证（需人工 / 真机）
+
+1. **真人浏览器交互**：拖拽手感、触屏手势、抽屉键盘焦点（本机无真人操作证据）。
+2. **真机 live session cwd 关联**：起会话后任务是否自动挂载（当前仅代码层验证）。
+3. **本文 §16 的 8 步人工验收**：需重启后端后由人执行。
+
+### 17.4 遗留 / 后续 TODO
+
+| 项 | 说明 |
+|---|---|
+| 前端 6 条过期断言 | `App.test.tsx`×2（`PI DASH`/`Health` 文案已转中文）、`LiveSessionFeatures.test.tsx`（`BTW · 1`）、`ToolCallBlock.test.tsx`（Arguments 隐藏逻辑）、`ToolSummary.test.tsx`（label 期望 `Read`，现返 `read /path`）、`liveToolEntries.test.ts`（分组数 1→2）。**后两条疑似行为变化**，需先确认是有意改动还是回归，再改断言。 |
+| 未 push | `master` 领先 `origin/master` **18** 个提交。 |
+| journal 写回 | 面板不写 journal 事实层（设计即如此，非缺陷）；改状态请走 task-pilot。 |
+| 真机 trend | `history.json` 首日仅 1 点，需 ≥2 天才有趋势线（UI 已提示）。 |
+
+### 17.5 生效方式
+
+后端改动需**用户自己执行 `./run.sh`** 重启进程才生效；前端 `dist` 已重建。按 `AGENTS.md`，agent 不代为重启正在运行的服务。
