@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { LiveSessionImage, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import DocumentPreviewModal from '../../components/DocumentPreviewModal'
@@ -901,6 +901,10 @@ export function AuthPanel({ onAuthenticated }: { onAuthenticated: (browserClient
 
 export default function LiveSessionPage() {
   const { processInstanceId } = useParams<{ processInstanceId?: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Set by the session-graph page (`?node=<entryId>`) so the graph → session
+  // jump can be finished here with the same `/ls-navigate` bridge command.
+  const graphNodeId = searchParams.get('node')
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
   const { refresh } = useLiveSessionsRuntime()
@@ -912,6 +916,10 @@ export default function LiveSessionPage() {
   const summary = activeId ? state.sessions[activeId] : undefined
   const detail = activeId ? state.details[activeId] : undefined
   const ownedLeaseId = activeId ? state.ownedLeases[activeId] : undefined
+  // The graph page's write actions ride the `/ls-navigate` extension command.
+  // An old bridge does not register it, and pi would then submit the text as a
+  // normal prompt, so only offer the action when the bridge advertises support.
+  const treeCapable = activeId ? state.sessions[activeId]?.capabilities?.includes('session_tree') === true : false
   const notifications = activeId ? state.notifications[activeId] ?? [] : []
   const features = useMemo(() => collectLiveFeatures(detail?.entries || []), [detail?.entries])
   const toolStates = useMemo(() => collectToolStates(detail?.entries || []), [detail?.entries])
@@ -1125,6 +1133,15 @@ export default function LiveSessionPage() {
     await liveSessionApi.command(activeId, { type: 'reload' })
     setCommandNotice('已触发重载，Web 端将短暂重连')
   })
+  // Session-tree navigation requested from the graph page: the bridge exposes
+  // `/ls-navigate` as an extension command, so this rides the plain input
+  // channel (no protocol change).
+  const navigateToNode = (nodeId: string) => perform(async () => {
+    if (!activeId) return
+    const suffix = ownedLeaseId ? ` ${ownedLeaseId}` : ''
+    await liveSessionApi.command(activeId, { type: 'input', text: `/ls-navigate ${nodeId}${suffix}`, channel: 'web' })
+    setCommandNotice(`已请求切换到节点 ${nodeId}`)
+  })
   const controlBtw = (type: 'open' | 'close') => perform(async () => {
     if (!activeId) return
     const leaseId = await claim()
@@ -1214,6 +1231,7 @@ export default function LiveSessionPage() {
           <div className="flex shrink-0 items-center gap-1">
             {summary?.status === 'running' && ownedLeaseId && <button type="button" disabled={busy} onClick={() => { void abort().catch(() => {}) }} className="rounded border border-danger/40 bg-danger-subtle px-2 py-0.5 text-2xs text-danger disabled:opacity-50">中止</button>}
             {summary && (ownedLeaseId ? <button type="button" disabled={busy} onClick={() => { void release().catch(() => {}) }} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted disabled:opacity-50">释放控制</button> : <button type="button" disabled={busy || summary.status === 'reconnecting'} onClick={() => { void perform(async () => { await claim() }).catch(() => {}) }} className="rounded border border-accent bg-accent px-2 py-0.5 text-2xs text-accent-fg disabled:opacity-50">取得控制</button>)}
+            <button type="button" onClick={() => navigate(summary?.sessionFile ? `/live-sessions/graph?file=${encodeURIComponent(summary.sessionFile)}` : '/live-sessions/graph')} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent" title="在会话家族图谱中查看该会话">◈ 在图谱中查看</button>
             <button type="button" onClick={() => void refresh()} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent">刷新</button>
           </div>
         </div>
@@ -1232,6 +1250,15 @@ export default function LiveSessionPage() {
         </div>}
         {state.error && <div className="px-4 py-2 bg-danger-subtle text-danger text-xs border-b border-danger/20">{state.error}</div>}
         {commandNotice && !state.error && <div className="px-4 py-2 bg-accent-subtle text-accent text-xs border-b border-accent/20">{commandNotice}</div>}
+        {graphNodeId && <div className="flex items-center gap-2 border-b border-accent/20 bg-accent-subtle px-4 py-2 text-xs text-accent">
+          <span className="min-w-0 flex-1 truncate">已从图谱定位到节点 <span className="font-mono">{graphNodeId}</span></span>
+          {treeCapable ? (
+            <button type="button" disabled={busy || !activeId} onClick={() => void navigateToNode(graphNodeId).catch(() => {})} className="shrink-0 rounded border border-accent bg-accent px-2 py-0.5 text-2xs text-accent-fg disabled:opacity-40">切到此处</button>
+          ) : (
+            <span className="shrink-0 text-2xs text-muted">当前扩展版本不支持，请先 /reload</span>
+          )}
+          <button type="button" onClick={() => { const next = new URLSearchParams(searchParams); next.delete('node'); setSearchParams(next, { replace: true }) }} className="shrink-0 rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent">关闭</button>
+        </div>}
         {activeId && notifications.length > 0 && <div className="shrink-0 border-b border-border bg-bg-elevated px-3 py-2">
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-2xs font-medium text-muted">扩展通知 · {notifications.length}</span>

@@ -1,4 +1,5 @@
 import type { LiveSessionCommand, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
+import type { SessionTreeGraph } from '@shared/session-tree'
 
 export class LiveSessionApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -87,4 +88,18 @@ export const liveSessionApi = {
   closeTmuxSession: (tmuxSession: string) => fetch(`/api/pty/sessions/${encodeURIComponent(tmuxSession)}`, {
     method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
   }).then(json<{ ok: true }>),
+  /**
+   * Session-family graph for the graph page. Keyed by absolute session file path
+   * so sessions that are no longer running can be inspected too.
+   */
+  sessionTree: (file: string) => fetch(`/api/session-tree?file=${encodeURIComponent(file)}`, { credentials: 'same-origin' })
+    .then(json<{ ok: true; result: SessionTreeGraph }>).then(result => result.result),
+  /**
+   * Session-tree write actions. These ride the EXISTING `input` command channel
+   * (the bridge registers `/ls-navigate` and `/ls-fork` extension commands), so
+   * no wire-protocol version bump is involved.
+   */
+  sessionTreeAction: (processInstanceId: string, text: string) => post<{ ok: true; result: unknown }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'input', channel: 'web', text } },
+  ),
 }
