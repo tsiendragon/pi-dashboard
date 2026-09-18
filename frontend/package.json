@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "lint": "eslint src",
     "check:theme-cvd": "node scripts/check-theme-cvd.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b --noEmit",
     "check": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
