@@ -17,6 +17,10 @@ export class Gateway {
   readonly mapping: Mapping
   private readonly dashboard: DashboardClient
   private allowedUserIds: readonly string[]
+  /** Last applied event sequence per process instance (outbound dedup). */
+  private readonly lastSequence = new Map<string, number>()
+  /** Recently handled inbound message ids (dropped if redelivered). */
+  private readonly seenMessageIds = new Set<string>()
 
   constructor(
     cfg: LarkGatewayConfig,
@@ -30,7 +34,12 @@ export class Gateway {
 
   async start(): Promise<void> {
     await this.mapping.load()
-    for (const summary of await this.dashboard.listSessions()) this.catalog.upsert(summary)
+    try {
+      for (const summary of await this.dashboard.listSessions()) this.catalog.upsert(summary)
+    } catch (error) {
+      // The dashboard may still be booting; the catalog refills on subscribe.
+      console.warn(`[gateway] initial session list failed (${errorText(error)}); will recover on reconnect`)
+    }
     await this.dashboard.subscribe(frame => {
       void this.onFrame(frame)
     })
@@ -50,6 +59,17 @@ export class Gateway {
 
   private isAllowed(userId: string): boolean {
     return this.allowedUserIds.length === 0 || this.allowedUserIds.includes(userId)
+  }
+
+  /** Drop messages already handled (Lark may redeliver after a reconnect). */
+  private isDuplicate(messageId?: string): boolean {
+    if (!messageId) return false
+    if (this.seenMessageIds.has(messageId)) return true
+    this.seenMessageIds.add(messageId)
+    if (this.seenMessageIds.size > 1000) {
+      for (const id of [...this.seenMessageIds].slice(0, 500)) this.seenMessageIds.delete(id)
+    }
+    return false
   }
 
   /** Send a reply to a chat, with a compact outbound log. */
@@ -72,7 +92,10 @@ export class Gateway {
       }
       case 'live_session_detached': {
         const data = frame.data as { processInstanceId?: string }
-        if (data.processInstanceId) this.catalog.remove(data.processInstanceId)
+        if (data.processInstanceId) {
+          this.catalog.remove(data.processInstanceId)
+          this.lastSequence.delete(data.processInstanceId)
+        }
         return
       }
       case 'live_session_event': {
@@ -86,8 +109,14 @@ export class Gateway {
 
   private async onEvent(data: unknown): Promise<void> {
     if (!data || typeof data !== 'object') return
-    const record = data as { processInstanceId?: string; event?: { type?: string; data?: unknown } }
+    const record = data as { processInstanceId?: string; sequence?: number; event?: { type?: string; data?: unknown } }
     if (!record.processInstanceId || !record.event?.type) return
+    // Drop replays/duplicates: `sequence` is monotonic per process instance.
+    if (typeof record.sequence === 'number') {
+      const last = this.lastSequence.get(record.processInstanceId)
+      if (last !== undefined && record.sequence <= last) return
+      this.lastSequence.set(record.processInstanceId, record.sequence)
+    }
 
     const summary = this.catalog.findByProcessId(record.processInstanceId)
     if (!summary?.sessionFile) return
@@ -108,6 +137,10 @@ export class Gateway {
   private async onMessage(message: ImMessage): Promise<void> {
     if (!this.isAllowed(message.userId)) {
       console.log(`[in] ignored (not allowed): ${message.userId}`)
+      return
+    }
+    if (this.isDuplicate(message.messageId)) {
+      console.log(`[in] duplicate ignored: ${message.messageId}`)
       return
     }
     const text = message.text.trim()
@@ -142,4 +175,8 @@ export class Gateway {
     }
     await this.dashboard.sendInput(summary.processInstanceId, text, 'chatapp')
   }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

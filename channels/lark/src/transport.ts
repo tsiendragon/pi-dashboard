@@ -9,6 +9,8 @@ export interface ImMessage {
   threadId: string | null
   userId: string
   text: string
+  /** Platform message id, used to drop duplicate deliveries. */
+  messageId?: string
 }
 
 export interface ImTransport {
