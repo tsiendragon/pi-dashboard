@@ -2,6 +2,7 @@ import type { LarkGatewayConfig } from './config.js'
 import type { ImMessage, ImTransport } from './transport.js'
 
 type Handler = (message: ImMessage) => void | Promise<void>
+type BotAddedHandler = (chatId: string) => void | Promise<void>
 
 /**
  * Lark (Feishu) transport over the long-connection (WebSocket) event mode, so
@@ -22,7 +23,7 @@ export class LarkTransport implements ImTransport {
     return import(moduleName)
   }
 
-  async start(onMessage: Handler): Promise<void> {
+  async start(onMessage: Handler, onBotAdded?: BotAddedHandler): Promise<void> {
     if (!this.cfg.larkAppId || !this.cfg.larkAppSecret) {
       throw new Error('LARK_APP_ID / LARK_APP_SECRET are required for the Lark transport')
     }
@@ -37,9 +38,15 @@ export class LarkTransport implements ImTransport {
         const chatId: string | undefined = data?.message?.chat_id
         const userId: string | undefined = data?.sender?.sender_id?.open_id || data?.sender?.sender_id?.user_id
         const messageId: string | undefined = data?.message?.message_id
+        // Present only in topic-groups; each thread becomes its own binding key.
+        const threadId: string | null = data?.message?.thread_id || null
         const text = extractText(data?.message)
         if (!chatId || !text) return
-        await onMessage({ chatId, threadId: null, userId: userId || 'unknown', text, messageId })
+        await onMessage({ chatId, threadId, userId: userId || 'unknown', text, messageId })
+      },
+      'im.chat.member.bot.added_v1': async (data: any) => {
+        const chatId: string | undefined = data?.chat_id
+        if (chatId && onBotAdded) await onBotAdded(chatId)
       },
     })
 
@@ -47,8 +54,16 @@ export class LarkTransport implements ImTransport {
     await this.wsClient.start({ eventDispatcher: dispatcher })
   }
 
-  async sendText(chatId: string, _threadId: string | null, text: string): Promise<void> {
+  async sendText(chatId: string, _threadId: string | null, text: string, replyMessageId?: string): Promise<void> {
     if (!this.client) throw new Error('LarkTransport has not been started')
+    if (replyMessageId) {
+      // Topic-group: reply inside the original thread so it lands in that topic.
+      await this.client.im.message.reply({
+        path: { message_id: replyMessageId },
+        data: { msg_type: 'text', content: JSON.stringify({ text }), reply_in_thread: true },
+      })
+      return
+    }
     await this.client.im.message.create({
       params: { receive_id_type: 'chat_id' },
       data: { receive_id: chatId, msg_type: 'text', content: JSON.stringify({ text }) },

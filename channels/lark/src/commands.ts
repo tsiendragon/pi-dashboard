@@ -6,6 +6,8 @@ import type { Mapping } from './mapping.js'
 export interface CommandContext {
   chatId: string
   threadId: string | null
+  /** Id of the message that carried the command (topic anchor for replies). */
+  messageId?: string
   catalog: Catalog
   mapping: Mapping
   dashboard: DashboardClient
@@ -64,7 +66,7 @@ async function bindSession(arg: string, ctx: CommandContext): Promise<string> {
   const target = ctx.catalog.resolve(arg)
   if (!target) return `未找到会话「${arg}」。用 /list 查看可用会话。`
   if (!target.sessionFile) return `会话「${refOf(target)}」缺少稳定的 sessionFile，无法绑定。`
-  await ctx.mapping.bind(ctx.chatId, target.sessionFile, target.sessionName, ctx.threadId)
+  await ctx.mapping.bind(ctx.chatId, target.sessionFile, target.sessionName, ctx.threadId, ctx.messageId)
   return `已绑定到 ${refOf(target)}（${target.status}）。之后直接发消息即可。`
 }
 
