@@ -8,5 +8,6 @@ export { createLiveSessionRoutes, type LiveSessionRoutes } from './live-sessions
 export { registerUsageRoutes } from './usage.js'
 export { registerTimingRoutes } from './timing.js'
 export { registerPtyRoutes } from './pty.js'
+export { registerLarkRoutes } from './lark.js'
 export { registerTaskRoutes, type TaskRouteOptions } from './tasks.js'
 export type { RouteDeps } from './types.js'

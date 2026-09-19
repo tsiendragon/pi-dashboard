@@ -30,6 +30,7 @@ import {
   registerUsageRoutes,
   registerTimingRoutes,
   registerPtyRoutes,
+  registerLarkRoutes,
   registerTaskRoutes,
   type LiveSessionRoutes,
 } from './routes/index.js'
@@ -909,6 +910,7 @@ const taskService = new TaskService({
   })),
 })
 registerTaskRoutes({ app, service: taskService })
+registerLarkRoutes(app)
 void liveSessionAuth.start().then(() => {
   console.log(`[pty] Terminal control token: ${liveSessionAuth.tokenPath}`)
 }).catch(error => console.error('[pty] Failed to init terminal auth:', error))
