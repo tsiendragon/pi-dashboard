@@ -11,7 +11,7 @@ import { SettingsSectionSlot } from '../plugins/slot-consumers'
 import { ACTIONS, formatKey, setShortcut, resetShortcut, resetAllShortcuts, hasCustomShortcuts, subscribeShortcuts, eventToKeyString, type ActionCategory } from '../shortcuts'
 import { modelFullId, splitModelFullId, splitThinkingSuffix } from '../utils/modelUtils'
 
-type Tab = 'general' | 'model' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'display' | 'vault' | 'tasks' | 'developer' | 'shortcuts'
+type Tab = 'general' | 'model' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'display' | 'vault' | 'tasks' | 'lark' | 'developer' | 'shortcuts'
 
 /* ── Shared form components ── */
 
@@ -892,6 +892,159 @@ interface DashConfig {
   }
 }
 
+const LARK_INPUT_CLS = 'w-full bg-bg-elevated border border-border rounded-md px-3 py-2 text-body-s text-text outline-none focus-ring transition-colors'
+const LARK_BTN_CLS = 'px-3 py-2 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30'
+const LARK_BTN_SM = 'px-2 py-1 rounded text-meta border border-border text-muted bg-transparent cursor-pointer hover:text-text transition disabled:opacity-30'
+
+interface LarkAccountPublic { id: string; name: string; appId: string; domain: string; appSecretMasked: string; createdAt: string }
+const LARK_DOMAIN_LABELS: Record<string, string> = { feishu: '飞书', lark: 'Lark 国际' }
+interface LarkAccountsPayload { activeId: string | null; accounts: LarkAccountPublic[]; allowedUserIds?: string[] }
+
+function LarkTab() {
+  const [payload, setPayload] = useState<LarkAccountsPayload | null>(null)
+  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+  const [form, setForm] = useState<{ id?: string; name: string; appId: string; appSecret: string; domain: 'feishu' | 'lark' }>({ name: '', appId: '', appSecret: '', domain: 'feishu' })
+  const [busy, setBusy] = useState(false)
+  const [allowedText, setAllowedText] = useState('')
+
+  const load = useCallback(async () => {
+    try {
+      const data = (await fetch('/api/lark/accounts').then(j)) as LarkAccountsPayload
+      setPayload(data)
+      setAllowedText((data.allowedUserIds || []).join('\n'))
+    } catch {
+      setFeedback({ type: 'err', msg: '加载失败' })
+    }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  const notify = (value: { type: 'ok' | 'err'; msg: string }) => {
+    setFeedback(value)
+    setTimeout(() => setFeedback(null), 2500)
+  }
+
+  const request = async (url: string, method: string, body?: object): Promise<unknown> => {
+    setBusy(true)
+    try {
+      return await fetch(url, {
+        method,
+        ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+      }).then(j)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const save = async () => {
+    if (!form.appId.trim()) return notify({ type: 'err', msg: 'App ID 必填' })
+    try {
+      await request('/api/lark/accounts', 'PUT', { id: form.id, name: form.name, appId: form.appId, domain: form.domain, appSecret: form.appSecret || undefined })
+      setForm({ name: '', appId: '', appSecret: '', domain: 'feishu' })
+      await load()
+      notify({ type: 'ok', msg: '已保存' })
+    } catch {
+      notify({ type: 'err', msg: '保存失败（检查 App ID / Secret）' })
+    }
+  }
+
+  const remove = async (id: string) => {
+    try { await request(`/api/lark/accounts/${id}`, 'DELETE'); await load(); notify({ type: 'ok', msg: '已删除' }) }
+    catch { notify({ type: 'err', msg: '删除失败' }) }
+  }
+
+  const activate = async (id: string) => {
+    try { await request(`/api/lark/accounts/${id}/activate`, 'POST'); await load(); notify({ type: 'ok', msg: '已设为启用（网关自动生效）' }) }
+    catch { notify({ type: 'err', msg: '切换失败' }) }
+  }
+
+  const verify = async (id: string) => {
+    try { await request(`/api/lark/accounts/${id}/verify`, 'POST'); notify({ type: 'ok', msg: '凭证有效' }) }
+    catch { notify({ type: 'err', msg: '凭证校验失败' }) }
+  }
+
+  const saveAllowed = async () => {
+    try {
+      await request('/api/lark/allowed-users', 'PUT', { allowedUserIds: allowedText })
+      await load()
+      notify({ type: 'ok', msg: '白名单已保存（网关自动生效）' })
+    } catch {
+      notify({ type: 'err', msg: '保存失败' })
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Feedback feedback={feedback} />
+
+      <Card>
+        <CardTitle>
+          Lark / 飞书机器人账号
+          <InfoTip text="在飞书开放平台创建企业自建应用，开启长连接事件订阅（im.message.receive_v1）并添加机器人能力。同一时刻只有一个账号启用；切换后网关自动生效，无需重启。" />
+        </CardTitle>
+        {!payload ? (
+          <div className="text-muted text-body-s py-2">Loading…</div>
+        ) : payload.accounts.length === 0 ? (
+          <div className="text-muted text-body-s py-2">尚未配置账号。在下方添加 App ID / App Secret。</div>
+        ) : (
+          <div className="space-y-2">
+            {payload.accounts.map(account => (
+              <div key={account.id} className="flex items-center gap-3 border border-border rounded-md px-3 py-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-body-s text-text truncate">
+                    {account.name}
+                    {payload.activeId === account.id && <span className="ml-1 text-accent">● 启用中</span>}
+                  </div>
+                  <div className="text-meta text-muted font-mono truncate">{account.appId} · {LARK_DOMAIN_LABELS[account.domain] || account.domain} · {account.appSecretMasked || '—'}</div>
+                </div>
+                <button className={LARK_BTN_SM} disabled={busy || payload.activeId === account.id} onClick={() => void activate(account.id)}>启用</button>
+                <button className={LARK_BTN_SM} disabled={busy} onClick={() => void verify(account.id)}>测试</button>
+                <button className={LARK_BTN_SM} disabled={busy} onClick={() => setForm({ id: account.id, name: account.name, appId: account.appId, appSecret: '', domain: account.domain === 'lark' ? 'lark' : 'feishu' })}>编辑</button>
+                <button className={LARK_BTN_SM} disabled={busy} onClick={() => void remove(account.id)}>删除</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardTitle>{form.id ? '编辑账号' : '新增账号'}</CardTitle>
+        <div className="space-y-2">
+          <input className={LARK_INPUT_CLS} placeholder="名称（如：工作机器人）" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+          <select className={LARK_INPUT_CLS} value={form.domain} onChange={e => setForm({ ...form, domain: e.target.value === 'lark' ? 'lark' : 'feishu' })}>
+            <option value="feishu">飞书（open.feishu.cn）</option>
+            <option value="lark">Lark 国际版（open.larksuite.com）</option>
+          </select>
+          <input className={LARK_INPUT_CLS} placeholder="App ID（cli_xxx）" value={form.appId} onChange={e => setForm({ ...form, appId: e.target.value })} />
+          <input className={LARK_INPUT_CLS} type="password" placeholder={form.id ? 'App Secret（留空则不修改）' : 'App Secret'} value={form.appSecret} onChange={e => setForm({ ...form, appSecret: e.target.value })} />
+          <div className="flex gap-2">
+            <button className={LARK_BTN_CLS} disabled={busy || !form.appId.trim()} onClick={() => void save()}>💾 保存</button>
+            {form.id && <button className={LARK_BTN_SM} onClick={() => setForm({ name: '', appId: '', appSecret: '', domain: 'feishu' })}>取消</button>}
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>
+          允许的用户（白名单）
+          <InfoTip text="只有名单内的用户能驱动机器人（群聊里也只认名单内的人）。留空 = 不限制，任何人都能用。每行一个 open_id / user_id，也可用逗号分隔。保存后网关自动生效，无需重启。" />
+        </CardTitle>
+        <div className="space-y-2">
+          <textarea
+            className={`${LARK_INPUT_CLS} font-mono min-h-[72px]`}
+            placeholder={'ou_xxxxxxxx（每行一个，或用逗号分隔）\n留空 = 不限制，任何人都能使用机器人'}
+            value={allowedText}
+            onChange={e => setAllowedText(e.target.value)}
+          />
+          <div className="text-meta text-muted">
+            当前状态：{allowedText.trim() ? '🔒 已限制为名单内用户' : '⚠️ 不限制（任何人可用）'}
+          </div>
+          <button className={LARK_BTN_CLS} disabled={busy} onClick={() => void saveAllowed()}>💾 保存白名单</button>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
 function VaultTab() {
   const [config, setConfig] = useState<DashConfig | null>(null)
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
@@ -1313,6 +1466,7 @@ const SETTINGS_GROUPS: { group: string; tabs: { id: Tab; label: string; icon: st
       { id: 'general', label: 'Packages', icon: '📦', hint: 'Context files & resources' },
       { id: 'vault', label: 'Vault', icon: '📁', hint: 'Knowledge vault paths' },
       { id: 'tasks', label: 'Tasks', icon: '🗂️', hint: 'Task panel sources & defaults' },
+      { id: 'lark', label: 'Lark', icon: '🕊', hint: 'Feishu / Lark bot accounts' },
       { id: 'developer', label: 'Developer', icon: '🔧', hint: 'Advanced & debug' },
     ],
   },
@@ -1381,6 +1535,7 @@ export default function SettingsPage() {
             {tab === 'shortcuts' && <ShortcutsTab />}
             {tab === 'vault' && <VaultTab />}
             {tab === 'tasks' && <TasksTab />}
+            {tab === 'lark' && <LarkTab />}
             {tab === 'developer' && <DeveloperTab />}
           </div>
         </div>
