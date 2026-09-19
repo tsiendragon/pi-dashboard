@@ -14,9 +14,19 @@ export interface ImMessage {
 }
 
 export interface ImTransport {
-  /** Begin receiving messages. `onMessage` may be async. */
-  start(onMessage: (message: ImMessage) => void | Promise<void>): Promise<void>
-  /** Send a plain-text message to a chat (optionally a topic/thread). */
-  sendText(chatId: string, threadId: string | null, text: string): Promise<void>
+  /**
+   * Begin receiving messages. `onMessage` may be async; `onBotAdded` fires when
+   * the bot is added to a chat (used to send a usage hint).
+   */
+  start(
+    onMessage: (message: ImMessage) => void | Promise<void>,
+    onBotAdded?: (chatId: string) => void | Promise<void>,
+  ): Promise<void>
+  /**
+   * Send a plain-text message to a chat (optionally a topic/thread).
+   * When `replyMessageId` is set, the text is posted as a reply into that
+   * message's thread — the only way to reach a specific topic in a topic-group.
+   */
+  sendText(chatId: string, threadId: string | null, text: string, replyMessageId?: string): Promise<void>
   stop(): Promise<void>
 }
