@@ -43,7 +43,10 @@ export class Gateway {
     await this.dashboard.subscribe(frame => {
       void this.onFrame(frame)
     })
-    await this.transport.start(message => this.onMessage(message))
+    await this.transport.start(
+      message => this.onMessage(message),
+      chatId => this.onBotAdded(chatId),
+    )
   }
 
   async stop(): Promise<void> {
@@ -70,6 +73,12 @@ export class Gateway {
       for (const id of [...this.seenMessageIds].slice(0, 500)) this.seenMessageIds.delete(id)
     }
     return false
+  }
+
+  /** Greet a chat when the bot is added, so a new group immediately knows how to start. */
+  private async onBotAdded(chatId: string): Promise<void> {
+    console.log(`[in] bot added to ${chatId}`)
+    await this.reply(chatId, null, WELCOME)
   }
 
   /** Send a reply to a chat, with a compact outbound log. */
@@ -129,7 +138,7 @@ export class Gateway {
     console.log(`[out] ${summary.sessionName || summary.sessionFile} -> ${targets.map(t => t.chatId).join(',')} (${text.length} chars)`)
     for (const binding of targets) {
       for (const chunk of chunkText(text)) {
-        await this.transport.sendText(binding.chatId, binding.threadId, chunk)
+        await this.transport.sendText(binding.chatId, binding.threadId, chunk, binding.replyMessageId)
       }
     }
   }
@@ -151,6 +160,7 @@ export class Gateway {
       const reply = await handleCommand(text, {
         chatId: message.chatId,
         threadId: message.threadId,
+        messageId: message.messageId,
         catalog: this.catalog,
         mapping: this.mapping,
         dashboard: this.dashboard,
@@ -180,3 +190,15 @@ export class Gateway {
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
+
+const WELCOME = [
+  '👋 pi-dashboard 已接入本会话。',
+  '',
+  '可用命令：',
+  '  /list              列出所有会话',
+  '  /bind <序号或名称>   绑定一个会话',
+  '  /status            查看当前绑定',
+  '  /unbind            解除绑定',
+  '',
+  '绑定后直接发消息，即可进入该会话。',
+].join('\n')
