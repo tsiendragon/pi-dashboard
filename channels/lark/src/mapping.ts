@@ -4,8 +4,10 @@ import path from 'node:path'
 export interface Binding {
   platform: string
   chatId: string
-  /** Topic/thread id for future topic-group mode; null in one-chat-one-session mode. */
+  /** Topic/thread id (topic-groups); null in one-chat-one-session mode. */
   threadId: string | null
+  /** Anchor message id for topic-groups: replies are posted into this thread. */
+  replyMessageId?: string
   /** Stable session identity (never processInstanceId). */
   sessionFile: string
   sessionName?: string
@@ -54,11 +56,18 @@ export class Mapping {
     await rename(tmp, this.filePath)
   }
 
-  async bind(chatId: string, sessionFile: string, sessionName?: string, threadId: string | null = null): Promise<Binding> {
+  async bind(
+    chatId: string,
+    sessionFile: string,
+    sessionName?: string,
+    threadId: string | null = null,
+    replyMessageId?: string,
+  ): Promise<Binding> {
     const binding: Binding = {
       platform: 'lark',
       chatId,
       threadId,
+      ...(replyMessageId ? { replyMessageId } : {}),
       sessionFile,
       ...(sessionName ? { sessionName } : {}),
       boundAt: new Date().toISOString(),
