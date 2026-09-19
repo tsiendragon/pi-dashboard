@@ -74,7 +74,7 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 | M2 | 渲染（事件→文本 / 分片） | ✅ 单测通过 |
 | M2.5 | dashboard「Lark」设置 tab + 存储/API + 热更新 | ✅ 已验证 |
 | M3 | Lark adapter 真实联调（私聊 + 多群多会话） | ✅ 已验证 |
-| M4 | 加固（白名单 ✅ / 去重 ⬜ / 重连 ⬜） | 🟡 进行中 |
+| M4 | 加固（白名单 / 去重 / 重连自愈） | ✅ 已完成 |
 
 ### M0–M2 验证证据
 
@@ -89,6 +89,13 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 - 长连接 `[gateway] started: transport=lark(cli_..., lark)` + `[ws] ws client ready`
 - 入站：私聊/群 `[in] <chatId> <userId>: /list` 正常；出站：`[out] <session> -> <chatId>` 正常
 - 多群多会话：两个群分别绑定 `ato-gent-analysis` / `kyc-llm`，互不干扰
+
+### M4 加固证据
+
+- **断线重连**：mock dashboard 断开 → `[dashboard] reconnecting in 1s/2s` → 恢复后 `[dashboard] ws connected`，自动重新订阅
+- **启动容错**：dashboard 未就绪时 `subscribe()` 不抛异常，后台退避重试（指数退避，上限 30s）
+- **Cookie 刷新**：票据请求遇 401/403 时自动重新认证（dashboard 重启后仍能重连）
+- **去重**：出站按 `(processInstanceId, sequence)` 单调去重；入站按 `message_id` 去重
 
 环境变量：
 
