@@ -49,6 +49,10 @@ function httpRequest(
 export class DashboardClient {
   private cookie?: string
   private ws?: WebSocket
+  private onFrame?: (frame: LiveSessionBrowserEvent) => void
+  private stopped = false
+  private reconnectAttempts = 0
+  private reconnectTimer?: NodeJS.Timeout
 
   constructor(private readonly cfg: LarkGatewayConfig) {}
 
@@ -117,32 +121,89 @@ export class DashboardClient {
     return parsed.result ?? {}
   }
 
-  /** Open the live event stream (the output port) and invoke `onEvent` per frame. */
-  async subscribe(onEvent: (frame: LiveSessionBrowserEvent) => void): Promise<WebSocket> {
-    const cookie = await this.ensureCookie()
-    const ticketRes = await httpRequest(`${this.cfg.dashboardBaseUrl}/api/live-sessions/ws-ticket`, {
-      method: 'POST',
-      headers: this.headers({ cookie, 'content-type': 'application/json' }),
-      body: '{}',
-    })
-    if (ticketRes.status !== 200) throw new Error(`ws_ticket_failed: ${ticketRes.status} ${ticketRes.body}`)
-    const ticket = (JSON.parse(ticketRes.body) as { result: { ticket: string } }).result.ticket
+  /**
+   * Open the live event stream (the output port) and invoke `onEvent` per
+   * frame. The connection is self-healing: on close it reconnects with
+   * exponential backoff, refreshing the auth cookie when the dashboard has
+   * restarted. Never throws — the dashboard may still be starting up.
+   */
+  async subscribe(onEvent: (frame: LiveSessionBrowserEvent) => void): Promise<void> {
+    this.onFrame = onEvent
+    this.stopped = false
+    await this.openSocket()
+  }
 
-    const wsUrl = `${this.cfg.dashboardBaseUrl.replace(/^http/, 'ws')}/api/live-sessions/ws?ticket=${encodeURIComponent(ticket)}`
-    const ws = new WebSocket(wsUrl, { headers: this.headers({ cookie }) })
-    ws.on('message', raw => {
-      try {
-        onEvent(JSON.parse(String(raw)) as LiveSessionBrowserEvent)
-      } catch {
-        /* ignore malformed frame */
-      }
-    })
-    this.ws = ws
-    return ws
+  private async openSocket(): Promise<void> {
+    if (this.stopped) return
+    try {
+      const cookie = await this.ensureCookie()
+      const ticket = await this.fetchTicket(cookie)
+      const wsUrl = `${this.cfg.dashboardBaseUrl.replace(/^http/, 'ws')}/api/live-sessions/ws?ticket=${encodeURIComponent(ticket)}`
+      const ws = new WebSocket(wsUrl, { headers: this.headers({ cookie }) })
+      ws.on('message', raw => {
+        try {
+          this.onFrame?.(JSON.parse(String(raw)) as LiveSessionBrowserEvent)
+        } catch {
+          /* ignore malformed frame */
+        }
+      })
+      ws.on('open', () => {
+        this.reconnectAttempts = 0
+        console.log('[dashboard] ws connected')
+      })
+      // A missing 'error' listener would throw; the following 'close' drives retry.
+      ws.on('error', () => {})
+      ws.on('close', () => {
+        if (this.ws === ws) this.ws = undefined
+        this.scheduleReconnect()
+      })
+      this.ws = ws
+    } catch (error) {
+      console.warn(`[dashboard] connect failed (${message(error)}); will retry`)
+      this.scheduleReconnect()
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.stopped || this.reconnectTimer) return
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30_000)
+    this.reconnectAttempts += 1
+    console.log(`[dashboard] reconnecting in ${Math.round(delay / 1000)}s`)
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined
+      void this.openSocket()
+    }, delay)
+  }
+
+  private async fetchTicket(cookie: string): Promise<string> {
+    const url = `${this.cfg.dashboardBaseUrl}/api/live-sessions/ws-ticket`
+    const request = (value: string) =>
+      httpRequest(url, {
+        method: 'POST',
+        headers: this.headers({ cookie: value, 'content-type': 'application/json' }),
+        body: '{}',
+      })
+    let res = await request(cookie)
+    if (res.status === 401 || res.status === 403) {
+      // Stale cookie (e.g. dashboard restarted) — re-authenticate once.
+      this.cookie = undefined
+      res = await request(await this.ensureCookie())
+    }
+    if (res.status !== 200) throw new Error(`ws_ticket_failed: ${res.status} ${res.body}`)
+    return (JSON.parse(res.body) as { result: { ticket: string } }).result.ticket
   }
 
   close(): void {
+    this.stopped = true
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = undefined
+    }
     this.ws?.close()
     this.ws = undefined
   }
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

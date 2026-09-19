@@ -36,9 +36,10 @@ export class LarkTransport implements ImTransport {
       'im.message.receive_v1': async (data: any) => {
         const chatId: string | undefined = data?.message?.chat_id
         const userId: string | undefined = data?.sender?.sender_id?.open_id || data?.sender?.sender_id?.user_id
+        const messageId: string | undefined = data?.message?.message_id
         const text = extractText(data?.message)
         if (!chatId || !text) return
-        await onMessage({ chatId, threadId: null, userId: userId || 'unknown', text })
+        await onMessage({ chatId, threadId: null, userId: userId || 'unknown', text, messageId })
       },
     })
 
