@@ -22,7 +22,8 @@
     "express-ws": "^5.0.2",
     "node-pty": "^1.1.0",
     "uuid": "^10.0.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
