@@ -282,6 +282,19 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
         role="application"
         aria-label="会话家族图谱"
       >
+        <defs>
+          {/*
+            Arrowheads: without them the edges only say “connected”, not which way the
+            conversation runs. Two variants so the arrow keeps the colour of its edge
+            (the focus branch is accent, everything else is muted).
+          */}
+          <marker id="ls-graph-arrow" viewBox="0 0 12 10" refX="12" refY="5" markerWidth="11" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M0,1 L10,5 L0,9 z" className="fill-border-strong" />
+          </marker>
+          <marker id="ls-graph-arrow-active" viewBox="0 0 12 10" refX="12" refY="5" markerWidth="11" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M0,1 L10,5 L0,9 z" className="fill-accent" />
+          </marker>
+        </defs>
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
           {/* Session group bands */}
           {graph.sessions.map(session => {
@@ -352,10 +365,11 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                 <path
                   d={d}
                   fill="none"
-                  strokeWidth={crossSession ? 2 : 1.5}
+                  strokeWidth={2}
                   strokeDasharray={crossSession ? '5 4' : undefined}
+                  markerEnd={onActivePath ? 'url(#ls-graph-arrow-active)' : 'url(#ls-graph-arrow)'}
                   className={onActivePath ? 'stroke-accent' : 'stroke-border-strong'}
-                  opacity={onActivePath ? 1 : 0.45}
+                  opacity={onActivePath ? 1 : 0.75}
                 />
                 {crossSession && (
                   <text x={labelX} y={labelY} textAnchor="middle" className="text-2xs fill-info">
@@ -387,6 +401,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
               <g
                 key={node.id}
                 data-node
+                data-node-id={node.id}
                 {...(node.expanded ? { 'data-steps': node.id } : {})}
                 tabIndex={0}
                 role="button"
@@ -575,12 +590,27 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
         >{layoutPreferenceLabel(layoutPreference, picked)}</button>
       </div>
 
-      <div className="absolute bottom-3 left-3 grid gap-1 rounded-lg border border-border bg-panel px-3 py-2 shadow-md">
+      <div className="absolute bottom-3 left-3 grid gap-1.5 rounded-lg border border-border bg-panel px-3 py-2 shadow-md">
         <div className="flex items-center gap-2 text-2xs text-muted">
-          <span className="inline-block h-0.5 w-4 bg-accent" />活动路径
+          <svg width="26" height="8" viewBox="0 0 26 8" className="shrink-0">
+            <line x1="0" y1="4" x2="16" y2="4" className="stroke-accent" strokeWidth="2" />
+            <path d="M16,0.5 L25,4 L16,7.5 z" className="fill-accent" />
+          </svg>
+          <span>当前分支的下一步</span>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
-          <span className="inline-block w-4 border-t border-dashed border-info" />fork 边（跨文件）
+          <svg width="26" height="8" viewBox="0 0 26 8" className="shrink-0">
+            <line x1="0" y1="4" x2="16" y2="4" className="stroke-border-strong" strokeWidth="2" />
+            <path d="M16,0.5 L25,4 L16,7.5 z" className="fill-border-strong" />
+          </svg>
+          <span>其他分支的下一步</span>
+        </div>
+        <div className="flex items-center gap-2 text-2xs text-muted">
+          <svg width="26" height="8" viewBox="0 0 26 8" className="shrink-0">
+            <line x1="0" y1="4" x2="16" y2="4" className="stroke-info" strokeWidth="2" strokeDasharray="3 2" />
+            <path d="M16,0.5 L25,4 L16,7.5 z" className="fill-info" />
+          </svg>
+          <span>虚线 = 从这一步 fork 出的新会话</span>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
           <span className="inline-block h-3 w-4 rounded-sm border border-border bg-card" />点 <code className="text-2xs">+N 步</code> 就地展开
