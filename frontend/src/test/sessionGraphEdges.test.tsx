@@ -135,8 +135,7 @@ describe('graph edges', () => {
     }
   })
 
-  it('routes a serpentine wrap as a downward arrow (same column)', () => {
-    // A 12-node chain on a wide canvas wraps into rows; the wrap edge must turn
+  it('routes a serpentine wrap as a downward arrow (same column)', () => {    // A 12-node chain on a wide canvas wraps into rows; the wrap edge must turn
     // downward instead of looping back across the row.
     const long = Array.from({ length: 12 }, (_, index) => node(
       `n${index}`,
@@ -153,5 +152,25 @@ describe('graph edges', () => {
       return Math.abs(bx - ax) < 1 && by > ay
     })
     expect(vertical.length).toBeGreaterThan(0)
+  })
+})
+
+describe('group band labels', () => {
+  it('draws them above the cards so an overlapping band cannot bury them', () => {
+    const { container } = renderGraph(chain)
+    const cards = [...container.querySelectorAll('[data-node-id]')]
+    const label = [...container.querySelectorAll('text')].find(text => text.textContent?.includes('· 当前'))
+    expect(cards.length).toBeGreaterThan(0)
+    expect(label).toBeTruthy()
+    // The label must come after the last card in document order (SVG has no z-index).
+    const order = [...container.querySelectorAll('*')]
+    expect(order.indexOf(label!)).toBeGreaterThan(order.indexOf(cards[cards.length - 1]))
+  })
+
+  it('haloes the label text so it stays readable over a card', () => {
+    const { container } = renderGraph(chain)
+    const label = [...container.querySelectorAll('text')].find(text => text.textContent?.includes('· 当前'))
+    expect(label?.getAttribute('paint-order')).toBe('stroke')
+    expect(label?.getAttribute('stroke')).toBe('var(--bg)')
   })
 })

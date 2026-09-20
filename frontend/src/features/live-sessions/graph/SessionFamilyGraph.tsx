@@ -17,6 +17,7 @@ import {
   sessionBounds,
   type GraphOrientation,
   type LayoutCandidate,
+  type LayoutPosition,
 } from './layout'
 
 export type GraphDetail = 'collapsed' | 'full'
@@ -150,6 +151,37 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
     return candidates.find(candidate => candidate.orientation === layoutPreference) ?? candidates[0]
   }, [layoutPreference, candidates])
   const layout = picked.layout
+  /**
+   * Cards the reader dragged themselves, in graph coordinates. The auto layout is a
+   * good default but it cannot know that two crossing edges bother one particular
+   * reader, so a card can be moved and everything else (edges, group bands, 适配)
+   * follows it. Cleared by the 重排 button or when the layout shape changes.
+   */
+  const [manualPositions, setManualPositions] = useState<Record<string, LayoutPosition>>({})
+  const positions = useMemo(() => {
+    if (!Object.keys(manualPositions).length) return layout.positions
+    const merged = new Map(layout.positions)
+    for (const [id, position] of Object.entries(manualPositions)) if (merged.has(id)) merged.set(id, position)
+    return merged
+  }, [layout.positions, manualPositions])
+  const hasManualPositions = Object.keys(manualPositions).length > 0
+  /** Bounds of what is actually drawn (dragged cards included), used by `适配`. */
+  const contentBox = useMemo(() => {
+    let width = 0
+    let height = 0
+    for (const node of graph.nodes) {
+      const position = positions.get(node.id)
+      if (!position) continue
+      width = Math.max(width, position.x + NODE_W)
+      height = Math.max(height, position.y + defaultHeightOf(node))
+    }
+    return { width, height }
+  }, [graph.nodes, positions])
+  /** Group-band rectangles + their labels, drawn in two layers so labels stay readable. */
+  const bands = useMemo(() => graph.sessions
+    .map(session => ({ session, bounds: sessionBounds(graph.nodes, positions, session.key) }))
+    .filter((band): band is { session: typeof band.session, bounds: NonNullable<typeof band.bounds> } => band.bounds !== null),
+  [graph.sessions, graph.nodes, positions])
   const activePath = useMemo(() => activePathOf(graph.nodes, graph.focusKey), [graph.nodes, graph.focusKey])
   const sessionByKey = useMemo(() => new Map(graph.sessions.map(session => [session.key, session])), [graph.sessions])
   const nodeById = useMemo(() => new Map(graph.nodes.map(node => [node.id, node])), [graph.nodes])
@@ -163,6 +195,13 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   const fittedFor = useRef<string | null>(null)
   const [view, setView] = useState<ViewState>({ x: 24, y: 20, k: 1 })
   const [dragging, setDragging] = useState(false)
+  /** Id of the card currently being dragged, for the grabbing cursor. */
+  const [draggingNode, setDraggingNode] = useState<string | null>(null)
+  /** Bumped by 重排 so the fit effect re-runs with the new (auto) positions. */
+  const [fitNonce, setFitNonce] = useState(0)
+  const nodeDragRef = useRef<{ id: string; pointerX: number; pointerY: number; originX: number; originY: number; scale: number; moved: boolean } | null>(null)
+  /** A real drag must not also count as a click on the card. */
+  const suppressClickRef = useRef(false)
   /** Per-expanded-card step-list scroll offset, in px. */
   const [scroll, setScroll] = useState<Record<string, number>>({})
 
@@ -170,17 +209,17 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
     const svg = svgRef.current
     if (!svg) return
     const rect = svg.getBoundingClientRect()
-    if (!rect.width || !rect.height || !layout.width || !layout.height) {
+    if (!rect.width || !rect.height || !contentBox.width || !contentBox.height) {
       setView({ x: 24, y: 20, k: 1 })
       return
     }
-    const scale = Math.max(MIN_FIT_ZOOM, Math.min(MAX_FIT_ZOOM, fitScale(layout, rect.width, rect.height, MAX_FIT_ZOOM)))
+    const scale = Math.max(MIN_FIT_ZOOM, Math.min(MAX_FIT_ZOOM, fitScale({ positions, width: contentBox.width, height: contentBox.height }, rect.width, rect.height, MAX_FIT_ZOOM)))
     setView({
-      x: Math.max(12, (rect.width - layout.width * scale) / 2),
-      y: Math.max(12, (rect.height - layout.height * scale) / 2),
+      x: Math.max(12, (rect.width - contentBox.width * scale) / 2),
+      y: Math.max(12, (rect.height - contentBox.height * scale) / 2),
       k: scale,
     })
-  }, [layout])
+  }, [contentBox, positions])
 
   const maxScrollOf = useCallback((node: SessionTreeNode): number => {
     const rows = node.steps?.length ?? 0
@@ -229,20 +268,56 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   // re-stamps generatedAt on each refetch, and re-fitting would fight the user's
   // pan/zoom.
   useEffect(() => {
-    const key = `${graph.focusKey}|${picked.orientation}|${picked.columns ?? ''}|${layout.width}x${layout.height}`
+    const key = `${graph.focusKey}|${picked.orientation}|${picked.columns ?? ''}|${layout.width}x${layout.height}|${fitNonce}`
     if (fittedFor.current === key) return
     fittedFor.current = key
     fit()
-  }, [graph.focusKey, picked, layout, fit])
+  }, [graph.focusKey, picked, layout, fitNonce, fit])
+
+  // A manual arrangement belongs to one shape; switching 横排/竖排/蛇形 or opening
+  // another session starts from the auto layout again.
+  useEffect(() => { setManualPositions({}) }, [graph.focusKey, picked.orientation, picked.columns])
 
   const onPointerDown = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
+    suppressClickRef.current = false
+    // Dragging a card moves THAT card; dragging the background pans the canvas.
+    const cardId = (event.target as Element).closest('[data-node-id]')?.getAttribute('data-node-id') ?? null
+    const position = cardId ? positions.get(cardId) : undefined
+    if (cardId && position) {
+      nodeDragRef.current = {
+        id: cardId,
+        pointerX: event.clientX,
+        pointerY: event.clientY,
+        originX: position.x,
+        originY: position.y,
+        scale: view.k,
+        moved: false,
+      }
+      setDraggingNode(cardId)
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+      return
+    }
     if ((event.target as Element).closest('[data-node]')) return
     dragRef.current = { pointerX: event.clientX, pointerY: event.clientY, view }
     setDragging(true)
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }, [view])
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }, [positions, view])
 
   const onPointerMove = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
+    const nodeDrag = nodeDragRef.current
+    if (nodeDrag) {
+      const dx = event.clientX - nodeDrag.pointerX
+      const dy = event.clientY - nodeDrag.pointerY
+      // A few pixels of slop so a sloppy click still selects instead of nudging.
+      if (!nodeDrag.moved && Math.abs(dx) + Math.abs(dy) < 4) return
+      nodeDrag.moved = true
+      suppressClickRef.current = true
+      setManualPositions(current => ({
+        ...current,
+        [nodeDrag.id]: { x: nodeDrag.originX + dx / nodeDrag.scale, y: nodeDrag.originY + dy / nodeDrag.scale },
+      }))
+      return
+    }
     const drag = dragRef.current
     if (!drag) return
     setView({
@@ -253,10 +328,15 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   }, [])
 
   const endDrag = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId)
+    if (nodeDragRef.current) {
+      nodeDragRef.current = null
+      setDraggingNode(null)
+      return
+    }
     if (!dragRef.current) return
     dragRef.current = null
     setDragging(false)
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }, [])
 
   const onNodeKeyDown = useCallback((event: ReactKeyboardEvent<SVGGElement>, node: SessionTreeNode) => {
@@ -273,7 +353,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
     <div className="relative h-full w-full min-h-0">
       <svg
         ref={svgRef}
-        className={`h-full w-full touch-none select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        className={`h-full w-full touch-none select-none ${dragging || draggingNode ? 'cursor-grabbing' : 'cursor-grab'}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
@@ -296,30 +376,23 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           </marker>
         </defs>
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
-          {/* Session group bands */}
-          {graph.sessions.map(session => {
-            const bounds = sessionBounds(graph.nodes, layout.positions, session.key)
-            if (!bounds) return null
+          {/* Session group bands (rects only; labels are drawn ABOVE the cards so an
+              overlapping band can no longer bury them). */}
+          {bands.map(({ session, bounds }) => {
             const current = session.key === graph.focusKey
             return (
-              <g key={`band-${session.key}`} data-band>
-                <rect
-                  x={bounds.x}
-                  y={bounds.y}
-                  width={bounds.width}
-                  height={bounds.height}
-                  rx={14}
-                  className={current ? 'fill-accent-subtle stroke-accent' : 'fill-bg-elevated stroke-border'}
-                  strokeWidth={1}
-                  opacity={current ? 1 : 0.7}
-                />
-                <text x={bounds.x + 12} y={bounds.y + 19} className={`text-2xs font-medium ${current ? 'fill-accent' : 'fill-muted'}`}>
-                  {truncate(shortKey(session.key), 24)}{current ? ' · 当前' : ''}
-                </text>
-                <text x={bounds.x + bounds.width - 12} y={bounds.y + 19} textAnchor="end" className="text-2xs fill-muted">
-                  {session.entryCount} 条{session.isLive ? ' · 运行中' : session.partial ? ' · 仅尾部' : ''}
-                </text>
-              </g>
+              <rect
+                key={`band-${session.key}`}
+                data-band
+                x={bounds.x}
+                y={bounds.y}
+                width={bounds.width}
+                height={bounds.height}
+                rx={14}
+                className={current ? 'fill-accent-subtle stroke-accent' : 'fill-bg-elevated stroke-border'}
+                strokeWidth={1}
+                opacity={current ? 1 : 0.7}
+              />
             )
           })}
 
@@ -327,8 +400,8 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           {graph.nodes.map(node => {
             if (!node.parentId) return null
             const fromNode = nodeById.get(node.parentId)
-            const from = layout.positions.get(node.parentId)
-            const to = layout.positions.get(node.id)
+            const from = positions.get(node.parentId)
+            const to = positions.get(node.id)
             if (!from || !to || !fromNode) return null
             const crossSession = fromNode.sessionKey !== node.sessionKey
             const onActivePath = activePath.has(node.id) && activePath.has(node.parentId)
@@ -382,7 +455,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
 
           {/* Nodes */}
           {graph.nodes.map(node => {
-            const position = layout.positions.get(node.id)
+            const position = positions.get(node.id)
             if (!position) return null
             const style = styleFor(node)
             const isCurrentSession = node.sessionKey === graph.focusKey
@@ -410,9 +483,14 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                   + (isFolded ? (node.expanded ? ' · 点击收起' : ' · 点击展开这段步骤') : '')
                   + (isCurrentSession ? ' · 当前会话' : ' · 点击打开该会话')
                 }
-                className="cursor-pointer outline-none"
+                className="cursor-grab outline-none"
                 opacity={onActivePath || !isCurrentSession ? 0.6 : 1}
-                onClick={() => { if (isFolded) onToggleExpand(node); else onSelect(node) }}
+                onClick={() => {
+                  // A finished drag must not also select / open the card.
+                  if (suppressClickRef.current) { suppressClickRef.current = false; return }
+                  if (isFolded) onToggleExpand(node)
+                  else onSelect(node)
+                }}
                 onKeyDown={event => onNodeKeyDown(event, node)}
               >
                 {selected && (
@@ -562,6 +640,42 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
             )
           })}
         </g>
+
+        {/* Group labels last: a label must stay readable even when another band's cards
+            overlap its rectangle, hence the opaque halo. */}
+        <g transform={`translate(${view.x},${view.y}) scale(${view.k})`} pointerEvents="none">
+          {bands.map(({ session, bounds }) => {
+            const current = session.key === graph.focusKey
+            return (
+              <g key={`band-label-${session.key}`}>
+                <text
+                  x={bounds.x + 12}
+                  y={bounds.y + 19}
+                  stroke="var(--bg)"
+                  strokeWidth={3}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  paintOrder="stroke"
+                  className={`text-2xs font-medium ${current ? 'fill-accent' : 'fill-muted'}`}
+                >
+                  {truncate(shortKey(session.key), 24)}{current ? ' · 当前' : ''}
+                </text>
+                <text
+                  x={bounds.x + bounds.width - 12}
+                  y={bounds.y + 19}
+                  textAnchor="end"
+                  stroke="var(--bg)"
+                  strokeWidth={3}
+                  strokeLinejoin="round"
+                  paintOrder="stroke"
+                  className="text-2xs fill-muted"
+                >
+                  {session.entryCount} 条{session.isLive ? ' · 运行中' : session.partial ? ' · 仅尾部' : ''}
+                </text>
+              </g>
+            )
+          })}
+        </g>
       </svg>
 
       <div className="absolute right-3 top-3 flex items-center gap-1 rounded-lg border border-border bg-panel px-1 py-1 shadow-md">
@@ -588,6 +702,13 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           className="h-7 cursor-pointer rounded border-none bg-transparent px-2 text-2xs text-muted transition-colors hover:bg-bg-hover hover:text-text"
           title="布局形状：自动会逐一给 横排 / 竖排 / 蛇形×N 打分（能否把卡片渲染得更大），选最优；蛇形把长链折成多行"
         >{layoutPreferenceLabel(layoutPreference, picked)}</button>
+        {hasManualPositions && (
+          <button
+            onClick={() => { setManualPositions({}); setFitNonce(nonce => nonce + 1) }}
+            className="h-7 cursor-pointer rounded border-none bg-accent-subtle px-2 text-2xs text-accent transition-colors hover:bg-bg-hover"
+            title={`恢复自动布局（已有 ${Object.keys(manualPositions).length} 张卡片被手动移动）`}
+          >重排</button>
+        )}
       </div>
 
       <div className="absolute bottom-3 left-3 grid gap-1.5 rounded-lg border border-border bg-panel px-3 py-2 shadow-md">
@@ -613,7 +734,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           <span>虚线 = 从这一步 fork 出的新会话</span>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
-          <span className="inline-block h-3 w-4 rounded-sm border border-border bg-card" />点 <code className="text-2xs">+N 步</code> 就地展开
+          <span className="inline-block h-3 w-4 rounded-sm border border-border bg-card" />拖动卡片自定位置，拖动背景平移画布
           {expandedCount ? `（已展开 ${expandedCount}）` : ''}
         </div>
       </div>
