@@ -11,6 +11,8 @@ import {
   activePathOf,
   defaultHeightOf,
   fitScale,
+  GAP_Y,
+  GAP_Y_BADGED,
   layoutCandidates,
   pickBestLayout,
   MAX_FIT_ZOOM,
@@ -52,6 +54,18 @@ function useElementSize<T extends Element>(ref: React.RefObject<T | null>): { wi
     return () => observer.disconnect()
   }, [ref])
   return size
+}
+
+/** Rough text width at the 10px `text-2xs` size, used to avoid overlaps. */
+export function estimateTextWidth(text: string): number {
+  let width = 0
+  for (const char of text) width += /[\u1100-\u9fff\uff00-\uffef]/.test(char) ? 10 : 6
+  return width
+}
+
+/** How many half-width chars fit in `width` px. */
+function fitChars(width: number): number {
+  return Math.max(4, Math.floor(width / 6))
 }
 
 /**
@@ -140,9 +154,11 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   const settledSize = useSettledSize(containerSize)
   const canvasWidth = settledSize.width || 1200
   const canvasHeight = settledSize.height || 720
+  /** Badges sit on edges, so the rows need clearance for them. */
+  const rowGap = edgeBadges && Object.keys(edgeBadges).length ? GAP_Y_BADGED : GAP_Y
   const candidates = useMemo(
-    () => layoutCandidates(graph.nodes, defaultHeightOf, canvasWidth, canvasHeight),
-    [graph.nodes, canvasWidth, canvasHeight],
+    () => layoutCandidates(graph.nodes, defaultHeightOf, canvasWidth, canvasHeight, undefined, rowGap),
+    [graph.nodes, canvasWidth, canvasHeight, rowGap],
   )
   /** Manual override; `auto` keeps whichever candidate fills this canvas best. */
   const [layoutPreference, setLayoutPreference] = useState<LayoutPreference>('auto')
@@ -359,7 +375,6 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   }, [onSelect, onToggleExpand])
 
   const focusSession = sessionByKey.get(graph.focusKey)
-  const expandedCount = graph.nodes.filter(node => node.expanded).length
 
   return (
     <div className="relative h-full w-full min-h-0">
@@ -463,26 +478,32 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                 )}
                 {/* 骨架 view: say how many steps the edge jumps over, and let a click
                     reveal them. */}
-                {edgeBadges?.[node.id] ? (
-                  <g
-                    data-badge
-                    className={onShowMiddle ? 'cursor-pointer' : undefined}
-                    onClick={event => { event.stopPropagation(); onShowMiddle?.() }}
-                  >
-                    <rect
-                      x={labelX - 38}
-                      y={labelY - 11}
-                      width={76}
-                      height={17}
-                      rx={8.5}
-                      className="fill-bg-elevated stroke-border"
-                      strokeWidth={1}
-                    />
-                    <text x={labelX} y={labelY + 1.5} textAnchor="middle" className="text-2xs fill-muted">
-                      +{edgeBadges[node.id]} 步{onShowMiddle ? ' · 展开' : ''}
-                    </text>
-                  </g>
-                ) : null}
+                {edgeBadges?.[node.id] ? (() => {
+                  const text = `+${edgeBadges[node.id]} 步`
+                  // Size the pill to its text so it fits a 76px column gutter instead of
+                  // covering the cards on either side of a short edge.
+                  const badgeWidth = estimateTextWidth(text) + 14
+                  return (
+                    <g
+                      data-badge
+                      className={onShowMiddle ? 'cursor-pointer' : undefined}
+                      onClick={event => { event.stopPropagation(); onShowMiddle?.() }}
+                    >
+                      <rect
+                        x={labelX - badgeWidth / 2}
+                        y={labelY - 9}
+                        width={badgeWidth}
+                        height={16}
+                        rx={8}
+                        className="fill-bg-elevated stroke-border"
+                        strokeWidth={1}
+                      />
+                      <text x={labelX} y={labelY + 3} textAnchor="middle" className="text-2xs fill-muted">
+                        {text}
+                      </text>
+                    </g>
+                  )
+                })() : null}
               </g>
             )
           })}
@@ -537,7 +558,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                     fill="none"
                     strokeDasharray="4 3"
                     className="stroke-accent"
-                    strokeWidth={1.5}
+                    strokeWidth={2}
                   />
                 )}
                 <rect
@@ -676,10 +697,16 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
         </g>
 
         {/* Group labels last: a label must stay readable even when another band's cards
-            overlap its rectangle, hence the opaque halo. */}
+            overlap its rectangle, hence the opaque halo. The name is truncated to the
+            room left by the count on the right, so the two never collide. */}
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`} pointerEvents="none">
           {bands.map(({ session, bounds }) => {
             const current = session.key === graph.focusKey
+            const countText = `${session.entryCount} 条${session.isLive ? ' · 运行中' : session.partial ? ' · 仅尾部' : ''}`
+            const suffix = current ? ' · 当前' : ''
+            // 12px of padding each side, 12px between the texts, plus 8px of slack so
+            // a slightly wider real font still cannot collide.
+            const roomForName = bounds.width - 24 - estimateTextWidth(countText) - 12 - estimateTextWidth(suffix) - 8
             return (
               <g key={`band-label-${session.key}`}>
                 <text
@@ -692,7 +719,8 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                   paintOrder="stroke"
                   className={`text-2xs font-medium ${current ? 'fill-accent' : 'fill-muted'}`}
                 >
-                  {truncate(shortKey(session.key), 24)}{current ? ' · 当前' : ''}
+                  {truncate(shortKey(session.key), fitChars(roomForName))}{suffix}
+                  <title>{session.key}</title>
                 </text>
                 <text
                   x={bounds.x + bounds.width - 12}
@@ -704,7 +732,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                   paintOrder="stroke"
                   className="text-2xs fill-muted"
                 >
-                  {session.entryCount} 条{session.isLive ? ' · 运行中' : session.partial ? ' · 仅尾部' : ''}
+                  {countText}
                 </text>
               </g>
             )
@@ -745,43 +773,35 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
         )}
       </div>
 
-      <div className="absolute bottom-3 left-3 grid gap-1.5 rounded-lg border border-border bg-panel px-3 py-2 shadow-md">
+      <div className="absolute bottom-3 left-3 grid max-w-[19rem] gap-1 rounded-lg border border-border bg-panel px-2.5 py-2 shadow-md">
         <div className="flex items-center gap-2 text-2xs text-muted">
           <svg width="26" height="8" viewBox="0 0 26 8" className="shrink-0">
-            <line x1="0" y1="4" x2="16" y2="4" className="stroke-accent" strokeWidth="2" />
-            <path d="M16,0.5 L25,4 L16,7.5 z" className="fill-accent" />
+            <line x1="0" y1="4" x2="15" y2="4" className="stroke-accent" strokeWidth="2" />
+            <path d="M15,0.5 L24,4 L15,7.5 z" className="fill-accent" />
+            <line x1="0" y1="4" x2="15" y2="4" className="stroke-border-strong" strokeWidth="2" />
+            <path d="M15,0.5 L24,4 L15,7.5 z" className="fill-border-strong" />
           </svg>
-          <span>当前分支的下一步</span>
+          <span>箭头 = 下一步（蓝 = 当前分支）</span>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
           <svg width="26" height="8" viewBox="0 0 26 8" className="shrink-0">
-            <line x1="0" y1="4" x2="16" y2="4" className="stroke-border-strong" strokeWidth="2" />
-            <path d="M16,0.5 L25,4 L16,7.5 z" className="fill-border-strong" />
-          </svg>
-          <span>其他分支的下一步</span>
-        </div>
-        <div className="flex items-center gap-2 text-2xs text-muted">
-          <svg width="26" height="8" viewBox="0 0 26 8" className="shrink-0">
-            <line x1="0" y1="4" x2="16" y2="4" className="stroke-info" strokeWidth="2" strokeDasharray="3 2" />
-            <path d="M16,0.5 L25,4 L16,7.5 z" className="fill-info" />
+            <line x1="0" y1="4" x2="15" y2="4" className="stroke-info" strokeWidth="2" strokeDasharray="3 2" />
+            <path d="M15,0.5 L24,4 L15,7.5 z" className="fill-info" />
           </svg>
           <span>虚线 = 从这一步 fork 出的新会话</span>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
           <svg width="26" height="16" viewBox="0 0 26 16" className="shrink-0">
             <rect x="2" y="2" width="22" height="12" rx="3" fill="none" strokeDasharray="4 3" className="stroke-accent" strokeWidth="1.5" />
+            <rect x="1" y="1" width="24" height="14" rx="4" className="fill-accent-subtle stroke-accent" strokeWidth="1" opacity="0" />
           </svg>
-          <span>虚线框 = 已选中（右侧面板与写操作的目标）</span>
+          <span>虚线框 = 已选中；大圆角底色 = 同一会话文件</span>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
           <svg width="26" height="16" viewBox="0 0 26 16" className="shrink-0">
-            <rect x="1" y="1" width="24" height="14" rx="4" className="fill-accent-subtle stroke-accent" strokeWidth="1" />
+            <rect x="6" y="4" width="14" height="9" rx="4.5" className="fill-bg-elevated stroke-border" strokeWidth="1" />
           </svg>
-          <span>大圆角底色 = 同一个会话文件（分组带）</span>
-        </div>
-        <div className="flex items-center gap-2 text-2xs text-muted">
-          <span className="inline-block h-3 w-4 rounded-sm border border-border bg-card" />拖动卡片自定位置，拖动背景平移画布
-          {expandedCount ? `（已展开 ${expandedCount}）` : ''}
+          <span>点 <code className="text-2xs">+N 步</code> 展开中间步骤；拖卡片自定位置</span>
         </div>
       </div>
     </div>
