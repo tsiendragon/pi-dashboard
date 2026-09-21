@@ -22,6 +22,29 @@ const STEP_BATCH = 400
 /** Mirrors the server's `SESSION_TREE_STEPS_MAX`. */
 const STEP_LIMIT_MAX = 3000
 
+/**
+ * What to do when the pi process we are watching reports a different session file.
+ *
+ * `/ls-fork` keeps the SAME pi process and gives it a NEW session file, so a fork is
+ * only observable as a changed `sessionFile`. After a fork the reader wants to be in
+ * the new branch's agent page at the entry they forked at; a plain session swap
+ * (terminal `/tree` + `resume`) should instead keep the graph and just follow.
+ */
+export function followSessionFile(
+  processInstanceId: string,
+  nextFile: string,
+  forkEntryId: string | null,
+): { kind: 'navigate'; to: string } | { kind: 'follow'; file: string } {
+  if (forkEntryId) {
+    // The fork copies the prefix with the same entry ids, so `?node=` still matches.
+    return {
+      kind: 'navigate',
+      to: `/live-sessions/${encodeURIComponent(processInstanceId)}?node=${encodeURIComponent(forkEntryId)}`,
+    }
+  }
+  return { kind: 'follow', file: nextFile }
+}
+
 export default function SessionGraphPage() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
@@ -63,6 +86,12 @@ export default function SessionGraphPage() {
   // goes stale: the graph would neither refresh nor keep its write actions. Follow
   // the process we were watching to whatever session file it now reports.
   const followedProcess = useRef<string | null>(null)
+  /**
+   * Entry id the user forked at, while waiting for the snapshot that swaps the
+   * session file. `/ls-fork` creates a NEW session file for the SAME pi process, so
+   * the fork is only observable as a changed `sessionFile` on that process.
+   */
+  const pendingForkRef = useRef<string | null>(null)
   useEffect(() => {
     if (!file) { followedProcess.current = null; return }
     const owner = Object.values(state.sessions).find(session => session.sessionFile === file)
@@ -73,9 +102,17 @@ export default function SessionGraphPage() {
     if (!processInstanceId) return
     const nextFile = state.sessions[processInstanceId]?.sessionFile
     if (!nextFile || nextFile === file) return
-    setParams({ file: nextFile })
-    setToast(`已跟随到新会话：${nextFile.split('/').pop() ?? nextFile}`)
-  }, [state.sessions, file, setParams])
+    const forkEntryId = pendingForkRef.current
+    pendingForkRef.current = null
+    const plan = followSessionFile(processInstanceId, nextFile, forkEntryId)
+    if (plan.kind === 'navigate') {
+      setToast(null)
+      navigate(plan.to)
+      return
+    }
+    setParams({ file: plan.file })
+    setToast(`已跟随到新会话：${plan.file.split('/').pop() ?? plan.file}`)
+  }, [state.sessions, file, setParams, navigate])
 
   // In-place expansions belong to one session file: drop them when the focus moves.
   useEffect(() => { setExpandedRuns([]); setStepLimit(STEP_BATCH) }, [file])
@@ -167,6 +204,7 @@ export default function SessionGraphPage() {
   }, [graph, runCommand])
 
   const handleFork = useCallback((node: SessionTreeNode) => {
+    pendingForkRef.current = node.id
     void runCommand(`/ls-fork ${node.id}`, `已从 ${node.id} 分叉`, undefined)
   }, [runCommand])
 
