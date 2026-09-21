@@ -222,8 +222,20 @@ const liveSessionsSlice = createSlice({
     liveSessionSnapshot(state, action: PayloadAction<LiveSessionDetail>) {
       const incoming = action.payload
       const current = state.details[incoming.summary.processInstanceId]
-      if (current && incoming.summary.revision <= current.summary.revision) return
-      if (!upsertSummary(state, incoming.summary)) return
+      // A snapshot is fresh when it carries a newer revision OR a newer event
+      // sequence. The eventSequence half matters for recovery: `revision` only
+      // advances when the session pushes a snapshot (connect / fork / tree ops /
+      // resync), so a browser resync fetch usually returns the same revision as
+      // the copy we already hold. Gating on revision alone discarded exactly the
+      // payload needed to heal missed events and froze the transcript until a
+      // full page reload.
+      const fresh = !current
+        || incoming.summary.revision > current.summary.revision
+        || incoming.summary.eventSequence > current.summary.eventSequence
+      if (!fresh) return
+      // Replacing the detail also drops any stale `needsResync` flag: the
+      // snapshot now covers every event the flag was set for.
+      state.sessions[incoming.summary.processInstanceId] = { ...incoming.summary, claim: { ...incoming.summary.claim } }
       state.details[incoming.summary.processInstanceId] = {
         summary: { ...incoming.summary, claim: { ...incoming.summary.claim } },
         entries: normalizeEntries(incoming.summary, incoming.entries),
@@ -345,10 +357,6 @@ const liveSessionsSlice = createSlice({
         && (entry as Record<string, unknown>).dashboardLocalId === action.payload.localId)
       if (index >= 0) detail.entries.splice(index, 1)
     },
-    liveSessionResynced(state, action: PayloadAction<string>) {
-      const detail = state.details[action.payload]
-      if (detail) detail.needsResync = false
-    },
     uiAnswered(state, action: PayloadAction<{ processInstanceId: string; id: string }>) {
       const bucket = state.pendingUi[action.payload.processInstanceId]
       if (bucket) delete bucket[action.payload.id]
@@ -374,7 +382,7 @@ export const {
   sessionsLoaded, liveSessionAttached, liveSessionSnapshot, liveSessionEvent,
   liveSessionClaimChanged, liveSessionReconnecting, liveSessionDetached,
   liveSessionOwned, liveSessionReleased, liveSessionUserMessageAdded,
-  liveSessionUserMessageRemoved, liveSessionResynced, selectLiveSession, clearLiveSessions, uiAnswered,
+  liveSessionUserMessageRemoved, selectLiveSession, clearLiveSessions, uiAnswered,
   dismissSessionNotifications,
 } = liveSessionsSlice.actions
 
