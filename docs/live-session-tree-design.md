@@ -978,3 +978,31 @@ fill  = (内容宽 × scale) × (内容高 × scale) / 可用面积
 - **镇标尺寸**：`+1673 步` 的 pill 宽 < 76px（能落在列间隙里）。
 - **行间距**：带镇标时两行卡片的 y 距离 ≥ 20px 变大。
 - **不重叠不变量**：名字宽 + 条数宽 + 36px 内边距 ≤ 带子宽（并且窄带子的名字比宽带子短）。写这条时踩了个坑：`textContent` 会把 `<title>` 提示也算进去，所以只能取 **文本节点**。
+
+---
+
+## 25. 分叉到底做了什么（v7.0）
+
+### 25.1 pi 的语义
+
+`ExtensionCommandContext.fork` 的官方注释是 “Fork from a specific entry, **creating a new session file**”：
+
+| 会 / 不会 | 说明 |
+|---|---|
+| ✅ 新建**会话文件**（新分支） | 事件 `session_start.reason = "fork"`，带 `previousSessionFile` |
+| ✅ 复制本会话到该 entry 的**前缀** | 实测：子的 2117 条里**前 1675 条与父同 id 逐字相同**，之后开始分岔 |
+| ✅ 同一个进程**切到**新会话 | Dashboard 里 `processInstanceId` 不变，`sessionFile` / `sessionId` 变 |
+| ❌ **不新起 pi 进程** | 所以不会多出一个 live session |
+
+### 25.2 图谱侧的行为
+
+分叉后 pi **没有** post-fork 事件，所以桥在 `ctx.fork` 返回后主动 `markChanged() + sendSnapshot() + publish(session_tree)`。
+
+前端旧行为：只把图谱 URL 的 `file` 换成新文件 + 一个 toast（停在图谱页，要自己点「打开会话」）。
+
+新行为（`followSessionFile`）：
+
+- 是**分叉**触发的换文件 → `navigate('/live-sessions/<pid>?node=<分叉 entry id>')`，即**直接进入新分支的 agent 页面并定位到分叉那一步**（`LiveSessionPage` 本就读 `?node=` 并显示「已定位到节点 X / 切到此处」）。
+- 是**普通换会话**（终端 `/tree` + resume）→ 仍然只跟随文件，留在图谱页。
+
+因为前缀同 id，`?node=` 在新会话里仍能匹配（上面实测的那个 1675 条就是证据）。
