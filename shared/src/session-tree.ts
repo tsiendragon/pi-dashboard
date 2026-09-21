@@ -61,20 +61,30 @@ export interface SessionTreeNode {
   timestamp?: string
   /** Tool names invoked by an assistant message, when any. */
   tools?: string[]
+  /**
+   * Assistant's answer on a synthetic turn step (see `turnSteps`): `preview` holds the
+   * user's request, this holds the reply so the detail panel can show both.
+   */
+  reply?: string
+  /**
+   * How many raw records a step stands for. A turn step is one card, but the agent may
+   * have written dozens of records (thinking / tool calls / telemetry) inside it.
+   */
+  coveredCount?: number
   childCount: number
   isLeaf: boolean
   /** True for the focus file's active leaf (`leafId`). */
   isHead: boolean
-  /** `kind === 'collapsed'` only: how many entries were folded in. */
+  /** `kind === 'collapsed'` only: how many **agent turns** were folded in (not records). */
   collapsedCount?: number
   /** `kind === 'collapsed'` only: the folded entry-id range, for a later expansion pass. */
   collapsedRange?: { from: string; to: string }
   /** `kind === 'collapsed'` only: the run was expanded in place (`?expand=`), see `steps`. */
   expanded?: boolean
   /**
-   * `kind === 'collapsed'` only: the real entries of the run, in order, so the UI
-   * can list them inside the expanded card. They are carried as nested data and
-   * are NOT part of the graph layout (that is what keeps the canvas readable).
+   * `kind === 'collapsed'` only: the run's steps, one per **agent turn**, so the UI can
+   * list them inside the expanded card. They are carried as nested data and are NOT
+   * part of the graph layout (that is what keeps the canvas readable).
    */
   steps?: SessionTreeNode[]
   /** True when `steps` was cut short of the run's real size (`collapsedCount` is the truth). */

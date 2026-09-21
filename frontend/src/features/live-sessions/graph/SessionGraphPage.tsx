@@ -56,9 +56,9 @@ export default function SessionGraphPage() {
   const file = params.get('file')
   const nodeParam = params.get('node')
   // `collapsed` (default) folds linear runs so a conversation reads as
-  // start → +N 步 → end; `full` returns every entry for step-level inspection.
+  // start → +N 轮 → end; `full` returns every entry for record-level inspection.
   const [nodeView, setNodeView] = useState<GraphNodeView>('ends')
-  /** Only 全部步骤 needs the server to return every entry. */
+  /** Only 逐条记录 needs the server to return every entry. */
   const detail: GraphDetail = nodeView === 'full' ? 'full' : 'collapsed'
   /** Folded runs expanded in place (their steps render inside the card). */
   const [expandedRuns, setExpandedRuns] = useState<string[]>([])
@@ -67,7 +67,7 @@ export default function SessionGraphPage() {
   const { graph: fullGraph, loading, error, refresh: reload } = useSessionTree(file, detail, expandedRuns, stepLimit)
   /**
    * 骨架视图：只留结构点（起点、各会话首节点、分叉点、当前点、标注），中间步骤的
-   * 数量标在边上（`+N 步`）。没有分叉的会话因此只剩“起点 → 现在”两张卡片。
+   * 数量标在边上（`+N 轮`）。没有分叉的会话因此只剩“起点 → 现在”两张卡片。
    */
   const view = useMemo(
     () => (fullGraph ? applyNodeView(fullGraph.nodes, fullGraph.sessions, nodeView) : null),
@@ -171,10 +171,18 @@ export default function SessionGraphPage() {
     return () => clearTimeout(timer)
   }, [toast])
 
-  const selectedNode = useMemo(
-    () => graph?.nodes.find(node => node.id === selectedId) ?? null,
-    [graph, selectedId],
-  )
+  const selectedNode = useMemo(() => {
+    if (!graph || !selectedId) return null
+    const direct = graph.nodes.find(node => node.id === selectedId)
+    if (direct) return direct
+    // A step row inside an expanded run is not a top-level node, but selecting it must
+    // still fill the panel (and enable 切到此处 / 从此分叉 on that exact entry).
+    for (const node of graph.nodes) {
+      const step = node.steps?.find(candidate => candidate.id === selectedId)
+      if (step) return step
+    }
+    return null
+  }, [graph, selectedId])
   // Synthetic ids from folded linear runs (`run:<headId>`) are display-only: they
   // are not real entry ids, so they must never reach `/ls-navigate`.
   const actionableNodeId = selectedId && !selectedId.startsWith('run:') ? selectedId : null
@@ -277,7 +285,7 @@ export default function SessionGraphPage() {
           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-2xs text-muted">
             <span className="font-mono">{baseName(file)}</span>
             {graph ? <span>{graph.sessions.length} 会话 · {graph.nodes.length} 节点</span> : null}
-            {view && view.hiddenSteps > 0 ? <span>中间 {view.hiddenSteps} 步已折叠在边上</span> : null}
+            {view && view.hiddenSteps > 0 ? <span>中间 {view.hiddenSteps} 轮已折叠在边上</span> : null}
             {live
               ? <span className={live.status === 'running' ? 'text-accent' : 'text-ok'}>{live.status === 'running' ? '工作中' : '空闲'}</span>
               : <span className="text-warn">未运行</span>}
@@ -293,9 +301,9 @@ export default function SessionGraphPage() {
             }}
             className={`rounded border px-2.5 py-1 text-2xs transition-colors ${nodeView === 'full' ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-card text-muted hover:border-accent'}`}
             title={
-              nodeView === 'ends' ? '骨架：只显示起点/分叉点/当前，中间步数标在边上（默认）'
+              nodeView === 'ends' ? '骨架：只显示起点/分叉点/当前，中间轮数标在边上（默认）'
                 : nodeView === 'key' ? '关键节点：折叠段、总结与标注都画出来'
-                  : '显示每一条步骤（大会话会很慢）'
+                  : '显示每一条原始记录（thinking/工具调用都在，大会话会很慢）'
             }
           >◈ {graphNodeViewLabel(nodeView)}</button>
           <button

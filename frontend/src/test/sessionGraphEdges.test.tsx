@@ -254,7 +254,7 @@ describe('edge badges', () => {
   it('sizes the pill to its text so it fits between two cards', () => {
     const { container } = renderWithBadges({ head: 1673 })
     const badge = container.querySelector('[data-badge]')
-    expect(badge?.textContent).toBe('+1673 步')
+    expect(badge?.textContent).toBe('+1673 轮')
     const width = Number(badge?.querySelector('rect')?.getAttribute('width'))
     // Fits the 76px column gutter with room to spare.
     expect(width).toBeLessThan(76)

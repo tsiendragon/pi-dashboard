@@ -4,16 +4,16 @@ import type { SessionTreeNode, SessionTreeSessionEntry } from '@shared/session-t
  * How much of a family the reader wants to see.
  *
  * - `ends` 骨架：只留结构点（起点、各会话首节点、分叉点/fork 锚点、当前点、标注），
- *          中间被折叠的步数标在边上
+ *          中间被折叠的轮数标在边上
  * - `key`  关键节点（折叠段 / 总结 / 标注都画出来）
- * - `full` 每一个 entry
+ * - `full` 每一条原始记录（thinking/工具调用都在）
  */
 export type GraphNodeView = 'ends' | 'key' | 'full'
 
 export const GRAPH_NODE_VIEW_CYCLE: GraphNodeView[] = ['ends', 'key', 'full']
 
 export function graphNodeViewLabel(view: GraphNodeView): string {
-  return view === 'ends' ? '骨架' : view === 'key' ? '关键节点' : '全部步骤'
+  return view === 'ends' ? '骨架' : view === 'key' ? '关键节点' : '逐条记录'
 }
 
 /** A single file with no branching — the common (97%) shape. */
@@ -29,7 +29,7 @@ function stepsOf(node: SessionTreeNode): number {
 
 export interface EndpointView {
   nodes: SessionTreeNode[]
-  /** Steps hidden on the edge into a node, keyed by that node's id (`+N 步` badge). */
+  /** Turns/records hidden on the edge into a node, keyed by that node's id (`+N 轮`). */
   badges: Record<string, number>
   /** Total hidden steps, for the header hint. */
   hiddenSteps: number

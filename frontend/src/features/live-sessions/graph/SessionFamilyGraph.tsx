@@ -102,7 +102,7 @@ const ROLE_STYLES: Record<string, RoleStyle> = {
   compaction: { fill: 'fill-ok', label: 'Compaction', icon: '📦' },
   branchSummary: { fill: 'fill-clarify', label: 'Branch summary', icon: '📋' },
   custom: { fill: 'fill-muted', label: 'Custom', icon: '✦' },
-  collapsed: { fill: 'fill-border-strong', label: '已折叠的步骤', icon: '⋯' },
+  collapsed: { fill: 'fill-border-strong', label: '已折叠的对话', icon: '⋯' },
 }
 
 function styleFor(node: SessionTreeNode): RoleStyle {
@@ -143,7 +143,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   onToggleExpand: (node: SessionTreeNode) => void
   /** Raise the per-run step window (`?steps=`) so a truncated run loads its next batch. */
   onLoadMore: (node: SessionTreeNode) => void
-  /** `+N 步` badges on edges, keyed by the child node id (see `reduceToStructure`). */
+  /** `+N 轮` badges on edges, keyed by the child node id (`reduceToStructure`). */
   edgeBadges?: Record<string, number>
   /** Clicking such a badge reveals what is hidden (switches back to 关键节点). */
   onShowMiddle?: () => void
@@ -479,7 +479,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                 {/* 骨架 view: say how many steps the edge jumps over, and let a click
                     reveal them. */}
                 {edgeBadges?.[node.id] ? (() => {
-                  const text = `+${edgeBadges[node.id]} 步`
+                  const text = `+${edgeBadges[node.id]} 轮`
                   // Size the pill to its text so it fits a 76px column gutter instead of
                   // covering the cards on either side of a short edge.
                   const badgeWidth = estimateTextWidth(text) + 14
@@ -535,7 +535,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                 role="button"
                 aria-label={
                   `${style.label} · ${truncate(title, 40)}`
-                  + (isFolded ? (node.expanded ? ' · 点击收起' : ' · 点击展开这段步骤') : '')
+                  + (isFolded ? (node.expanded ? ' · 点击收起' : ' · 点击展开这几轮对话') : '')
                   + (isCurrentSession ? ' · 当前会话' : ' · 点击打开该会话')
                 }
                 className="cursor-grab outline-none"
@@ -597,7 +597,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                 {isFolded && node.expanded ? (
                   <g>
                     <text x={x + 13} y={y + 52} className="text-2xs fill-muted">
-                      {steps.length}/{node.collapsedCount} 步{node.stepsTruncated ? '' : ' · 全部加载'}（卡内滚动，点某一行可选中）
+                      {steps.length}/{node.collapsedCount} 轮{node.stepsTruncated ? '' : ' · 全部加载'}（卡内滚动，点某一行可选中）
                     </text>
                     <clipPath id={cssId(node.id)}>
                       <rect x={x + 1} y={y + EXPANDED_VIEWPORT_TOP} width={NODE_W - 2} height={EXPANDED_VIEWPORT_H} rx={6} />
@@ -624,7 +624,8 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                               <rect x={x + 6} y={rowY} width={2} height={STEP_ROW_H - 3} rx={1} className={stepStyle.fill} />
                               <text x={x + 14} y={rowY + 15} className="text-2xs fill-muted">{index + 1}</text>
                               <text x={x + 32} y={rowY + 15} className="text-2xs fill-text">
-                                {truncate(`${step.title}${step.preview ? ` · ${step.preview}` : ''}`, 30)}
+                                {truncate(`${step.title}${step.preview ? ` · ${step.preview}` : ''}`, step.coveredCount && step.coveredCount > 1 ? 22 : 30)}
+                                {step.coveredCount && step.coveredCount > 1 ? ` (${step.coveredCount} 条)` : ''}
                               </text>
                             </g>
                           )
@@ -663,7 +664,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                           textAnchor="middle"
                           className="text-2xs fill-accent"
                         >
-                          已加载 {steps.length}/{node.collapsedCount} 步 · 加载更多
+                          已加载 {steps.length}/{node.collapsedCount} 轮 · 加载更多
                         </text>
                       </g>
                     ) : (
@@ -673,7 +674,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                         textAnchor="middle"
                         className="text-2xs fill-muted"
                       >
-                        已加载全部 {steps.length} 步
+                        已加载全部 {steps.length} 轮
                       </text>
                     )}
                   </g>
@@ -801,7 +802,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           <svg width="26" height="16" viewBox="0 0 26 16" className="shrink-0">
             <rect x="6" y="4" width="14" height="9" rx="4.5" className="fill-bg-elevated stroke-border" strokeWidth="1" />
           </svg>
-          <span>点 <code className="text-2xs">+N 步</code> 展开中间步骤；拖卡片自定位置</span>
+          <span>点 <code className="text-2xs">+N 轮</code> 展开中间对话（1 轮 = 一问一答）；拖卡片自定位置</span>
         </div>
       </div>
     </div>

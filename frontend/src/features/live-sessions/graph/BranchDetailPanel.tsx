@@ -73,8 +73,8 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
     : action.blockedReason ? null // already rendered above
     : !isFolded ? null
     : node.expanded
-      ? '已展开：直接点卡片列表里的某一步，就能对它「切到此处 / 从此分叉」。'
-      : '折叠段不是一条真实 entry，无法直接切分支/分叉。先点下面的「▶ 展开这 N 步」，再点列表里的具体某一步。'
+      ? '已展开：直接点卡片列表里的某一轮，就能对它「切到此处 / 从此分叉」。'
+      : '折叠段不是一条真实 entry，无法直接切分支/分叉。先点下面的「▶ 展开这 N 轮」，再点列表里的具体某一轮。'
   const canWrite = Boolean(action.processInstanceId) && !action.blockedReason
   const isHead = node.isHead
 
@@ -82,7 +82,7 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
     <aside className="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-l border-border bg-panel">
       <div className="flex items-center gap-2 px-4 py-3">
         <span className="text-meta">{ROLE_ICONS[node.kind === 'collapsed' ? 'collapsed' : node.role ?? 'system'] ?? '·'}</span>
-        <span className="text-body-s font-medium text-text">{node.kind === 'collapsed' ? '折叠的线性步骤' : node.role ?? 'entry'}</span>
+        <span className="text-body-s font-medium text-text">{node.kind === 'collapsed' ? '折叠的对话' : node.role ?? 'entry'}</span>
         <button
           onClick={onClose}
           className="ml-auto h-6 w-6 cursor-pointer rounded border-none bg-transparent text-meta text-muted transition-colors hover:bg-bg-hover hover:text-text"
@@ -107,8 +107,22 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
 
         {node.preview ? (
           <div>
-            <div className="text-2xs font-medium uppercase tracking-wide text-muted">预览</div>
+            <div className="text-2xs font-medium uppercase tracking-wide text-muted">{node.type === 'turn' ? '提问' : '预览'}</div>
             <div className="mt-1 whitespace-pre-wrap break-words text-meta leading-relaxed text-muted">{node.preview}</div>
+          </div>
+        ) : null}
+
+        {node.reply ? (
+          <div>
+            <div className="text-2xs font-medium uppercase tracking-wide text-muted">回复</div>
+            <div className="mt-1 whitespace-pre-wrap break-words text-meta leading-relaxed text-muted">{node.reply}</div>
+          </div>
+        ) : null}
+
+        {node.coveredCount && node.coveredCount > 1 ? (
+          <div className="rounded border border-border bg-bg-elevated px-2 py-1 text-2xs leading-relaxed text-muted">
+            这一轮含 {node.coveredCount} 条记录：思考、工具调用与遥测已并入本行。
+            {node.tools?.length ? `用到的工具：${node.tools.join('、')}。` : ''}
           </div>
         ) : null}
 
@@ -158,10 +172,10 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
               type="button"
               onClick={() => onToggleExpand(node)}
               className="h-8 cursor-pointer rounded-md border border-border bg-transparent text-body-s font-medium text-text transition-colors hover:bg-bg-hover"
-            >{node.expanded ? `▼ 收起这 ${node.collapsedCount} 步` : `▶ 展开这 ${node.collapsedCount} 步（就地，卡片内可滚）`}</button>
+            >{node.expanded ? `▼ 收起这 ${node.collapsedCount} 轮` : `▶ 展开这 ${node.collapsedCount} 轮（就地，卡片内可滚）`}</button>
             {node.expanded && node.steps?.length ? (
               <div className="text-2xs leading-relaxed text-muted">
-                已加载 {node.steps.length} / {node.collapsedCount} 步，点其中一行可直接选中/切到那一步。
+                已加载 {node.steps.length} / {node.collapsedCount} 轮，点其中一行可直接选中/切到那一轮。每轮 = 一次提问 + agent 的思考/工具调用/回复。
                 {node.stepsTruncated ? '卡片底部「加载更多」可继续加载下一批。' : ''}
               </div>
             ) : null}
@@ -208,7 +222,7 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
                 onClick={() => onNavigate(node)}
                 disabled={!canWrite || action.busy || isHead || isFolded}
                 className="h-8 cursor-pointer rounded-md border-none bg-accent text-body-s font-medium text-accent-fg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-                title={isHead ? '已经是活动叶子' : isFolded ? '折叠段不是真实 entry，先展开再点具体某一步' : '把会话的活动分支切到这个节点（原地，不新建会话）'}
+                title={isHead ? '已经是活动叶子' : isFolded ? '折叠段不是真实 entry，先展开再点具体某一轮' : '把会话的活动分支切到这个节点（原地，不新建会话）'}
               >
                 {action.busy ? '处理中…' : isHead ? '已是当前位置' : '切到此处'}
               </button>
@@ -217,8 +231,8 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
                 disabled={!canWrite || action.busy || isFolded}
                 className="h-8 cursor-pointer rounded-md border border-border bg-transparent text-body-s font-medium text-text transition-colors hover:bg-bg-hover disabled:cursor-not-allowed disabled:opacity-40"
                 title={isFolded
-                  ? '折叠段不是真实 entry，先展开再点具体某一步'
-                  : '从这一步分叉：同一个 Pi 进程会切到一个新会话文件（并复制本会话到这一步的前缀），随后自动进入新会话页面并定位到这一步'}
+                  ? '折叠段不是真实 entry，先展开再点具体某一轮'
+                  : '从这一轮分叉：同一个 Pi 进程会切到一个新会话文件（并复制本会话到这一步的前缀），随后自动进入新会话页面并定位到这一步'}
               >
                 从此分叉
               </button>
