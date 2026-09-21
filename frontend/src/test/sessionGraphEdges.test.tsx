@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import type { SessionNodeKind, SessionTreeGraph, SessionTreeNode } from '@shared/session-tree'
-import SessionFamilyGraph from '../features/live-sessions/graph/SessionFamilyGraph'
+import SessionFamilyGraph, { estimateTextWidth } from '../features/live-sessions/graph/SessionFamilyGraph'
 
 function node(id: string, parentId: string | null, overrides: Partial<SessionTreeNode> = {}): SessionTreeNode {
   return {
@@ -172,5 +172,102 @@ describe('group band labels', () => {
     const label = [...container.querySelectorAll('text')].find(text => text.textContent?.includes('· 当前'))
     expect(label?.getAttribute('paint-order')).toBe('stroke')
     expect(label?.getAttribute('stroke')).toBe('var(--bg)')
+  })
+})
+
+const LONG_KEY = '2026-09-20T05-56-41-769Z_01a0ae48-0c5a-7055-9cb7-45cd56f8c7db'
+
+describe('band label vs entry count', () => {
+  /** Session `s` is a long chain (wide band); the child is one card (narrow band). */
+  function twoBands() {
+    const nodes = chain.map(item => ({ ...item, sessionKey: LONG_KEY }))
+    nodes.push(node('childOnly', null, { sessionKey: `${LONG_KEY}_child`, isLeaf: true, isHead: true }))
+    const graph: SessionTreeGraph = {
+      focusKey: LONG_KEY,
+      sessions: [
+        { key: LONG_KEY, file: '/tmp/a.jsonl', sessionId: 'a', entryCount: 1675, leafId: 'c', isFocus: true, isLive: true },
+        { key: `${LONG_KEY}_child`, file: '/tmp/b.jsonl', sessionId: 'b', entryCount: 1986, leafId: 'x', isFocus: false, isLive: true, forkOf: LONG_KEY },
+      ],
+      nodes,
+      detail: 'collapsed',
+      truncated: false,
+      generatedAt: 0,
+    }
+    return render(
+      <SessionFamilyGraph
+        graph={graph}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onOpenSession={vi.fn()}
+        onToggleExpand={vi.fn()}
+        onLoadMore={vi.fn()}
+      />,
+    )
+  }
+
+  it('never prints a name wider than the room left by the count', () => {
+    const { container } = twoBands()
+    const bandWidths = [...container.querySelectorAll('rect[data-band]')]
+      .map(rect => Number(rect.getAttribute('width')))
+      .sort((a, b) => a - b)
+    // Text nodes only: the <title> tooltip holds the full key and would inflate this.
+    const ownText = (element: Element): string => [...element.childNodes]
+      .filter(child => child.nodeType === 3)
+      .map(child => child.textContent ?? '')
+      .join('')
+    const labelWidths = [...container.querySelectorAll('text')]
+      .map(ownText)
+      .filter(text => text.includes('01a0ae48'))
+      .map(estimateTextWidth)
+      .sort((a, b) => a - b)
+    expect(bandWidths).toHaveLength(2)
+    expect(labelWidths).toHaveLength(2)
+    // The narrow band gets the shorter name: name + count can never collide.
+    expect(labelWidths[0]).toBeLessThan(labelWidths[1])
+    for (const [index, bandWidth] of bandWidths.entries()) {
+      // 12px padding on each side + 12px between the two texts
+      expect(labelWidths[index] + estimateTextWidth('1986 条 · 运行中') + 36).toBeLessThanOrEqual(bandWidth)
+    }
+  })
+})
+
+describe('edge badges', () => {
+  const shape = [
+    node('start', null, { childCount: 1 }),
+    node('head', 'start', { isLeaf: true, isHead: true }),
+  ]
+
+  function renderWithBadges(badges?: Record<string, number>) {
+    return render(
+      <SessionFamilyGraph
+        graph={graph(shape)}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onOpenSession={vi.fn()}
+        onToggleExpand={vi.fn()}
+        onLoadMore={vi.fn()}
+        edgeBadges={badges}
+      />,
+    )
+  }
+
+  it('sizes the pill to its text so it fits between two cards', () => {
+    const { container } = renderWithBadges({ head: 1673 })
+    const badge = container.querySelector('[data-badge]')
+    expect(badge?.textContent).toBe('+1673 步')
+    const width = Number(badge?.querySelector('rect')?.getAttribute('width'))
+    // Fits the 76px column gutter with room to spare.
+    expect(width).toBeLessThan(76)
+    expect(width).toBeGreaterThan(30)
+  })
+
+  it('asks the layout for taller rows so a badge has somewhere to sit', () => {
+    const cardY = (container: HTMLElement, id: string) =>
+      Number(container.querySelector(`[data-node-id="${id}"] rect[rx="10"]`)?.getAttribute('y'))
+    const without = cardY(renderWithBadges().container, 'head')
+    const withBadge = cardY(renderWithBadges({ head: 1673 }).container, 'head')
+    // These two cards are stacked (vertical layout), so the row gap shows up as their
+    // y distance — a 12px gap leaves a 16px pill nowhere to go.
+    expect(withBadge - without).toBeGreaterThanOrEqual(20)
   })
 })
