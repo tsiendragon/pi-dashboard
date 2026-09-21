@@ -41,24 +41,43 @@ function workspaceTitle(session: LiveSessionSummary): string {
   return cwd.split('/').pop() || cwd || ''
 }
 
-function parentToolTitle(parent: LiveSessionDetail | undefined, toolCallId?: string): string {
-  if (!parent || !toolCallId) return ''
-  for (const entry of messageEntries(parent)) {
+/**
+ * Derived sidebar data (child-session titles, subagent statuses) scans every
+ * session's transcript. Caching per detail object keeps a streaming event in
+ * one session from re-scanning all the others: immer replaces only the touched
+ * detail, so untouched details keep both their object identity and their cache
+ * entry.
+ */
+const toolCallTitlesByDetail = new WeakMap<LiveSessionDetail, Map<string, string>>()
+
+function toolCallTitlesOf(detail: LiveSessionDetail): Map<string, string> {
+  let titles = toolCallTitlesByDetail.get(detail)
+  if (titles) return titles
+  titles = new Map()
+  for (const entry of messageEntries(detail)) {
     const message = messageOf(entry)
     if (!message || message.role !== 'assistant' || !Array.isArray(message.content)) continue
     for (const part of message.content) {
       const toolCall = record(part)
-      if (!toolCall || toolCall.type !== 'toolCall' || toolCall.id !== toolCallId) continue
+      if (!toolCall || toolCall.type !== 'toolCall' || typeof toolCall.id !== 'string' || titles.has(toolCall.id)) continue
+      const fallback = clipTitle(typeof toolCall.name === 'string' ? toolCall.name : '子 Agent')
       const args = record(toolCall.arguments)
-      if (!args) return clipTitle(typeof toolCall.name === 'string' ? toolCall.name : '子 Agent')
+      if (!args) { titles.set(toolCall.id, fallback); continue }
+      let title = ''
       for (const key of ['label', 'title', 'task', 'prompt', 'description']) {
         const value = typeof args[key] === 'string' ? clipTitle(args[key] as string) : ''
-        if (value) return value
+        if (value) { title = value; break }
       }
-      return clipTitle(typeof toolCall.name === 'string' ? toolCall.name : '子 Agent')
+      titles.set(toolCall.id, title || fallback)
     }
   }
-  return ''
+  toolCallTitlesByDetail.set(detail, titles)
+  return titles
+}
+
+function parentToolTitle(parent: LiveSessionDetail | undefined, toolCallId?: string): string {
+  if (!parent || !toolCallId) return ''
+  return toolCallTitlesOf(parent).get(toolCallId) ?? ''
 }
 
 export type SubagentTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'killed' | 'cancelled' | 'unknown'
@@ -70,29 +89,38 @@ function normalizeTaskStatus(value: unknown): SubagentTaskStatus | undefined {
 
 export function buildSubagentStatuses(details: Record<string, LiveSessionDetail>): Record<string, SubagentTaskStatus> {
   const statuses: Record<string, SubagentTaskStatus> = {}
+  for (const detail of Object.values(details)) Object.assign(statuses, subagentStatusesOf(detail))
+  return statuses
+}
+
+const subagentStatusesByDetail = new WeakMap<LiveSessionDetail, Record<string, SubagentTaskStatus>>()
+
+function subagentStatusesOf(detail: LiveSessionDetail): Record<string, SubagentTaskStatus> {
+  const cached = subagentStatusesByDetail.get(detail)
+  if (cached) return cached
+  const statuses: Record<string, SubagentTaskStatus> = {}
   const set = (workId: unknown, status: unknown) => {
     if (typeof workId !== 'string') return
     const normalized = normalizeTaskStatus(status)
     if (normalized) statuses[workId] = normalized
   }
-  for (const detail of Object.values(details)) {
-    for (const entry of messageEntries(detail)) {
-      const message = messageOf(entry)
-      if (!message || typeof message.toolName !== 'string' || !message.toolName.startsWith('subagent_')) continue
-      const toolDetails = record(message.details)
-      if (!toolDetails) continue
-      set(toolDetails.workId, toolDetails.status)
-      if (message.toolName === 'subagent_start') set(toolDetails.workId, 'queued')
-      if (Array.isArray(toolDetails.completed)) for (const item of toolDetails.completed) {
-        const result = record(item)
-        set(result?.workId, result?.status || 'completed')
-      }
-      if (Array.isArray(toolDetails.pending)) for (const item of toolDetails.pending) {
-        const result = record(item)
-        set(result?.workId, result?.status || 'running')
-      }
+  for (const entry of messageEntries(detail)) {
+    const message = messageOf(entry)
+    if (!message || typeof message.toolName !== 'string' || !message.toolName.startsWith('subagent_')) continue
+    const toolDetails = record(message.details)
+    if (!toolDetails) continue
+    set(toolDetails.workId, toolDetails.status)
+    if (message.toolName === 'subagent_start') set(toolDetails.workId, 'queued')
+    if (Array.isArray(toolDetails.completed)) for (const item of toolDetails.completed) {
+      const result = record(item)
+      set(result?.workId, result?.status || 'completed')
+    }
+    if (Array.isArray(toolDetails.pending)) for (const item of toolDetails.pending) {
+      const result = record(item)
+      set(result?.workId, result?.status || 'running')
     }
   }
+  subagentStatusesByDetail.set(detail, statuses)
   return statuses
 }
 
