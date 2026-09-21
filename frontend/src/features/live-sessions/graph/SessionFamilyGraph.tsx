@@ -768,6 +768,18 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           <span>虚线 = 从这一步 fork 出的新会话</span>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
+          <svg width="26" height="16" viewBox="0 0 26 16" className="shrink-0">
+            <rect x="2" y="2" width="22" height="12" rx="3" fill="none" strokeDasharray="4 3" className="stroke-accent" strokeWidth="1.5" />
+          </svg>
+          <span>虚线框 = 已选中（右侧面板与写操作的目标）</span>
+        </div>
+        <div className="flex items-center gap-2 text-2xs text-muted">
+          <svg width="26" height="16" viewBox="0 0 26 16" className="shrink-0">
+            <rect x="1" y="1" width="24" height="14" rx="4" className="fill-accent-subtle stroke-accent" strokeWidth="1" />
+          </svg>
+          <span>大圆角底色 = 同一个会话文件（分组带）</span>
+        </div>
+        <div className="flex items-center gap-2 text-2xs text-muted">
           <span className="inline-block h-3 w-4 rounded-sm border border-border bg-card" />拖动卡片自定位置，拖动背景平移画布
           {expandedCount ? `（已展开 ${expandedCount}）` : ''}
         </div>
