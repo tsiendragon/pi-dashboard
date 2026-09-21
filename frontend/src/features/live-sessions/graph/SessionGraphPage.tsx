@@ -332,12 +332,15 @@ export default function SessionGraphPage() {
 
   const handleNavigate = useCallback((node: SessionTreeNode) => {
     const previousHead = graph?.nodes.find(candidate => candidate.sessionKey === graph.focusKey && candidate.isHead)?.id ?? null
-    void runCommand(`/ls-navigate ${node.id}`, `已切换到 ${node.id}`, previousHead)
+    // pi confirms via `tree_action`; this is only the request echo.
+    void runCommand(`/ls-navigate ${node.id}`, `已请求切换到 ${node.id}，等待 pi 确认…`, previousHead)
   }, [graph, runCommand])
 
   const handleFork = useCallback((node: SessionTreeNode) => {
     pendingForkRef.current = node.id
-    void runCommand(`/ls-fork ${node.id}`, `已从 ${node.id} 分叉`, undefined)
+    // pi confirms via `tree_action`. Keep the echo honest: a refused fork must not
+    // look successful while the confirmation is still in flight.
+    void runCommand(`/ls-fork ${node.id}`, `已请求从 ${node.id} 分叉，等待 pi 确认…`, undefined)
   }, [runCommand])
 
   const handleOpenSession = useCallback((session: SessionTreeSessionEntry) => {
