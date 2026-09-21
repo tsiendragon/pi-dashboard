@@ -120,7 +120,7 @@ const MAX_ZOOM = 2
  */
 const MIN_FIT_ZOOM = 0.4
 
-export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpenSession, onToggleExpand, onLoadMore }: {
+export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpenSession, onToggleExpand, onLoadMore, edgeBadges, onShowMiddle }: {
   graph: SessionTreeGraph
   selectedId: string | null
   onSelect: (node: SessionTreeNode) => void
@@ -129,6 +129,10 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   onToggleExpand: (node: SessionTreeNode) => void
   /** Raise the per-run step window (`?steps=`) so a truncated run loads its next batch. */
   onLoadMore: (node: SessionTreeNode) => void
+  /** `+N 步` badges on edges, keyed by the child node id (see `reduceToStructure`). */
+  edgeBadges?: Record<string, number>
+  /** Clicking such a badge reveals what is hidden (switches back to 关键节点). */
+  onShowMiddle?: () => void
 }) {
   // Refs first: the layout choice below measures the SVG box.
   const svgRef = useRef<SVGSVGElement>(null)
@@ -294,10 +298,14 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
         moved: false,
       }
       setDraggingNode(cardId)
-      event.currentTarget.setPointerCapture?.(event.pointerId)
+      // NO pointer capture here: capturing on pointerdown makes the browser retarget
+      // the following `click` at this SVG, so the card's step rows would stop being
+      // clickable. Capture is taken lazily once the pointer actually moves.
       return
     }
     if ((event.target as Element).closest('[data-node]')) return
+    // A badge on an edge is a button; leave its click alone.
+    if ((event.target as Element).closest('[data-badge]')) return
     dragRef.current = { pointerX: event.clientX, pointerY: event.clientY, view }
     setDragging(true)
     event.currentTarget.setPointerCapture?.(event.pointerId)
@@ -312,6 +320,10 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
       if (!nodeDrag.moved && Math.abs(dx) + Math.abs(dy) < 4) return
       nodeDrag.moved = true
       suppressClickRef.current = true
+      // Now that this is a real drag, keep receiving moves even outside the canvas.
+      if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.setPointerCapture?.(event.pointerId)
+      }
       setManualPositions(current => ({
         ...current,
         [nodeDrag.id]: { x: nodeDrag.originX + dx / nodeDrag.scale, y: nodeDrag.originY + dy / nodeDrag.scale },
@@ -449,6 +461,28 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                     fork
                   </text>
                 )}
+                {/* 骨架 view: say how many steps the edge jumps over, and let a click
+                    reveal them. */}
+                {edgeBadges?.[node.id] ? (
+                  <g
+                    data-badge
+                    className={onShowMiddle ? 'cursor-pointer' : undefined}
+                    onClick={event => { event.stopPropagation(); onShowMiddle?.() }}
+                  >
+                    <rect
+                      x={labelX - 38}
+                      y={labelY - 11}
+                      width={76}
+                      height={17}
+                      rx={8.5}
+                      className="fill-bg-elevated stroke-border"
+                      strokeWidth={1}
+                    />
+                    <text x={labelX} y={labelY + 1.5} textAnchor="middle" className="text-2xs fill-muted">
+                      +{edgeBadges[node.id]} 步{onShowMiddle ? ' · 展开' : ''}
+                    </text>
+                  </g>
+                ) : null}
               </g>
             )
           })}

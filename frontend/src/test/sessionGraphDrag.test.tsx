@@ -147,3 +147,51 @@ describe('card dragging', () => {
     expect(queryByText('重排')).toBeNull()
   })
 })
+
+/** `a → run:h1 → head`, with the folded run expanded so it lists its steps. */
+function expandedGraph(): SessionTreeNode[] {
+  return [
+    node('a', null, { childCount: 1 }),
+    node('run:h1', 'a', {
+      kind: 'collapsed' as SessionNodeKind,
+      collapsedCount: 3,
+      expanded: true,
+      childCount: 1,
+      steps: [
+        node('s1', 'run:h1', { title: 'step-one' }),
+        node('s2', 'run:h1', { title: 'step-two' }),
+        node('s3', 'run:h1', { title: 'step-three' }),
+      ],
+    }),
+    node('head', 'run:h1', { isLeaf: true, isHead: true }),
+  ]
+}
+
+describe('card press vs click', () => {
+  it('does not capture the pointer on press, only once a real drag starts', () => {
+    const { container, svg } = renderGraph(chain)
+    const capture = vi.fn()
+    Object.assign(svg, { setPointerCapture: capture })
+    pointer(cardOf(container, 'b'), 'pointerdown', { clientX: 100, clientY: 100 })
+    // Capturing here would make the browser retarget the following `click` at the
+    // SVG, which is exactly how the card's step rows stopped being clickable.
+    expect(capture).not.toHaveBeenCalled()
+    pointer(svg, 'pointermove', { clientX: 102, clientY: 100 })
+    expect(capture).not.toHaveBeenCalled()
+    pointer(svg, 'pointermove', { clientX: 160, clientY: 140 })
+    expect(capture).toHaveBeenCalledTimes(1)
+  })
+
+  it('still selects a step row inside an expanded card', () => {
+    const { container, onSelect } = renderGraph(expandedGraph())
+    const row = [...container.querySelectorAll('[data-node-id="run:h1"] g')]
+      // The innermost <g>: wrappers (clip / scroll offset) contain the same text.
+      .filter(element => !element.querySelector('g'))
+      .find(element => element.textContent?.includes('step-two'))
+    expect(row).toBeTruthy()
+    pointer(row!, 'pointerdown', { clientX: 100, clientY: 100 })
+    fireEvent.click(row!)
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect.mock.calls[0][0].id).toBe('s2')
+  })
+})
