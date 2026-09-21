@@ -17,6 +17,8 @@ export const EXPANDED_FOOTER_H = 20
 export const EXPANDED_VIEWPORT_H = NODE_H_EXPANDED - EXPANDED_VIEWPORT_TOP - EXPANDED_FOOTER_H
 export const GAP_X = 76
 export const GAP_Y = 12
+/** Row gap when edges carry `+N 步` badges: a wrap edge is otherwise only 12px long. */
+export const GAP_Y_BADGED = 34
 /** Padding added around a session's nodes when drawing its group band. */
 export const BAND_PAD_X = 18
 export const BAND_PAD_TOP = 30
@@ -116,6 +118,7 @@ function resolveColumnOverlap(
   positions: Map<string, LayoutPosition>,
   heightOf: (node: SessionTreeNode) => number,
   groupOf: (node: SessionTreeNode) => string,
+  rowGap: number,
 ): void {
   const byNode = new Map(nodes.map(node => [node.id, node]))
   const groups = new Map<string, string[]>()
@@ -132,7 +135,7 @@ function resolveColumnOverlap(
       const current = positions.get(group[index])
       const previousNode = byNode.get(group[index - 1])
       if (!previous || !current || !previousNode) continue
-      const minimum = previous.y + heightOf(previousNode) + GAP_Y
+      const minimum = previous.y + heightOf(previousNode) + rowGap
       if (current.y < minimum) positions.set(group[index], { x: current.x, y: minimum })
     }
   }
@@ -164,11 +167,13 @@ function boundsOf(
  *
  * @param heightOf per-node height; defaults to {@link defaultHeightOf}.
  * @param orientation `horizontal` = depth→x (default), `vertical` = depth→y.
+ * @param rowGap vertical gap between rows/levels; raise it when edges carry badges.
  */
 export function tidyLayout(
   nodes: SessionTreeNode[],
   heightOf: (node: SessionTreeNode) => number = defaultHeightOf,
   orientation: Exclude<GraphOrientation, 'serpentine'> = 'horizontal',
+  rowGap: number = GAP_Y,
 ): TreeLayout {
   const order = computeTreeOrder(nodes)
   const { depthOf, slotOf } = order
@@ -179,12 +184,12 @@ export function tidyLayout(
     for (const node of nodes) {
       positions.set(node.id, {
         x: (depthOf.get(node.id) ?? 0) * (NODE_W + GAP_X),
-        y: (slotOf.get(node.id) ?? 0) * (NODE_H + GAP_Y),
+        y: (slotOf.get(node.id) ?? 0) * (NODE_H + rowGap),
       })
     }
     // A tall card only risks overlapping nodes in the SAME depth column.
     resolveColumnOverlap(nodes, positions, heightOf,
-      node => String(depthOf.get(node.id) ?? 0))
+      node => String(depthOf.get(node.id) ?? 0), rowGap)
   } else {
     // depth → y, leaf slot → x. Each depth level is a horizontal band whose height
     // is the tallest card in it (an expanded folded run is 268px, not 60px).
@@ -197,7 +202,7 @@ export function tidyLayout(
     let cursor = 0
     for (const depth of [...levelHeight.keys()].sort((a, b) => a - b)) {
       levelY.set(depth, cursor)
-      cursor += (levelHeight.get(depth) ?? NODE_H) + GAP_Y
+      cursor += (levelHeight.get(depth) ?? NODE_H) + rowGap
     }
     for (const node of nodes) {
       positions.set(node.id, {
@@ -222,6 +227,7 @@ export function serpentineLayout(
   nodes: SessionTreeNode[],
   heightOf: (node: SessionTreeNode) => number = defaultHeightOf,
   columns = 4,
+  rowGap: number = GAP_Y,
 ): TreeLayout {
   const { depthOf, slotOf, maxDepth } = computeTreeOrder(nodes)
   const width = Math.max(1, Math.min(Math.round(columns), maxDepth + 1))
@@ -237,12 +243,12 @@ export function serpentineLayout(
       x: columnOf(depthOf.get(node.id) ?? 0) * (NODE_W + GAP_X),
       // Local y = the tidy-tree slot, so a parent still sits at the midpoint of
       // its children inside its row band.
-      y: (slotOf.get(node.id) ?? 0) * (NODE_H + GAP_Y),
+      y: (slotOf.get(node.id) ?? 0) * (NODE_H + rowGap),
     })
   }
   // Tall cards can only collide inside the same row band + visual column.
   resolveColumnOverlap(nodes, positions, heightOf,
-    node => `${rowOf(depthOf.get(node.id) ?? 0)}:${columnOf(depthOf.get(node.id) ?? 0)}`)
+    node => `${rowOf(depthOf.get(node.id) ?? 0)}:${columnOf(depthOf.get(node.id) ?? 0)}`, rowGap)
 
   // Stack the row bands; each band is as tall as its tallest column.
   const bandOf = new Map<string, number>()
@@ -258,7 +264,7 @@ export function serpentineLayout(
   let cursor = 0
   for (const band of [...bandHeight.keys()].sort((a, b) => a - b)) {
     bandY.set(band, cursor)
-    cursor += (bandHeight.get(band) ?? NODE_H) + GAP_Y
+    cursor += (bandHeight.get(band) ?? NODE_H) + rowGap
   }
   for (const node of nodes) {
     const position = positions.get(node.id)
@@ -334,11 +340,12 @@ export function layoutCandidates(
   containerWidth: number,
   containerHeight: number,
   maxColumns = MAX_SERPENTINE_COLUMNS,
+  rowGap: number = GAP_Y,
 ): LayoutCandidate[] {
   const score = (layout: TreeLayout): number => canvasFill(layout, containerWidth, containerHeight)
   const candidates: LayoutCandidate[] = [
-    { orientation: 'horizontal', layout: tidyLayout(nodes, heightOf, 'horizontal'), scale: 0 },
-    { orientation: 'vertical', layout: tidyLayout(nodes, heightOf, 'vertical'), scale: 0 },
+    { orientation: 'horizontal', layout: tidyLayout(nodes, heightOf, 'horizontal', rowGap), scale: 0 },
+    { orientation: 'vertical', layout: tidyLayout(nodes, heightOf, 'vertical', rowGap), scale: 0 },
   ]
   const { maxDepth } = computeTreeOrder(nodes)
   const columnLimit = Math.min(maxDepth + 1, maxColumns)
@@ -346,7 +353,7 @@ export function layoutCandidates(
     candidates.push({
       orientation: 'serpentine',
       columns,
-      layout: serpentineLayout(nodes, heightOf, columns),
+      layout: serpentineLayout(nodes, heightOf, columns, rowGap),
       scale: 0,
     })
   }
