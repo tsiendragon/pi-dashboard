@@ -1064,3 +1064,43 @@ fill  = (内容宽 × scale) × (内容高 × scale) / 可用面积
 ### 26.5 测试
 
 后端新增 `turnSteps` 4 例（合并 thinking/工具/遥测与回复、compaction 断轮、缺回复、无 user 时回退到 assistant 文本、前奏并入首轮），并更新 3 个既有用例到轮语义（其中 assistant-only 长链：8 条记录 = **1 轮**，区间仍覆盖 a2..a9）。
+---
+
+## 27. 「从此分叉」的实测结论（v7.2）
+
+用户报告「在 graph 上点击从此分叉之后并没有创建新的 session」。用隔离 pi 会话逐层复现后，确认**是三个独立原因叠加**，不是分叉本身坏掉。
+
+### 27.1 分叉一直会创建会话
+
+pi 的 `ctx.fork(entryId, {position:'at'})` 每次都成功（实测：pi 屏幕 `Forked to new session`、`sessionFile` 切到新文件、新文件里保留分叉点之前的前缀、`parentSession` 指向父文件）。登记在 dashboard 侧也同步更新（`summary.sessionFile` + snapshot）。
+
+### 27.2 原因一：前端在不可执行时静默 return
+
+`runCommand` 原本 `if (!live || !treeCapable) return`。若该会话的 pi 进程加载的是**旧版扩展**（不声明 `session_tree`），点击等于没点、也没有任何提示。实测当时 17 个 live 进程中有 **6 个**是旧扩展；全量扫描所有会话文件，`role=user` 且文本为 `/ls-fork …` 的条目 **0 命中** —— 证明命令根本没离开浏览器。
+
+修复：`graphWriteBlockReason` 给出每种状态的原因（含「请在该 Pi 会话执行 /reload」），图谱页顶部横幅同步显示；`tree_action` 事件把 pi 侧的真实结果回传（成功进 toast、拒绝进错误条）。
+
+### 27.3 原因二：fork 后必须用 `withSession` 的 ctx
+
+pi 会明确抛错：
+
+> This extension ctx is stale after session replacement or reload. … For newSession, fork, and switchSession, move post-replacement work into withSession
+
+旧代码在 fork 返回后仍用捕获的 `currentContext`（已 stale）读 `sessionFile`、发 `notify` → 抛错被吞 → 分叉结果谁也不知道（连终端提示都没有）。现在 fork 后的上报与快照都放进 `withSession` 回调，用回调传入的新 ctx。
+
+### 27.4 原因三：pi 会「延迟」写新会话文件
+
+`SessionManager.createBranchedSession` 的源码注释写得很清楚：
+
+```
+// Only write the file now if it contains an assistant message.
+// Otherwise defer to _persist(), which creates the file on the first response
+```
+
+实测：fork 到**含 assistant 回复**的位置 → 文件立刻落盘（1→2 个文件）；fork 到**分支上还没有 assistant** 的位置（例如第一条 user 消息）→ pi 已切过去但**磁盘上没有文件**，直到新会话产出第一条回复才出现。dashboard 的图谱是按文件读的，所以那一瞬间看不到 → 又像「没创建」。
+
+修复：扩展上报 `filePending`；前端跟随分叉时先探测文件，未落盘则显示「已分叉，正在等待文件落盘」并轮询（≤60s）后再跳转。
+
+### 27.5 仍不稳定的一点（已知）
+
+`tree_action` 在 **fork 场景**下偶尔投不到 dashboard：fork 会替换 runtime，live 连接短暂断开，`client.ready` 实测会在新会话开始后再次变 false；`/ls-navigate` 与「被拒绝」路径已实测可达（`eventSequence` 递增且事件出现在 dashboard 侧）。影响面：只少了那句「pi 侧结果」的文案（前端仍有乐观 toast 与等待落盘提示），**不影响创建会话与跟随**。下一步需要抓 fork 前后的 `session_shutdown`/`session_start`/`onDisconnected` 时序。
