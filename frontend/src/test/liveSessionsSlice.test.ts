@@ -62,6 +62,35 @@ describe('liveSessionsSlice', () => {
     expect(state.details.a.needsResync).toBe(true)
   })
 
+  it('heals a missed event from a resync snapshot that only advances eventSequence', () => {
+    // The scenario that used to freeze a transcript forever: the browser missed
+    // a frame (WS drop / reconnect), and the recovery GET returns the registry
+    // state whose `revision` equals the copy we already hold because the session
+    // has not pushed a fresh snapshot since.
+    let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a', 5, 100)] }))
+    state = reducer(state, liveSessionSnapshot(detail(summary('a', 5, 100), [{ type: 'm1' }])))
+    state = reducer(state, liveSessionEvent(event('a', 102)))
+    expect(state.details.a.needsResync).toBe(true)
+
+    state = reducer(state, liveSessionSnapshot(detail(summary('a', 5, 102), [{ type: 'm1' }, { type: 'm2' }])))
+    expect(state.details.a.needsResync).toBeUndefined()
+    expect(state.details.a.summary.eventSequence).toBe(102)
+    expect(state.details.a.entries).toHaveLength(2)
+
+    // Events flow again after the heal.
+    state = reducer(state, liveSessionEvent(event('a', 103)))
+    expect(state.details.a.summary.eventSequence).toBe(103)
+    expect(state.details.a.entries).toHaveLength(3)
+  })
+
+  it('still ignores snapshots that are not newer than the local copy', () => {
+    const state = reducer(undefined, liveSessionSnapshot(detail(summary('a', 5, 100), [{ type: 'm1' }])))
+    const same = reducer(state, liveSessionSnapshot(detail(summary('a', 5, 100), [{ type: 'older' }])))
+    expect(same.details.a.entries).toEqual([{ type: 'm1' }])
+    const older = reducer(state, liveSessionSnapshot(detail(summary('a', 4, 99), [{ type: 'older' }])))
+    expect(older.details.a.entries).toEqual([{ type: 'm1' }])
+  })
+
   it('shows Dashboard user input immediately, rolls it back, and deduplicates Pi echoes', () => {
     let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a')] }))
     state = reducer(state, liveSessionSnapshot(detail(summary('a', 2))))
