@@ -10,6 +10,7 @@ import { buildSessionTitles } from '../sessionTitle'
 import BranchDetailPanel from './BranchDetailPanel'
 import SessionFamilyGraph, { type GraphDetail } from './SessionFamilyGraph'
 import { useSessionTree } from './useSessionTree'
+import { GRAPH_NODE_VIEW_CYCLE, applyNodeView, graphNodeViewLabel, type GraphNodeView } from './nodeView'
 
 function baseName(file: string): string {
   const tail = file.split('/').pop() ?? file
@@ -33,12 +34,26 @@ export default function SessionGraphPage() {
   const nodeParam = params.get('node')
   // `collapsed` (default) folds linear runs so a conversation reads as
   // start → +N 步 → end; `full` returns every entry for step-level inspection.
-  const [detail, setDetail] = useState<GraphDetail>('collapsed')
+  const [nodeView, setNodeView] = useState<GraphNodeView>('ends')
+  /** Only 全部步骤 needs the server to return every entry. */
+  const detail: GraphDetail = nodeView === 'full' ? 'full' : 'collapsed'
   /** Folded runs expanded in place (their steps render inside the card). */
   const [expandedRuns, setExpandedRuns] = useState<string[]>([])
   /** Per-run step window; “加载更多” raises it by one batch (server clamps to 3000). */
   const [stepLimit, setStepLimit] = useState(STEP_BATCH)
-  const { graph, loading, error, refresh: reload } = useSessionTree(file, detail, expandedRuns, stepLimit)
+  const { graph: fullGraph, loading, error, refresh: reload } = useSessionTree(file, detail, expandedRuns, stepLimit)
+  /**
+   * 骨架视图：只留结构点（起点、各会话首节点、分叉点、当前点、标注），中间步骤的
+   * 数量标在边上（`+N 步`）。没有分叉的会话因此只剩“起点 → 现在”两张卡片。
+   */
+  const view = useMemo(
+    () => (fullGraph ? applyNodeView(fullGraph.nodes, fullGraph.sessions, nodeView) : null),
+    [fullGraph, nodeView],
+  )
+  const graph = useMemo(
+    () => (fullGraph ? { ...fullGraph, nodes: view?.nodes ?? fullGraph.nodes } : null),
+    [fullGraph, view],
+  )
 
   const [selectedId, setSelectedId] = useState<string | null>(nodeParam)
   const [busy, setBusy] = useState(false)
@@ -224,6 +239,7 @@ export default function SessionGraphPage() {
           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-2xs text-muted">
             <span className="font-mono">{baseName(file)}</span>
             {graph ? <span>{graph.sessions.length} 会话 · {graph.nodes.length} 节点</span> : null}
+            {view && view.hiddenSteps > 0 ? <span>中间 {view.hiddenSteps} 步已折叠在边上</span> : null}
             {live
               ? <span className={live.status === 'running' ? 'text-accent' : 'text-ok'}>{live.status === 'running' ? '工作中' : '空闲'}</span>
               : <span className="text-warn">未运行</span>}
@@ -233,10 +249,17 @@ export default function SessionGraphPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => { setDetail(current => current === 'collapsed' ? 'full' : 'collapsed'); setExpandedRuns([]) }}
-            className={`rounded border px-2.5 py-1 text-2xs transition-colors ${detail === 'full' ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-card text-muted hover:border-accent'}`}
-            title={detail === 'full' ? '当前显示每一条步骤' : '当前只显示起点、终点、分叉点与标签，中间步骤已折叠'}
-          >{detail === 'full' ? '⋯ 显示步骤' : '⋯ 仅关键节点'}</button>
+            onClick={() => {
+              setExpandedRuns([])
+              setNodeView(current => GRAPH_NODE_VIEW_CYCLE[(GRAPH_NODE_VIEW_CYCLE.indexOf(current) + 1) % GRAPH_NODE_VIEW_CYCLE.length])
+            }}
+            className={`rounded border px-2.5 py-1 text-2xs transition-colors ${nodeView === 'full' ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-card text-muted hover:border-accent'}`}
+            title={
+              nodeView === 'ends' ? '骨架：只显示起点/分叉点/当前，中间步数标在边上（默认）'
+                : nodeView === 'key' ? '关键节点：折叠段、总结与标注都画出来'
+                  : '显示每一条步骤（大会话会很慢）'
+            }
+          >◈ {graphNodeViewLabel(nodeView)}</button>
           <button
             type="button"
             onClick={reload}
@@ -290,6 +313,8 @@ export default function SessionGraphPage() {
               onOpenSession={handleOpenSession}
               onToggleExpand={toggleExpand}
               onLoadMore={loadMoreSteps}
+              edgeBadges={view?.badges}
+              onShowMiddle={() => setNodeView('key')}
             />
           ) : (
             // Never leave the canvas silently blank: a failed fetch (e.g. a backend
