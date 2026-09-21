@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { LiveSessionImage, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
@@ -782,7 +782,7 @@ function MessageContent({ content, onFileOpen, toolStates, timestamp, auxiliary 
   )
 }
 
-function TimelineEntry({ entry, onFileOpen, toolStates, auxiliary = true }: { entry: unknown; onFileOpen: (path: string) => void; toolStates: ToolStateMap; auxiliary?: boolean }) {
+const TimelineEntry = memo(function TimelineEntry({ entry, onFileOpen, toolStates, auxiliary = true }: { entry: unknown; onFileOpen: (path: string) => void; toolStates: ToolStateMap; auxiliary?: boolean }) {
   const timestamp = entryTimestamp(entry)
   const entryRecord = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : undefined
   const eventData = entryRecord?.data && typeof entryRecord.data === 'object' && !Array.isArray(entryRecord.data)
@@ -870,9 +870,9 @@ function TimelineEntry({ entry, onFileOpen, toolStates, auxiliary = true }: { en
     return <details className="rounded-lg border border-border bg-card"><summary className="px-3 py-2 cursor-pointer text-xs text-text">custom message</summary><pre className="p-3 pt-1 text-xs text-text whitespace-pre-wrap">{JSON.stringify(record.data, null, 2).slice(0, 100_000)}</pre></details>
   }
   return <div className="text-2xs text-muted border-l-2 border-border pl-3 py-1">{type.split('_').join(' ')}</div>
-}
+})
 
-function LiveToolGroup({ items, thinking, onFileOpen, toolStates }: { items: LiveToolItem[]; thinking: { index: number; entry: unknown }[]; onFileOpen: (path: string) => void; toolStates: ToolStateMap }) {
+const LiveToolGroup = memo(function LiveToolGroup({ items, thinking, onFileOpen, toolStates }: { items: LiveToolItem[]; thinking: { index: number; entry: unknown }[]; onFileOpen: (path: string) => void; toolStates: ToolStateMap }) {
   const [expanded, setExpanded] = useState(false)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const done = items.filter(item => item.resultText !== undefined || item.isError).length
@@ -935,7 +935,7 @@ function LiveToolGroup({ items, thinking, onFileOpen, toolStates }: { items: Liv
       )}
     </section>
   )
-}
+})
 
 export function AuthPanel({ onAuthenticated }: { onAuthenticated: (browserClientId: string) => void }) {
   const [token, setToken] = useState('')
