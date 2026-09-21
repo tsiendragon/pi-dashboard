@@ -1086,6 +1086,19 @@ export default function LiveSessionPage() {
     panel.setDirty(false)
   }, [panel.setDirty])
 
+  /**
+   * Manual refresh: list metadata + the active transcript. The transcript fetch
+   * heals anything the live stream could not deliver, so the button actually
+   * refreshes what the user is looking at (it used to refresh only the list).
+   */
+  const refreshNow = useCallback(() => {
+    void refresh()
+    if (!activeId) return
+    liveSessionApi.detail(activeId)
+      .then(value => dispatch(liveSessionSnapshot(value)))
+      .catch(error => dispatch(setLiveSessionError(errorMessage(error))))
+  }, [activeId, dispatch, refresh])
+
   useEffect(() => {
     if (activeId) dispatch(selectLiveSession(activeId))
     else if (sessions[0]) navigate(`/live-sessions/${encodeURIComponent(sessions[0].processInstanceId)}`, { replace: true })
@@ -1321,7 +1334,7 @@ export default function LiveSessionPage() {
             <button type="button" onClick={toggleAuxiliary} className={`shrink-0 rounded border px-2 py-0.5 text-2xs ${auxiliary ? 'border-border bg-bg text-muted hover:border-accent hover:text-accent' : 'border-accent bg-accent-subtle text-accent'}`} title={auxiliary ? '当前显示思路与工具/脚本执行；点一下切换为精简阅读' : '精简阅读：只留正文（思路与工具/脚本已隐去）'}>
               {auxiliary ? '👁 显示全部' : ' 精简阅读'}
             </button>
-            <button type="button" onClick={() => void refresh()} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent">刷新</button>
+            <button type="button" onClick={refreshNow} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent">刷新</button>
           </div>
         </div>
         {childSessions.length > 0 && <div className="shrink-0 border-b border-border bg-card/30 px-3 py-2">
