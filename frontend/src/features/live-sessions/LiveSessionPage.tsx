@@ -1015,6 +1015,7 @@ export default function LiveSessionPage() {
   const [commandNotice, setCommandNotice] = useState<string>()
   const [sessionSidebarVisible, setSessionSidebarVisible] = useState(() => typeof window === 'undefined' || localStorage.getItem('live-session-sidebar') !== 'hidden')
   const timelineScrollRef = useRef<HTMLDivElement>(null)
+  const timelineContentRef = useRef<HTMLDivElement>(null)
   // Whether the timeline is pinned to the newest message. Flipped to false when
   // the user scrolls up to read history, so streaming updates never yank them.
   const timelineAtBottom = useRef(true)
@@ -1077,6 +1078,10 @@ export default function LiveSessionPage() {
     }
   }, [handleFileOpen, summary?.canonicalCwd])
 
+  // Stable callback for the timeline rows: keeps the memoized TimelineEntry /
+  // LiveToolGroup from re-rendering just because the page re-rendered.
+  const openTimelineFile = useCallback((path: string) => { void handleDocumentLink(path) }, [handleDocumentLink])
+
   const handleFileSave = useCallback(async (filePath: string, content: string) => {
     const response = await fetch('/api/file-write', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1109,6 +1114,20 @@ export default function LiveSessionPage() {
     if (el) el.scrollTop = el.scrollHeight
   }, [])
 
+  /**
+   * Keep following the newest message while pinned — including layout that
+   * settles after the first paint (images, mermaid, lazy panels). One rAF is
+   * not enough for late layout, so re-pin once after the frame committed; the
+   * ResizeObserver below covers anything that grows later still.
+   */
+  const pinTimelineToBottom = useCallback(() => {
+    if (!timelineAtBottom.current) return
+    scrollTimelineToBottom()
+    requestAnimationFrame(() => {
+      if (timelineAtBottom.current) scrollTimelineToBottom()
+    })
+  }, [scrollTimelineToBottom])
+
   const handleTimelineScroll = useCallback(() => {
     const el = timelineScrollRef.current
     if (!el) return
@@ -1119,9 +1138,8 @@ export default function LiveSessionPage() {
   // its length: streaming `message_update` / `tool_execution_update` events replace
   // the last entry in place, so the length alone would miss every later chunk.
   useEffect(() => {
-    if (!timelineAtBottom.current) return
-    scrollTimelineToBottom()
-  }, [detail?.entries, scrollTimelineToBottom])
+    pinTimelineToBottom()
+  }, [detail?.entries, pinTimelineToBottom])
 
   const timelineReady = Boolean(summary && detail)
   // A freshly mounted timeline (session switch, reconnect re-render) starts at
@@ -1129,12 +1147,31 @@ export default function LiveSessionPage() {
   useLayoutEffect(() => {
     if (!timelineReady) return
     timelineAtBottom.current = true
-    scrollTimelineToBottom()
-  }, [timelineReady, scrollTimelineToBottom])
+    pinTimelineToBottom()
+  }, [timelineReady, pinTimelineToBottom])
 
   // Switching between two already-loaded sessions reuses the same scroll
-  // container, so reset the pin for the newly selected session.
-  useLayoutEffect(() => { timelineAtBottom.current = true }, [activeId])
+  // container, so reset the pin for the newly selected session and re-pin after
+  // the switch renders.
+  useLayoutEffect(() => {
+    timelineAtBottom.current = true
+    pinTimelineToBottom()
+  }, [activeId, pinTimelineToBottom])
+
+  // Async content (images, mermaid diagrams, lazy-rendered panels) keeps
+  // growing the transcript after the scroll effects above ran. While pinned,
+  // re-pin on every content height change so the view never drifts into older
+  // messages; while the user reads history the observer does nothing.
+  useEffect(() => {
+    if (!timelineReady) return
+    const content = timelineContentRef.current
+    if (!content || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (timelineAtBottom.current) scrollTimelineToBottom()
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [timelineReady, scrollTimelineToBottom])
 
   useEffect(() => {
     if (!focusedSubagentId || state.auth !== 'authenticated') return
@@ -1376,7 +1413,8 @@ export default function LiveSessionPage() {
           <>
             <div className="flex min-h-0 flex-1">
               <div className="flex min-w-0 flex-1 flex-col">
-                <div ref={timelineScrollRef} onScroll={handleTimelineScroll} className="flex flex-1 flex-col overflow-y-auto p-3 space-y-2">
+                <div ref={timelineScrollRef} onScroll={handleTimelineScroll} className="flex flex-1 flex-col overflow-y-auto p-3">
+                <div ref={timelineContentRef} className="flex flex-col space-y-2">
                   {workflowItems.map(workflow => <LiveWorkflowProgressCard key={String(workflow.id)} workflow={workflow} sessions={sessions} onOpen={workflowValue => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflowValue) }} />)}
                   {detail.entries.length === 0 && workflowItems.length === 0 && <div className="text-sm text-muted text-center py-10">该 session 暂无可显示消息。</div>}
                   {!auxiliary && (timeline.hidden.tools > 0 || timeline.hidden.thinking > 0 || timeline.hidden.other > 0) ? (
@@ -1392,9 +1430,10 @@ export default function LiveSessionPage() {
                     </div>
                   ) : null}
                   {timelineItems.map(item => item.type === 'toolGroup'
-                    ? <LiveToolGroup key={`tool-group-${item.items[0]?.index ?? 0}`} items={item.items} thinking={item.thinking} onFileOpen={path => { void handleDocumentLink(path) }} toolStates={toolStates} />
-                    : <TimelineEntry key={`${item.index}-${typeof item.entry === 'object' && item.entry ? String((item.entry as Record<string, unknown>).type || '') : ''}`} entry={item.entry} onFileOpen={path => { void handleDocumentLink(path) }} toolStates={toolStates} auxiliary={auxiliary} />
+                    ? <LiveToolGroup key={`tool-group-${item.items[0]?.index ?? 0}`} items={item.items} thinking={item.thinking} onFileOpen={openTimelineFile} toolStates={toolStates} />
+                    : <TimelineEntry key={`${item.index}-${typeof item.entry === 'object' && item.entry ? String((item.entry as Record<string, unknown>).type || '') : ''}`} entry={item.entry} onFileOpen={openTimelineFile} toolStates={toolStates} auxiliary={auxiliary} />
                   )}
+                </div>
                 </div>
                 <LiveCommandBar toolStates={toolStates} features={features} />
                 <LiveSessionComposer
