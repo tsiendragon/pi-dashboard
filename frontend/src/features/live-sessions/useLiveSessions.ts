@@ -9,7 +9,6 @@ import {
   liveSessionDetached,
   liveSessionEvent,
   liveSessionReconnecting,
-  liveSessionResynced,
   liveSessionSnapshot,
   sessionsLoaded,
   setLiveSessionError,
@@ -137,8 +136,11 @@ export function useLiveSessionsRuntime(): { refresh: () => Promise<void> } {
     for (const [processInstanceId, detail] of Object.entries(details)) {
       if (!detail.needsResync) continue
       liveSessionApi.detail(processInstanceId).then(snapshot => {
+        // Applying the snapshot clears `needsResync` (the reducer drops the flag
+        // when it replaces the detail). If the payload turns out to be a no-op
+        // the flag deliberately stays set so the next change retries — never
+        // report a resync that did not actually land.
         dispatch(liveSessionSnapshot(snapshot))
-        dispatch(liveSessionResynced(processInstanceId))
       }).catch(error => dispatch(setLiveSessionError(messageOf(error))))
     }
   }, [auth, details, dispatch])
