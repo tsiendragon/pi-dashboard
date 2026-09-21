@@ -146,8 +146,7 @@ function asRole(value: unknown): SessionTreeNodeRole | undefined {
   return value === 'user' || value === 'assistant' || value === 'system' || value === 'tool' ? value : undefined
 }
 
-/** Clamp the per-run step window requested by `?steps=` into a safe range. */
-function clampStepLimit(value: number | undefined): number {
+/** Clamp the per-run step window requested by `?steps=` into a safe range. */function clampStepLimit(value: number | undefined): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return SESSION_TREE_STEPS_DEFAULT
   return Math.max(1, Math.min(SESSION_TREE_STEPS_MAX, Math.floor(value)))
 }
@@ -552,6 +551,78 @@ export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions
   }
 }
 
+// ── turns ──
+
+function textOf(node: SessionTreeNode | undefined): string | undefined {
+  if (!node) return undefined
+  const text = (node.preview ?? '').split('\n')[0]?.trim()
+  return text ? text : undefined
+}
+
+/**
+ * Collapse ONE agent turn — a user request plus everything the agent did for it
+ * (thinking, tool calls, telemetry, replies) — into a single readable row.
+ *
+ * `coveredCount` keeps the honest bookkeeping: the row says 1 turn but may stand
+ * for dozens of records, and the panel reports how many were folded into it.
+ */
+function turnNode(bucket: SessionTreeNode[]): SessionTreeNode {
+  const first = bucket[0]!
+  const user = bucket.find(node => node.role === 'user')
+  const replies = bucket.filter(node => node.role === 'assistant')
+  const tools = [...new Set(bucket.flatMap(node => node.tools ?? []))]
+  const request = textOf(user) ?? textOf(first)
+  const reply = [...replies].reverse().map(node => textOf(node)).find(Boolean)
+  const anchor = user ?? first
+  const label = user ? 'User' : replies.length ? (tools.length ? `Assistant · ${tools.join(', ')}` : 'Assistant') : anchor.title
+  return {
+    ...anchor,
+    parentId: anchor.parentId,
+    kind: user && !tools.length ? 'message' : tools.length ? 'tool' : 'message',
+    role: user ? 'user' : replies.length ? 'assistant' : 'system',
+    type: 'turn',
+    title: label,
+    ...(request ? { preview: request } : {}),
+    ...(reply ? { reply } : {}),
+    ...(tools.length ? { tools } : {}),
+    coveredCount: bucket.length,
+    childCount: 0,
+    isLeaf: false,
+    isHead: false,
+  }
+}
+
+/**
+ * Group a run's entries into AGENT TURNS.
+ *
+ * A reader does not care that “Thinking → max” or `compact-thinking-duration` was
+ * its own record, so a step in the graph means a turn: 15 records of a short session
+ * are really ~4 exchanges. A user message opens a new turn; a compaction also breaks
+ * one (it is a context reset, not part of the running exchange). Records before the
+ * first request — a model switch, a thinking level — are that request's prelude, so
+ * they are folded into it rather than becoming a step of their own.
+ */
+export function turnSteps(entries: SessionTreeNode[]): SessionTreeNode[] {
+  const turns: SessionTreeNode[] = []
+  let bucket: SessionTreeNode[] = []
+  /** A bucket is a real turn once it holds a request (or a context reset). */
+  const opened = (nodes: SessionTreeNode[]): boolean =>
+    nodes.some(node => node.role === 'user' || node.kind === 'compaction')
+  const flush = (): void => {
+    if (bucket.length) turns.push(turnNode(bucket))
+    bucket = []
+  }
+  for (const entry of entries) {
+    // Entries before the first request (model switch, thinking level, session info) are
+    // the PRELUDE of that request, not a step of their own, so they stay in the bucket.
+    const startsTurn = entry.role === 'user' || entry.kind === 'compaction'
+    if (startsTurn && opened(bucket)) flush()
+    bucket.push(entry)
+  }
+  flush()
+  return turns
+}
+
 // ── linear-run collapsing ──
 
 /**
@@ -566,7 +637,8 @@ export async function buildSessionFamilyGraph(options: BuildSessionFamilyOptions
  *
  * Everything else (plain user/assistant turns and tool steps) is absorbed into a
  * single `collapsed` node, so a purely linear session renders as exactly
- * start → +N 步 → end.
+ * start → +N 轮 → end. `N` counts **agent turns**, not records: thinking, tool calls,
+ * telemetry and model switches belong to the turn they happened in.
  *
  * @param keepIds ids that must stay visible even when structurally foldable
  *                (used for each session's start node).
@@ -612,31 +684,35 @@ export function collapseLinearRuns(
 
     if (chain.length >= SESSION_TREE_LINEAR_RUN_MIN) {
       // Fold the WHOLE run into one node and hang the run's children off it, so a
-      // linear session becomes start → +N 步 → end instead of start → +N → step → end.
+      // linear session becomes start → +N 轮 → end instead of start → +N → step → end.
       const head = chain[0]
       const tail = chain[chain.length - 1]
       const collapsedId = `run:${head.id}`
       const expanded = expandRuns?.has(collapsedId) === true
+      const turns = turnSteps(chain)
+      const firstText = textOf(turns[0])
+      const lastText = textOf(turns[turns.length - 1])
+      const span = firstText && lastText && firstText !== lastText ? `${firstText} → ${lastText}` : (firstText ?? '')
       out.push({
         id: collapsedId,
         parentId: start.id,
         kind: 'collapsed',
         sessionKey: start.sessionKey,
         type: 'collapsed',
-        title: `+${chain.length} 步`,
-        preview: `${head.title} → ${tail.title}`,
+        title: `+${turns.length} 轮`,
+        ...(span ? { preview: span } : {}),
         childCount: 1,
         isLeaf: false,
         isHead: false,
-        collapsedCount: chain.length,
+        collapsedCount: turns.length,
         collapsedRange: { from: head.id, to: tail.id },
-        // In-place expansion: keep ONE graph node, carry the real entries as
-        // nested data so the canvas layout stays small. The steps keep their own
-        // ids so clicking a row can select/navigate that exact entry.
+        // In-place expansion: keep ONE graph node, carry the real turns as nested
+        // data so the canvas layout stays small. A row keeps the turn's first entry
+        // id so clicking it can select/navigate that exact entry.
         ...(expanded ? {
           expanded: true,
-          steps: chain.slice(0, stepLimit),
-          ...(chain.length > stepLimit ? { stepsTruncated: true } : {}),
+          steps: turns.slice(0, stepLimit),
+          ...(turns.length > stepLimit ? { stepsTruncated: true } : {}),
         } : {}),
       })
       for (const kid of children.get(tail.id) ?? []) visit(kid, collapsedId)

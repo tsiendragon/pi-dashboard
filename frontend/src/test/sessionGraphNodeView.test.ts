@@ -29,7 +29,7 @@ const session = (key: string, overrides: Partial<SessionTreeSessionEntry> = {}):
   key, file: `/tmp/${key}.jsonl`, sessionId: key, entryCount: 1, leafId: null, isFocus: key === 's', ...overrides,
 })
 
-/** A real default shape: start → +418 步 → Compaction → +868 步 → HEAD. */
+/** A real default shape: start → +418 轮 → Compaction → +868 轮 → HEAD. */
 const realShape = [
   node('start', null, { childCount: 1, title: 'Model → deepseek' }),
   node('run:h1', 'start', { kind: 'collapsed' as SessionNodeKind, collapsedCount: 418, childCount: 1 }),
@@ -92,7 +92,7 @@ describe('reduceToStructure', () => {
     expect(kept).toContain('head')
     expect(kept).toContain('childStart')
     expect(kept).toContain('childHead')
-    // 中间那条 `mid` 被折叠，步数记在它后面的第一条保留边上，而不是凭空变出一条边。
+    // 中间那条 `mid` 被折叠，轮数记在它后面的第一条保留边上，而不是凭空变出一条边。
     expect(view.badges.childStart).toBe(1)
     expect(view.nodes.find(node => node.id === 'childHead')?.parentId).toBe('childStart')
     expect(view.badges.childHead).toBe(40)

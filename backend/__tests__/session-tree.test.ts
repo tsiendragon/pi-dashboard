@@ -15,6 +15,7 @@ import {
   collapseLinearRuns,
   resetSessionTreeCaches,
   sessionKeyForFile,
+  turnSteps,
   type SessionTreeNode,
 } from '../live-sessions/session-tree.js'
 
@@ -115,9 +116,12 @@ describe('buildSessionFamilyGraph', () => {
     expect(graph.nodes.find(node => node.id === 'u5')?.sessionKey).toBe(sessionKeyForFile(parentFile))
     expect(graph.nodes.find(node => node.id === 'u6')?.sessionKey).toBe(sessionKeyForFile(childFile))
     expect(graph.nodes.find(node => node.id === 'a7')?.isHead).toBe(true)
-    // Every real entry is either rendered or accounted for by a folded range.
+    // Every real entry is either rendered or covered by a folded range. The folded
+    // COUNT is turns now ([a2] and [u3 → a4]), so coverage is asserted on the range.
     const folded = graph.nodes.filter(node => node.kind === 'collapsed')
-    expect(folded.reduce((total, node) => total + (node.collapsedCount ?? 0), 0)).toBe(3)
+    expect(folded.map(node => node.collapsedRange)).toEqual([{ from: 'a2', to: 'a4' }])
+    // `a2` is the prelude of `u3`'s request, so the run is ONE turn.
+    expect(folded[0]?.collapsedCount).toBe(1)
   })
 
   it('expands one folded run in place without changing the graph topology', async () => {
@@ -140,19 +144,31 @@ describe('buildSessionFamilyGraph', () => {
     expect(expanded.nodes.map(node => node.id)).toEqual(folded.nodes.map(node => node.id))
     const node = expanded.nodes.find(candidate => candidate.id === runId)
     expect(node?.expanded).toBe(true)
-    expect(node?.steps?.map(step => step.id)).toEqual(['a2', 'u3', 'a4', 'u5'])
+    // One row per agent turn, not per record: `u3`'s turn (with `a2` as its prelude and
+    // `a4` as its reply), then `u5`'s turn (its reply is the head, outside the run).
+    expect(node?.steps?.map(step => step.id)).toEqual(['u3', 'u5'])
+    expect(node?.steps?.map(step => step.title)).toEqual(['User', 'User'])
+    expect(node?.steps?.[0]?.preview).toBe('user message u3')
+    expect(node?.steps?.[0]?.reply).toBe('assistant reply a4')
+    expect(node?.steps?.[0]?.coveredCount).toBe(3)
+    expect(node?.steps?.[1]?.preview).toBe('user message u5')
+    expect(node?.steps?.[1]?.reply).toBeUndefined()
     expect(node?.stepsTruncated).toBeUndefined()
     // A run that was not requested stays folded.
     expect(folded.nodes.some(candidate => candidate.expanded)).toBe(false)
   })
 
   it('pages a long run: the per-run step window is respected and can be raised', async () => {
+    // A real long conversation is alternating user/assistant records, i.e. one turn per
+    // pair; a step is a turn, so the window counts turns.
     const lines = [header('long-id'), user('u0', null)]
     let previous = 'u0'
     for (let index = 1; index <= 450; index += 1) {
-      const id = `s${index}`
-      lines.push(assistant(id, previous))
-      previous = id
+      const userId = `u${index}`
+      const assistantId = `a${index}`
+      lines.push(user(userId, previous))
+      lines.push(assistant(assistantId, userId))
+      previous = assistantId
     }
     const file = writeSession('long', lines)
 
@@ -163,23 +179,25 @@ describe('buildSessionFamilyGraph', () => {
       return graph.nodes.find(candidate => candidate.id === runId)
     }
 
-    // Default window is 400; the run's real size stays reported by collapsedCount
-    // (the chain is s1..s449; s450 is the head).
+    // Default window is 400 turns; the run's real size stays reported by collapsedCount.
+    // The run is u1..a449 plus the trailing u450 (whose reply a450 is the head) = 450 turns.
     const first = await at(400)
     expect(first?.steps).toHaveLength(400)
     expect(first?.stepsTruncated).toBe(true)
-    expect(first?.collapsedCount).toBe(449)
-    expect(first?.steps?.[0]?.id).toBe('s1')
+    expect(first?.collapsedCount).toBe(450)
+    // A row stands for a turn and keeps the turn's first entry id.
+    expect(first?.steps?.[0]?.id).toBe('u1')
+    expect(first?.steps?.[0]?.reply).toBe('assistant reply a1')
 
     // “加载更多” just raises the window for the same run.
     const more = await at(800)
-    expect(more?.steps).toHaveLength(449)
+    expect(more?.steps).toHaveLength(450)
     expect(more?.stepsTruncated).toBeUndefined()
-    expect(more?.steps?.at(-1)?.id).toBe('s449')
-    expect(more?.steps?.[0]?.id).toBe('s1')
+    expect(more?.steps?.at(-1)?.id).toBe('u450')
+    expect(more?.steps?.[0]?.id).toBe('u1')
 
     // Absurd values are clamped rather than honoured (server-side ceiling).
-    expect((await at(Number.MAX_SAFE_INTEGER))?.steps).toHaveLength(449)
+    expect((await at(Number.MAX_SAFE_INTEGER))?.steps).toHaveLength(450)
     expect((await at(0))?.steps).toHaveLength(1)
   })
 
@@ -198,7 +216,9 @@ describe('buildSessionFamilyGraph', () => {
     expect(folded.detail).toBe('collapsed')
     expect(folded.nodes.map(node => node.id)).toEqual(['u1', 'run:a2', 'a6'])
     const segment = folded.nodes.find(node => node.kind === 'collapsed')
-    expect(segment?.title).toBe('+4 步')
+    // 4 records, 2 turns: [a2 → u3 → a4] (a2 is the prelude of u3's request) and [u5].
+    expect(segment?.title).toBe('+2 轮')
+    expect(segment?.collapsedCount).toBe(2)
     expect(segment?.collapsedRange).toEqual({ from: 'a2', to: 'u5' })
     expect(folded.nodes.find(node => node.id === 'a6')?.parentId).toBe('run:a2')
 
@@ -346,6 +366,90 @@ describe('buildSessionFamilyGraph', () => {
   })
 })
 
+describe('turnSteps', () => {
+  const node = (id: string, overrides: Partial<SessionTreeNode> = {}): SessionTreeNode => ({
+    id,
+    parentId: null,
+    kind: 'message',
+    sessionKey: 's',
+    type: 'message',
+    title: id,
+    childCount: 0,
+    isLeaf: false,
+    isHead: false,
+    ...overrides,
+  })
+
+  it('folds thinking, tool calls, telemetry and the reply into one user turn', () => {
+    const turns = turnSteps([
+      node('u1', { role: 'user', preview: '帮我改一下 dashboard' }),
+      node('sys1', { kind: 'system', role: 'system', title: 'Thinking → max' }),
+      node('t1', { kind: 'tool', role: 'assistant', title: 'Assistant · Read', tools: ['Read'], preview: '正在读文件' }),
+      node('tel1', { kind: 'custom', role: 'system', title: 'compact-thinking-duration' }),
+      node('tel2', { kind: 'custom', role: 'system', title: 'compact-thinking-duration' }),
+      node('a1', { role: 'assistant', preview: '改好了，喵' }),
+      node('u2', { role: 'user', preview: '再帮我看看测试' }),
+      node('a2', { role: 'assistant', preview: '测试通过' }),
+    ])
+
+    // 8 records -> 2 turns, and the noise is gone from the step list.
+    expect(turns.map(turn => turn.id)).toEqual(['u1', 'u2'])
+    expect(turns[0]).toMatchObject({
+      type: 'turn',
+      role: 'user',
+      title: 'User',
+      preview: '帮我改一下 dashboard',
+      reply: '改好了，喵',
+      coveredCount: 6,
+    })
+    expect(turns[0].tools).toEqual(['Read'])
+    expect(turns[1]).toMatchObject({ reply: '测试通过', coveredCount: 2 })
+  })
+
+  it('keeps a model/thinking prelude inside the turn it set up', () => {
+    // The graph's first card is usually `Model → ...`; it is setup for the first
+    // request, not a step the reader has to click through.
+    const turns = turnSteps([
+      node('m1', { kind: 'system', role: 'system', title: 'Model → deepseek' }),
+      node('th1', { kind: 'system', role: 'system', title: 'Thinking → max' }),
+      node('u1', { role: 'user', preview: 'hello' }),
+      node('a1', { role: 'assistant', preview: '喵，你好' }),
+      node('u2', { role: 'user', preview: '再问一个' }),
+      node('a2', { role: 'assistant', preview: '好' }),
+    ])
+    expect(turns.map(turn => turn.id)).toEqual(['u1', 'u2'])
+    expect(turns[0]).toMatchObject({ title: 'User', preview: 'hello', reply: '喵，你好', coveredCount: 4 })
+  })
+
+  it('opens a new turn at a compaction (a context reset is its own step)', () => {
+    const turns = turnSteps([
+      node('u1', { role: 'user', preview: '继续' }),
+      node('a1', { role: 'assistant', preview: '好' }),
+      node('c1', { kind: 'compaction', role: 'system', title: 'Compaction', preview: '摘要' }),
+      node('a2', { role: 'assistant', preview: '压缩后继续' }),
+    ])
+    expect(turns.map(turn => turn.id)).toEqual(['u1', 'c1'])
+    expect(turns[1]).toMatchObject({ coveredCount: 2, preview: '摘要', reply: '压缩后继续' })
+  })
+
+  it('keeps a user turn whose reply is missing (still one step)', () => {
+    const turns = turnSteps([node('u1', { role: 'user', preview: '还没回' })])
+    expect(turns).toHaveLength(1)
+    expect(turns[0].id).toBe('u1')
+    expect(turns[0].reply).toBeUndefined()
+  })
+
+  it('falls back to the assistant text when a run has no user message', () => {
+    const turns = turnSteps([
+      node('a1', { role: 'assistant', preview: '第一段' }),
+      node('t1', { kind: 'tool', role: 'assistant', tools: ['Bash'], title: 'Assistant · Bash' }),
+      node('a2', { role: 'assistant', preview: '最终回答' }),
+    ])
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toMatchObject({ title: 'Assistant · Bash', preview: '第一段', reply: '最终回答', coveredCount: 3 })
+  })
+})
+
 describe('collapseLinearRuns', () => {
   const node = (id: string, parentId: string | null, overrides: Partial<SessionTreeNode> = {}): SessionTreeNode => ({
     id,
@@ -369,7 +473,9 @@ describe('collapseLinearRuns', () => {
     const out = collapseLinearRuns(nodes, new Set(['a1']))
     const collapsed = out.filter(candidate => candidate.kind === 'collapsed')
     expect(collapsed).toHaveLength(1)
-    expect(collapsed[0].collapsedCount).toBe(8)
+    // Assistant-only records with no user message in between are ONE agent turn, even
+    // though they are 8 records: the range still covers every one of them.
+    expect(collapsed[0].collapsedCount).toBe(1)
     expect(collapsed[0].collapsedRange).toEqual({ from: 'a2', to: 'a9' })
     // start → folded run → end, with the run's children re-hung off the fold.
     expect(out.map(candidate => candidate.id)).toEqual(['a1', 'run:a2', 'a10'])
