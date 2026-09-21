@@ -21,6 +21,49 @@ function baseName(file: string): string {
 const STEP_BATCH = 400
 /** Mirrors the server's `SESSION_TREE_STEPS_MAX`. */
 const STEP_LIMIT_MAX = 3000
+/** How long to wait for a forked session file to appear on disk. */
+const PENDING_FILE_POLL_MS = 2000
+const PENDING_FILE_MAX_TRIES = 30
+
+/**
+ * Outcome of a `/ls-fork` or `/ls-navigate`, published by the Pi extension as a
+ * `tree_action` event. The extension reports its real result because the graph
+ * page cannot know whether pi refused the action (busy, stale entry id) — that
+ * used to be a terminal-only `notify`, invisible in the browser.
+ */
+export interface TreeActionOutcome {
+  action: 'fork' | 'navigate'
+  ok: boolean
+  entryId: string
+  message: string
+  at: number
+  sessionFile?: string
+  filePending?: boolean
+}
+
+/**
+ * Why the graph's write actions cannot run right now, or `undefined` when they can.
+ *
+ * Must never return nothing-but-``: a click used to hit `if (!live || !treeCapable) return`,
+ * which looked exactly like a broken button.
+ */
+export function graphWriteBlockReason(input: {
+  live: boolean
+  treeCapable: boolean
+  claimedByOther: boolean
+}): string | undefined {
+  if (!input.live) return '这个会话没有在线的 Pi 进程，图谱写操作不可用（只能看图）。'
+  if (input.claimedByOther) return '该会话已被另一个浏览器接管，写操作已禁用：刷新页面重新接管后再操作。'
+  if (!input.treeCapable) {
+    return '当前 Pi 进程加载的是旧版 live-session 扩展（没有声明 session_tree 能力），图谱写操作不可用。请在该 Pi 会话里执行一次 /reload（或重启该会话）后重试。'
+  }
+  return undefined
+}
+
+/** Success goes to the toast, refusal goes to the error strip — never nowhere. */
+export function treeActionFeedback(outcome: TreeActionOutcome): { toast?: string; error?: string } {
+  return outcome.ok ? { toast: outcome.message } : { error: outcome.message }
+}
 
 /**
  * What to do when the pi process we are watching reports a different session file.
@@ -81,6 +124,13 @@ export default function SessionGraphPage() {
   const [selectedId, setSelectedId] = useState<string | null>(nodeParam)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>(undefined)
+  /**
+   * A fork whose new session file is not on disk yet. pi defers that file until
+   * the new session produces its first assistant message, and the graph is read
+   * from disk — so jumping immediately would land on an empty/404 page and look
+   * like the fork never happened.
+   */
+  const [pendingFile, setPendingFile] = useState<{ processInstanceId: string; file: string; entryId: string } | null>(null)
 
   // After `/ls-fork` the bridge swaps to a NEW session file, so the URL's `file`
   // goes stale: the graph would neither refresh nor keep its write actions. Follow
@@ -106,8 +156,9 @@ export default function SessionGraphPage() {
     pendingForkRef.current = null
     const plan = followSessionFile(processInstanceId, nextFile, forkEntryId)
     if (plan.kind === 'navigate') {
-      setToast(null)
-      navigate(plan.to)
+      // pi defers the forked file until the new session's first reply, so wait
+      // for it instead of jumping to a graph that cannot be read yet.
+      setPendingFile({ processInstanceId, file: nextFile, entryId: forkEntryId ?? '' })
       return
     }
     setParams({ file: plan.file })
@@ -188,12 +239,25 @@ export default function SessionGraphPage() {
   const actionableNodeId = selectedId && !selectedId.startsWith('run:') ? selectedId : null
 
   const runCommand = useCallback(async (text: string, successMessage: string, undoHeadId?: string | null) => {
-    if (!live || !treeCapable) return
+    // Never fail silently: a greyed-out or capability-less action used to just
+    // `return`, so a click looked like a broken button with no explanation.
+    const blocked = graphWriteBlockReason({
+      live: Boolean(live),
+      treeCapable: Boolean(treeCapable),
+      claimedByOther: Boolean(live?.claim.state === 'claimed' && !ownedLease),
+    })
+    if (blocked || !live) {
+      setActionError(blocked ?? '图谱写操作不可用。')
+      setToast(null)
+      return
+    }
     setBusy(true)
     setActionError(undefined)
     try {
       const suffix = ownedLease ? ` ${ownedLease}` : ''
       await liveSessionApi.sessionTreeAction(live.processInstanceId, `${text}${suffix}`)
+      // The request is only an “accepted”: whether pi honoured it arrives as a
+      // `tree_action` event, which sets the real toast or error below.
       setToast(successMessage)
       if (undoHeadId !== undefined) setUndo(undoHeadId ? { headId: undoHeadId, label: successMessage } : null)
       reload()
@@ -205,6 +269,66 @@ export default function SessionGraphPage() {
       setBusy(false)
     }
   }, [live, treeCapable, ownedLease, reload])
+
+  /**
+   * Show what pi actually did with the last `/ls-*` action.
+   *
+   * This is the only channel that can report a refusal the browser cannot
+   * predict (session busy, stale entry id, fork deferred to disk), so it replaces
+   * the optimistic toast as soon as it arrives.
+   */
+  const lastTreeAction = useAppSelector(state => {
+    if (!live) return undefined
+    const entries = state.liveSessions.details[live.processInstanceId]?.entries ?? []
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index] as { type?: unknown; data?: unknown } | null
+      if (entry?.type !== 'tree_action') continue
+      const data = entry.data as TreeActionOutcome | undefined
+      if (data && typeof data.at === 'number') return data
+    }
+    return undefined
+  })
+  const shownTreeActionRef = useRef(0)
+  useEffect(() => {
+    if (!lastTreeAction || lastTreeAction.at === shownTreeActionRef.current) return
+    shownTreeActionRef.current = lastTreeAction.at
+    const feedback = treeActionFeedback(lastTreeAction)
+    if (feedback.toast) {
+      setActionError(undefined)
+      setToast(feedback.toast)
+      return
+    }
+    setToast(null)
+    setActionError(feedback.error)
+  }, [lastTreeAction])
+
+  // Wait for a forked session file to land on disk, then jump to it.
+  useEffect(() => {
+    if (!pendingFile) return
+    let cancelled = false
+    let tries = 0
+    const poll = (): void => {
+      liveSessionApi.sessionTree(pendingFile.file)
+        .then(() => {
+          if (cancelled) return
+          setPendingFile(null)
+          setToast(null)
+          navigate(`/live-sessions/${encodeURIComponent(pendingFile.processInstanceId)}?node=${encodeURIComponent(pendingFile.entryId)}`)
+        })
+        .catch(() => {
+          if (cancelled) return
+          tries += 1
+          if (tries >= PENDING_FILE_MAX_TRIES) {
+            setPendingFile(null)
+            setActionError(`分叉已创建，但新会话文件 ${pendingFile.file.split('/').pop()} 还没写入磁盘；在它产出第一条回复后重新打开此页就能看到。`)
+            return
+          }
+          timer = setTimeout(poll, PENDING_FILE_POLL_MS)
+        })
+    }
+    let timer = setTimeout(poll, 600)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [pendingFile, navigate])
 
   const handleNavigate = useCallback((node: SessionTreeNode) => {
     const previousHead = graph?.nodes.find(candidate => candidate.sessionKey === graph.focusKey && candidate.isHead)?.id ?? null
@@ -329,6 +453,18 @@ export default function SessionGraphPage() {
       {graph?.truncated ? (
         <div className="bg-warn-subtle px-4 py-2 text-2xs text-text">
           图谱已截断：家族会话数或节点数超过上限（当前 {graph.sessions.length} 个会话 / {graph.nodes.length} 个节点）。长线性段已折叠为「⋯」。
+        </div>
+      ) : null}
+      {capabilityBlocked || claimedByOther ? (
+        <div className="bg-warn-subtle px-4 py-2 text-2xs text-text">
+          {claimedByOther
+            ? '⚠ 写操作已禁用：该会话已被另一个浏览器接管（当前浏览器未持有 lease）。'
+            : '⚠ 写操作已禁用：当前 Pi 进程加载的是旧版 live-session 扩展（没有 session_tree 能力）。请在右侧面板之外，于该 Pi 会话里执行一次 /reload（或重启该会话），然后刷新本页。'}
+        </div>
+      ) : null}
+      {pendingFile ? (
+        <div className="bg-accent-subtle px-4 py-2 text-2xs text-text">
+          已分叉：pi 已切到新会话，正在等待它的文件落盘（{(pendingFile.file.split('/').pop() ?? '').slice(0, 46)}）⋯ 该文件会随新会话的第一条回复生成。
         </div>
       ) : null}
       {live && live.sessionFile && graph && graph.sessions.find(session => session.isFocus)?.partial ? (
