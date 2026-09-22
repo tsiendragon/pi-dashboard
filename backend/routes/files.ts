@@ -78,7 +78,9 @@ export function registerFileRoutes(deps: RouteDeps): void {
     const SKIP = new Set(['node_modules', '.git', '.venv', '__pycache__', '.next', 'dist', 'build', '.cache', '.idea', 'vendor'])
     const out: { name: string; path: string; isDir: boolean }[] = []
     const seen = new Set<string>()
-    const stack = [...roots]
+    // `pop()` takes the last entry, so reverse to search the requested cwd
+    // before the home dir — callers expect their workspace hits to win.
+    const stack = [...roots].reverse()
     let dirs = 0
     while (stack.length && out.length < limit && dirs < 400) {
       const dir = stack.pop()!
