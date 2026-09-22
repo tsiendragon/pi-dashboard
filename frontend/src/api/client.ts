@@ -85,8 +85,9 @@ export const api = {
     post('/api/chat/slots/' + encodeURIComponent(slot) + '/workspace', { workspace }).then(j),
   workspaces: () => get('/api/workspaces').then(j),
   browse: (path?: string) => afetch('/api/browse' + (path ? '?path=' + encodeURIComponent(path) : '')).then(j) as Promise<{ path: string; parent: string; entries: { name: string; path: string; isDir: boolean }[] }>,
+  browseFiles: (path: string) => afetch('/api/browse?files=true&hidden=true&path=' + encodeURIComponent(path)).then(j) as Promise<{ path: string; parent: string; entries: { name: string; path: string; isDir: boolean }[] }>,
   pathComplete: (input: string) => afetch('/api/path-complete?input=' + encodeURIComponent(input)).then(j) as Promise<{ dir: string; prefix: string; entries: { name: string; path: string; isDir: boolean }[] }>,
-  fileSearch: (q: string, cwd?: string) => afetch('/api/file-search?q=' + encodeURIComponent(q) + (cwd ? '&cwd=' + encodeURIComponent(cwd) : '')).then(j) as Promise<{ entries: { name: string; path: string; isDir: boolean }[] }>,
+  fileSearch: (q: string, cwd?: string, limit?: number) => afetch('/api/file-search?q=' + encodeURIComponent(q) + (cwd ? '&cwd=' + encodeURIComponent(cwd) : '') + (limit ? '&limit=' + limit : '')).then(j) as Promise<{ entries: { name: string; path: string; isDir: boolean }[] }>,
   models: () => get('/api/models').then(j),
   setSlotModel: (slot: string, provider: string, modelId: string) =>
     post('/api/chat/slots/' + encodeURIComponent(slot) + '/model', { provider, modelId }).then(j),
