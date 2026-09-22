@@ -25,6 +25,8 @@ import PathCompleteMenu from '../components/PathCompleteMenu'
 import FileMentionMenu from '../components/FileMentionMenu'
 import { usePanelState, detectFileType } from '../hooks/usePanelState'
 import { resolvePath } from '../utils/resolvePath'
+import { clipboardFiles, splitFilesByKind, pastedFileRef } from '../utils/clipboardFiles'
+import { resolveFileRef, uploadAttachedFiles, withAttachedFile } from '../utils/attachmentIntake'
 import { WsContext } from '../App'
 import { registerAction } from '../shortcuts'
 import { ChatFooter, AssistantMessage, ToolGroup, groupToolMessages, ThinkingBlock, ToolCallBlock, PermissionMessage, SystemMessage, SubagentDock } from './chat'
@@ -461,20 +463,10 @@ export default function ChatPage() {
     setUploading(false)
   }, [])
 
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setDragOver(false)
-    const files = Array.from(e.dataTransfer.files)
-    if (!files.length) return
-
-    const imageFiles: File[] = []
-    const docFiles: File[] = []
-    for (const f of files) {
-      if (f.type.startsWith('image/')) imageFiles.push(f)
-      else docFiles.push(f)
-    }
-
-    // Images → existing pendingImages pipeline
-    for (const file of imageFiles) {
+  // Images go inline as pendingImages; everything else is uploaded to the backend
+  // and sent as a file path. Shared by drag-drop, paste and the attach picker.
+  const addImageFiles = useCallback((files: File[]) => {
+    for (const file of files) {
       const reader = new FileReader()
       reader.onload = () => {
         const dataUrl = reader.result as string
@@ -483,26 +475,52 @@ export default function ChatPage() {
       }
       reader.readAsDataURL(file)
     }
+  }, [])
 
-    // Documents → upload to backend, get paths
-    if (docFiles.length) {
-      setUploading(true)
-      try {
-        const toUpload = await Promise.all(docFiles.map(f => new Promise<{ name: string; data: string }>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve({ name: f.name, data: (reader.result as string).split(',')[1] })
-          reader.onerror = reject
-          reader.readAsDataURL(f)
-        })))
-        const { paths } = await api.uploadFiles(toUpload)
-        if (paths?.length) {
-          setPendingFiles(prev => [...prev, ...paths.map((p, i) => ({ name: docFiles[i].name, path: p }))])
-        }
-      } catch { /* upload failed */ }
+  /** Put back the text the browser would have pasted when no file resolved. */
+  const insertPastedText = useCallback((text: string, start: number, end: number) => {
+    if (!text) return
+    setInput(prev => prev.slice(0, start) + text + prev.slice(end))
+    const pos = start + text.length
+    setCursorPos(pos)
+    setTimeout(() => {
+      if (inputRef.current) inputRef.current.selectionStart = inputRef.current.selectionEnd = pos
+    }, 0)
+  }, [setInput])
+
+  /**
+   * Resolve a pasted path reference to a file on the dashboard host; the heavy
+   * lifting (workspace cwd, ambiguity rules) lives in utils/attachmentIntake.
+   */
+  const resolvePastedFileRef = useCallback((candidate: string) => {
+    const cwd = slots.find(s => s.key === activeSlot)?.cwd
+    return resolveFileRef(candidate, cwd)
+  }, [slots, activeSlot])
+
+  const uploadDocumentFiles = useCallback(async (files: File[]) => {
+    if (!files.length) return
+    setUploading(true)
+    try {
+      const attached = await uploadAttachedFiles(files)
+      setPendingFiles(prev => attached.reduce(withAttachedFile, prev))
+    } catch {
+      dispatch(appendMessage({ role: 'error', content: 'File upload failed — try again, or drop the file into the input.', cls: '' }))
+    } finally {
       setUploading(false)
     }
+  }, [dispatch])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation(); setDragOver(false)
+    const dropped = Array.from(e.dataTransfer.files)
+    if (!dropped.length) return
+
+    // Images → inline pendingImages pipeline; documents → upload for a file path
+    const { images, documents } = splitFilesByKind(dropped)
+    addImageFiles(images)
+    await uploadDocumentFiles(documents)
     inputRef.current?.focus()
-  }, [])
+  }, [addImageFiles, uploadDocumentFiles])
 
   const scrollBottom = useCallback(() => {
     virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'auto', align: 'end' })
@@ -685,41 +703,56 @@ export default function ChatPage() {
   }, [slotRunning, voiceMode, isNativeIOS, messages])
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items
-    if (!items) return
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault()
-        const file = item.getAsFile()
-        if (!file) continue
-        const reader = new FileReader()
-        reader.onload = () => {
-          const dataUrl = reader.result as string
-          const base64 = dataUrl.split(',')[1]
-          const mimeType = file.type
-          setPendingImages(prev => [...prev, { data: base64, mimeType, preview: dataUrl }])
-        }
-        reader.readAsDataURL(file)
-      }
+    // Files copied from the OS file manager (markdown, json, pdf, …) arrive as
+    // `kind: 'file'` items, so route them through the same pipelines as
+    // drag-drop — pasting a file attaches it instead of dropping raw text.
+    const pasted = clipboardFiles(e.clipboardData)
+    if (pasted.length) {
+      e.preventDefault()
+      const { images, documents } = splitFilesByKind(pasted)
+      addImageFiles(images)
+      void uploadDocumentFiles(documents)
+      return
     }
-  }, [])
+
+    // Some platforms (macOS browsers most notably) put a copied file on the
+    // clipboard as text only — a `file://` URL or the bare file name. Resolve
+    // that against the workspace and attach it; otherwise paste the text as-is.
+    const pastedText = e.clipboardData?.getData('text/plain') ?? ''
+    const candidate = pastedFileRef({ uriList: e.clipboardData?.getData('text/uri-list'), text: pastedText })
+    if (!candidate) return
+
+    const start = inputRef.current?.selectionStart ?? cursorPos
+    const end = inputRef.current?.selectionEnd ?? start
+    e.preventDefault()
+    void resolvePastedFileRef(candidate).then(resolved => {
+      if (resolved) {
+        setPendingFiles(prev => withAttachedFile(prev, resolved))
+      } else {
+        // The clipboard carried only text — the browser never handed us the bytes,
+        // so a file that only exists on the user's own machine cannot be attached.
+        insertPastedText(pastedText.trim() ? pastedText : candidate, start, end)
+        const name = candidate.split('/').pop() || candidate
+        dispatch(appendMessage({
+          role: 'error',
+          content: `没能把「${name}」当作附件：剪贴板里只有文件名/路径文本，而 Pi 所在主机上找不到这个文件。请把文件直接拖进输入框，或用 📎 选择文件（这两种会把文件内容传上来）。`,
+          cls: '',
+        }))
+      }
+    })
+  }, [addImageFiles, uploadDocumentFiles, resolvePastedFileRef, insertPastedText, cursorPos, dispatch])
 
   const removeImage = useCallback((idx: number) => {
     setPendingImages(prev => prev.filter((_, i) => i !== idx))
   }, [])
 
   const handleMobileFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    Array.from(e.target.files ?? []).forEach(file => {
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        const dataUrl = ev.target?.result as string
-        const base64 = dataUrl.split(',')[1]
-        setPendingImages(prev => [...prev, { data: base64, mimeType: file.type, preview: dataUrl }])
-      }
-      reader.readAsDataURL(file)
-    })
+    const picked = Array.from(e.target.files ?? [])
     e.target.value = ''
-  }, [])
+    const { images, documents } = splitFilesByKind(picked)
+    addImageFiles(images)
+    void uploadDocumentFiles(documents)
+  }, [addImageFiles, uploadDocumentFiles])
 
   // Receive events from native iOS bridge
   useEffect(() => {
