@@ -1445,6 +1445,7 @@ export default function LiveSessionPage() {
                   modelsLoading={modelsLoading}
                   onLoadModels={loadModels}
                   onSelectModel={selectModel}
+                  cwd={summary.canonicalCwd}
                   onSubmit={submit}
                 />
               </div>
