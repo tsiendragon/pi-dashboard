@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent 
 import { createPortal } from 'react-dom'
 import { LIVE_SESSION_MAX_IMAGE_BYTES, LIVE_SESSION_MAX_IMAGES, type LiveSessionImage, type LiveSessionModelOption, type LiveSessionStatus } from '@shared/live-sessions'
 import { LIVE_SESSION_SLASH_MENU, LIVE_SESSION_TUI_ONLY, type LiveSessionSlashItem } from './liveSessionCommands'
+import { clipboardFiles, pastedFileRef, splitFilesByKind } from '../../utils/clipboardFiles'
+import { resolveFileRef, uploadAttachedFiles, withAttachedFile, type AttachedFile } from '../../utils/attachmentIntake'
 
 export interface LiveSessionActivity {
   label: string
@@ -18,6 +20,8 @@ interface LiveSessionComposerProps {
   modelsLoading?: boolean
   onLoadModels?: () => Promise<void>
   onSelectModel?: (model: LiveSessionModelOption) => Promise<void>
+  /** Workspace cwd — used to resolve a pasted file name/path into a real file. */
+  cwd?: string
   onSubmit: (text: string, deliverAs?: 'steer' | 'followUp', images?: LiveSessionImage[]) => Promise<void>
 }
 
@@ -76,9 +80,12 @@ function AgentActivityBar({ activity }: { activity?: LiveSessionActivity }) {
   )
 }
 
-export default function LiveSessionComposer({ status, activity, disabled, models = [], currentModel, modelsLoading = false, onLoadModels, onSelectModel, onSubmit }: LiveSessionComposerProps) {
+export default function LiveSessionComposer({ status, activity, disabled, models = [], currentModel, modelsLoading = false, onLoadModels, onSelectModel, cwd, onSubmit }: LiveSessionComposerProps) {
   const [text, setText] = useState('')
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
+  const [pendingFiles, setPendingFiles] = useState<AttachedFile[]>([])
+  const [fileError, setFileError] = useState<string>()
+  const [uploadingFiles, setUploadingFiles] = useState(false)
   const [imageError, setImageError] = useState<string>()
   const [deliverAs, setDeliverAs] = useState<'steer' | 'followUp'>('followUp')
   const [sending, setSending] = useState(false)
@@ -87,14 +94,10 @@ export default function LiveSessionComposer({ status, activity, disabled, models
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [slashSelected, setSlashSelected] = useState(0)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
-    const files = Array.from(event.clipboardData.items)
-      .filter(item => item.type.startsWith('image/'))
-      .map(item => item.getAsFile())
-      .filter((file): file is File => !!file)
+  const intakeImages = (files: File[]): void => {
     if (files.length === 0) return
-    event.preventDefault()
     if (pendingImages.length >= LIVE_SESSION_MAX_IMAGES) {
       setImageError(`最多同时发送 ${LIVE_SESSION_MAX_IMAGES} 张图片`)
       return
@@ -110,8 +113,86 @@ export default function LiveSessionComposer({ status, activity, disabled, models
     }).catch(error => setImageError(error instanceof Error ? error.message : '图片读取失败'))
   }
 
+  /**
+   * Upload files to the dashboard host so the message can carry their paths.
+   * Files cannot ride along inside the live-session protocol — only paths can.
+   */
+  const intakeFiles = (files: File[]): void => {
+    if (files.length === 0) return
+    setUploadingFiles(true)
+    void uploadAttachedFiles(files)
+      .then(attached => {
+        setFileError(undefined)
+        setPendingFiles(previous => attached.reduce(withAttachedFile, previous))
+      })
+      .catch(() => setFileError('文件上传失败，请重试，或把文件拖到输入框。'))
+      .finally(() => setUploadingFiles(false))
+  }
+
+  const intakeCandidateFiles = (files: File[]): void => {
+    const { images, documents } = splitFilesByKind(files)
+    intakeImages(images)
+    intakeFiles(documents)
+  }
+
+  /** Restore the text the browser would have pasted when nothing resolved. */
+  const insertPastedText = (value: string, start: number, end: number): void => {
+    if (!value) return
+    setText(previous => previous.slice(0, start) + value + previous.slice(end))
+    const caret = start + value.length
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) el.setSelectionRange(caret, caret)
+    })
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const data = event.clipboardData
+    const pastedFiles = clipboardFiles(data)
+    if (pastedFiles.length > 0) {
+      event.preventDefault()
+      intakeCandidateFiles(pastedFiles)
+      return
+    }
+
+    // Some platforms (macOS browsers most notably) put a copied file on the
+    // clipboard as text only — a `file://` URL or the bare file name. Attach it
+    // when it exists on the host; otherwise paste the text and say why.
+    const pastedText = data.getData('text/plain') ?? ''
+    const candidate = pastedFileRef({ uriList: data.getData('text/uri-list'), text: pastedText })
+    if (!candidate) return
+
+    const start = inputRef.current?.selectionStart ?? 0
+    const end = inputRef.current?.selectionEnd ?? start
+    event.preventDefault()
+    void resolveFileRef(candidate, cwd).then(resolved => {
+      if (resolved) {
+        setFileError(undefined)
+        setPendingFiles(previous => withAttachedFile(previous, resolved))
+        return
+      }
+      insertPastedText(pastedText.trim() ? pastedText : candidate, start, end)
+      const name = candidate.split('/').pop() || candidate
+      setFileError(`没能把「${name}」当作附件：剪贴板里只有文件名/路径文本，而 Pi 所在主机上找不到这个文件。请把文件拖到输入框里。`)
+    })
+  }
+
+  const isFileDrag = (event: React.DragEvent): boolean => Array.from(event.dataTransfer.types).includes('Files')
+  const handleDragOver = (event: React.DragEvent): void => {
+    if (!isFileDrag(event) || disabled) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }
+  const handleDrop = (event: React.DragEvent): void => {
+    if (!isFileDrag(event) || disabled) return
+    event.preventDefault()
+    intakeCandidateFiles(Array.from(event.dataTransfer.files))
+  }
+
   const submit = async (): Promise<void> => {
-    const value = text.trim() || (pendingImages.length > 0 ? '请分析这张图片。' : '')
+    const filePrefix = pendingFiles.map(file => file.path).join('\n')
+    const typed = [filePrefix, text.trim()].filter(Boolean).join('\n\n')
+    const value = typed || (pendingImages.length > 0 ? '请分析这张图片。' : '')
     if (!value || sending || disabled) return
     const images = pendingImages.map(({ preview: _preview, ...image }) => image)
     setSending(true)
@@ -120,7 +201,9 @@ export default function LiveSessionComposer({ status, activity, disabled, models
       else await onSubmit(value, status === 'running' ? deliverAs : undefined)
       setText('')
       setPendingImages([])
+      setPendingFiles([])
       setImageError(undefined)
+      setFileError(undefined)
     } catch {
       // The page keeps the detailed error; preserve the draft for retry.
     } finally {
@@ -185,7 +268,16 @@ export default function LiveSessionComposer({ status, activity, disabled, models
   return (
     <>
       <AgentActivityBar activity={activity} />
-      <div className="border-t border-border bg-card p-2">
+      <div className="border-t border-border bg-card p-2" onDragOver={handleDragOver} onDrop={handleDrop}>
+        {pendingFiles.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label="待发送文件">
+          {pendingFiles.map((file, index) => <div key={`${file.path}-${index}`} className="group flex items-center gap-1.5 rounded-md border border-border bg-bg px-2 py-1 text-2xs text-text">
+            <span aria-hidden="true">📄</span>
+            <span className="max-w-52 truncate" title={file.path}>{file.name}</span>
+            <button type="button" onClick={() => setPendingFiles(previous => previous.filter((_, itemIndex) => itemIndex !== index))} className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-none bg-danger text-2xs text-danger-fg opacity-60 transition-opacity hover:opacity-100" aria-label={`移除文件 ${file.name}`}>×</button>
+          </div>)}
+        </div>}
+        {uploadingFiles && <div className="mb-2 text-2xs text-muted" role="status">文件上传中…</div>}
+        {fileError && <div className="mb-2 text-2xs text-danger" role="alert">{fileError}</div>}
         {pendingImages.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label="待发送图片">
           {pendingImages.map((image, index) => <div key={`${image.mimeType}-${index}`} className="group relative">
             <img src={image.preview} alt={`待发送图片 ${index + 1}`} className="h-16 max-w-28 rounded-md border border-border object-cover" />
@@ -208,8 +300,28 @@ export default function LiveSessionComposer({ status, activity, disabled, models
           maxLength={128 * 1024}
           rows={1}
           onPaste={handlePaste}
-          placeholder={pendingImages.length > 0 ? '补充图片说明，或直接发送…' : '发送到运行中的 Pi…'}
+          placeholder={pendingFiles.length > 0 ? '补充文件说明，或直接发送…' : pendingImages.length > 0 ? '补充图片说明，或直接发送…' : '发送到运行中的 Pi…'}
           className="min-h-9 flex-1 resize-none rounded-lg border border-border bg-bg px-2.5 py-1.5 text-sm text-text shadow-inner outline-none focus-ring disabled:opacity-50"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || sending || uploadingFiles}
+          aria-label="选择文件"
+          title="选择文件（会上传到 Pi 所在主机，再把路径发给 Pi）"
+          className="h-8 w-8 shrink-0 rounded-lg border border-border bg-bg text-sm text-muted transition hover:border-accent hover:text-accent disabled:opacity-40"
+        >
+          {uploadingFiles ? '⏳' : '📎'}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={event => {
+            intakeCandidateFiles(Array.from(event.target.files ?? []))
+            event.target.value = ''
+          }}
         />
         {status === 'running' && (
           <select value={deliverAs} onChange={event => setDeliverAs(event.target.value as 'steer' | 'followUp')} className="h-8 rounded-lg border border-border bg-bg px-2 text-2xs text-text">
@@ -234,7 +346,7 @@ export default function LiveSessionComposer({ status, activity, disabled, models
             })}
           </div>}
         </div>
-        <button type="button" onClick={() => void submit()} disabled={(!text.trim() && pendingImages.length === 0) || sending || !!action || disabled} className="h-8 px-3 rounded-lg bg-accent text-accent-fg border-none text-xs disabled:opacity-50">
+        <button type="button" onClick={() => void submit()} disabled={(!text.trim() && pendingImages.length === 0 && pendingFiles.length === 0) || sending || !!action || disabled} className="h-8 px-3 rounded-lg bg-accent text-accent-fg border-none text-xs disabled:opacity-50">
           {sending ? '发送中…' : '发送'}
         </button>
         </div>
