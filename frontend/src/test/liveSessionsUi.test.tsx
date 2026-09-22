@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import LiveSessionComposer from '../features/live-sessions/LiveSessionComposer'
 import LiveSessionsList from '../features/live-sessions/LiveSessionsList'
+import { api } from '../api/client'
+
+afterEach(() => vi.restoreAllMocks())
 
 function session(processInstanceId: string, pid: number, cwd = '/mnt/workspace/lilong/repos/worktree/task-a'): LiveSessionSummary {
   return {
@@ -60,12 +63,55 @@ describe('Live Session UI', () => {
     render(<LiveSessionComposer status="idle" onSubmit={onSubmit} />)
     const input = screen.getByPlaceholderText('发送到运行中的 Pi…') as HTMLTextAreaElement
     const file = new File(['image-bytes'], 'screen.png', { type: 'image/png' })
-    fireEvent.paste(input, { clipboardData: { items: [{ type: 'image/png', getAsFile: () => file }] } })
+    fireEvent.paste(input, { clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] } })
     await waitFor(() => expect(screen.getByAltText('待发送图片 1')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(
       '请分析这张图片。', undefined,
       [expect.objectContaining({ type: 'image', mimeType: 'image/png' })],
     ))
+  })
+
+  it('uploads a pasted document and sends its path', async () => {
+    vi.spyOn(api, 'uploadFiles').mockResolvedValue({ ok: true, paths: ['/tmp/pi-dashboard-uploads/1-notes.md'] })
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<LiveSessionComposer status="idle" cwd="/repo" onSubmit={onSubmit} />)
+    const input = screen.getByPlaceholderText('发送到运行中的 Pi…') as HTMLTextAreaElement
+    const file = new File(['# hi'], 'notes.md', { type: 'text/markdown' })
+
+    fireEvent.paste(input, { clipboardData: { items: [{ kind: 'file', type: 'text/markdown', getAsFile: () => file }] } })
+    await waitFor(() => expect(screen.getByLabelText('待发送文件')).toHaveTextContent('notes.md'))
+
+    fireEvent.change(input, { target: { value: '看一下这个' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(
+      '/tmp/pi-dashboard-uploads/1-notes.md\n\n看一下这个', undefined,
+    ))
+    expect(input.value).toBe('')
+  })
+
+  it('attaches a pasted file name that resolves inside the workspace', async () => {
+    vi.spyOn(api, 'browseFiles').mockResolvedValue({
+      path: '/repo', parent: '/', entries: [{ name: 'design.md', path: '/repo/design.md', isDir: false }],
+    })
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<LiveSessionComposer status="idle" cwd="/repo" onSubmit={onSubmit} />)
+    const input = screen.getByPlaceholderText('发送到运行中的 Pi…') as HTMLTextAreaElement
+
+    fireEvent.paste(input, { clipboardData: { items: [{ kind: 'string', type: 'text/plain' }], getData: (type: string) => (type === 'text/plain' ? 'design.md' : '') } })
+    await waitFor(() => expect(screen.getByLabelText('待发送文件')).toHaveTextContent('design.md'))
+    expect(input.value).toBe('')
+  })
+
+  it('explains why a pasted name that exists only off-host cannot be attached', async () => {
+    vi.spyOn(api, 'browseFiles').mockRejectedValue(new Error('ENOENT'))
+    vi.spyOn(api, 'fileSearch').mockResolvedValue({ entries: [] })
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<LiveSessionComposer status="idle" cwd="/repo" onSubmit={onSubmit} />)
+    const input = screen.getByPlaceholderText('发送到运行中的 Pi…') as HTMLTextAreaElement
+
+    fireEvent.paste(input, { clipboardData: { items: [{ kind: 'string', type: 'text/plain' }], getData: (type: string) => (type === 'text/plain' ? 'Local_Report.md' : '') } })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Local_Report.md'))
+    expect(input.value).toBe('Local_Report.md')
   })
 })
