@@ -49,4 +49,15 @@ describe('DocumentPreviewModal', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('copies the whole file content to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+
+    render(<DocumentPreviewModal filePath="/tmp/notes.md" content="# Hello" onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: '复制文件内容' }))
+
+    await screen.findByText('✓ 已复制')
+    expect(writeText).toHaveBeenCalledWith('# Hello')
+  })
 })
