@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
 import javascript from 'highlight.js/lib/languages/javascript'
@@ -8,6 +8,7 @@ import bash from 'highlight.js/lib/languages/bash'
 import json from 'highlight.js/lib/languages/json'
 import yaml from 'highlight.js/lib/languages/yaml'
 import MarkdownRenderer from './MarkdownRenderer'
+import { copyText } from '../utils/clipboard'
 
 hljs.registerLanguage('javascript', javascript)
 hljs.registerLanguage('js', javascript)
@@ -88,9 +89,17 @@ export interface DocumentPreviewModalProps {
 
 export default function DocumentPreviewModal({ filePath, content, loading = false, error = null, onClose }: DocumentPreviewModalProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
+  const [copied, setCopied] = useState(false)
   const markdown = isMarkdownPath(filePath)
   const language = languageForPreview(filePath)
   const label = markdown ? 'Markdown' : language?.label || 'Text'
+
+  const handleCopy = useCallback(async () => {
+    if (await copyText(content)) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }
+  }, [content])
 
   useEffect(() => {
     closeRef.current?.focus()
@@ -109,6 +118,14 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
           <span className="shrink-0 text-sm">📄</span>
           <span className="min-w-0 flex-1 truncate text-body-s font-mono font-semibold text-text" title={filePath}>{filePath}</span>
           <span className="shrink-0 rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-muted">{label}</span>
+          <button
+            type="button"
+            title={`复制 ${filePath} 的内容`}
+            aria-label="复制文件内容"
+            disabled={loading || !!error}
+            onClick={handleCopy}
+            className="shrink-0 rounded border border-border bg-transparent px-2 py-1 text-meta text-muted cursor-pointer hover:border-accent hover:text-accent transition-colors disabled:opacity-40 disabled:cursor-default"
+          >{copied ? '✓ 已复制' : '📋 复制'}</button>
           <a
             href={`/api/local-file/download?path=${encodeURIComponent(filePath)}`}
             download

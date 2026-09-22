@@ -2,6 +2,7 @@ import { memo, useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense
 import TextRenderer, { stripMd, CommentInput } from './renderers/TextRenderer'
 import DiffView from './DiffView'
 import { detectFileType, type Comment } from '../hooks/usePanelState'
+import { copyText } from '../utils/clipboard'
 
 const PdfRenderer = lazy(() => import('./renderers/PdfRenderer'))
 const DocxRenderer = lazy(() => import('./renderers/DocxRenderer'))
@@ -37,6 +38,7 @@ interface Props {
 
 export default memo(function DocumentPanel({ filePath, content, onContentChange, onSave, onClose, dirty, versions, selectedVersion, conflictContent, onSelectVersion, onResolveConflict, diffMode, onToggleDiff, comments, onAddComment, onEditComment, onDeleteComment, onReviewComments, presentation = 'side' }: Props) {
   const [mode, setMode] = useState<'preview' | 'edit'>('preview')
+  const [copied, setCopied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [lineNums, setLineNums] = useState(true)
@@ -206,6 +208,9 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
             <button className={`px-2 py-1 rounded-md text-meta font-medium border cursor-pointer transition ${diffMode ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted hover:text-text hover:border-border-strong'}`} onClick={onToggleDiff} aria-label="Diff">Diff</button>
           )}
           {!isBinary && <button className={`px-2 py-1 rounded-md text-meta font-medium border transition disabled:opacity-40 ${dirty ? 'border-accent text-accent-fg bg-accent cursor-pointer hover:bg-accent-hover' : 'border-border text-muted cursor-default'}`} disabled={saving || !dirty} onClick={handleSave}>{saving ? 'Saving…' : 'Save'}</button>}
+          {!isBinary && (
+            <button className="px-2 py-1 rounded-md text-meta text-muted border border-border hover:text-accent hover:border-accent transition cursor-pointer" title="复制文件内容" aria-label="复制文件内容" onClick={async () => { if (await copyText(content)) { setCopied(true); setTimeout(() => setCopied(false), 1500) } }}>{copied ? '✓' : '📋'}</button>
+          )}
           <a href={`/api/local-file/download?path=${encodeURIComponent(filePath)}`} download={fileName} className="px-2 py-1 rounded-md text-meta text-muted border border-border hover:text-accent hover:border-accent transition cursor-pointer no-underline" title="Download">⬇</a>
           <button className="px-2 py-1 rounded-md text-meta text-muted border border-border hover:text-danger hover:border-danger transition cursor-pointer" onClick={guardedClose}>✕</button>
         </div>

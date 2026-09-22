@@ -125,6 +125,19 @@ describe('DocumentPanel — No Local Dirty State (AC8)', () => {
   })
 })
 
+describe('DocumentPanel — Copy File Content', () => {
+  it('copies the file content to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+
+    render(<DocumentPanel {...baseProps} filePath="/tmp/notes.md" content="# Hello" />)
+    fireEvent.click(screen.getByRole('button', { name: '复制文件内容' }))
+
+    await screen.findByText('✓')
+    expect(writeText).toHaveBeenCalledWith('# Hello')
+  })
+})
+
 describe('DocumentPanel — Right-click Comment', () => {
   it('shows context menu on right-click with text selection', () => {
     const content = 'line 1\nline 2\nline 3'
