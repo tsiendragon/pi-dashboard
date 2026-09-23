@@ -8,6 +8,9 @@ import bash from 'highlight.js/lib/languages/bash'
 import json from 'highlight.js/lib/languages/json'
 import yaml from 'highlight.js/lib/languages/yaml'
 import MarkdownRenderer from './MarkdownRenderer'
+import InlineComments from './InlineComments'
+import type { Comment } from '../hooks/usePanelState'
+import { useCommentSelection, type CommentTarget } from '../hooks/useCommentSelection'
 import { copyText } from '../utils/clipboard'
 
 hljs.registerLanguage('javascript', javascript)
@@ -85,14 +88,36 @@ export interface DocumentPreviewModalProps {
   loading?: boolean
   error?: string | null
   onClose: () => void
+  /** Commenting is available when the caller supplies the comment handlers. */
+  comments?: Comment[]
+  currentVersion?: number
+  onAddComment?: (startLine: number, endLine: number, content: string, quote?: string) => void
+  onEditComment?: (id: string, content: string) => void
+  onDeleteComment?: (id: string) => void
+  onReviewComments?: () => void
 }
 
-export default function DocumentPreviewModal({ filePath, content, loading = false, error = null, onClose }: DocumentPreviewModalProps) {
+export default function DocumentPreviewModal({ filePath, content, loading = false, error = null, onClose, comments = [], currentVersion, onAddComment, onEditComment, onDeleteComment, onReviewComments }: DocumentPreviewModalProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
+  const commentsRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
+  const [activeInputRange, setActiveInputRange] = useState<CommentTarget | null>(null)
   const markdown = isMarkdownPath(filePath)
   const language = languageForPreview(filePath)
   const label = markdown ? 'Markdown' : language?.label || 'Text'
+  const commenting = Boolean(onAddComment) && !loading && !error
+  const { contextMenu, clampedMenuStyle, handleContextMenu, closeContextMenu } = useCommentSelection(content)
+
+  const handleAddComment = useCallback((startLine: number, endLine: number, text: string) => {
+    onAddComment?.(startLine, endLine, text, activeInputRange?.quote)
+    setActiveInputRange(null)
+  }, [onAddComment, activeInputRange])
+
+  // The comment input lives at the end of the footer, so reveal it when it opens.
+  useEffect(() => {
+    const footer = commentsRef.current
+    if (activeInputRange && footer) footer.scrollTop = footer.scrollHeight
+  }, [activeInputRange])
 
   const handleCopy = useCallback(async () => {
     if (await copyText(content)) {
@@ -135,7 +160,7 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
           >⬇ 下载</a>
           <button ref={closeRef} type="button" aria-label="Close document preview" className="ml-1 shrink-0 rounded border border-border bg-transparent px-2 py-1 text-meta text-muted cursor-pointer hover:border-danger hover:text-danger" onClick={onClose}>✕</button>
         </header>
-        <div className="min-h-0 flex-1 overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-auto p-4" onContextMenu={commenting ? handleContextMenu : undefined}>
           {loading ? (
             <div className="flex min-h-32 items-center justify-center text-sm text-muted">Loading…</div>
           ) : error ? (
@@ -150,6 +175,33 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
             </div>
           )}
         </div>
+        {commenting && (activeInputRange || comments.length > 0) && (
+          <div ref={commentsRef} className="max-h-[45%] overflow-auto border-t border-border px-2 py-1">
+            <InlineComments
+              comments={comments}
+              currentVersion={currentVersion}
+              activeInputRange={activeInputRange}
+              onAdd={handleAddComment}
+              onEdit={(id, text) => onEditComment?.(id, text)}
+              onDelete={id => onDeleteComment?.(id)}
+              onCancelInput={() => setActiveInputRange(null)}
+              onReviewComments={onReviewComments}
+            />
+          </div>
+        )}
+        {contextMenu && (
+          <div
+            className="fixed z-50 min-w-[160px] rounded-md border border-border bg-bg-elevated py-1 shadow-lg"
+            style={clampedMenuStyle}
+            onMouseDown={event => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-3 py-1.5 text-left font-body text-body-s text-text hover:bg-bg-hover"
+              onClick={() => { setActiveInputRange(contextMenu.target); closeContextMenu() }}
+            >💬 Add Comment</button>
+          </div>
+        )}
       </section>
     </div>
   )

@@ -13,6 +13,8 @@ export interface Comment {
   content: string
   version: number
   createdAt: string
+  /** Sentence the comment was written on, so the agent sees the exact text it targets. */
+  quote?: string
   /** For non-text files: page number, paragraph index, cell ref, etc. */
   anchor?: string
 }
