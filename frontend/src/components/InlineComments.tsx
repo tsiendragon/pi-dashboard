@@ -6,7 +6,7 @@ interface Props {
   onAdd: (startLine: number, endLine: number, content: string) => void
   onEdit: (id: string, content: string) => void
   onDelete: (id: string) => void
-  currentVersion: number
+  currentVersion?: number
   activeInputRange: { start: number; end: number } | null
   onCancelInput: () => void
   onReviewComments?: () => void
@@ -19,7 +19,7 @@ export default memo(function InlineComments({ comments, onAdd, onEdit, onDelete,
   const [navIndex, setNavIndex] = useState(0)
   const commentRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
-  const filtered = comments.filter(c => c.version === currentVersion)
+  const filtered = currentVersion == null ? comments : comments.filter(c => c.version === currentVersion)
 
   const handleSaveNew = useCallback(() => {
     if (!inputValue.trim() || activeInputRange == null) return
@@ -101,6 +101,7 @@ export default memo(function InlineComments({ comments, onAdd, onEdit, onDelete,
               <div>
                 <span>{c.content}</span>
                 <span className="ml-2 text-2xs text-muted">v{c.version}</span>
+                {c.quote && <div className="truncate text-2xs text-muted" title={c.quote}>“{c.quote}”</div>}
               </div>
               <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 hover:opacity-100" style={{ opacity: 1 }}>
                 <button data-action={`edit-${c.id}`} className="text-2xs text-muted hover:text-accent cursor-pointer" onClick={() => handleStartEdit(c)}>✎</button>

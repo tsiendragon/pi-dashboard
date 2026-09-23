@@ -3,12 +3,15 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { LiveSessionImage, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import DocumentPreviewModal from '../../components/DocumentPreviewModal'
+import ReviewCommentsDialog from '../../components/ReviewCommentsDialog'
 import ExtensionUiModal from '../../components/ExtensionUiModal'
 import LiveSessionExtensionUiModal from './LiveSessionExtensionUiModal'
 import ErrorBoundary from '../../components/ErrorBoundary'
 import ToolCallBlock from '../../pages/chat/ToolCallBlock'
 import { ToolSummaryLine, type ToolSummaryStatus } from '../../components/ToolSummary'
-import { detectFileType, usePanelState } from '../../hooks/usePanelState'
+import { detectFileType, usePanelState, type Comment } from '../../hooks/usePanelState'
+import { useDocumentComments } from '../../hooks/useDocumentComments'
+import { loadFileComments, saveFileComments } from '../../api/fileComments'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { resolvePath } from '../../utils/resolvePath'
@@ -1021,6 +1024,10 @@ export default function LiveSessionPage() {
   const timelineAtBottom = useRef(true)
   const panel = usePanelState()
   const [documentPreview, setDocumentPreview] = useState<{ filePath: string; content: string; loading: boolean; error: string | null } | null>(null)
+  // Comments on the full-screen preview live in the same sidecar as the side panel.
+  const previewComments = useDocumentComments(documentPreview?.filePath ?? null)
+  // Review comments are queued here and only sent after the user confirms in the dialog.
+  const [reviewDraft, setReviewDraft] = useState<{ target: 'panel' | 'preview'; filePath: string; comments: Comment[] } | null>(null)
   const [focusedSubagentId, setFocusedSubagentId] = useState<string>()
   const [focusedWorkflow, setFocusedWorkflow] = useState<WorkflowRecord>()
   const [subagentLoading, setSubagentLoading] = useState(false)
@@ -1049,6 +1056,7 @@ export default function LiveSessionPage() {
         content = response.ok ? await response.text() : `_Error ${response.status}: file not found_`
       }
       panel.openPanel(filePath, content)
+      void loadFileComments(filePath).then(loaded => panel.setComments(loaded))
     } catch {
       panel.openPanel(filePath, '_Error reading file_')
     }
@@ -1090,6 +1098,42 @@ export default function LiveSessionPage() {
     if (!response.ok) throw new Error(`Save failed: ${response.status}`)
     panel.setDirty(false)
   }, [panel.setDirty])
+
+  const saveComments = useCallback((comments: Comment[]) => {
+    if (!panel.filePath) return
+    panel.setComments(comments)
+    void saveFileComments(panel.filePath, comments).catch(error => console.warn('[file-comments] save failed', error))
+  }, [panel.filePath, panel.setComments])
+
+  const appendPanelComment = useCallback((startLine: number, endLine: number, content: string, quote?: string) => {
+    const comment: Comment = {
+      id: crypto.randomUUID(),
+      startLine, endLine, content,
+      ...(quote ? { quote } : {}),
+      version: panel.versions.length > 0 ? panel.versions[panel.versions.length - 1].version : 1,
+      createdAt: new Date().toISOString(),
+    }
+    saveComments([...panel.comments, comment])
+  }, [panel.versions, panel.comments, saveComments])
+
+  const editPanelComment = useCallback((id: string, content: string) => {
+    saveComments(panel.comments.map(c => c.id === id ? { ...c, content } : c))
+  }, [panel.comments, saveComments])
+
+  const deletePanelComment = useCallback((id: string) => {
+    saveComments(panel.comments.filter(c => c.id !== id))
+  }, [panel.comments, saveComments])
+
+  const handlePanelReview = useCallback(() => {
+    if (!panel.filePath || panel.comments.length === 0) return
+    setReviewDraft({ target: 'panel', filePath: panel.filePath, comments: panel.comments })
+  }, [panel.filePath, panel.comments])
+
+  const handlePreviewReview = useCallback(() => {
+    const filePath = documentPreview?.filePath
+    if (!filePath || previewComments.comments.length === 0) return
+    setReviewDraft({ target: 'preview', filePath, comments: previewComments.comments })
+  }, [documentPreview?.filePath, previewComments.comments])
 
   /**
    * Manual refresh: list metadata + the active transcript. The transcript fetch
@@ -1329,6 +1373,15 @@ export default function LiveSessionPage() {
     }
   })
 
+  /** Sends the reviewed comments as one prompt, then drops only those comments. */
+  const handleReviewSend = useCallback((message: string, sentIds: string[]) => {
+    if (!reviewDraft) return
+    void submit(message).catch(() => {})
+    if (reviewDraft.target === 'panel') saveComments(panel.comments.filter(c => !sentIds.includes(c.id)))
+    else previewComments.removeComments(sentIds)
+    setReviewDraft(null)
+  }, [reviewDraft, submit, saveComments, panel.comments, previewComments])
+
   if (state.auth === 'checking') return <div className="flex-1 flex items-center justify-center text-muted">检查 Live Session 认证…</div>
   if (state.auth === 'required') return <AuthPanel onAuthenticated={browserClientId => { dispatch(authenticated({ browserClientId })); void refresh() }} />
 
@@ -1491,9 +1544,10 @@ export default function LiveSessionPage() {
             diffMode={panel.diffMode}
             onToggleDiff={panel.toggleDiffMode}
             comments={panel.comments}
-            onAddComment={() => {}}
-            onEditComment={() => {}}
-            onDeleteComment={() => {}}
+            onAddComment={appendPanelComment}
+            onEditComment={editPanelComment}
+            onDeleteComment={deletePanelComment}
+            onReviewComments={handlePanelReview}
           />
           </Suspense>
         </ErrorBoundary>
@@ -1526,6 +1580,21 @@ export default function LiveSessionPage() {
             loading={documentPreview.loading}
             error={documentPreview.error}
             onClose={() => setDocumentPreview(null)}
+            comments={previewComments.comments}
+            onAddComment={previewComments.addComment}
+            onEditComment={previewComments.editComment}
+            onDeleteComment={previewComments.deleteComment}
+            onReviewComments={handlePreviewReview}
+          />
+        </ErrorBoundary>
+      )}
+      {reviewDraft && (
+        <ErrorBoundary key={`review:${reviewDraft.filePath}`}>
+          <ReviewCommentsDialog
+            filePath={reviewDraft.filePath}
+            comments={reviewDraft.comments}
+            onCancel={() => setReviewDraft(null)}
+            onSend={handleReviewSend}
           />
         </ErrorBoundary>
       )}
