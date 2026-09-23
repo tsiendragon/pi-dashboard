@@ -23,16 +23,80 @@ export function formatLineRef(comment: Pick<Comment, 'startLine' | 'endLine'>): 
 }
 
 /**
- * The single chat message an agent receives for one review round. Every comment
- * carries its line reference, the quoted sentence it targets, and the feedback.
+ * One quoted piece of conversation (a selected sentence plus where it came from).
+ * Shared by the composer's quote chips and the conversation comment box.
  */
-export function buildReviewMessage(filePath: string, comments: Comment[]): string {
-  const blocks = comments.map((comment, index) => {
-    const quote = comment.quote ? `\nQuoted: "${comment.quote}"` : ''
-    return `[${index + 1}] ${formatLineRef(comment)}${quote}\nComment: ${comment.content}`
+export interface QuotedText {
+  id: string
+  /** Whitespace-collapsed, length-capped quote. */
+  text: string
+  /** `user` | `assistant` (or undefined when the source is unknown). */
+  role?: string
+  /** Session entry id of the message the quote came from, when known. */
+  entryId?: string
+}
+
+/**
+ * One reviewable item: what to point at (label + quote) and what to say.
+ * Document comments fill `label` with a line reference; conversation quotes
+ * fill it with the speaker.
+ */
+export interface ReviewItem {
+  id: string
+  label?: string
+  quote?: string
+  content: string
+}
+
+/** "你的回复" / "我的消息" / "会话内容" — who wrote the quoted text. */
+export function selectionLabel(role?: string): string {
+  if (role === 'assistant') return '你的回复'
+  if (role === 'user') return '我的消息'
+  return '会话内容'
+}
+
+/** Map stored document comments onto dialog items. */
+export function commentReviewItems(comments: Comment[]): ReviewItem[] {
+  return comments.map(c => ({
+    id: c.id,
+    label: formatLineRef(c),
+    ...(c.quote ? { quote: c.quote } : {}),
+    content: c.content,
+  }))
+}
+
+function quoteBlock(quote: string, label?: string): string {
+  const head = label ? `引用（来自${label}）：` : '引用：'
+  const body = quote
+    .split('\n')
+    .map(line => `> ${line}`)
+    .join('\n')
+  return `${head}\n${body}`
+}
+
+/**
+ * Prefix for a chat reply built from selected text: each quote becomes a
+ * markdown blockquote so the agent reads it as quoted context, and the user's
+ * own words follow as the actual message.
+ */
+export function buildQuoteReplyMessage(quotes: QuotedText[]): string {
+  return quotes
+    .map(quote => quoteBlock(quote.text, selectionLabel(quote.role)))
+    .join('\n\n')
+}
+
+/**
+ * The single chat message an agent receives for one review round. Every item
+ * carries what it points at, the quoted text, and the feedback.
+ */
+export function buildReviewMessage(target: string, items: ReviewItem[], intro?: string): string {
+  const blocks = items.map((item, index) => {
+    const head = item.label ? `[${index + 1}] ${item.label}` : `[${index + 1}]`
+    const quote = item.quote ? `\nQuoted: "${item.quote}"` : ''
+    return `${head}${quote}\nComment: ${item.content}`
   })
-  const label = comments.length === 1 ? 'comment' : 'comments'
-  return `Please review and address the ${label} in ${filePath}:\n\n${blocks.join('\n\n')}`
+  const headline = intro ?? `Please review and address the ${items.length === 1 ? 'comment' : 'comments'} in ${target}:`
+  return `${headline}\n\n${blocks.join('\n\n')}`
 }
 
 /** Strip markdown formatting for fuzzy text matching */

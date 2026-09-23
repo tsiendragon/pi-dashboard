@@ -18,6 +18,7 @@ import TerminalPanel from '../features/terminal/TerminalPanel'
 import ReferencedFiles from '../components/ReferencedFiles'
 import DocumentPreviewModal from '../components/DocumentPreviewModal'
 import ReviewCommentsDialog from '../components/ReviewCommentsDialog'
+import { SelectionQuoteMenu, QuoteCommentPopover } from '../components/SelectionQuoteMenu'
 import ErrorBoundary from '../components/ErrorBoundary'
 import { useReferencedFiles } from '../hooks/useReferencedFiles'
 import WelcomeView from '../components/WelcomeView'
@@ -26,6 +27,8 @@ import PathCompleteMenu from '../components/PathCompleteMenu'
 import FileMentionMenu from '../components/FileMentionMenu'
 import { usePanelState, detectFileType, type Comment } from '../hooks/usePanelState'
 import { useDocumentComments } from '../hooks/useDocumentComments'
+import { useChatQuoteSelection, type SelectionTarget } from '../hooks/useChatQuoteSelection'
+import { buildQuoteReplyMessage, commentReviewItems, selectionLabel, type QuotedText, type ReviewItem } from '../utils/reviewComments'
 import { loadFileComments, saveFileComments } from '../api/fileComments'
 import { resolvePath } from '../utils/resolvePath'
 import { clipboardFiles, splitFilesByKind, pastedFileRef } from '../utils/clipboardFiles'
@@ -67,6 +70,17 @@ function stripMarkdownForSpeech(text: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
+
+/** One review round: what the comments point at and how to clear them after sending. */
+interface ReviewRequest {
+  kind: 'panel' | 'preview' | 'chat'
+  label: string
+  items: ReviewItem[]
+  intro?: string
+}
+
+/** Opening line used when the comments target the conversation itself. */
+const CHAT_REVIEW_INTRO = 'Please review and address these comments about the quoted parts of our conversation:'
 
 export default function ChatPage() {
   const dispatch = useAppDispatch()
@@ -310,7 +324,12 @@ export default function ChatPage() {
   // Comments on the full-screen preview live in the same sidecar as the side panel.
   const previewComments = useDocumentComments(documentPreview?.filePath ?? null)
   // Review comments are queued here and only sent after the user confirms in the dialog.
-  const [reviewDraft, setReviewDraft] = useState<{ target: 'panel' | 'preview'; filePath: string; comments: Comment[] } | null>(null)
+  const [reviewDraft, setReviewDraft] = useState<ReviewRequest | null>(null)
+  // Quoted sentences picked in the transcript (A) and comments collected on them (B).
+  const quoteSelection = useChatQuoteSelection()
+  const [quotes, setQuotes] = useState<QuotedText[]>([])
+  const [commentTarget, setCommentTarget] = useState<SelectionTarget | null>(null)
+  const [chatComments, setChatComments] = useState<ReviewItem[]>([])
   const { subscribeFileChange, wsRef } = useContext(WsContext)
 
   // Register file change callback (mirrors LogsPage subscribeLogs pattern)
@@ -847,10 +866,11 @@ export default function ChatPage() {
     }, 0)
   }, [setInput])
 
-  const send = useCallback(async (optionText?: string) => {
+  const send = useCallback(async (optionText?: string, quotePrefix?: string) => {
     const filePaths = pendingFiles.map(f => f.path)
     const filePrefix = filePaths.length ? filePaths.join('\n') + '\n\n' : ''
-    const txt = (filePrefix + (optionText || input)).trim()
+    const quoted = quotePrefix ? quotePrefix + '\n\n' : ''
+    const txt = (filePrefix + quoted + (optionText || input)).trim()
     const images = pendingImages.map(img => ({ type: 'image' as const, data: img.data, mimeType: img.mimeType }))
     if (!txt && images.length === 0) return
     const isSlashCmd = txt.startsWith('/')
@@ -956,23 +976,63 @@ export default function ChatPage() {
     const currentVersion = panel.selectedVersion ?? (panel.versions.length > 0 ? panel.versions[panel.versions.length - 1]?.version ?? 1 : 1)
     const pending = panel.comments.filter(c => c.version === currentVersion)
     if (pending.length === 0) return
-    setReviewDraft({ target: 'panel', filePath: panel.filePath, comments: pending })
+    setReviewDraft({ kind: 'panel', label: panel.filePath, items: commentReviewItems(pending) })
   }, [panel.filePath, panel.comments, panel.selectedVersion, panel.versions])
 
   const handlePreviewReview = useCallback(() => {
     const filePath = documentPreview?.filePath
     if (!filePath || previewComments.comments.length === 0) return
-    setReviewDraft({ target: 'preview', filePath, comments: previewComments.comments })
+    setReviewDraft({ kind: 'preview', label: filePath, items: commentReviewItems(previewComments.comments) })
   }, [documentPreview?.filePath, previewComments.comments])
 
   const handleReviewSend = useCallback((message: string, sentIds: string[]) => {
     if (!reviewDraft) return
     void send(message)
     // Only the comments that were actually sent leave the dashboard.
-    if (reviewDraft.target === 'panel') saveComments(panel.comments.filter(c => !sentIds.includes(c.id)))
-    else previewComments.removeComments(sentIds)
+    if (reviewDraft.kind === 'panel') saveComments(panel.comments.filter(c => !sentIds.includes(c.id)))
+    else if (reviewDraft.kind === 'preview') previewComments.removeComments(sentIds)
+    else setChatComments(previous => previous.filter(item => !sentIds.includes(item.id)))
     setReviewDraft(null)
   }, [reviewDraft, send, saveComments, panel.comments, previewComments])
+
+  /** A: quotes ride along with the next typed message. */
+  const addQuote = useCallback((target: SelectionTarget) => {
+    setQuotes(previous => previous.some(quote => quote.text === target.text)
+      ? previous
+      : [...previous, { id: target.id, text: target.text, ...(target.role ? { role: target.role } : {}), ...(target.entryId ? { entryId: target.entryId } : {}) }])
+    quoteSelection.clear()
+  }, [quoteSelection])
+
+  const addChatComment = useCallback((content: string) => {
+    if (!commentTarget) return
+    setChatComments(previous => [...previous, {
+      id: crypto.randomUUID(),
+      label: selectionLabel(commentTarget.role),
+      quote: commentTarget.text,
+      content,
+    }])
+    setCommentTarget(null)
+    quoteSelection.clear()
+  }, [commentTarget, quoteSelection])
+
+  const handleChatCommentsReview = useCallback(() => {
+    if (chatComments.length === 0) return
+    setReviewDraft({ kind: 'chat', label: '上面的会话', items: chatComments, intro: CHAT_REVIEW_INTRO })
+  }, [chatComments])
+
+  /** Send the typed message, carrying the quote chips with it. */
+  const sendInput = useCallback(() => {
+    const prefix = quotes.length > 0 ? buildQuoteReplyMessage(quotes) : undefined
+    setQuotes([])
+    void send(undefined, prefix)
+  }, [quotes, send])
+
+  // Quotes and collected comments belong to one session; a switch starts clean.
+  useEffect(() => {
+    setQuotes([])
+    setChatComments([])
+    setCommentTarget(null)
+  }, [activeSlot])
 
 
   // Chat keyboard shortcuts — register into centralized action registry
@@ -1060,7 +1120,7 @@ export default function ChatPage() {
       return d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     })() : ''
     return (
-      <div key={key} className={`pidash-msg-card flex gap-2 md:gap-3 items-start mb-2 md:mb-4 mr-2 md:mr-4 ${isUser ? 'flex-row-reverse animate-slide-in-right' : 'animate-slide-up'}`} data-pidash-sender={isUser ? 'user' : 'assistant'} data-pidash-streaming={isStreaming ? 'true' : undefined}>
+      <div key={key} className={`pidash-msg-card flex gap-2 md:gap-3 items-start mb-2 md:mb-4 mr-2 md:mr-4 ${isUser ? 'flex-row-reverse animate-slide-in-right' : 'animate-slide-up'}`} data-msg-anchor="" data-msg-role={isUser ? 'user' : 'assistant'} data-pidash-sender={isUser ? 'user' : 'assistant'} data-pidash-streaming={isStreaming ? 'true' : undefined}>
         {/* Avatars hidden on mobile for more message width — like Claude app */}
         {isUser
           ? <div className="hidden md:grid w-8 h-8 rounded-md place-items-center font-semibold text-xs shrink-0 self-end mb-0.5 bg-accent-subtle text-accent">U</div>
@@ -1550,6 +1610,26 @@ export default function ChatPage() {
               <FileMentionMenu input={input} cursorPos={cursorPos} cwd={currentSlot?.cwd} anchorRef={inputRef as React.RefObject<HTMLElement>} onPick={handleMentionPick} onClose={() => {}} />
               <div className="flex-1 flex flex-col gap-1.5">
                 <MemoryFlash slotKey={activeSlot} />
+                {quotes.length > 0 && (
+                  <div className="flex flex-wrap gap-2" aria-label="待发送引用">
+                    {quotes.map(quote => (
+                      <div key={quote.id} className="flex min-w-0 items-center gap-1.5 rounded-md border border-accent/40 bg-accent-subtle px-2 py-1 text-2xs text-text">
+                        <span aria-hidden="true">↩</span>
+                        <span className="max-w-72 truncate" title={quote.text}>{quote.text}</span>
+                        <span className="shrink-0 text-muted">{selectionLabel(quote.role)}</span>
+                        <button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-none bg-danger text-2xs text-danger-fg opacity-60 transition-opacity hover:opacity-100" aria-label={`移除引用：${quote.text.slice(0, 24)}`} onClick={() => setQuotes(previous => previous.filter(item => item.id !== quote.id))}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {chatComments.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-bg-elevated px-2 py-1 text-2xs text-muted" role="status">
+                    <span>💬 {chatComments.length} 条批注待发送</span>
+                    <span className="min-w-0 flex-1 truncate" title={chatComments.map(item => item.quote ?? '').join(' / ')}>{chatComments.map(item => item.quote ?? '').join(' / ')}</span>
+                    <button type="button" className="shrink-0 rounded border border-border px-2 py-0.5 hover:border-danger hover:text-danger" onClick={() => setChatComments([])}>清空</button>
+                    <button type="button" className="shrink-0 rounded border border-accent px-2 py-0.5 text-accent hover:bg-accent-subtle" onClick={handleChatCommentsReview}>发送批注</button>
+                  </div>
+                )}
                 {pendingImages.length > 0 && (
                   <div className="flex gap-2 flex-wrap">
                     {pendingImages.map((img, i) => (
@@ -1590,7 +1670,7 @@ export default function ChatPage() {
                 onClick={e => setCursorPos((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
                 onCompositionStart={() => { (inputRef.current as any).__composing = true }}
                 onCompositionEnd={() => { (inputRef.current as any).__composing = true; setTimeout(() => { if (inputRef.current) (inputRef.current as any).__composing = false }, 50) }}
-                onKeyDown={e => { if (e.key === 'Tab' && !e.shiftKey && !input.startsWith('/')) { e.preventDefault(); setPathMenuOpen(true); setCursorPos(inputRef.current?.selectionStart ?? 0) } else if (e.key === 'Enter' && !e.shiftKey && !e.defaultPrevented && !e.nativeEvent.isComposing && !(inputRef.current as any)?.__composing) { e.preventDefault(); send() } }}
+                onKeyDown={e => { if (e.key === 'Tab' && !e.shiftKey && !input.startsWith('/')) { e.preventDefault(); setPathMenuOpen(true); setCursorPos(inputRef.current?.selectionStart ?? 0) } else if (e.key === 'Enter' && !e.shiftKey && !e.defaultPrevented && !e.nativeEvent.isComposing && !(inputRef.current as any)?.__composing) { e.preventDefault(); sendInput() } }}
                 onInput={e => { const t = e.target as HTMLTextAreaElement; const cap = prefillHint ? 320 : 140; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, cap) + 'px' }} />
               </div>
               <button type="button" onClick={() => { void runQuickCommand('compact', '/compact') }} disabled={!activeSlot || slotRunning || !!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-border bg-bg-elevated px-2.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="压缩当前 session context">{quickAction === 'compact' ? '压缩中…' : 'Compact'}</button>
@@ -1618,7 +1698,7 @@ export default function ChatPage() {
                   >
                     <span className="md:hidden">■</span><span className="hidden md:inline">{slotStopping ? 'Stopping…' : 'Stop'}</span>
                   </button>
-                : <button className="btn-sweep bg-accent text-accent-fg border-none rounded-lg shrink-0 w-[40px] h-[40px] md:w-auto md:px-5 md:h-[44px] text-sm font-semibold cursor-pointer hover:bg-accent-hover hover:shadow-[0_0_20px_var(--accent-glow)] disabled:opacity-40 disabled:cursor-not-allowed transition font-body flex items-center justify-center" onClick={() => send()} disabled={slotStopping}><span className="md:hidden">↑</span><span className="hidden md:inline">Send</span></button>
+                : <button className="btn-sweep bg-accent text-accent-fg border-none rounded-lg shrink-0 w-[40px] h-[40px] md:w-auto md:px-5 md:h-[44px] text-sm font-semibold cursor-pointer hover:bg-accent-hover hover:shadow-[0_0_20px_var(--accent-glow)] disabled:opacity-40 disabled:cursor-not-allowed transition font-body flex items-center justify-center" onClick={() => sendInput()} disabled={slotStopping}><span className="md:hidden">↑</span><span className="hidden md:inline">Send</span></button>
               }
             </div>
           </div>
@@ -1653,14 +1733,29 @@ export default function ChatPage() {
         </ErrorBoundary>
       )}
       {reviewDraft && (
-        <ErrorBoundary key={`review:${reviewDraft.filePath}`}>
+        <ErrorBoundary key={`review:${reviewDraft.label}`}>
           <ReviewCommentsDialog
-            filePath={reviewDraft.filePath}
-            comments={reviewDraft.comments}
+            target={reviewDraft.label}
+            items={reviewDraft.items}
+            intro={reviewDraft.intro}
             onCancel={() => setReviewDraft(null)}
             onSend={handleReviewSend}
           />
         </ErrorBoundary>
+      )}
+      {quoteSelection.selection && !commentTarget && (
+        <SelectionQuoteMenu
+          target={quoteSelection.selection}
+          onQuote={addQuote}
+          onComment={target => setCommentTarget(target)}
+        />
+      )}
+      {commentTarget && (
+        <QuoteCommentPopover
+          target={commentTarget}
+          onSave={addChatComment}
+          onCancel={() => { setCommentTarget(null); quoteSelection.clear() }}
+        />
       )}
       <ExtensionUiModal />
       <ToolApprovalModal />

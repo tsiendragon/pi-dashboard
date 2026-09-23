@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
   MAX_QUOTE_CHARS,
+  buildQuoteReplyMessage,
   buildReviewMessage,
+  commentReviewItems,
   describeCommentTarget,
   formatLineRef,
   normalizeQuote,
   resolveSelectionToLines,
+  selectionLabel,
 } from '../utils/reviewComments'
 import type { Comment } from '../hooks/usePanelState'
 
@@ -17,6 +20,13 @@ const comment = (over: Partial<Comment>): Comment => ({
   version: 1,
   createdAt: '2026-04-14T10:00:00Z',
   ...over,
+})
+
+describe('commentReviewItems', () => {
+  it('maps stored comments onto dialog items', () => {
+    const items = commentReviewItems([comment({ id: 'c1', startLine: 4, endLine: 6, content: '改口径', quote: '原文' })])
+    expect(items).toEqual([{ id: 'c1', label: 'Lines 4-6', quote: '原文', content: '改口径' }])
+  })
 })
 
 describe('normalizeQuote', () => {
@@ -61,10 +71,10 @@ describe('describeCommentTarget', () => {
 
 describe('buildReviewMessage', () => {
   it('numbers every comment with its line reference and quote', () => {
-    const message = buildReviewMessage('/tmp/spec.md', [
+    const message = buildReviewMessage('/tmp/spec.md', commentReviewItems([
       comment({ id: 'c1', startLine: 12, endLine: 14, content: '口径不对', quote: '净额按日汇总' }),
       comment({ id: 'c2', startLine: 30, endLine: 30, content: '删掉这句' }),
-    ])
+    ]))
     expect(message).toBe(
       'Please review and address the comments in /tmp/spec.md:\n\n' +
       '[1] Lines 12-14\nQuoted: "净额按日汇总"\nComment: 口径不对\n\n' +
@@ -73,14 +83,57 @@ describe('buildReviewMessage', () => {
   })
 
   it('uses the singular label for one comment', () => {
-    const message = buildReviewMessage('/tmp/a.md', [comment({ content: 'typo' })])
+    const message = buildReviewMessage('/tmp/a.md', commentReviewItems([comment({ content: 'typo' })]))
     expect(message).toContain('address the comment in /tmp/a.md')
   })
 
   it('omits the quote line when a comment has none', () => {
-    const message = buildReviewMessage('/tmp/a.md', [comment({ content: 'typo' })])
+    const message = buildReviewMessage('/tmp/a.md', commentReviewItems([comment({ content: 'typo' })]))
     expect(message).not.toContain('Quoted:')
     expect(message).toContain('[1] Line 1\nComment: typo')
+  })
+
+  it('accepts conversation items with a custom intro', () => {
+    const message = buildReviewMessage('上面的会话', [
+      { id: 'q1', label: '你的回复', quote: '触屏上没有 hover', content: '改成常显' },
+    ], 'Please review these comments about the conversation:')
+    expect(message).toBe(
+      'Please review these comments about the conversation:\n\n' +
+      '[1] 你的回复\nQuoted: "触屏上没有 hover"\nComment: 改成常显',
+    )
+  })
+})
+
+describe('selectionLabel', () => {
+  it('names the speaker of a quoted message', () => {
+    expect(selectionLabel('assistant')).toBe('你的回复')
+    expect(selectionLabel('user')).toBe('我的消息')
+    expect(selectionLabel(undefined)).toBe('会话内容')
+  })
+})
+
+describe('buildQuoteReplyMessage', () => {
+  it('renders one markdown quote block per selection', () => {
+    const message = buildQuoteReplyMessage([
+      { id: 'q1', text: '方案 1 已完成', role: 'assistant' },
+      { id: 'q2', text: '这条我自己写的', role: 'user' },
+    ])
+    expect(message).toBe([
+      '引用（来自你的回复）：',
+      '> 方案 1 已完成',
+      '',
+      '引用（来自我的消息）：',
+      '> 这条我自己写的',
+    ].join('\n'))
+  })
+
+  it('quotes every line of a multi-line selection', () => {
+    const message = buildQuoteReplyMessage([{ id: 'q1', text: '第一行\n第二行' }])
+    expect(message).toBe('引用（来自会话内容）：\n> 第一行\n> 第二行')
+  })
+
+  it('returns an empty string when nothing is quoted', () => {
+    expect(buildQuoteReplyMessage([])).toBe('')
   })
 })
 
