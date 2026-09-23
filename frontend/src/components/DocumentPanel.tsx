@@ -1,7 +1,8 @@
 import { memo, useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense, type ChangeEvent } from 'react'
-import TextRenderer, { stripMd, CommentInput } from './renderers/TextRenderer'
+import TextRenderer, { CommentInput } from './renderers/TextRenderer'
 import DiffView from './DiffView'
 import { detectFileType, type Comment } from '../hooks/usePanelState'
+import { useCommentSelection } from '../hooks/useCommentSelection'
 import { copyText } from '../utils/clipboard'
 
 const PdfRenderer = lazy(() => import('./renderers/PdfRenderer'))
@@ -29,7 +30,7 @@ interface Props {
   diffMode: boolean
   onToggleDiff: () => void
   comments: Comment[]
-  onAddComment: (startLine: number, endLine: number, content: string) => void
+  onAddComment: (startLine: number, endLine: number, content: string, quote?: string) => void
   onEditComment: (id: string, content: string) => void
   onDeleteComment: (id: string) => void
   onReviewComments?: () => void
@@ -47,8 +48,7 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
     const n = saved ? parseInt(saved, 10) : NaN
     return !isNaN(n) && n >= 300 ? n : 480
   })
-  const [activeInputRange, setActiveInputRange] = useState<{ start: number; end: number } | null>(null)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; startLine: number; endLine: number } | null>(null)
+  const [activeInputRange, setActiveInputRange] = useState<{ start: number; end: number; quote?: string } | null>(null)
   const fileName = filePath.split('/').pop() || filePath
   const ref = useRef<HTMLDivElement>(null)
   const isOldVersion = selectedVersion !== null
@@ -93,70 +93,14 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
 
   const handleChange = useCallback((v: string) => { onContentChange(v) }, [onContentChange])
 
-  // Reverse-map selected rendered text back to source line numbers.
-  // Shared by the Source-mode right-click path and the HTML-preview iframe bridge.
-  const resolveTextToLines = useCallback((selText: string) => {
-    const lines = content.split('\n')
-    let startLine = 1, endLine = 1
-    const needle = selText.split('\n').map(l => l.trim()).filter(Boolean)[0]?.toLowerCase() || ''
-    if (needle.length > 0) {
-      // Strategy 1: exact substring match in raw content
-      const idx = content.toLowerCase().indexOf(needle)
-      if (idx >= 0) {
-        startLine = content.slice(0, idx).split('\n').length
-      } else {
-        // Strategy 2: match against markdown-stripped source lines
-        for (let i = 0; i < lines.length; i++) {
-          const stripped = stripMd(lines[i]).toLowerCase()
-          if (stripped.length > 0 && (stripped.includes(needle) || needle.includes(stripped))) {
-            startLine = i + 1
-            break
-          }
-        }
-      }
-      const selLineCount = selText.split('\n').filter(l => l.trim()).length
-      endLine = Math.min(startLine + Math.max(0, selLineCount - 1), lines.length)
-    }
-    return { startLine, endLine }
-  }, [content])
+  // Right-click selection → comment target (line range + quoted sentence).
+  const { contextMenu, clampedMenuStyle, targetFromText, handleContextMenu, closeContextMenu } = useCommentSelection(content)
 
   // HTML preview: an in-frame selection arrives (via postMessage bridge) as text.
   // Reverse-map it and open the same floating comment input the Source path uses.
   const handleIframeSelect = useCallback((text: string) => {
-    const { startLine, endLine } = resolveTextToLines(text)
-    setActiveInputRange({ start: startLine, end: endLine })
-  }, [resolveTextToLines])
-
-  // Right-click context menu for adding comments on selected text
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    const sel = window.getSelection()
-    if (!sel || sel.isCollapsed) return // no selection → default browser menu
-    e.preventDefault()
-
-    let startLine = 1, endLine = 1
-
-    // Edit mode: precise line from textarea selection
-    const ta = (e.currentTarget as HTMLElement).querySelector('textarea')
-    if (ta && ta.selectionStart !== ta.selectionEnd) {
-      startLine = content.slice(0, ta.selectionStart).split('\n').length
-      endLine = content.slice(0, ta.selectionEnd).split('\n').length
-    } else {
-      // Preview mode: match selected text back to source lines
-      ;({ startLine, endLine } = resolveTextToLines(sel.toString()))
-    }
-
-    setContextMenu({ x: e.clientX, y: e.clientY, startLine, endLine })
-  }, [content, resolveTextToLines])
-
-  // Close context menu on click outside or Escape
-  useEffect(() => {
-    if (!contextMenu) return
-    const close = () => setContextMenu(null)
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    document.addEventListener('mousedown', close)
-    document.addEventListener('keydown', esc)
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
-  }, [contextMenu])
+    setActiveInputRange(targetFromText(text))
+  }, [targetFromText])
 
   const filteredComments = useMemo(() => {
     // When viewing a specific historical version, filter to that version's comments.
@@ -265,7 +209,8 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
         <div className="border-t border-border">
           <CommentInput
             range={activeInputRange}
-            onSave={text => { onAddComment(activeInputRange.start, activeInputRange.end, text); setActiveInputRange(null) }}
+            quote={activeInputRange.quote}
+            onSave={text => { onAddComment(activeInputRange.start, activeInputRange.end, text, activeInputRange.quote); setActiveInputRange(null) }}
             onCancel={() => setActiveInputRange(null)}
           />
         </div>
@@ -274,12 +219,12 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
       {contextMenu && (
         <div
           className="fixed z-50 bg-bg-elevated border border-border rounded-md shadow-lg py-1 min-w-[160px]"
-          style={{ top: Math.min(contextMenu.y, window.innerHeight - 60), left: Math.min(contextMenu.x, window.innerWidth - 180) }}
+          style={clampedMenuStyle}
           onMouseDown={e => e.stopPropagation()}
         >
           <button
             className="w-full text-left px-3 py-1.5 text-body-s text-text hover:bg-bg-hover cursor-pointer bg-transparent border-none font-body flex items-center gap-2"
-            onClick={() => { setActiveInputRange({ start: contextMenu.startLine, end: contextMenu.endLine }); setContextMenu(null) }}
+            onClick={() => { setActiveInputRange(contextMenu.target); closeContextMenu() }}
           >💬 Add Comment</button>
         </div>
       )}

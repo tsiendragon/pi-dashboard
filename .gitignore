@@ -12,7 +12,8 @@ tmux-*.log
 .DS_Store
 PROMPT.md
 ralph.yml
-docs/.*.comments.json
+# Doc review sidecars — created wherever a file is commented on, never committed
+.*.comments.json
 autoloops.toml
 prompt.txt
 test-document.pdf

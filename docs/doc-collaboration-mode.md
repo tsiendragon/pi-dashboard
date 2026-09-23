@@ -34,21 +34,48 @@ If you don't have unsaved changes, the panel auto-updates to show the agent's ed
 
 ## Inline Comments
 
-In Preview or Edit mode, click line numbers to select a line (or drag for a range). A comment input appears below the code. Comments are:
+In Preview or Edit mode, select the sentence you want to comment on and right-click → **Add Comment**. You can also click line numbers in Edit mode to select a line (drag for a range). Comments are:
 
+- **Anchored to a sentence** — each comment stores the line range *and* the quoted sentence, so the agent sees the exact text being reviewed
 - **Version-scoped** — each comment records which version it was created on
-- **Stored as JSON sidecars** — `.{filename}.comments.json` next to the file
+- **Stored as JSON sidecars** — `.{filename}.comments.json` next to the file (git-ignored)
 - **Agent-readable** — the agent can read the sidecar file directly
 - **Navigable** — use ↑/↓ arrows in the comment bar to jump between comments
 
+Commenting works in both surfaces that render a file:
+
+- the **side panel** (📄 Files button or a file path in chat)
+- the **full-screen preview modal** (click a document link in agent output)
+
+Both read and write the same sidecar, so a comment left in one shows up in the other.
+
 ## Review Comments
 
-Click **Review Comments** in the comment navigation bar to send all comments to the agent as a chat message. Comments are cleared after sending, so each review cycle starts fresh. The agent receives a formatted list of your feedback with line references and addresses each point.
+Click **Review Comments** in the comment navigation bar. A dialog opens showing every pending comment with its line reference and quoted sentence:
+
+- remove individual comments you no longer care about
+- edit the exact message before it is sent
+- **Send** delivers everything as a single chat message; **Cancel**/Esc keeps the comments
+
+Sent comments are cleared from the dashboard so each review cycle starts fresh; unsent ones stay.
+
+The agent receives:
+
+```
+Please review and address the comments in /path/doc.md:
+
+[1] Lines 12-14
+Quoted: "净额按日汇总"
+Comment: 口径不对
+
+[2] Line 30
+Comment: 删掉这句
+```
 
 This is the core workflow for doc collaboration:
 1. Agent drafts a document
-2. You open it, leave inline feedback on lines in Preview
-3. Click Review Comments to send feedback to the agent
+2. You open it, leave inline feedback on the sentences you disagree with
+3. Click Review Comments, adjust the list, send
 4. Agent revises the document
 5. Panel auto-updates, you review the diff
 

@@ -2,21 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { usePanelState } from '../hooks/usePanelState'
 import type { Comment } from '../hooks/usePanelState'
+import { buildReviewMessage } from '../utils/reviewComments'
 
 /**
  * Test the review integration logic that will be added to ChatPage:
- * 1. formatReviewMessage — formats comments into a chat message
+ * 1. buildReviewMessage — formats comments into a chat message
  * 2. auto-open on agent .md writes
  */
-
-// Extract the message formatting logic as a pure function for testability
-function formatReviewMessage(filePath: string, comments: Comment[]): string {
-  const lines = comments.map(c => {
-    const lineRef = c.startLine === c.endLine ? `Line ${c.startLine}` : `Lines ${c.startLine}-${c.endLine}`
-    return `${lineRef}: ${c.content}`
-  })
-  return `Please review and address the comments in ${filePath}:\n\n${lines.join('\n')}`
-}
 
 describe('Review Integration — Message Formatting', () => {
   // AC1: Review button sends formatted message
@@ -25,11 +17,11 @@ describe('Review Integration — Message Formatting', () => {
       { id: 'c1', startLine: 5, endLine: 5, content: 'Fix typo here', version: 1, createdAt: '2026-04-14T10:00:00Z' },
       { id: 'c2', startLine: 10, endLine: 15, content: 'Refactor this section', version: 1, createdAt: '2026-04-14T11:00:00Z' },
     ]
-    const msg = formatReviewMessage('/tmp/spec.md', comments)
+    const msg = buildReviewMessage('/tmp/spec.md', comments)
     expect(msg).toBe(
       'Please review and address the comments in /tmp/spec.md:\n\n' +
-      'Line 5: Fix typo here\n' +
-      'Lines 10-15: Refactor this section'
+      '[1] Line 5\nComment: Fix typo here\n\n' +
+      '[2] Lines 10-15\nComment: Refactor this section'
     )
   })
 
@@ -38,9 +30,18 @@ describe('Review Integration — Message Formatting', () => {
     const comments: Comment[] = [
       { id: 'c1', startLine: 3, endLine: 3, content: 'Needs clarification', version: 1, createdAt: '2026-04-14T10:00:00Z' },
     ]
-    const msg = formatReviewMessage('/docs/design.md', comments)
-    expect(msg).toContain('Please review and address the comments in /docs/design.md')
-    expect(msg).toContain('Line 3: Needs clarification')
+    const msg = buildReviewMessage('/docs/design.md', comments)
+    expect(msg).toContain('Please review and address the comment in /docs/design.md')
+    expect(msg).toContain('[1] Line 3\nComment: Needs clarification')
+  })
+
+  // AC1b: The quoted sentence travels with the comment
+  it('includes the quoted sentence for each comment', () => {
+    const comments: Comment[] = [
+      { id: 'c1', startLine: 12, endLine: 14, content: '口径不对', quote: '净额按日汇总', version: 2, createdAt: '2026-04-14T10:00:00Z' },
+    ]
+    const msg = buildReviewMessage('/tmp/spec.md', comments)
+    expect(msg).toContain('[1] Lines 12-14\nQuoted: "净额按日汇总"\nComment: 口径不对')
   })
 })
 

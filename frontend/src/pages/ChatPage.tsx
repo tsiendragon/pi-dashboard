@@ -17,13 +17,16 @@ import FileBrowser from '../components/FileBrowser'
 import TerminalPanel from '../features/terminal/TerminalPanel'
 import ReferencedFiles from '../components/ReferencedFiles'
 import DocumentPreviewModal from '../components/DocumentPreviewModal'
+import ReviewCommentsDialog from '../components/ReviewCommentsDialog'
 import ErrorBoundary from '../components/ErrorBoundary'
 import { useReferencedFiles } from '../hooks/useReferencedFiles'
 import WelcomeView from '../components/WelcomeView'
 import SlashCommandMenu from '../components/SlashCommandMenu'
 import PathCompleteMenu from '../components/PathCompleteMenu'
 import FileMentionMenu from '../components/FileMentionMenu'
-import { usePanelState, detectFileType } from '../hooks/usePanelState'
+import { usePanelState, detectFileType, type Comment } from '../hooks/usePanelState'
+import { useDocumentComments } from '../hooks/useDocumentComments'
+import { loadFileComments, saveFileComments } from '../api/fileComments'
 import { resolvePath } from '../utils/resolvePath'
 import { clipboardFiles, splitFilesByKind, pastedFileRef } from '../utils/clipboardFiles'
 import { resolveFileRef, uploadAttachedFiles, withAttachedFile } from '../utils/attachmentIntake'
@@ -304,6 +307,10 @@ export default function ChatPage() {
 
   const panel = usePanelState()
   const [documentPreview, setDocumentPreview] = useState<{ filePath: string; content: string; loading: boolean; error: string | null } | null>(null)
+  // Comments on the full-screen preview live in the same sidecar as the side panel.
+  const previewComments = useDocumentComments(documentPreview?.filePath ?? null)
+  // Review comments are queued here and only sent after the user confirms in the dialog.
+  const [reviewDraft, setReviewDraft] = useState<{ target: 'panel' | 'preview'; filePath: string; comments: Comment[] } | null>(null)
   const { subscribeFileChange, wsRef } = useContext(WsContext)
 
   // Register file change callback (mirrors LogsPage subscribeLogs pattern)
@@ -362,10 +369,7 @@ export default function ChatPage() {
         .then(d => { if (d?.versions) panel.setVersions(d.versions) })
         .catch(() => {})
       // Fetch comments on open
-      fetch('/api/file-comments?path=' + encodeURIComponent(filePath))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d?.comments) panel.setComments(d.comments) })
-        .catch(() => {})
+      void loadFileComments(filePath).then(loaded => panel.setComments(loaded))
     } catch { panel.openPanel(filePath, '_Error reading file_') }
   }, [panel.openPanel]) // eslint-disable-line react-hooks/exhaustive-deps -- panel.openPanel is stable
 
@@ -411,20 +415,17 @@ export default function ChatPage() {
       .catch(() => {})
   }, [panel.setDirty]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const saveComments = useCallback((comments: import('../hooks/usePanelState').Comment[]) => {
+  const saveComments = useCallback((comments: Comment[]) => {
     if (!panel.filePath) return
     panel.setComments(comments)
-    fetch('/api/file-comments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: panel.filePath, comments }),
-    }).catch(() => {})
+    void saveFileComments(panel.filePath, comments).catch(error => console.warn('[file-comments] save failed', error))
   }, [panel.filePath, panel.setComments])
 
-  const handleAddComment = useCallback((startLine: number, endLine: number, content: string) => {
-    const comment: import('../hooks/usePanelState').Comment = {
+  const handleAddComment = useCallback((startLine: number, endLine: number, content: string, quote?: string) => {
+    const comment: Comment = {
       id: crypto.randomUUID(),
       startLine, endLine, content,
+      ...(quote ? { quote } : {}),
       version: panel.versions.length > 0 ? panel.versions[panel.versions.length - 1].version : 1,
       createdAt: new Date().toISOString(),
     }
@@ -953,22 +954,26 @@ export default function ChatPage() {
   const handleReviewComments = useCallback(() => {
     if (!panel.filePath || panel.comments.length === 0) return
     const currentVersion = panel.selectedVersion ?? (panel.versions.length > 0 ? panel.versions[panel.versions.length - 1]?.version ?? 1 : 1)
-    const filtered = panel.comments.filter(c => c.version === currentVersion)
-    if (filtered.length === 0) return
-    const lines = filtered.map(c => {
-      const lineRef = c.startLine === c.endLine ? `Line ${c.startLine}` : `Lines ${c.startLine}-${c.endLine}`
-      return `${lineRef}: ${c.content}`
-    })
-    const msg = `Please review and address the comments in ${panel.filePath}:\n\n${lines.join('\n')}`
-    send(msg)
-    // Clear comments after sending so the next review cycle starts fresh
-    panel.setComments([])
-    fetch('/api/file-comments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: panel.filePath, comments: [] })
-    }).catch(() => {})
-  }, [panel.filePath, panel.comments, panel.selectedVersion, panel.versions, send])
+    const pending = panel.comments.filter(c => c.version === currentVersion)
+    if (pending.length === 0) return
+    setReviewDraft({ target: 'panel', filePath: panel.filePath, comments: pending })
+  }, [panel.filePath, panel.comments, panel.selectedVersion, panel.versions])
+
+  const handlePreviewReview = useCallback(() => {
+    const filePath = documentPreview?.filePath
+    if (!filePath || previewComments.comments.length === 0) return
+    setReviewDraft({ target: 'preview', filePath, comments: previewComments.comments })
+  }, [documentPreview?.filePath, previewComments.comments])
+
+  const handleReviewSend = useCallback((message: string, sentIds: string[]) => {
+    if (!reviewDraft) return
+    void send(message)
+    // Only the comments that were actually sent leave the dashboard.
+    if (reviewDraft.target === 'panel') saveComments(panel.comments.filter(c => !sentIds.includes(c.id)))
+    else previewComments.removeComments(sentIds)
+    setReviewDraft(null)
+  }, [reviewDraft, send, saveComments, panel.comments, previewComments])
+
 
   // Chat keyboard shortcuts — register into centralized action registry
   useEffect(() => {
@@ -1639,6 +1644,21 @@ export default function ChatPage() {
             loading={documentPreview.loading}
             error={documentPreview.error}
             onClose={() => setDocumentPreview(null)}
+            comments={previewComments.comments}
+            onAddComment={previewComments.addComment}
+            onEditComment={previewComments.editComment}
+            onDeleteComment={previewComments.deleteComment}
+            onReviewComments={handlePreviewReview}
+          />
+        </ErrorBoundary>
+      )}
+      {reviewDraft && (
+        <ErrorBoundary key={`review:${reviewDraft.filePath}`}>
+          <ReviewCommentsDialog
+            filePath={reviewDraft.filePath}
+            comments={reviewDraft.comments}
+            onCancel={() => setReviewDraft(null)}
+            onSend={handleReviewSend}
           />
         </ErrorBoundary>
       )}

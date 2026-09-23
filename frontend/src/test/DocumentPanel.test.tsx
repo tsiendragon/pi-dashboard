@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import DocumentPanel from '../components/DocumentPanel'
 
 // Stub MarkdownRenderer to avoid heavy deps
@@ -176,6 +176,30 @@ describe('DocumentPanel — Right-click Comment', () => {
 
     // No context menu
     expect(screen.queryByText(/Add Comment/)).toBeNull()
+
+    vi.restoreAllMocks()
+  })
+
+  it('passes the quoted sentence with the new comment', () => {
+    const content = '# Title\n\nSome body text'
+    const { container } = render(
+      <DocumentPanel {...baseProps} content={content} />
+    )
+    const contentArea = container.querySelector('.flex-1.overflow-hidden.p-4')
+    vi.spyOn(window, 'getSelection').mockReturnValue({ isCollapsed: false, toString: () => 'Some body text' } as any)
+
+    fireEvent.contextMenu(contentArea!)
+    fireEvent.click(screen.getByText(/Add Comment/))
+
+    // The input preview shows which sentence is being commented on
+    expect(screen.getByText(/line 3 — “Some body text”/)).toBeTruthy()
+
+    const input = screen.getByPlaceholderText(/add a comment/i)
+    fireEvent.change(input, { target: { value: 'clarify this' } })
+    const inputRoot = input.closest('div.ml-\\[3em\\]') as HTMLElement
+    fireEvent.click(within(inputRoot).getByRole('button', { name: /^save$/i }))
+
+    expect(baseProps.onAddComment).toHaveBeenCalledWith(3, 3, 'clarify this', 'Some body text')
 
     vi.restoreAllMocks()
   })

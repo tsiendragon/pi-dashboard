@@ -40,24 +40,14 @@ hljs.registerLanguage('md', markdown)
 import DOMPurify from 'dompurify'
 import MarkdownRenderer from '../MarkdownRenderer'
 import type { Comment } from '../../hooks/usePanelState'
+import { describeCommentTarget } from '../../utils/reviewComments'
 
 export const MD_EXTS = new Set(['.md', '.markdown', '.mdx', '.txt', ''])
 export function extOf(fp: string) { const i = fp.lastIndexOf('.'); return i >= 0 ? fp.slice(i).toLowerCase() : '' }
 export function wrapCode(content: string, ext: string) { const lang = ext.replace('.', ''); return '~~~' + lang + '\n' + content + '\n~~~' }
 
-/** Strip markdown formatting for fuzzy text matching */
-export function stripMd(line: string): string {
-  return line
-    .replace(/^#{1,6}\s+/, '')              // headings
-    .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1') // bold/italic
-    .replace(/`([^`]+)`/g, '$1')            // inline code
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // images (must precede link rule)
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links
-    .replace(/^[-*+]\s+/, '')                // unordered list items
-    .replace(/^\d+\.\s+/, '')                // ordered list items
-    .replace(/^>\s+/, '')                    // blockquotes
-    .trim()
-}
+/** Strip markdown formatting for fuzzy text matching (shared with review tooling) */
+export { stripMd } from '../../utils/reviewComments'
 export function langFor(ext: string): string {
   const map: Record<string, string> = { '.ts': 'typescript', '.tsx': 'typescript', '.js': 'javascript', '.jsx': 'javascript', '.py': 'python', '.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.sh': 'bash', '.css': 'css', '.html': 'html', '.md': 'markdown', '.rs': 'rust', '.go': 'go', '.java': 'java', '.kt': 'kotlin', '.rb': 'ruby', '.sql': 'sql', '.xml': 'xml', '.toml': 'ini', '.cfg': 'ini' }
   return map[ext] || 'plaintext'
@@ -97,13 +87,13 @@ export function CodeEditor({ content, lang, lineNums, onChange, readOnly, commen
 }
 
 /** Inline comment input */
-export function CommentInput({ range, onSave, onCancel }: { range: { start: number; end: number }; onSave: (text: string) => void; onCancel: () => void }) {
+export function CommentInput({ range, quote, onSave, onCancel }: { range: { start: number; end: number }; quote?: string; onSave: (text: string) => void; onCancel: () => void }) {
   const [value, setValue] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
   useEffect(() => { ref.current?.focus() }, [])
   return (
     <div className="ml-[3em] pl-3 py-1.5 border-l-2 border-cyan-400 bg-cyan-500/5">
-      <div className="text-2xs text-muted mb-1">Comment on {range.start === range.end ? `line ${range.start}` : `lines ${range.start}–${range.end}`}</div>
+      <div className="text-2xs text-muted mb-1 truncate" title={describeCommentTarget(range.start, range.end, quote)}>Comment on {describeCommentTarget(range.start, range.end, quote)}</div>
       <textarea ref={ref} className="w-full bg-bg border border-border rounded px-2 py-1 text-meta text-text outline-none focus:border-accent resize-none" rows={2} placeholder="Add a comment..." value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (value.trim()) onSave(value.trim()) } if (e.key === 'Escape') onCancel() }} />
       <div className="flex gap-1 mt-1">
         <button className="px-2 py-0.5 rounded border border-accent text-accent text-2xs cursor-pointer hover:bg-accent-subtle" onClick={() => { if (value.trim()) onSave(value.trim()) }}>Save</button>
@@ -136,6 +126,7 @@ function InlineCommentWidget({ comment, onEdit, onDelete }: { comment: Comment; 
         <div className="flex items-start justify-between gap-2">
           <div className={onEdit ? 'cursor-pointer hover:bg-cyan-500/10 rounded px-1 -mx-1 transition-colors' : ''} onClick={onEdit ? () => setEditing(true) : undefined}>
             <span className="text-2xs text-cyan-400 font-mono mr-1.5">{lineLabel}</span><span className="text-text">{comment.content}</span>
+            {comment.quote && <div className="mt-0.5 truncate text-2xs text-muted" title={comment.quote}>“{comment.quote}”</div>}
           </div>
           {onDelete && <button className="text-2xs text-muted hover:text-danger cursor-pointer shrink-0" onClick={() => onDelete(comment.id)} title="Delete">✕</button>}
         </div>
