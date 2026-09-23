@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { usePanelState } from '../hooks/usePanelState'
 import type { Comment } from '../hooks/usePanelState'
-import { buildReviewMessage } from '../utils/reviewComments'
+import { buildReviewMessage, commentReviewItems } from '../utils/reviewComments'
 
 /**
  * Test the review integration logic that will be added to ChatPage:
@@ -17,7 +17,7 @@ describe('Review Integration — Message Formatting', () => {
       { id: 'c1', startLine: 5, endLine: 5, content: 'Fix typo here', version: 1, createdAt: '2026-04-14T10:00:00Z' },
       { id: 'c2', startLine: 10, endLine: 15, content: 'Refactor this section', version: 1, createdAt: '2026-04-14T11:00:00Z' },
     ]
-    const msg = buildReviewMessage('/tmp/spec.md', comments)
+    const msg = buildReviewMessage('/tmp/spec.md', commentReviewItems(comments))
     expect(msg).toBe(
       'Please review and address the comments in /tmp/spec.md:\n\n' +
       '[1] Line 5\nComment: Fix typo here\n\n' +
@@ -30,7 +30,7 @@ describe('Review Integration — Message Formatting', () => {
     const comments: Comment[] = [
       { id: 'c1', startLine: 3, endLine: 3, content: 'Needs clarification', version: 1, createdAt: '2026-04-14T10:00:00Z' },
     ]
-    const msg = buildReviewMessage('/docs/design.md', comments)
+    const msg = buildReviewMessage('/docs/design.md', commentReviewItems(comments))
     expect(msg).toContain('Please review and address the comment in /docs/design.md')
     expect(msg).toContain('[1] Line 3\nComment: Needs clarification')
   })
@@ -40,7 +40,7 @@ describe('Review Integration — Message Formatting', () => {
     const comments: Comment[] = [
       { id: 'c1', startLine: 12, endLine: 14, content: '口径不对', quote: '净额按日汇总', version: 2, createdAt: '2026-04-14T10:00:00Z' },
     ]
-    const msg = buildReviewMessage('/tmp/spec.md', comments)
+    const msg = buildReviewMessage('/tmp/spec.md', commentReviewItems(comments))
     expect(msg).toContain('[1] Lines 12-14\nQuoted: "净额按日汇总"\nComment: 口径不对')
   })
 })

@@ -28,6 +28,9 @@ import {
 } from '../../store/liveSessionsSlice'
 import { liveSessionApi, LiveSessionApiError } from './api'
 import LiveSessionComposer from './LiveSessionComposer'
+import { SelectionQuoteMenu, QuoteCommentPopover } from '../../components/SelectionQuoteMenu'
+import { useChatQuoteSelection, type SelectionTarget } from '../../hooks/useChatQuoteSelection'
+import { commentReviewItems, selectionLabel, type QuotedText, type ReviewItem } from '../../utils/reviewComments'
 import LiveSessionFeatures from './LiveSessionFeatures'
 import LiveSubagentPanel from './LiveSubagentPanel'
 import LiveWorkflowPanel from './LiveWorkflowPanel'
@@ -809,7 +812,10 @@ const TimelineEntry = memo(function TimelineEntry({ entry, onFileOpen, toolState
     const assistant = message.role === 'assistant'
     const user = message.role === 'user'
     return (
-      <article className={`rounded-lg border ${user ? 'ml-4 w-fit max-w-[78%] self-end border-[#bfdbfe] bg-[#eff6ff] p-1.5 shadow-sm md:ml-10 md:max-w-[70%]' : assistant ? 'w-fit max-w-[96%] border-[#bfdbfe] bg-[#eff6ff] p-1.5' : 'border-accent/25 bg-accent-subtle p-2.5'}`}>
+      <article
+        data-msg-anchor=""
+        data-msg-role={message.role}
+        className={`rounded-lg border ${user ? 'ml-4 w-fit max-w-[78%] self-end border-[#bfdbfe] bg-[#eff6ff] p-1.5 shadow-sm md:ml-10 md:max-w-[70%]' : assistant ? 'w-fit max-w-[96%] border-[#bfdbfe] bg-[#eff6ff] p-1.5' : 'border-accent/25 bg-accent-subtle p-2.5'}`}>
         <div className={`mb-1 flex items-center justify-between gap-2 px-1 text-2xs uppercase tracking-wide text-slate-500 ${user ? 'text-right' : ''}`}>
           <span>
             {message.role}
@@ -967,6 +973,17 @@ export function AuthPanel({ onAuthenticated }: { onAuthenticated: (browserClient
   )
 }
 
+/** One review round: what the comments point at and how to clear them after sending. */
+interface ReviewRequest {
+  kind: 'panel' | 'preview' | 'chat'
+  label: string
+  items: ReviewItem[]
+  intro?: string
+}
+
+/** Opening line used when the comments target the conversation itself. */
+const CHAT_REVIEW_INTRO = 'Please review and address these comments about the quoted parts of our conversation:'
+
 export default function LiveSessionPage() {
   const { processInstanceId } = useParams<{ processInstanceId?: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1027,7 +1044,12 @@ export default function LiveSessionPage() {
   // Comments on the full-screen preview live in the same sidecar as the side panel.
   const previewComments = useDocumentComments(documentPreview?.filePath ?? null)
   // Review comments are queued here and only sent after the user confirms in the dialog.
-  const [reviewDraft, setReviewDraft] = useState<{ target: 'panel' | 'preview'; filePath: string; comments: Comment[] } | null>(null)
+  const [reviewDraft, setReviewDraft] = useState<ReviewRequest | null>(null)
+  // Quoted sentences picked in the transcript (A) and comments collected on them (B).
+  const quoteSelection = useChatQuoteSelection()
+  const [quotes, setQuotes] = useState<QuotedText[]>([])
+  const [commentTarget, setCommentTarget] = useState<SelectionTarget | null>(null)
+  const [chatComments, setChatComments] = useState<ReviewItem[]>([])
   const [focusedSubagentId, setFocusedSubagentId] = useState<string>()
   const [focusedWorkflow, setFocusedWorkflow] = useState<WorkflowRecord>()
   const [subagentLoading, setSubagentLoading] = useState(false)
@@ -1126,13 +1148,13 @@ export default function LiveSessionPage() {
 
   const handlePanelReview = useCallback(() => {
     if (!panel.filePath || panel.comments.length === 0) return
-    setReviewDraft({ target: 'panel', filePath: panel.filePath, comments: panel.comments })
+    setReviewDraft({ kind: 'panel', label: panel.filePath, items: commentReviewItems(panel.comments) })
   }, [panel.filePath, panel.comments])
 
   const handlePreviewReview = useCallback(() => {
     const filePath = documentPreview?.filePath
     if (!filePath || previewComments.comments.length === 0) return
-    setReviewDraft({ target: 'preview', filePath, comments: previewComments.comments })
+    setReviewDraft({ kind: 'preview', label: filePath, items: commentReviewItems(previewComments.comments) })
   }, [documentPreview?.filePath, previewComments.comments])
 
   /**
@@ -1377,10 +1399,44 @@ export default function LiveSessionPage() {
   const handleReviewSend = useCallback((message: string, sentIds: string[]) => {
     if (!reviewDraft) return
     void submit(message).catch(() => {})
-    if (reviewDraft.target === 'panel') saveComments(panel.comments.filter(c => !sentIds.includes(c.id)))
-    else previewComments.removeComments(sentIds)
+    if (reviewDraft.kind === 'panel') saveComments(panel.comments.filter(c => !sentIds.includes(c.id)))
+    else if (reviewDraft.kind === 'preview') previewComments.removeComments(sentIds)
+    else setChatComments(previous => previous.filter(item => !sentIds.includes(item.id)))
     setReviewDraft(null)
   }, [reviewDraft, submit, saveComments, panel.comments, previewComments])
+
+  // Quotes and collected comments belong to one session; a switch starts clean.
+  useEffect(() => {
+    setQuotes([])
+    setChatComments([])
+    setCommentTarget(null)
+  }, [activeId])
+
+  /** A: keep the selected sentence as a chip above the composer. */
+  const addQuote = useCallback((target: SelectionTarget) => {
+    setQuotes(previous => previous.some(quote => quote.text === target.text)
+      ? previous
+      : [...previous, { id: target.id, text: target.text, ...(target.role ? { role: target.role } : {}), ...(target.entryId ? { entryId: target.entryId } : {}) }])
+    quoteSelection.clear()
+  }, [quoteSelection])
+
+  /** B: collect a comment on the selected sentence without sending yet. */
+  const addChatComment = useCallback((content: string) => {
+    if (!commentTarget) return
+    setChatComments(previous => [...previous, {
+      id: crypto.randomUUID(),
+      label: selectionLabel(commentTarget.role),
+      quote: commentTarget.text,
+      content,
+    }])
+    setCommentTarget(null)
+    quoteSelection.clear()
+  }, [commentTarget, quoteSelection])
+
+  const handleChatCommentsReview = useCallback(() => {
+    if (chatComments.length === 0) return
+    setReviewDraft({ kind: 'chat', label: '上面的会话', items: chatComments, intro: CHAT_REVIEW_INTRO })
+  }, [chatComments])
 
   if (state.auth === 'checking') return <div className="flex-1 flex items-center justify-center text-muted">检查 Live Session 认证…</div>
   if (state.auth === 'required') return <AuthPanel onAuthenticated={browserClientId => { dispatch(authenticated({ browserClientId })); void refresh() }} />
@@ -1500,7 +1556,16 @@ export default function LiveSessionPage() {
                   onSelectModel={selectModel}
                   cwd={summary.canonicalCwd}
                   onSubmit={submit}
+                  quotes={quotes}
+                  onRemoveQuote={id => setQuotes(previous => previous.filter(quote => quote.id !== id))}
+                  onClearQuotes={() => setQuotes([])}
                 />
+                {chatComments.length > 0 && <div className="flex flex-wrap items-center gap-2 border-t border-border bg-chrome px-2 py-1 text-2xs text-muted" role="status">
+                  <span>💬 {chatComments.length} 条批注待发送</span>
+                  <span className="min-w-0 flex-1 truncate" title={chatComments.map(item => item.quote ?? '').join(' / ')}>{chatComments.map(item => item.quote ?? '').join(' / ')}</span>
+                  <button type="button" onClick={() => setChatComments([])} className="shrink-0 rounded border border-border px-2 py-0.5 text-muted hover:border-danger hover:text-danger">清空</button>
+                  <button type="button" onClick={handleChatCommentsReview} className="shrink-0 rounded border border-accent px-2 py-0.5 text-accent hover:bg-accent-subtle">发送批注</button>
+                </div>}
               </div>
               <LiveSessionFeatures
                 features={features}
@@ -1589,14 +1654,29 @@ export default function LiveSessionPage() {
         </ErrorBoundary>
       )}
       {reviewDraft && (
-        <ErrorBoundary key={`review:${reviewDraft.filePath}`}>
+        <ErrorBoundary key={`review:${reviewDraft.label}`}>
           <ReviewCommentsDialog
-            filePath={reviewDraft.filePath}
-            comments={reviewDraft.comments}
+            target={reviewDraft.label}
+            items={reviewDraft.items}
+            intro={reviewDraft.intro}
             onCancel={() => setReviewDraft(null)}
             onSend={handleReviewSend}
           />
         </ErrorBoundary>
+      )}
+      {quoteSelection.selection && !commentTarget && (
+        <SelectionQuoteMenu
+          target={quoteSelection.selection}
+          onQuote={addQuote}
+          onComment={target => setCommentTarget(target)}
+        />
+      )}
+      {commentTarget && (
+        <QuoteCommentPopover
+          target={commentTarget}
+          onSave={addChatComment}
+          onCancel={() => { setCommentTarget(null); quoteSelection.clear() }}
+        />
       )}
       <ExtensionUiModal />
       <LiveSessionExtensionUiModal processInstanceId={activeId} />

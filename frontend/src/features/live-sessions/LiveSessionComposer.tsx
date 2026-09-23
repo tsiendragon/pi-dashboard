@@ -4,6 +4,7 @@ import { LIVE_SESSION_MAX_IMAGE_BYTES, LIVE_SESSION_MAX_IMAGES, type LiveSession
 import { LIVE_SESSION_SLASH_MENU, LIVE_SESSION_TUI_ONLY, type LiveSessionSlashItem } from './liveSessionCommands'
 import { clipboardFiles, pastedFileRef, splitFilesByKind } from '../../utils/clipboardFiles'
 import { resolveFileRef, uploadAttachedFiles, withAttachedFile, type AttachedFile } from '../../utils/attachmentIntake'
+import { buildQuoteReplyMessage, selectionLabel, type QuotedText } from '../../utils/reviewComments'
 
 export interface LiveSessionActivity {
   label: string
@@ -23,6 +24,10 @@ interface LiveSessionComposerProps {
   /** Workspace cwd — used to resolve a pasted file name/path into a real file. */
   cwd?: string
   onSubmit: (text: string, deliverAs?: 'steer' | 'followUp', images?: LiveSessionImage[]) => Promise<void>
+  /** Quoted sentences from the transcript, sent together with the next message. */
+  quotes?: QuotedText[]
+  onRemoveQuote?: (id: string) => void
+  onClearQuotes?: () => void
 }
 
 type PendingImage = LiveSessionImage & { preview: string }
@@ -80,7 +85,7 @@ function AgentActivityBar({ activity }: { activity?: LiveSessionActivity }) {
   )
 }
 
-export default function LiveSessionComposer({ status, activity, disabled, models = [], currentModel, modelsLoading = false, onLoadModels, onSelectModel, cwd, onSubmit }: LiveSessionComposerProps) {
+export default function LiveSessionComposer({ status, activity, disabled, models = [], currentModel, modelsLoading = false, onLoadModels, onSelectModel, cwd, onSubmit, quotes, onRemoveQuote, onClearQuotes }: LiveSessionComposerProps) {
   const [text, setText] = useState('')
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
   const [pendingFiles, setPendingFiles] = useState<AttachedFile[]>([])
@@ -191,7 +196,8 @@ export default function LiveSessionComposer({ status, activity, disabled, models
 
   const submit = async (): Promise<void> => {
     const filePrefix = pendingFiles.map(file => file.path).join('\n')
-    const typed = [filePrefix, text.trim()].filter(Boolean).join('\n\n')
+    const quotePrefix = buildQuoteReplyMessage(quotes ?? [])
+    const typed = [filePrefix, quotePrefix, text.trim()].filter(Boolean).join('\n\n')
     const value = typed || (pendingImages.length > 0 ? '请分析这张图片。' : '')
     if (!value || sending || disabled) return
     const images = pendingImages.map(({ preview: _preview, ...image }) => image)
@@ -202,6 +208,7 @@ export default function LiveSessionComposer({ status, activity, disabled, models
       setText('')
       setPendingImages([])
       setPendingFiles([])
+      onClearQuotes?.()
       setImageError(undefined)
       setFileError(undefined)
     } catch {
@@ -269,6 +276,14 @@ export default function LiveSessionComposer({ status, activity, disabled, models
     <>
       <AgentActivityBar activity={activity} />
       <div className="border-t border-border bg-card p-2" onDragOver={handleDragOver} onDrop={handleDrop}>
+        {(quotes?.length ?? 0) > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label="待发送引用">
+          {(quotes ?? []).map(quote => <div key={quote.id} className="flex min-w-0 items-center gap-1.5 rounded-md border border-accent/40 bg-accent-subtle px-2 py-1 text-2xs text-text">
+            <span aria-hidden="true">↩</span>
+            <span className="max-w-72 truncate" title={quote.text}>{quote.text}</span>
+            <span className="shrink-0 text-muted">{selectionLabel(quote.role)}</span>
+            <button type="button" onClick={() => onRemoveQuote?.(quote.id)} className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-none bg-danger text-2xs text-danger-fg opacity-60 transition-opacity hover:opacity-100" aria-label={`移除引用：${quote.text.slice(0, 24)}`}>×</button>
+          </div>)}
+        </div>}
         {pendingFiles.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label="待发送文件">
           {pendingFiles.map((file, index) => <div key={`${file.path}-${index}`} className="group flex items-center gap-1.5 rounded-md border border-border bg-bg px-2 py-1 text-2xs text-text">
             <span aria-hidden="true">📄</span>
@@ -300,7 +315,7 @@ export default function LiveSessionComposer({ status, activity, disabled, models
           maxLength={128 * 1024}
           rows={1}
           onPaste={handlePaste}
-          placeholder={pendingFiles.length > 0 ? '补充文件说明，或直接发送…' : pendingImages.length > 0 ? '补充图片说明，或直接发送…' : '发送到运行中的 Pi…'}
+          placeholder={(quotes?.length ?? 0) > 0 ? '针对引用的说明…' : pendingFiles.length > 0 ? '补充文件说明，或直接发送…' : pendingImages.length > 0 ? '补充图片说明，或直接发送…' : '发送到运行中的 Pi…'}
           className="min-h-9 flex-1 resize-none rounded-lg border border-border bg-bg px-2.5 py-1.5 text-sm text-text shadow-inner outline-none focus-ring disabled:opacity-50"
         />
         <button
@@ -346,7 +361,7 @@ export default function LiveSessionComposer({ status, activity, disabled, models
             })}
           </div>}
         </div>
-        <button type="button" onClick={() => void submit()} disabled={(!text.trim() && pendingImages.length === 0 && pendingFiles.length === 0) || sending || !!action || disabled} className="h-8 px-3 rounded-lg bg-accent text-accent-fg border-none text-xs disabled:opacity-50">
+        <button type="button" onClick={() => void submit()} disabled={(!text.trim() && pendingImages.length === 0 && pendingFiles.length === 0 && (quotes?.length ?? 0) === 0) || sending || !!action || disabled} className="h-8 px-3 rounded-lg bg-accent text-accent-fg border-none text-xs disabled:opacity-50">
           {sending ? '发送中…' : '发送'}
         </button>
         </div>

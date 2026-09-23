@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import ReviewCommentsDialog from '../components/ReviewCommentsDialog'
-import type { Comment } from '../hooks/usePanelState'
+import type { ReviewItem } from '../utils/reviewComments'
 
-const comments: Comment[] = [
-  { id: 'c1', startLine: 5, endLine: 5, content: 'Fix typo', quote: 'teh file', version: 1, createdAt: '2026-04-14T10:00:00Z' },
-  { id: 'c2', startLine: 10, endLine: 15, content: 'Refactor this', version: 1, createdAt: '2026-04-14T11:00:00Z' },
+const items: ReviewItem[] = [
+  { id: 'c1', label: 'Line 5', content: 'Fix typo', quote: 'teh file' },
+  { id: 'c2', label: 'Lines 10-15', content: 'Refactor this' },
 ]
 
 const baseProps = {
-  filePath: '/tmp/spec.md',
-  comments,
+  target: '/tmp/spec.md',
+  items,
   onCancel: vi.fn(),
   onSend: vi.fn(),
 }
