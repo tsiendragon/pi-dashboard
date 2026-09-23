@@ -79,6 +79,28 @@ This is the core workflow for doc collaboration:
 4. Agent revises the document
 5. Panel auto-updates, you review the diff
 
+## Quoting the Conversation
+
+You can quote a sentence from the conversation itself instead of copying it.
+
+1. Select the sentence (or a paragraph) in any message — the agent's reply, a tool result, or your own message.
+2. A floating menu appears next to the selection with two actions:
+   - **💬 引用回复** — the sentence becomes a removable chip above the composer; type your reply and send. The message carries `引用（来自你的回复）：` and a `>` blockquote, so the agent knows exactly what you are replying to.
+   - **📝 批注** — opens a small comment box for that sentence without sending. Collect as many as you like; the strip above the composer shows `💬 N 条批注待发送` with **清空** and **发送批注**. Sending opens the same review dialog used for documents (drop items, edit the message, then Send).
+
+Quotes and collected comments are cleared when you switch sessions, and quotes are cleared once they are sent.
+
+The agent receives either form as plain chat text, e.g.:
+
+```
+引用（来自你的回复）：
+> 方案 1 实现已完成。子 Agent 卡片右上角新增两步确认的关闭按钮…
+
+改成常显吧，触屏上没有 hover
+```
+
+Works in both the Pi chat page and live sessions.
+
 ## File Browser
 
 The file browser panel (📄 Files button) supports:

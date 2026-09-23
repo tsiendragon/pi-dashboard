@@ -1,32 +1,35 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Comment } from '../hooks/usePanelState'
-import { buildReviewMessage, formatLineRef } from '../utils/reviewComments'
+import { buildReviewMessage, type ReviewItem } from '../utils/reviewComments'
 
 export interface ReviewCommentsDialogProps {
-  filePath: string
-  comments: Comment[]
+  /** What the comments point at — a file path, or a label for the conversation. */
+  target: string
+  items: ReviewItem[]
+  /** Overrides the generated opening line of the message. */
+  intro?: string
   onCancel: () => void
-  /** `sentIds` lets the caller clear exactly the comments that left the dashboard. */
+  /** `sentIds` lets the caller clear exactly the items that left the dashboard. */
   onSend: (message: string, sentIds: string[]) => void
 }
 
 /**
- * Last stop before comments reach the agent: shows every pending comment with
- * its line reference and quoted sentence, lets you drop individual ones, and
- * lets you edit the exact message that will be sent.
+ * Last stop before comments reach the agent: shows every pending item with its
+ * label and quoted text, lets you drop individual ones, and lets you edit the
+ * exact message that will be sent. Used for document review and for comments
+ * collected on the conversation itself.
  */
-export default function ReviewCommentsDialog({ filePath, comments, onCancel, onSend }: ReviewCommentsDialogProps) {
-  const [pending, setPending] = useState<Comment[]>(comments)
-  const [message, setMessage] = useState(() => buildReviewMessage(filePath, comments))
+export default function ReviewCommentsDialog({ target, items, intro, onCancel, onSend }: ReviewCommentsDialogProps) {
+  const [pending, setPending] = useState<ReviewItem[]>(items)
+  const [message, setMessage] = useState(() => buildReviewMessage(target, items, intro))
   const [edited, setEdited] = useState(false)
 
   const canSend = pending.length > 0 && message.trim().length > 0
 
-  const removeComment = (id: string) => {
-    const next = pending.filter(c => c.id !== id)
+  const removeItem = (id: string) => {
+    const next = pending.filter(item => item.id !== id)
     setPending(next)
     // Keep manual edits; only regenerate the draft while it is untouched.
-    if (!edited) setMessage(buildReviewMessage(filePath, next))
+    if (!edited) setMessage(buildReviewMessage(target, next, intro))
   }
 
   useEffect(() => {
@@ -44,7 +47,7 @@ export default function ReviewCommentsDialog({ filePath, comments, onCancel, onS
 
   const submit = () => {
     if (!canSend) return
-    onSend(message.trim(), pending.map(c => c.id))
+    onSend(message.trim(), pending.map(item => item.id))
   }
 
   const count = useMemo(() => `${pending.length} comment${pending.length === 1 ? '' : 's'}`, [pending.length])
@@ -56,25 +59,25 @@ export default function ReviewCommentsDialog({ filePath, comments, onCancel, onS
         <header className="flex min-w-0 items-center gap-2 border-b border-border bg-chrome px-3 py-2">
           <span className="shrink-0 text-sm">💬</span>
           <span className="text-body-s font-semibold text-text">Send {count} to the agent</span>
-          <span className="min-w-0 flex-1 truncate text-2xs font-mono text-muted" title={filePath}>{filePath}</span>
+          <span className="min-w-0 flex-1 truncate text-2xs font-mono text-muted" title={target}>{target}</span>
           <button type="button" aria-label="Cancel review" className="shrink-0 rounded border border-border px-2 py-1 text-meta text-muted cursor-pointer hover:border-danger hover:text-danger" onClick={onCancel}>✕</button>
         </header>
 
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
-            {pending.map(comment => (
-              <li key={comment.id} data-review-comment-id={comment.id} className="rounded border border-border bg-bg-elevated px-2 py-1">
+            {pending.map(item => (
+              <li key={item.id} data-review-comment-id={item.id} className="rounded border border-border bg-bg-elevated px-2 py-1">
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
-                    <span className="mr-1.5 font-mono text-2xs text-cyan-400">{formatLineRef(comment)}</span>
-                    <span className="text-body-s text-text">{comment.content}</span>
-                    {comment.quote && <div className="mt-0.5 truncate text-2xs text-muted" title={comment.quote}>“{comment.quote}”</div>}
+                    {item.label && <span className="mr-1.5 font-mono text-2xs text-cyan-400">{item.label}</span>}
+                    <span className="text-body-s text-text">{item.content}</span>
+                    {item.quote && <div className="mt-0.5 truncate text-2xs text-muted" title={item.quote}>“{item.quote}”</div>}
                   </div>
                   <button
                     type="button"
-                    aria-label={`Remove comment on ${formatLineRef(comment)}`}
+                    aria-label={`Remove comment ${item.label ? `on ${item.label}` : ''}`.trim()}
                     className="shrink-0 cursor-pointer text-2xs text-muted hover:text-danger"
-                    onClick={() => removeComment(comment.id)}
+                    onClick={() => removeItem(item.id)}
                   >✕</button>
                 </div>
               </li>
