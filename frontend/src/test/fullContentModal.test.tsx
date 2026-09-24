@@ -63,6 +63,16 @@ describe('FullContentModal', () => {
     expect(behind).not.toHaveBeenCalled()
   })
 
+  it('carries the message role so quotes taken here name their source', () => {
+    const { unmount } = render(<FullContentModal content="正文" anchorRole="user" onClose={() => {}} />)
+    const anchor = screen.getByRole('dialog').querySelector('[data-msg-anchor]') as HTMLElement
+    expect(anchor.getAttribute('data-msg-role')).toBe('user')
+    unmount()
+    render(<FullContentModal content="正文" onClose={() => {}} />)
+    const plain = screen.getByRole('dialog').querySelector('[data-msg-anchor]') as HTMLElement
+    expect(plain.hasAttribute('data-msg-role')).toBe(false)
+  })
+
   it('honours the transcript raw toggle', () => {
     // MarkdownRenderer only offers the raw view for content longer than 20 chars.
     const long = '这是一段够长的内容，用来让 raw 开关出现，否则它不会渲染。'

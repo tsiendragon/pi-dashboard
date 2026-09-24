@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
+import FullContentModal from '../components/FullContentModal'
 import { SelectionQuoteMenu, QuoteCommentPopover } from '../components/SelectionQuoteMenu'
 import { useChatQuoteSelection, targetFromSelection, type SelectionTarget } from '../hooks/useChatQuoteSelection'
 import LiveSessionComposer from '../features/live-sessions/LiveSessionComposer'
@@ -65,6 +66,14 @@ describe('targetFromSelection', () => {
     expect(targetFromSelection()).toBeNull()
     mockSelection(fakeSelection({ text: '   ' }))
     expect(targetFromSelection()).toBeNull()
+  })
+
+  it('quotes text selected inside the full-content window', () => {
+    render(<FullContentModal content="长回答的一段" anchorRole="assistant" onClose={() => {}} />)
+    const anchor = screen.getByRole('dialog').querySelector('[data-msg-anchor]') as HTMLElement
+    expect(anchor).not.toBeNull()
+    mockSelection(fakeSelection({ text: ' 长回答的一段 ', node: anchor }))
+    expect(targetFromSelection()).toMatchObject({ text: '长回答的一段', role: 'assistant' })
   })
 })
 
