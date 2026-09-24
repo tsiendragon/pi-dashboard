@@ -28,6 +28,7 @@ import {
 } from '../../store/liveSessionsSlice'
 import { liveSessionApi, LiveSessionApiError } from './api'
 import LiveSessionComposer from './LiveSessionComposer'
+import FullContentModal from '../../components/FullContentModal'
 import { SelectionQuoteMenu, QuoteCommentPopover } from '../../components/SelectionQuoteMenu'
 import { useChatQuoteSelection, type SelectionTarget } from '../../hooks/useChatQuoteSelection'
 import { commentReviewItems, selectionLabel, type QuotedText, type ReviewItem } from '../../utils/reviewComments'
@@ -160,19 +161,22 @@ function CollapsibleMarkdown({ content, onFileOpen, showRaw = true }: { content:
   const previewLines = 12
   const previewChars = 1_600
   const long = lines.length > previewLines || content.length > previewChars
-  const [collapsed, setCollapsed] = useState(long)
-  const visible = collapsed ? lines.slice(0, previewLines).join('\n').slice(0, previewChars) : content
+  const [reading, setReading] = useState(false)
+  // A long answer keeps a fixed-height preview here, and the rest opens in its own
+  // window: reading it no longer reflows the transcript or moves the reader's place.
+  const visible = long ? lines.slice(0, previewLines).join('\n').slice(0, previewChars) : content
   return (
     <div>
-      <div className={`text-body-s leading-5 [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:text-base [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-sm [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_li]:text-body-s [&_li]:leading-5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1 ${collapsed ? 'relative max-h-[220px] overflow-hidden' : ''}`}>
+      <div className={`text-body-s leading-5 [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:text-base [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-sm [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_li]:text-body-s [&_li]:leading-5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1 ${long ? 'relative max-h-[220px] overflow-hidden' : ''}`}>
         <MarkdownRenderer content={visible} onFileOpen={onFileOpen} showRaw={showRaw} />
-        {collapsed && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent" />}
+        {long && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent" />}
       </div>
       {long && (
-        <button type="button" onClick={() => setCollapsed(value => !value)} className="mt-2 text-xs text-accent bg-transparent border-none cursor-pointer hover:underline">
-          {collapsed ? `展开全部（${lines.length} 行）` : '收起长内容'}
+        <button type="button" onClick={() => setReading(true)} className="mt-2 text-xs text-accent bg-transparent border-none cursor-pointer hover:underline">
+          展开全部（{lines.length} 行）
         </button>
       )}
+      {reading && <FullContentModal content={content} meta={`${lines.length} 行`} onFileOpen={onFileOpen} showRaw={showRaw} onClose={() => setReading(false)} />}
     </div>
   )
 }
