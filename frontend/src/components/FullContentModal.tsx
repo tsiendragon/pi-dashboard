@@ -56,7 +56,7 @@ export default function FullContentModal({ title = '完整内容', meta, content
     // inside this window still gets its actions on top of it.
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 p-4" role="presentation" onClick={onClose}>
       <section
-        className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
+        className="flex max-h-[88vh] w-full max-w-[min(1180px,94vw)] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -67,6 +67,7 @@ export default function FullContentModal({ title = '完整内容', meta, content
             <div className="text-xs font-semibold text-text-strong">{title}</div>
             {meta && <div className="mt-0.5 text-2xs text-muted">{meta}</div>}
           </div>
+          <span className="hidden shrink-0 text-2xs text-muted md:inline">选中文字可直接引用 / 批注给 Agent</span>
           <button
             ref={closeRef}
             type="button"
