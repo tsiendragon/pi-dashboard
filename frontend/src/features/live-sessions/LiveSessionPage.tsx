@@ -161,7 +161,10 @@ function CollapsibleMarkdown({ content, onFileOpen, showRaw = true }: { content:
   const previewLines = 12
   const previewChars = 1_600
   const long = lines.length > previewLines || content.length > previewChars
-  const [reading, setReading] = useState(false)
+  // The open window carries the message role, read from the enclosing row: the window
+  // is portaled out of the transcript, and quotes taken inside it should still say
+  // where the sentence came from.
+  const [reading, setReading] = useState<{ role?: string } | null>(null)
   // A long answer keeps a fixed-height preview here, and the rest opens in its own
   // window: reading it no longer reflows the transcript or moves the reader's place.
   const visible = long ? lines.slice(0, previewLines).join('\n').slice(0, previewChars) : content
@@ -172,11 +175,18 @@ function CollapsibleMarkdown({ content, onFileOpen, showRaw = true }: { content:
         {long && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent" />}
       </div>
       {long && (
-        <button type="button" onClick={() => setReading(true)} className="mt-2 text-xs text-accent bg-transparent border-none cursor-pointer hover:underline">
+        <button
+          type="button"
+          onClick={event => {
+            const role = event.currentTarget.closest('[data-msg-anchor]')?.getAttribute('data-msg-role') ?? undefined
+            setReading(role ? { role } : {})
+          }}
+          className="mt-2 text-xs text-accent bg-transparent border-none cursor-pointer hover:underline"
+        >
           展开全部（{lines.length} 行）
         </button>
       )}
-      {reading && <FullContentModal content={content} meta={`${lines.length} 行`} onFileOpen={onFileOpen} showRaw={showRaw} onClose={() => setReading(false)} />}
+      {reading && <FullContentModal content={content} meta={`${lines.length} 行`} onFileOpen={onFileOpen} showRaw={showRaw} anchorRole={reading.role} onClose={() => setReading(null)} />}
     </div>
   )
 }
