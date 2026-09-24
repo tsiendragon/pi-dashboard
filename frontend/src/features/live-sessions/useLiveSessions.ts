@@ -15,6 +15,7 @@ import {
   setLiveWebSocketConnected,
 } from '../../store/liveSessionsSlice'
 import { liveSessionApi, LiveSessionApiError } from './api'
+import { cancelDetach, DETACH_FLUSH_MS, expireDetaches, pendingSummaries, scheduleDetach, type PendingDetach } from './detachGrace'
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -26,11 +27,17 @@ export function useLiveSessionsRuntime(): { refresh: () => Promise<void> } {
   const details = useAppSelector(state => state.liveSessions.details)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>()
   const stopped = useRef(false)
+  // Detached sessions keep their row for a grace window instead of blinking out
+  // and back while their Pi reconnects (see detachGrace.ts).
+  const pendingDetach = useRef(new Map<string, PendingDetach>())
 
   const refresh = useCallback(async () => {
     try {
       const result = await liveSessionApi.list()
-      dispatch(sessionsLoaded(result))
+      // Sessions detached inside their grace window are absent from this payload;
+      // re-adding them keeps their rows from disappearing for a moment.
+      const kept = pendingSummaries(pendingDetach.current, Date.now(), result.sessions.map(summary => summary.processInstanceId))
+      dispatch(sessionsLoaded(kept.length > 0 ? { ...result, sessions: [...result.sessions, ...kept] } : result))
       dispatch(authenticated({ browserClientId: result.browserClientId }))
     } catch (error) {
       if (error instanceof LiveSessionApiError && error.status === 401) dispatch(authRequired())
@@ -48,10 +55,16 @@ export function useLiveSessionsRuntime(): { refresh: () => Promise<void> } {
 
     const applyFrame = (frame: LiveSessionBrowserEvent): void => {
       switch (frame.type) {
-        case 'live_session_attached':
-          dispatch(liveSessionAttached(frame.data as LiveSessionDetail | { sessions: LiveSessionSummary[] }))
+        case 'live_session_attached': {
+          const attached = frame.data as LiveSessionDetail | { sessions: LiveSessionSummary[] }
+          if ('sessions' in attached) for (const summary of attached.sessions) cancelDetach(pendingDetach.current, summary.processInstanceId)
+          else cancelDetach(pendingDetach.current, attached.summary.processInstanceId)
+          dispatch(liveSessionAttached(attached))
           break
+        }
         case 'live_session_snapshot':
+          // A snapshot means the session is talking to us again.
+          cancelDetach(pendingDetach.current, (frame.data as LiveSessionDetail).summary.processInstanceId)
           dispatch(liveSessionSnapshot(frame.data as LiveSessionDetail))
           break
         case 'live_session_event':
@@ -63,10 +76,14 @@ export function useLiveSessionsRuntime(): { refresh: () => Promise<void> } {
         case 'live_session_reconnecting':
           dispatch(liveSessionReconnecting(frame.data as LiveSessionSummary))
           break
-        case 'live_session_detached':
-          dispatch(liveSessionDetached(frame.data as { summary: LiveSessionSummary; reason?: string }))
+        case 'live_session_detached': {
+          // Keep the row briefly: the registry dropped the entry, but a Pi that
+          // reconnects will announce itself again and the row would blink.
+          const detached = frame.data as { summary: LiveSessionSummary; reason?: string }
+          scheduleDetach(pendingDetach.current, detached.summary, Date.now(), detached.reason)
           void refresh()
           break
+        }
         case 'live_session_error':
           dispatch(setLiveSessionError(messageOf(frame.data)))
           break
@@ -144,6 +161,18 @@ export function useLiveSessionsRuntime(): { refresh: () => Promise<void> } {
       }).catch(error => dispatch(setLiveSessionError(messageOf(error))))
     }
   }, [auth, details, dispatch])
+
+  // Flush rows whose grace window has closed. Nothing is dispatched while no
+  // session is pending, so the tick is free in the common case.
+  useEffect(() => {
+    if (auth !== 'authenticated') return
+    const timer = setInterval(() => {
+      for (const entry of expireDetaches(pendingDetach.current, Date.now())) {
+        dispatch(liveSessionDetached({ summary: entry.summary, ...(entry.reason ? { reason: entry.reason } : {}) }))
+      }
+    }, DETACH_FLUSH_MS)
+    return () => clearInterval(timer)
+  }, [auth, dispatch])
 
   return { refresh }
 }
