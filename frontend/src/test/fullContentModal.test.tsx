@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import FullContentModal from '../components/FullContentModal'
@@ -9,6 +10,26 @@ describe('FullContentModal', () => {
     expect(screen.getByText('完整内容')).toBeInTheDocument()
     expect(screen.getByText('3 行')).toBeInTheDocument()
     expect(screen.getByText('正文一段')).toBeInTheDocument()
+  })
+
+  it('moves focus into the window and back to the trigger', () => {
+    function Harness(): React.ReactElement {
+      const [open, setOpen] = useState(false)
+      return (
+        <div>
+          <button type="button" onClick={() => setOpen(true)}>展开全部（32 行）</button>
+          {open && <FullContentModal content="正文" onClose={() => setOpen(false)} />}
+        </div>
+      )
+    }
+    render(<Harness />)
+    const trigger = screen.getByRole('button', { name: '展开全部（32 行）' })
+    // jsdom does not focus a button on click the way a browser does.
+    trigger.focus()
+    fireEvent.click(trigger)
+    expect(screen.getByRole('button', { name: '关闭' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    expect(trigger).toHaveFocus()
   })
 
   it('closes on Escape and on the 关闭 button', () => {
