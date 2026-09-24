@@ -284,6 +284,19 @@ const allowed = relative === "" || (!relative.startsWith("..") && !path.isAbsolu
 
 如果 cwd 暂时不存在或 `realpath()` 失败，该 session 只显示 `out_of_scope` 诊断，不允许注册或控制。
 
+### 7.2 侧栏行的断开宽限
+
+服务端在 `disconnectGraceMs` 之后 `detach()` 会直接删掉注册表条目，`GET /api/live-sessions` 随之不再返回它。
+浏览器若同步删行，「掉线 → 重连」周期里该行会一闪一闪（Pi 重连慢于 15 s 时尤其明显）。
+
+前端因此在 `frontend/src/features/live-sessions/detachGrace.ts` 再保留一段宽限：
+
+- `DETACH_GRACE_MS = 60_000`：收到 `live_session_detached` 后不立即删行，该行继续按「重连中」显示；
+- 宽限期内刷新列表时，把仍在宽限中的会话补回 payload，避免 `sessionsLoaded` 的缺失扫描把行删掉；
+- 会话重新 `attached` / 收到 `snapshot` 即取消宽限，恢复服务端状态；
+- 宽限结束才真正移除该行（并清空 `activeId`），语义与服务端 detach 一致，只是延后。
+- `DETACH_FLUSH_MS = 5_000` 为清理周期，行的消失最多滞后这么久。
+
 ## 8. 身份与数据模型
 
 ```ts
