@@ -1,4 +1,4 @@
-export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
+export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 export type ThinkingLevel = typeof THINKING_LEVELS[number]
 
 const THINKING_SET = new Set<string>(THINKING_LEVELS)
@@ -90,8 +90,9 @@ export function supportedThinkingLevels(model?: ModelLike | null): ThinkingLevel
   return THINKING_LEVELS.filter(level => {
     const mapped = model.thinkingLevelMap?.[level]
     if (mapped === null) return false
-    // pi only exposes xhigh when a model explicitly maps it.
-    if (level === 'xhigh') return mapped !== undefined
+    // pi only exposes xhigh / max when a model explicitly maps them, so a model
+    // that never mentions them must not show them as choices.
+    if (level === 'xhigh' || level === 'max') return mapped !== undefined
     return true
   })
 }

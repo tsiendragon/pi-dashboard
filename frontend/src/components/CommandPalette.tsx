@@ -10,7 +10,7 @@ import { BUILTIN_THEMES } from '../themes'
 import { api } from '../api/client'
 import { ACTIONS, formatKey } from '../shortcuts'
 
-const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
+const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 type Mode = 'root' | 'model' | 'thinking' | 'rename' | 'tag' | 'session-search' | 'system-prompt' | 'theme'
 
@@ -402,7 +402,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
             <Command.Group heading="Thinking Level" className="cmdk-group">
               {THINKING_LEVELS.map(l => (
                 <Command.Item key={l} value={l} onSelect={() => handleThinkingSelect(l)} className="cmdk-item">
-                  <span className="cmdk-item-icon">{l === 'off' ? '💤' : l === 'minimal' ? '💭' : l === 'low' ? '🧠' : l === 'medium' ? '🤔' : '🔥'}</span>
+                  <span className="cmdk-item-icon">{l === 'off' ? '💤' : l === 'minimal' ? '💭' : l === 'low' ? '🧠' : l === 'medium' ? '🤔' : l === 'xhigh' ? '🔥' : '🚀'}</span>
                   <span className="cmdk-item-label capitalize">{l}</span>
                 </Command.Item>
               ))}
