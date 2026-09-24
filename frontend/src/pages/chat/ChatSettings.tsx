@@ -114,7 +114,7 @@ export default function ChatSettings({ activeSlot, currentModel, currentThinking
           {activeSlot && (
             <div className="flex flex-col gap-1">
               <span className="text-meta text-muted">Thinking level</span>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 {THINKING_LEVELS.map(l => {
                   const disabled = !availableThinkingLevels.includes(l)
                   return <button key={l} disabled={disabled} className={`flex-1 px-1 py-1 rounded text-2xs font-medium border transition ${thinkingLevel === l ? 'bg-accent text-accent-fg border-accent' : 'bg-bg-elevated text-muted border-border hover:border-border-strong hover:text-text'} ${disabled ? 'opacity-35 cursor-not-allowed hover:text-muted hover:border-border' : 'cursor-pointer'}`} onClick={() => handleThinkingChange(l)}>{l}</button>
