@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import MarkdownRenderer from './MarkdownRenderer'
 
@@ -23,6 +23,18 @@ export interface FullContentModalProps {
  * and the answer cannot collapse out from under them mid-read.
  */
 export default function FullContentModal({ title = '完整内容', meta, content, onFileOpen, showRaw = true, onClose }: FullContentModalProps) {
+  const closeRef = useRef<HTMLButtonElement>(null)
+
+  // Focus moves into the window and back to whatever opened it, so a reader can
+  // close with the keyboard without hunting for the trigger again.
+  useEffect(() => {
+    const previous = document.activeElement
+    closeRef.current?.focus()
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus()
+    }
+  }, [])
+
   useEffect(() => {
     // Capture phase: Escape belongs to this window while it is open. The global
     // shortcut listener (and every other Escape handler) sits on the bubble phase
@@ -52,6 +64,7 @@ export default function FullContentModal({ title = '完整内容', meta, content
             {meta && <div className="mt-0.5 text-2xs text-muted">{meta}</div>}
           </div>
           <button
+            ref={closeRef}
             type="button"
             onClick={onClose}
             className="shrink-0 cursor-pointer rounded border border-border bg-bg px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent"
