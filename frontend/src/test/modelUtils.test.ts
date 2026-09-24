@@ -41,4 +41,11 @@ describe('modelUtils', () => {
     expect(supportedThinkingLevels(gpt55)).toEqual(['minimal', 'low', 'medium', 'high', 'xhigh'])
     expect(supportedThinkingLevels({ provider: 'x', id: 'plain', reasoning: false })).toEqual(['off'])
   })
+
+  it('offers max only to the models pi maps it for', () => {
+    const claude = { provider: 'anthropic', id: 'claude-opus-4-8', reasoning: true, thinkingLevelMap: { xhigh: 'xhigh', max: 'max' } }
+    expect(supportedThinkingLevels(claude)).toContain('max')
+    expect(supportedThinkingLevels(gpt55)).not.toContain('max')
+    expect(supportedThinkingLevels({ provider: 'x', id: 'plain', reasoning: false })).not.toContain('max')
+  })
 })
