@@ -5,6 +5,7 @@
  * This is the composition root: creates the Express app, wires middleware,
  * shared state, WebSocket handling, and delegates routes to modules.
  */
+import './env-bootstrap.js'
 import express, { Request, Response, NextFunction } from 'express'
 import WebSocket, { WebSocketServer } from 'ws'
 import { createServer, IncomingMessage } from 'http'
