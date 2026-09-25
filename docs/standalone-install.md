@@ -184,7 +184,10 @@ sudo rm /etc/systemd/system/pi-dashboard.service && sudo systemctl daemon-reload
 
 ## 6. 扩展清单
 
-standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsien-extension）。加载顺序有语义：
+standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsien-extension）。
+每个扩展现在是一个独立包 `packages/pi-tsien-*`（一功能一包，入口 `src/index.ts`），共享代码在
+`packages/pi-tsien-shared`；下面的表格列的是**包名**，不再是 `extensions/*.ts` 的文件名。
+（`pi-tsien-auto-compact` / `pi-tsien-context-powerline` / `pi-tsien-live-session` 仍在迁移中，行为不变。）加载顺序有语义：
 `web-tools` 最前，`tool-result-pipeline` 必须紧跟其后（它是 `tool_result` 钩子的唯一入口，
 内部再按 `rtk → bash-digest` 有序执行），`trajectory-recorder` 与 `capability` 放在最后。
 
@@ -192,51 +195,51 @@ standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsi
 
 | 扩展 | 做什么 | 入口 |
 |---|---|---|
-| `live-session.ts` | 把 Pi 会话作为可远程接管的 live session 暴露给 dashboard：接管/释放、会话树导航、分叉、触发 reload；会话标题由 agent 设置 | dashboard `/live-sessions`、`set_session_title` 工具、`/dashboard-release`、`/live-session-reload`、`/ls-navigate`、`/ls-fork` |
-| `running-commands.ts` | 前台命令与后台任务统一列表；`Ctrl+B` 把原进程转后台（不重启）；dashboard 的 Background commands 面板与 live session 命令条复用同一套语义 | 四个工具 `background_command_start/status/output/cancel`、`↑` 聚焦命令列表 |
-| `subagent-workbench.ts` | 进程隔离的子代理与可恢复 Workflow，可由 dashboard 的 Workbench 面板查看 | `subagent_start`、`subagent_workflow`、`subagent_workflow_control`、`subagent_results`、`subagent_cancel`、`/subagent-workbench` |
+| `pi-tsien-live-session` | 把 Pi 会话作为可远程接管的 live session 暴露给 dashboard：接管/释放、会话树导航、分叉、触发 reload；会话标题由 agent 设置 | dashboard `/live-sessions`、`set_session_title` 工具、`/dashboard-release`、`/live-session-reload`、`/ls-navigate`、`/ls-fork` |
+| `pi-tsien-running-commands` | 前台命令与后台任务统一列表；`Ctrl+B` 把原进程转后台（不重启）；dashboard 的 Background commands 面板与 live session 命令条复用同一套语义 | 四个工具 `background_command_start/status/output/cancel`、`↑` 聚焦命令列表 |
+| `pi-tsien-subagent-workbench` | 进程隔离的子代理与可恢复 Workflow，可由 dashboard 的 Workbench 面板查看 | `subagent_start`、`subagent_workflow`、`subagent_workflow_control`、`subagent_results`、`subagent_cancel`、`/subagent-workbench` |
 
 ### 6.2 上下文与成本控制
 
 | 扩展 | 做什么 | 入口 |
 |---|---|---|
-| `tool-result-pipeline.ts` | `tool_result` 钩子的唯一入口；RTK 过滤与 bash-digest 是有序 stage（前一个的输出喂给下一个），任一 stage 出错只退化为「不改写」 | 8 个 `rtk-*` 命令、`rtk_configure` 工具 |
-| `auto-compact-target.ts` | 把自动压缩触发点统一到 `min(270000, 0.75 × contextWindow)`，而不是按各模型 50% 窗口 | 无命令；可选 `~/.pi/agent/auto-compact-target.json` |
-| `compact-continue.ts` | 自动压缩完成后补一条隐藏 follow-up，提示 agent 基于摘要继续当前任务，避免长任务在压缩点停住 | 无命令 |
-| `observation-pack.ts` | 把超大工具结果换成「头 + 尾 + observation id」占位符，全文归档，需要时按 offset 精确取回 | `obs_recall` 工具、`/obs-prune`；**默认关闭** |
-| `context-powerline.ts` | footer 显示当前模型、推理等级、上下文用量、自动压缩阈值、本机 CPU/内存 | 无命令（Powerline 项） |
-| `metrics-sidebar.ts` | 逐轮指标浮层：token、prompt cache 读写、耗时 | `/metrics-sidebar [show\|hide\|toggle]` |
+| `pi-tsien-rtk-fork` | `tool_result` 钩子的唯一入口；RTK 过滤与 bash-digest 是有序 stage（前一个的输出喂给下一个），任一 stage 出错只退化为「不改写」 | 8 个 `rtk-*` 命令、`rtk_configure` 工具 |
+| `pi-tsien-auto-compact` | 把自动压缩触发点统一到 `min(270000, 0.75 × contextWindow)`，而不是按各模型 50% 窗口 | 无命令；可选 `~/.pi/agent/auto-compact-target.json` |
+| `pi-tsien-compact-continue` | 自动压缩完成后补一条隐藏 follow-up，提示 agent 基于摘要继续当前任务，避免长任务在压缩点停住 | 无命令 |
+| `pi-tsien-observation-pack` | 把超大工具结果换成「头 + 尾 + observation id」占位符，全文归档，需要时按 offset 精确取回 | `obs_recall` 工具、`/obs-prune`；**默认关闭** |
+| `pi-tsien-context-powerline` | footer 显示当前模型、推理等级、上下文用量、自动压缩阈值、本机 CPU/内存 | 无命令（Powerline 项） |
+| `pi-tsien-metrics-sidebar` | 逐轮指标浮层：token、prompt cache 读写、耗时 | `/metrics-sidebar [show\|hide\|toggle]` |
 
 ### 6.3 TUI 体验
 
 | 扩展 | 做什么 | 入口 |
 |---|---|---|
-| `00-zero.ts`（pi-zero） | Powerline 宿主、主题、工作状态消息、Claude Code 风格工具渲染、`/transcript`；`running-commands` 依赖它的 `pre-powerline` 插槽 | `/powerline`、`/vibe`、`/context`、`/ccstyle`、`/transcript` |
-| `sidebar.ts` | 当前会话信息侧栏：模型、上下文组成、用量、缓存（不展示子代理/子会话） | `/sidebar [show\|hide\|toggle\|close]`、`Ctrl+Alt+S` |
-| `btw.ts` | 与主任务隔离的只读侧聊浮窗（不能写文件/执行命令），用来临时问一句不污染主会话 | `/btw` |
-| `git-graph.ts` | 当前仓库提交概览浮层，含本地/远端引用 | `/git-graph [1-2000]` |
+| `pi-tsien-session-ui-fork`（pi-zero） | Powerline 宿主、主题、工作状态消息、Claude Code 风格工具渲染、`/transcript`；`running-commands` 依赖它的 `pre-powerline` 插槽 | `/powerline`、`/vibe`、`/context`、`/ccstyle`、`/transcript` |
+| `pi-tsien-sidebar` | 当前会话信息侧栏：模型、上下文组成、用量、缓存（不展示子代理/子会话） | `/sidebar [show\|hide\|toggle\|close]`、`Ctrl+Alt+S` |
+| `pi-tsien-side-chat` | 与主任务隔离的只读侧聊浮窗（不能写文件/执行命令），用来临时问一句不污染主会话 | `/btw` |
+| `pi-tsien-git-graph` | 当前仓库提交概览浮层，含本地/远端引用 | `/git-graph [1-2000]` |
 | `pi-tsien-session-aliases` | 补上 `/clear`（新会话）与 `/exit`（退出）两个别名 | `/clear`、`/exit` |
-| `prompt-inspector.ts` | 把「模型实际收到的最终 payload」可视化：优先用 `before_provider_request` 落盘的真实载荷，没有时实时重建一份近似视图 | `/prompt [raw\|path]` |
-| `effort.ts` | 直接调整当前模型的 thinking level | `/effort [off\|minimal\|low\|medium\|high\|xhigh\|max]` |
-| `default-system-prompt.ts` | 用 `~/.pi/agent/DefaultSystemPrompt.md` 覆盖系统提示开头并调整 Guidelines 段落 | 无命令；缺该文件时静默跳过 |
+| `pi-tsien-prompt-inspector` | 把「模型实际收到的最终 payload」可视化：优先用 `before_provider_request` 落盘的真实载荷，没有时实时重建一份近似视图 | `/prompt [raw\|path]` |
+| `pi-tsien-thinking-level` | 直接调整当前模型的 thinking level | `/effort [off\|minimal\|low\|medium\|high\|xhigh\|max]` |
+| `pi-tsien-default-system-prompt` | 用 `~/.pi/agent/DefaultSystemPrompt.md` 覆盖系统提示开头并调整 Guidelines 段落 | 无命令；缺该文件时静默跳过 |
 
 ### 6.4 记忆与目标
 
 | 扩展 | 做什么 | 入口 |
 |---|---|---|
-| `memory.ts` | 本地 SQLite/FTS5 长期记忆、自动召回、候选审核、遗忘与撤销 | `memory_search`、`memory_remember`、`memory_update`、`memory_forget`、`/memory ...`；数据在 `~/.pi/tsien-memory/` |
-| `goal.ts` | 持久化目标 + 验收标准 + 进度/阻塞项、每 20 分钟自动 continuation、可说明原因的暂停 | `get_goal`、`create_goal`、`propose_goal_draft`、`complete_goal`、`pause_goal`、`update_goal_graph`、`update_goal_progress`、`/goal ...` |
+| `pi-tsien-memory` | 本地 SQLite/FTS5 长期记忆、自动召回、候选审核、遗忘与撤销 | `memory_search`、`memory_remember`、`memory_update`、`memory_forget`、`/memory ...`；数据在 `~/.pi/tsien-memory/` |
+| `pi-tsien-goal` | 持久化目标 + 验收标准 + 进度/阻塞项、每 20 分钟自动 continuation、可说明原因的暂停 | `get_goal`、`create_goal`、`propose_goal_draft`、`complete_goal`、`pause_goal`、`update_goal_graph`、`update_goal_progress`、`/goal ...` |
 
 ### 6.5 工具与可观测性
 
 | 扩展 | 做什么 | 入口 |
 |---|---|---|
-| `ptc.ts`（Code Mode） | 用一个模型生成的 TypeScript 程序编排多个已有工具，把中间结果留在程序里而不是上下文里，减少往返 | `run_code` 工具 |
+| `pi-tsien-code-mode`（Code Mode） | 用一个模型生成的 TypeScript 程序编排多个已有工具，把中间结果留在程序里而不是上下文里，减少往返 | `run_code` 工具 |
 | `pi-tsien-capability` | 注册工作区里可复用的「能力」，区分 draft/trusted，并作为技能暴露给 agent | `capability_ls`、`capability_run`、`/capability [ls\|promote\|demote]` |
-| `vendor/pi-web-tools` | 联网检索与网页正文抓取；没有搜索 provider key 时回退到 DuckDuckGo lite | `WebSearch`、`WebFetch` 工具 |
-| `schedule.ts` | 当前会话内的定时/周期任务，用于长任务跟进与轮询 | `schedule` 工具、`/schedule` |
-| `usage-analytics.ts` | 本地统计工具与技能使用频率（不上传提示词/参数/输出，也不自动卸载） | `/usage [tools\|skills\|unused\|export\|reset]`；数据在 `~/.pi/agent/usage-analytics.json` |
-| `trajectory-recorder.ts` | 记录可复现的 agent 轨迹，并额外写一份紧凑计时账本供 dashboard 时间分析 | 无命令；`PI_TRACE_DIR` / `PI_TIMING_DIR` 可覆盖路径 |
+| `pi-tsien-web-tools`（自研重写） | 联网检索与网页正文抓取；没有搜索 provider key 时回退到 DuckDuckGo lite | `WebSearch`、`WebFetch` 工具 |
+| `pi-tsien-schedule` | 当前会话内的定时/周期任务，用于长任务跟进与轮询 | `schedule` 工具、`/schedule` |
+| `pi-tsien-usage-analytics` | 本地统计工具与技能使用频率（不上传提示词/参数/输出，也不自动卸载） | `/usage [tools\|skills\|unused\|export\|reset]`；数据在 `~/.pi/agent/usage-analytics.json` |
+| `pi-tsien-trajectory-recorder` | 记录可复现的 agent 轨迹，并额外写一份紧凑计时账本供 dashboard 时间分析 | 无命令；`PI_TRACE_DIR` / `PI_TIMING_DIR` 可覆盖路径 |
 
 > - 默认关闭或需要配置才能生效的：`observation-pack`（`~/.pi/agent/observation-pack.json`）、
 >   bash-digest stage（`~/.pi/agent/bash-digest.json`）。
