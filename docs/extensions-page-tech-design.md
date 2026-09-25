@@ -13,6 +13,8 @@
   2. **`pi-tsien-extension` 的 manifest 顺序是错的**：它声明 `./extensions/*.ts`（glob），而 pi 展开 glob 会**按字母排序**，
      与仓库声明的 25 条 `loadOrder` 有 **11 处不一致**（见 §9）。想「像开源扩展一样一条命令装」必须先修这个。
 - 分四阶段，P1+P2 是价值主体（约 1.5 天），P3 复用现成 CLI（约 0.5 天）。
+- 追加：**按功能拆成若干独立 package**（monorepo，仍在 `pi-tsien-extension` 统一管理）可行，见 §12；
+  但「用户可选装」在本机/受管环境下用前缀启停就够了，拆包的真实收益是**分发给别人**与**独立版本**。
 
 ## 1. 目标 / 非目标
 
@@ -131,7 +133,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 
 **关于「每个扩展单独安装」**：pi 的安装粒度是 **package**，不存在「从包里单独 npm 装某一个扩展」。
 等价能力 = **装整包 + 用 `-path` 前缀逐个启停**（正是本页面要暴露的开关）。
-真要做到一扩展一包，代价是拆 25 个 npm 包 + 维护交叉依赖，**不建议**。
+按功能拆成 N 个包是另一条路（比 25 个包现实），见 §12。
 
 三种分发路径对比：
 
@@ -161,3 +163,52 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 - dashboard 是否已有鉴权中间件（取决于部署方式），P3 前必须确认。
 - gallery 目前只搜 npm 公开包（keyword `pi-package`）；内部 marketplace 的扩展是否需要一并展示，待定。
 - 并发写同一 `settings.json` 的具体冲突场景未实测（预案见 §5）。
+
+## 12. 按功能拆成多个 package（monorepo，repo 仍统一管理）
+
+**结论：可行，而且是现有机制的自然延伸** —— `vendor/pi-web-tools` 本来就是第二个包，
+同步器的 `packages[]` 天生支持多个来源。拆包不改变「repo 只有一个、由同步器统一管理」这一点。
+
+### 12.1 用户「选装」的三条路径（实测约束）
+
+| 路径 | 能否按子包装 | 证据 |
+|---|---|---|
+| npm 私服/公开包，一包一发 | ✅ 真正像开源扩展：每包一条 `pi install <pkg>` | `pi --help`：`pi install <source>` |
+| git URL 装整个仓库 | ❌ **只认仓库根的 `package.json`**，不支持子目录 | `installGit` clone 后只查 `join(targetDir, "package.json")`（`package-manager.ts:1850-1856`） |
+| 本地 checkout + `pi install <子包目录>` | ✅ 实测通过 | 隔离 HOME 实测：输出 `Installed .../vendor/pi-web-tools`，写入 `packages:["../../../../mnt/..."]`，**未写 `extensions`**（走包 autoload → manifest 顺序，故 §9 的顺序修复是前提） |
+| 同步器（现状） | ✅ 已支持多包 | `packages[]` + `loadOrder` |
+
+### 12.2 耦合实测（决定怎么切）
+
+- 24 个顶层扩展中 **10 个完全没有跨模块 import**；**9 个只 import 自己目录**（含 4 个一行 re-export 桩：`00-zero`/`goal`/`memory`/`subagent-workbench`）。
+- 真正的跨功能耦合只有 5 处，集中在两个共享模块：
+  - `extensions/lib/`（`dashboard-bridge`、`live-observer`、`command-ui`、`background-commands`）← `btw`、`live-session`、`running-commands`、`schedule`
+  - `auto-compact-target/core.ts` ← `live-session`、`context-powerline`
+- ⇒ **必须把 `lib/` 与 `auto-compact-target/core.ts` 抽成基础包被依赖**，不能靠复制，否则 4 份 `lib/` 必然漂移。
+
+### 12.3 建议切法（5 + 1 个包，按「用户会一起选/不选」切）
+
+| 包 | 内容 | 依赖 |
+|---|---|---|
+| `pi-tsien-core` | `lib/`（dashboard-bridge、live-observer、command-ui、background-commands 配置）、`auto-compact-target/core.ts` | 无 |
+| `pi-tsien-live` | live-session、btw、running-commands、schedule、session-aliases、metrics-sidebar、sidebar、context-powerline | core |
+| `pi-tsien-tools` | tool-result-pipeline(+bash-digest)、ptc、subagent-workbench、observation-pack、trajectory-recorder、compact-continue、auto-compact-target(功能层) | core |
+| `pi-tsien-memory` | memory(tsien-memory)、capability、prompt-inspector、default-system-prompt、goal、00-zero(pi-zero) | core |
+| `pi-tsien-extra` | git-graph、usage-analytics、effort（展示/统计类） | 无 |
+| `pi-web-tools`（已独立） | `src/index.ts` | 无 |
+
+原则：**包内允许耦合，包间只允许依赖 core**；每包 `package.json` 的 `pi.extensions` **显式列序**（不用 glob）。
+
+### 12.4 成本与风险
+
+- 内部依赖跨包：npm 安装时依赖必须能在 registry 解析。走私服则 `core` 必须一起发布；走本地路径则不涉 registry，但用户要 clone。
+- 顺序：包内顺序由 manifest 决定；**包间顺序**仍需约定（`packages[]` 的相对顺序 + `loadOrder` 全局序）。
+- 机械改动量大（移动目录 + 改 import 路径 + workspace 配置 + CI 从 1 套变 N 套），测试是主要保障；npm workspaces 可一条命令全跑。
+- 收益：①可按需装 ②依赖图变成**真实的包级边** ③改一个功能不动整包 ④版本独立。
+- 代价 vs 收益提示：**只在本机/受管环境选装**时，§5 的前缀启停就够；拆包的净收益在「分发给别人 + 独立版本」。
+
+### 12.5 与其它部分的关系
+
+- 同步器：只需支持多个本地/私有来源（已支持），`loadOrder` 变为「按包分组、保持全局序」；§3 的前缀保留仍需先做。
+- 页面（§4/§6）：列表按包分组展示，依赖图直接画包级边 + 包内扩展；`pi install` 粒度=包，与页面一致。
+- 估时：拆分重构 + workspaces + 测试绿 ≈ 1 天（机械但面广）；发布到私服再 +0.5 天。
