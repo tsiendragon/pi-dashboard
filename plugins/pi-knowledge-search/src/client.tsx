@@ -73,8 +73,8 @@ export function KnowledgeSearchRenderer({ toolInput, toolResult, isError }: Tool
   const { results } = parseKnowledgeResults(toolResult || '')
 
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">📚</span>
         <span className="text-[13px] font-semibold text-text">Knowledge: "{query}"</span>
         {results.length > 0 && <span className="text-[11px] text-muted ml-auto">{results.length} results</span>}
@@ -87,7 +87,7 @@ export function KnowledgeSearchRenderer({ toolInput, toolResult, isError }: Tool
             {results.map((r, i) => (
               <div key={i} className="rounded border border-border overflow-hidden">
                 <button
-                  className="w-full flex items-center gap-2 px-2.5 py-2 text-left bg-transparent border-none cursor-pointer hover:bg-bg-hover/50 transition-colors"
+                  className="w-full flex items-center gap-2 px-2.5 py-2 text-left bg-transparent border-none cursor-pointer hover:bg-bg-hover transition-colors"
                   onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
                 >
                   <span className={`text-[10px] transition-transform ${expandedIdx === i ? 'rotate-90' : ''}`}>▶</span>
@@ -100,10 +100,10 @@ export function KnowledgeSearchRenderer({ toolInput, toolResult, isError }: Tool
                   </span>
                 </button>
                 {expandedIdx === i && (
-                  <div className="px-3 pb-2.5 space-y-1.5 border-t border-border/50 bg-bg-hover/30">
+                  <div className="px-3 pb-2.5 space-y-1.5 border-t border-border bg-bg-hover">
                     <div className="text-[11px] text-muted font-mono truncate">{r.path}</div>
                     {r.heading && <div className="text-[11px] text-accent font-medium">§ {r.heading}</div>}
-                    <div className={`text-[12px] text-text/80 leading-relaxed ${mdStyles}`}>
+                    <div className={`text-[12px] text-text opacity-80 leading-relaxed ${mdStyles}`}>
                       <MarkdownRenderer content={r.excerpt} />
                     </div>
                   </div>

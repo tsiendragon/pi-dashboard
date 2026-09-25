@@ -16,8 +16,8 @@ function CardShell({ icon, title, subtitle, badge, children, isError }: {
   icon: string; title: string; subtitle?: string; badge?: React.ReactNode; children: React.ReactNode; isError?: boolean
 }) {
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">{icon}</span>
         <span className="text-[13px] font-semibold text-text">{title}</span>
         {subtitle && <span className="text-[11px] text-muted truncate">{subtitle}</span>}
@@ -51,7 +51,7 @@ function EmailRow({ email }: { email: any }) {
   return (
     <div className="rounded border border-border overflow-hidden">
       <button
-        className="w-full flex items-center gap-2 px-2.5 py-2 text-left bg-transparent border-none cursor-pointer hover:bg-bg-hover/50 transition-colors"
+        className="w-full flex items-center gap-2 px-2.5 py-2 text-left bg-transparent border-none cursor-pointer hover:bg-bg-hover transition-colors"
         onClick={() => setOpen(!open)}
       >
         <span className={`text-[10px] transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
@@ -59,9 +59,9 @@ function EmailRow({ email }: { email: any }) {
         <span className="text-[11px] text-muted shrink-0">{shortDate(date)}</span>
       </button>
       {open && (
-        <div className="px-3 pb-2.5 space-y-1 border-t border-border/50 bg-bg-hover/30">
-          <div className="text-[11px] text-muted">From: <span className="text-text/80">{from}</span></div>
-          <p className="text-[12px] text-text/70 whitespace-pre-wrap">{preview.length > 500 ? preview.slice(0, 500) + '…' : preview}</p>
+        <div className="px-3 pb-2.5 space-y-1 border-t border-border bg-bg-hover">
+          <div className="text-[11px] text-muted">From: <span className="text-text opacity-80">{from}</span></div>
+          <p className="text-[12px] text-text opacity-70 whitespace-pre-wrap">{preview.length > 500 ? preview.slice(0, 500) + '…' : preview}</p>
         </div>
       )}
     </div>
@@ -104,7 +104,7 @@ export function EmailReadRenderer({ toolInput, toolResult, isError }: ToolProps)
             {expanded ? '▼ Collapse' : '▶ Expand'}
           </button>
           {expanded && (
-            <div className="bg-bg-hover rounded-md px-3 py-2 text-[13px] text-text/80 overflow-y-auto max-h-[400px] whitespace-pre-wrap">
+            <div className="bg-bg-hover rounded-md px-3 py-2 text-[13px] text-text opacity-80 overflow-y-auto max-h-[400px] whitespace-pre-wrap">
               {typeof body === 'string' ? body : JSON.stringify(body, null, 2)}
             </div>
           )}
@@ -141,12 +141,12 @@ export function EmailSendRenderer({ toolInput, toolResult, isError }: ToolProps)
 
   return (
     <CardShell icon="📤" title="Send Email" subtitle={subject}
-      badge={!isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok/15 text-ok">✓ Sent</span> : null}
+      badge={!isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok-subtle text-ok">✓ Sent</span> : null}
       isError={isError}>
       {isError && <pre className="text-danger text-[12px] font-mono whitespace-pre-wrap">{toolResult}</pre>}
       {!isError && (
         <div className="text-[13px] text-muted">
-          To: <span className="text-text/80">{Array.isArray(to) ? to.join(', ') : to}</span>
+          To: <span className="text-text opacity-80">{Array.isArray(to) ? to.join(', ') : to}</span>
         </div>
       )}
     </CardShell>
@@ -172,7 +172,7 @@ export function CalendarViewRenderer({ toolInput, toolResult, isError }: ToolPro
             {expanded ? '▼' : '▶'} {events.length} event{events.length !== 1 ? 's' : ''}
           </button>
           {expanded && events.map((e: any, i: number) => (
-            <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover/50 text-[13px]">
+            <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover text-[13px]">
               <span className="text-accent shrink-0">•</span>
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-text truncate">{e.subject || e.title || '(no title)'}</div>
@@ -237,7 +237,7 @@ export function InternalSearchRenderer({ toolInput, toolResult, isError }: ToolP
           {results.slice(0, 10).map((r: any, i: number) => (
             <div key={i} className="rounded border border-border overflow-hidden">
               <button
-                className="w-full flex items-center gap-2 px-2.5 py-2 text-left bg-transparent border-none cursor-pointer hover:bg-bg-hover/50 transition-colors"
+                className="w-full flex items-center gap-2 px-2.5 py-2 text-left bg-transparent border-none cursor-pointer hover:bg-bg-hover transition-colors"
                 onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
               >
                 <span className={`text-[10px] transition-transform ${expandedIdx === i ? 'rotate-90' : ''}`}>▶</span>
@@ -245,10 +245,10 @@ export function InternalSearchRenderer({ toolInput, toolResult, isError }: ToolP
                 {r.source && <span className="text-[10px] text-muted shrink-0">{r.source}</span>}
               </button>
               {expandedIdx === i && (
-                <div className="px-3 pb-2.5 space-y-1 border-t border-border/50 bg-bg-hover/30">
+                <div className="px-3 pb-2.5 space-y-1 border-t border-border bg-bg-hover">
                   {r.url && <div className="text-[11px] text-accent font-mono truncate">{r.url}</div>}
                   {(r.snippet || r.description || r.body) && (
-                    <p className="text-[12px] text-text/70 whitespace-pre-wrap">
+                    <p className="text-[12px] text-text opacity-70 whitespace-pre-wrap">
                       {(r.snippet || r.description || r.body || '').slice(0, 400)}
                     </p>
                   )}
