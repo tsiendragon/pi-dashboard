@@ -105,6 +105,9 @@ tmux new-session -d -s pi-dash-smoke1 -c <repo> -e PI_RUNTIME=live -e TERM=xterm
 - 触屏/移动端仍用 `⋯` 菜单（无拖动/无终端面板）。
 - 思考等级只能创建时定（live 协议没有运行时改 thinking 的命令）。
 - 外部（非 dashboard 启动）的 live session 没有 `tmux`，因此不显示终端与关闭入口。
+  - 例外：**子 Agent 会话**（subagent 工作台用 `spawn` 起的子进程，不带 tmux）在 live 页的子 Agent 条上
+    有自己的两步确认关闭入口 `POST /api/live-sessions/:processInstanceId/close`，走 SIGTERM→SIGKILL，
+    并用 `/proc/<pid>/environ` 的 `PI_SUBAGENT_WORKBENCH_CHILD=1` 校验 PID 后才发信号。
 - live 页的「新建」串行一次一个；同一目录并发新建时，注册匹配按 pane pid 优先、其次新 + cwd + 最新 startedAt。
 
 ## 后续修补（用户实测反馈：`启动失败：cwd cannot be resolved`）

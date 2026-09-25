@@ -87,6 +87,27 @@ describe('LiveSession path/config policy', () => {
 })
 
 describe('LiveSessionRegistry', () => {
+  it('mirrors unanswered extension dialogs into the session detail', async () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const transport = {
+      send(envelope) {
+        if (envelope.type !== 'command') return
+        queueMicrotask(() => registry.handleCommandResult({ type: 'command_result', requestId: envelope.requestId, ok: true, result: { resynced: true } }, transport))
+      },
+    }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary(), entries: [] }, transport, '/tmp/root/task')
+
+    // A browser that reconnects (page switch) reads this from the snapshot; the
+    // one-shot event alone would leave an unanswered dialog invisible forever.
+    registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 1, event: { type: 'extension_ui', data: { id: 'ui-1', method: 'select', title: 'Pick', options: ['a', 'b'] } } }, transport)
+    expect(registry.get('process-a').pendingUi).toEqual([{ id: 'ui-1', method: 'select', title: 'Pick', options: ['a', 'b'] }])
+
+    registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 2, event: { type: 'extension_ui_closed', data: { id: 'ui-1' } } }, transport)
+    expect(registry.get('process-a').pendingUi).toEqual([])
+  })
+
   it('projects status events and makes same-browser claim idempotent', async () => {
     const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
     cleanups.push(() => registry.stop())
@@ -130,6 +151,25 @@ describe('LiveSessionRegistry', () => {
     expect(registry.get('process-a').summary.status).toBe('running')
     registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 2, event: { type: 'agent_settled', data: {} } }, transport)
     expect(registry.get('process-a').summary.status).toBe('idle')
+  })
+
+  it('accepts the first snapshot of an in-process session switch whose revision restarts', () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const transportA = { send() {} }
+    registry.connect(hello(), '/tmp/root/task', transportA)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 7, sequence: 6, summary: summary({ revision: 7, eventSequence: 6 }), entries: [] }, transportA, '/tmp/root/task')
+
+    // `/clear`: the extension reconnects with a fresh projector (revision 1, sequence 0).
+    const transportB = { send() {} }
+    registry.connect(hello({ sessionId: 'session-b' }), '/tmp/root/task', transportB)
+    expect(registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary({ sessionId: 'session-b', revision: 1 }), entries: [] }, transportB, '/tmp/root/task')).toBe(true)
+    expect(registry.get('process-a').summary.sessionId).toBe('session-b')
+
+    // Same session, same revision → still treated as a duplicate.
+    expect(registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary({ sessionId: 'session-b', revision: 1 }), entries: [] }, transportB, '/tmp/root/task')).toBe(false)
+    // And the old connection cannot push the previous session back.
+    expect(() => registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 8, sequence: 7, summary: summary({ revision: 8, eventSequence: 7 }), entries: [] }, transportA, '/tmp/root/task')).toThrow()
   })
 
   it('dispatches answer_ui from a non-lease holder so any channel can answer a UI request', async () => {
@@ -201,6 +241,42 @@ describe('LiveSessionRegistry', () => {
     registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 4, summary: summary({ eventSequence: 4 }), entries: [] }, transport, '/tmp/root/task')
     expect(registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 6, event: { type: 'agent_start', data: {} } }, transport)).toBe(false)
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ command: { type: 'resync' } }))
+  })
+
+  it('bulk-reloads every main session and skips subagent children', async () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const commands = []
+    const attach = (id, summaryOverrides, behavior = 'ok') => {
+      const transport = {
+        send(envelope) {
+          if (envelope.type !== 'command') return
+          commands.push({ id, command: envelope.command })
+          if (behavior === 'error') {
+            queueMicrotask(() => registry.handleCommandResult({
+              type: 'command_result', requestId: envelope.requestId, ok: false, error: { code: 'reload_failed', message: 'bridge refused' },
+            }, transport))
+            return
+          }
+          queueMicrotask(() => registry.handleCommandResult({ type: 'command_result', requestId: envelope.requestId, ok: true, result: { reloaded: true } }, transport))
+        },
+      }
+      registry.connect(hello({ processInstanceId: id, sessionId: `session-${id}`, pid: summaryOverrides.pid }), '/tmp/root/task', transport)
+      registry.applySnapshot({
+        type: 'snapshot', processInstanceId: id, revision: 1, sequence: 0,
+        summary: summary({ processInstanceId: id, sessionId: `session-${id}`, ...summaryOverrides }), entries: [],
+      }, transport, '/tmp/root/task')
+      return transport
+    }
+    attach('process-main', { pid: 4242, role: 'main' })
+    attach('process-bad', { pid: 5252, role: 'main' }, 'error')
+    attach('process-child', { pid: 6262, role: 'subagent' })
+
+    const result = await registry.reloadAll()
+    expect(result.reloaded).toEqual(['process-main'])
+    expect(result.skipped).toEqual(['process-child'])
+    expect(result.failed).toEqual([{ processInstanceId: 'process-bad', code: 'reload_failed', message: 'bridge refused' }])
+    expect(commands.filter(entry => entry.command.type === 'reload').map(entry => entry.id)).toEqual(['process-main', 'process-bad'])
   })
 })
 
@@ -334,6 +410,54 @@ describe('LiveSession browser routes', () => {
     expect(proxyFirstFrame).toEqual({ type: 'live_session_attached', data: { sessions: [] } })
     proxySocket.close()
   })
+
+  it('reloads every attached session through the bulk endpoint, and only for an authenticated browser', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pi-live-reload-'))
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    const auth = new LiveSessionBrowserAuth({ tokenPath: path.join(base, 'live-control-token') })
+    const app = express()
+    app.use(express.json())
+    const routes = createLiveSessionRoutes({ app, registry, auth })
+    await routes.start()
+    const server = app.listen(0, '127.0.0.1')
+    cleanups.push(async () => {
+      await routes.stop(); await auth.stop(); await registry.stop()
+      await new Promise(resolve => server.close(resolve))
+      await rm(base, { recursive: true, force: true })
+    })
+    await new Promise(resolve => server.once('listening', resolve))
+    const origin = `http://127.0.0.1:${server.address().port}`
+
+    const commands = []
+    const transport = {
+      send(envelope) {
+        if (envelope.type !== 'command') return
+        commands.push(envelope.command)
+        queueMicrotask(() => registry.handleCommandResult({ type: 'command_result', requestId: envelope.requestId, ok: true, result: {} }, transport))
+      },
+    }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary({ role: 'main' }), entries: [] }, transport, '/tmp/root/task')
+
+    const token = (await readFile(auth.tokenPath, 'utf8')).trim()
+    const login = await fetch(`${origin}/api/live-sessions/auth`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ token }),
+    })
+    expect(login.status).toBe(200)
+    const cookie = login.headers.get('set-cookie').split(';', 1)[0]
+
+    const anonymous = await fetch(`${origin}/api/live-sessions/reload`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin }, body: '{}',
+    })
+    expect(anonymous.status).toBe(401)
+
+    const response = await fetch(`${origin}/api/live-sessions/reload`, {
+      method: 'POST', headers: { cookie, origin, 'content-type': 'application/json' }, body: '{}',
+    })
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ ok: true, result: { reloaded: ['process-a'], skipped: [], failed: [] } })
+    expect(commands.filter(command => command.type === 'reload')).toEqual([{ type: 'reload' }])
+  })
 })
 
 describe('LiveSessionBroker', () => {
@@ -435,5 +559,31 @@ describe('LiveSessionBroker', () => {
       ok: true,
       result: { focusKey: 'child', sessions: [{ key: 'child', isFocus: true }], nodes: [{ id: 'u1', isHead: true }] },
     })
+  })
+})
+
+describe('LiveSession timeline entry-id binding', () => {
+  it('folds a message_entry carrier into the message it belongs to, and never renders it', () => {
+    const registry = new LiveSessionRegistry()
+    const transport = { send: () => {} }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot(
+      { type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary(), entries: [] },
+      transport,
+      '/tmp/root/task',
+    )
+
+    registry.applyEvent({
+      type: 'event', processInstanceId: 'process-a', sequence: 1,
+      event: { type: 'message_end', data: { message: { role: 'user', content: 'fork me' } } },
+    }, transport)
+    registry.applyEvent({
+      type: 'event', processInstanceId: 'process-a', sequence: 2,
+      event: { type: 'message_entry', data: { entryId: 'entry-9' } },
+    }, transport)
+
+    const entries = registry.get('process-a').entries
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({ type: 'message_end', data: { entryId: 'entry-9' } })
   })
 })

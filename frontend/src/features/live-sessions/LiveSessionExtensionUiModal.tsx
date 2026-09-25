@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { uiAnswered } from '../../store/liveSessionsSlice'
-import type { LiveSessionUiRequest } from '@shared/live-sessions'
+import type { LiveSessionSummary, LiveSessionUiRequest } from '@shared/live-sessions'
 import { liveSessionApi } from './api'
 
 /**
@@ -12,20 +12,36 @@ import { liveSessionApi } from './api'
  * (no lease): any open web client, or the TUI itself, settles the request; the
  * L1 `extension_ui_closed` event removes it here once answered elsewhere.
  */
-export default function LiveSessionExtensionUiModal({ processInstanceId }: { processInstanceId?: string }) {
-  const byId = useAppSelector(state => (processInstanceId ? state.liveSessions.pendingUi[processInstanceId] : undefined))
-  const requests = useMemo(() => Object.values(byId ?? {}), [byId])
-  if (!processInstanceId || requests.length === 0) return null
+export default function LiveSessionExtensionUiModal({ processInstanceId }: { processInstanceId?: string } = {}) {
+  const pendingUi = useAppSelector(state => state.liveSessions.pendingUi)
+  const sessions = useAppSelector(state => state.liveSessions.sessions)
+  const scoped = useMemo(() => {
+    const buckets = processInstanceId ? [[processInstanceId, pendingUi[processInstanceId]] as const] : Object.entries(pendingUi)
+    return buckets.flatMap(([sessionId, bucket]) =>
+      Object.values(bucket ?? {}).map(request => ({ sessionId, request })),
+    )
+  }, [pendingUi, processInstanceId])
+  if (scoped.length === 0) return null
   return (
     <>
-      {requests.map(request => (
-        <UiDialog key={request.id} processInstanceId={processInstanceId} request={request} />
+      {scoped.map(({ sessionId, request }) => (
+        <UiDialog
+          key={`${sessionId}:${request.id}`}
+          processInstanceId={sessionId}
+          request={request}
+          sessionLabel={processInstanceId ? undefined : sessionLabelOf(sessions[sessionId])}
+        />
       ))}
     </>
   )
 }
 
-function UiDialog({ processInstanceId, request }: { processInstanceId: string; request: LiveSessionUiRequest }) {
+function sessionLabelOf(summary: LiveSessionSummary | undefined): string | undefined {
+  if (!summary) return undefined
+  return summary.sessionName || `Pi ${summary.pid}`
+}
+
+function UiDialog({ processInstanceId, request, sessionLabel }: { processInstanceId: string; request: LiveSessionUiRequest; sessionLabel?: string }) {
   const dispatch = useAppDispatch()
   const [value, setValue] = useState(request.prefill ?? '')
   const [submitting, setSubmitting] = useState(false)
@@ -66,6 +82,7 @@ function UiDialog({ processInstanceId, request }: { processInstanceId: string; r
         className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,460px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-bg-elevated p-5 shadow-2xl"
       >
         <div className="mb-3 text-sm font-semibold text-text-strong">{request.title || 'Extension request'}</div>
+        {sessionLabel && <div className="mb-2 text-2xs text-muted">来自会话：{sessionLabel}</div>}
         {request.message && (
           <div className="mb-3 whitespace-pre-wrap text-body-s text-muted">{request.message}</div>
         )}

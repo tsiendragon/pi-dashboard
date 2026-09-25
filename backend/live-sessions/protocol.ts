@@ -181,8 +181,21 @@ export function validateLiveSessionCommand(value: unknown, browserOnly = false):
       break
     case 'feature_command': {
       if (!onlyKeys(value, ['type', 'leaseId', 'feature', 'command'])) break
-      if (!nonEmptyString(value.leaseId, 512) || value.feature !== 'btw' || !record(value.command)
-        || !onlyKeys(value.command, ['type']) || (value.command.type !== 'open' && value.command.type !== 'close')) break
+      if (!nonEmptyString(value.leaseId, 512) || !record(value.command)) break
+      if (value.feature === 'btw') {
+        // `btw` rides the adapter's full surface: open/close the side chat, submit a
+        // question, abort a running answer, refresh the parent context snapshot.
+        const type = nonEmptyString(value.command.type, 64) ? value.command.type : ''
+        if (!type) break
+        if (type === 'submit') {
+          if (!onlyKeys(value.command, ['type', 'text']) || !nonEmptyString(value.command.text, LIVE_SESSION_MAX_PROMPT_BYTES)) break
+        } else if (type === 'open' || type === 'close' || type === 'abort' || type === 'refresh-parent') {
+          if (!onlyKeys(value.command, ['type'])) break
+        } else break
+      } else if (value.feature === 'background-commands') {
+        if (!onlyKeys(value.command, ['type', 'toolCallId'])) break
+        if (value.command.type !== 'background' || !nonEmptyString(value.command.toolCallId, 512)) break
+      } else break
       return value as unknown as LiveSessionCommand
     }
     case 'answer_ui': {

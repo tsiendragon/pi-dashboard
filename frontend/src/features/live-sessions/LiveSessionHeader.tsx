@@ -34,7 +34,7 @@ export default function LiveSessionHeader({ summary, owned, busy, onClaim, onRel
       </div>
       <div className="flex items-center gap-2">
         {summary.status === 'running' && owned && (
-          <button type="button" disabled={busy} onClick={onAbort} className="px-3 py-1.5 rounded-md border border-danger/40 bg-danger-subtle text-danger text-xs disabled:opacity-50">Abort</button>
+          <button type="button" disabled={busy} onClick={onAbort} className="px-3 py-1.5 rounded-md border border-danger bg-danger-subtle text-danger text-xs disabled:opacity-50">Abort</button>
         )}
         {owned ? (
           <button type="button" disabled={busy} onClick={onRelease} className="px-3 py-1.5 rounded-md border border-border bg-bg text-xs text-text disabled:opacity-50">释放强控制</button>

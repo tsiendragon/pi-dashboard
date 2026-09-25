@@ -149,6 +149,17 @@ export interface LiveSessionImage {
   mimeType: string
 }
 
+/**
+ * Commands the BTW side-chat adapter accepts (`extensions/btw/bridge.ts`).
+ * The dashboard panel exposes all of them, so its whitelist must stay in sync.
+ */
+export type BtwFeatureCommand =
+  | { type: 'open' }
+  | { type: 'close' }
+  | { type: 'submit'; text: string }
+  | { type: 'abort' }
+  | { type: 'refresh-parent' }
+
 export type LiveSessionCommand =
   | { type: 'resync' }
   | { type: 'claim'; browserClientId: string; requestedLeaseMs: number }
@@ -168,7 +179,8 @@ export type LiveSessionCommand =
   | { type: 'set_model'; provider: string; modelId: string }
   | { type: 'compact'; leaseId: string }
   | { type: 'reload' }
-  | { type: 'feature_command'; leaseId: string; feature: 'btw'; command: { type: 'open' | 'close' } }
+  | { type: 'feature_command'; leaseId: string; feature: 'btw'; command: BtwFeatureCommand }
+  | { type: 'feature_command'; leaseId: string; feature: 'background-commands'; command: { type: 'background'; toolCallId: string } }
   | { type: 'answer_ui'; id: string; value?: string; cancelled?: boolean }
 
 /** A pending extension UI request projected from a live session (L1 emits `extension_ui`). */
@@ -197,6 +209,26 @@ export type LiveSessionServerMessage =
 export interface LiveSessionDetail {
   summary: LiveSessionSummary
   entries: unknown[]
+  /**
+   * Unanswered extension UI requests for this session, mirrored by the registry
+   * so a browser that reconnects or switches pages can restore its dialog.
+   * The event stream alone is not enough: `extension_ui` is one-shot, so a
+   * missed event would strand pi waiting for an answer forever.
+   */
+  pendingUi?: LiveSessionUiRequest[]
+}
+
+/**
+ * Outcome of the bulk `reload` endpoint: every running Pi re-reads its
+ * extensions/skills/prompts/themes in one call instead of one session at a time.
+ */
+export interface LiveSessionReloadResult {
+  /** Main sessions whose Pi process accepted the `reload` command. */
+  reloaded: string[]
+  /** Subagent child processes left untouched so a running task is not killed. */
+  skipped: string[]
+  /** Sessions that could not be reached; the batch itself still succeeds. */
+  failed: { processInstanceId: string; code: string; message: string }[]
 }
 
 export interface LiveSessionModelOption {

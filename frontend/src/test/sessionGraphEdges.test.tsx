@@ -58,12 +58,14 @@ const chain = [
 ]
 
 describe('graph edges', () => {
-  it('defines both arrowheads (focus branch and muted)', () => {
+  it('defines an arrowhead per fork colour plus the accent one', () => {
     const { container } = renderGraph(chain)
-    expect(container.querySelector('marker#ls-graph-arrow')).not.toBeNull()
+    for (const index of [0, 1, 2]) {
+      expect(container.querySelector(`marker#ls-graph-arrow-${index}`)).not.toBeNull()
+    }
     expect(container.querySelector('marker#ls-graph-arrow-active')).not.toBeNull()
     // `orient="auto"` is what makes the arrow follow the curve's direction.
-    expect(container.querySelector('marker#ls-graph-arrow')?.getAttribute('orient')).toBe('auto')
+    expect(container.querySelector('marker#ls-graph-arrow-0')?.getAttribute('orient')).toBe('auto')
   })
 
   it('puts an arrowhead on every edge', () => {
@@ -71,22 +73,36 @@ describe('graph edges', () => {
     const edges = [...container.querySelectorAll('path[marker-end]')]
     expect(edges).toHaveLength(2)
     for (const edge of edges) {
-      expect(edge.getAttribute('marker-end')).toMatch(/^url\(#ls-graph-arrow(-active)?\)$/)
+      expect(edge.getAttribute('marker-end')).toMatch(/^url\(#ls-graph-arrow(-active|-\d+)?\)$/)
     }
   })
 
-  it('colours the arrow of the focus branch with accent and the others muted', () => {
+  it('colours the arrow of the focus branch with accent and the others with their fork colour', () => {
     const { container } = renderGraph(chain)
     const active = container.querySelector('path[marker-end="url(#ls-graph-arrow-active)"]')
-    const muted = container.querySelector('path[marker-end="url(#ls-graph-arrow)"]')
+    const branch = container.querySelector('path[marker-end="url(#ls-graph-arrow-0)"]')
     // a→b→c is entirely on the active branch, so both a→b and b→c are accent…
     const all = [...container.querySelectorAll('path[marker-end]')]
     expect(all.every(edge => edge.getAttribute('marker-end') === 'url(#ls-graph-arrow-active)')).toBe(true)
     expect(active).not.toBeNull()
-    expect(muted).toBeNull()
+    expect(branch).toBeNull()
   })
 
-  it('draws a side branch as a muted arrow while the trunk stays accent', () => {
+  it('paints the two children of a fork in different colours', () => {
+    // A sibling family that is NOT the focus session, so no edge is accent-coloured
+    // and the fork palette is the only thing deciding the hue.
+    const { container } = renderGraph([
+      node('a', null, { childCount: 2, sessionKey: 'other' }),
+      node('b', 'a', { isLeaf: true, sessionKey: 'other' }),
+      node('side', 'a', { isLeaf: true, sessionKey: 'other' }),
+    ])
+    const markers = [...container.querySelectorAll('path[marker-end]')].map(edge => edge.getAttribute('marker-end'))
+    expect(markers).toHaveLength(2)
+    expect(new Set(markers).size).toBe(2)
+    expect(markers.every(marker => /^url\(#ls-graph-arrow-\d+\)$/.test(marker ?? ''))).toBe(true)
+  })
+
+  it('draws a side branch with its own arrow while the trunk stays accent', () => {
     const { container } = renderGraph([
       node('a', null, { childCount: 2 }),
       node('b', 'a', { childCount: 1 }),
@@ -95,7 +111,7 @@ describe('graph edges', () => {
     ])
     const markers = [...container.querySelectorAll('path[marker-end]')].map(edge => edge.getAttribute('marker-end'))
     expect(markers).toContain('url(#ls-graph-arrow-active)')
-    expect(markers).toContain('url(#ls-graph-arrow)')
+    expect(markers.some(marker => /^url\(#ls-graph-arrow-\d+\)$/.test(marker ?? ''))).toBe(true)
   })
 
   it('anchors each arrow on the child card, not on the parent', () => {
@@ -207,8 +223,8 @@ describe('band label vs entry count', () => {
 
   it('never prints a name wider than the room left by the count', () => {
     const { container } = twoBands()
-    const bandWidths = [...container.querySelectorAll('rect[data-band]')]
-      .map(rect => Number(rect.getAttribute('width')))
+    const bandWidths = [...container.querySelectorAll('[data-band-width]')]
+      .map(group => Number(group.getAttribute('data-band-width')))
       .sort((a, b) => a - b)
     // Text nodes only: the <title> tooltip holds the full key and would inflate this.
     const ownText = (element: Element): string => [...element.childNodes]

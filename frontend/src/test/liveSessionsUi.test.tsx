@@ -39,6 +39,67 @@ describe('Live Session UI', () => {
     expect(input.value).toBe('keep this draft')
   })
 
+  it('keeps an unsent draft scoped to its own live session', () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    const { rerender } = render(<LiveSessionComposer sessionKey="a" status="idle" onSubmit={onSubmit} />)
+    const input = screen.getByPlaceholderText('发送到运行中的 Pi…') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: 'draft-a' } })
+    expect(input.value).toBe('draft-a')
+
+    rerender(<LiveSessionComposer sessionKey="b" status="idle" onSubmit={onSubmit} />)
+    expect(input.value).toBe('')
+    fireEvent.change(input, { target: { value: 'draft-b' } })
+
+    rerender(<LiveSessionComposer sessionKey="a" status="idle" onSubmit={onSubmit} />)
+    expect(input.value).toBe('draft-a')
+  })
+
+  it('offers effort (thinking level) inside the model picker', async () => {
+    const onSelectThinkingLevel = vi.fn().mockResolvedValue(undefined)
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<LiveSessionComposer
+      status="idle"
+      models={[{ provider: 'anthropic', id: 'claude-x', name: 'Claude X', reasoning: true, contextWindow: 200_000, thinkingLevels: ['low', 'medium', 'high'] }]}
+      currentModel={{ provider: 'anthropic', id: 'claude-x' }}
+      currentThinkingLevel="medium"
+      onSelectThinkingLevel={onSelectThinkingLevel}
+      onSubmit={onSubmit}
+    />)
+
+    fireEvent.click(screen.getByTitle('切换当前模型'))
+    const high = await screen.findByRole('button', { name: 'high' })
+    fireEvent.click(high)
+    await waitFor(() => expect(onSelectThinkingLevel).toHaveBeenCalledWith('high'))
+  })
+
+  it('filters the model picker and picks with the keyboard', async () => {
+    const onSelectModel = vi.fn().mockResolvedValue(undefined)
+    render(<LiveSessionComposer
+      status="idle"
+      models={[
+        { provider: 'dashscope', id: 'qwen3-coder-plus', name: 'Qwen3 Coder Plus', reasoning: false, contextWindow: 128_000, thinkingLevels: [] },
+        { provider: 'dashscope', id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', reasoning: true, contextWindow: 1_048_576, thinkingLevels: ['xhigh', 'max'] },
+      ]}
+      currentModel={{ provider: 'dashscope', id: 'qwen3-coder-plus' }}
+      onSelectModel={onSelectModel}
+      onSubmit={vi.fn().mockResolvedValue(undefined)}
+    />)
+
+    fireEvent.click(screen.getByTitle('切换当前模型'))
+    const search = await screen.findByLabelText('搜索模型')
+    // Grouped by provider, with a compact context size per row.
+    expect(screen.getByText('dashscope')).toBeInTheDocument()
+    expect(screen.getByText('1.0M')).toBeInTheDocument()
+    expect(screen.getByText('128K')).toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: 'deepseek' } })
+    expect(screen.queryByText('Qwen3 Coder Plus')).not.toBeInTheDocument()
+
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    fireEvent.keyDown(search, { key: 'Enter' })
+    await waitFor(() => expect(onSelectModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'deepseek-v4.1-flash' })))
+  })
+
   it('shows a live activity indicator above the composer', () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     render(<LiveSessionComposer
@@ -56,6 +117,28 @@ describe('Live Session UI', () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     render(<LiveSessionComposer status="idle" activity={{ label: '等待输入', tone: 'muted' }} onSubmit={onSubmit} />)
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('offers an interrupt control beside send while the turn is running', () => {
+    const onInterrupt = vi.fn()
+    const { rerender } = render(<LiveSessionComposer status="running" onInterrupt={onInterrupt} onSubmit={async () => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: '中止当前回合' }))
+    expect(onInterrupt).toHaveBeenCalledTimes(1)
+
+    // Idle sessions have nothing to interrupt.
+    rerender(<LiveSessionComposer status="idle" onInterrupt={onInterrupt} onSubmit={async () => {}} />)
+    expect(screen.queryByRole('button', { name: '中止当前回合' })).not.toBeInTheDocument()
+
+    // Read-only viewers (no interrupt capability) must not see it either.
+    rerender(<LiveSessionComposer status="running" onSubmit={async () => {}} />)
+    expect(screen.queryByRole('button', { name: '中止当前回合' })).not.toBeInTheDocument()
+  })
+
+  it('shows the interrupt control as busy while it is in flight', () => {
+    render(<LiveSessionComposer status="running" interrupting onInterrupt={() => {}} onSubmit={async () => {}} />)
+    const button = screen.getByRole('button', { name: '中止当前回合' })
+    expect(button).toBeDisabled()
+    expect(button).toHaveTextContent('中止中…')
   })
 
   it('accepts a pasted image and sends it with an optional prompt', async () => {

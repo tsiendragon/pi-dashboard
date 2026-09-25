@@ -9,6 +9,7 @@ import {
   killTmuxSession,
   resolvePiCommand,
   tmuxPanePid,
+  captureTmuxPane,
   type CreateTmuxSessionOptions,
 } from '../tmux-sessions.js'
 import { LiveSessionPathPolicy } from './path-policy.js'
@@ -16,9 +17,25 @@ import type { LivePiLaunchConfig } from './config.js'
 
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
-/** How long to wait for the freshly launched Pi to register over the broker. */
-const DEFAULT_REGISTRATION_TIMEOUT_MS = 30_000
+/**
+ * How long to wait for the freshly launched Pi to register over the broker.
+ *
+ * Measured on this machine (34 real starts): median 6.6s, but a cold Pi start
+ * under load has been seen at 28–34s, i.e. just past the old 30s limit — the
+ * launch then "failed" although the Pi was about to be ready. The timeout is a
+ * safety net, not a performance budget, so it is generous and overridable.
+ */
+const DEFAULT_REGISTRATION_TIMEOUT_MS = 120_000
+const REGISTRATION_TIMEOUT_ENV = 'PI_DASH_LIVE_START_TIMEOUT_MS'
 const REGISTRATION_POLL_MS = 400
+
+/** Pane rows attached to a timeout error so a slow/crashed Pi is diagnosable. */
+const PANE_TAIL_LINES = 12
+
+function registrationTimeoutFromEnv(): number | undefined {
+  const raw = Number.parseInt(process.env[REGISTRATION_TIMEOUT_ENV] ?? '', 10)
+  return Number.isFinite(raw) && raw >= 1_000 ? raw : undefined
+}
 
 export interface LivePiStartOptions {
   cwd: string
@@ -26,6 +43,19 @@ export interface LivePiStartOptions {
   modelId?: string
   thinkingLevel?: string
   title?: string
+  /**
+   * Absolute path of a session file to fork (`pi --fork <path>`). The pane still
+   * starts a brand-new Pi, so the source session keeps running untouched and
+   * the fork lives on as its own session file.
+   */
+  forkFrom?: string
+  /**
+   * Absolute path of an existing session file to resume (`pi --session <path>`).
+   * Used for entry-level forks: the dashboard first extracts the root→entry
+   * branch into a new file, then starts a Pi on it. Mutually exclusive with
+   * `forkFrom` (pi rejects both flags together).
+   */
+  sessionFile?: string
 }
 
 export interface LivePiStartResult {
@@ -54,6 +84,8 @@ export interface LivePiLauncherOptions {
   createSession?: (name: string, options: CreateTmuxSessionOptions) => string
   killSession?: (name: string) => void
   panePid?: (fullName: string) => number | undefined
+  /** Pane text for failure diagnostics (`tmux capture-pane`). */
+  capturePane?: (fullName: string) => string
   sessionExists?: (fullName: string) => boolean
   /** Wrapper/args/unset list, so a pane can mirror the user's terminal launcher. */
   launch?: LivePiLaunchConfig
@@ -81,6 +113,7 @@ export class LivePiLauncher {
   private readonly createSession: (name: string, options: CreateTmuxSessionOptions) => string
   private readonly killSession: (name: string) => void
   private readonly panePid: (fullName: string) => number | undefined
+  private readonly capturePane: (fullName: string) => string
   private readonly sessionExists: (fullName: string) => boolean
   private readonly registrationTimeoutMs: number
   private readonly pollIntervalMs: number
@@ -92,8 +125,9 @@ export class LivePiLauncher {
     this.createSession = options.createSession ?? createTmuxSession
     this.killSession = options.killSession ?? killTmuxSession
     this.panePid = options.panePid ?? tmuxPanePid
+    this.capturePane = options.capturePane ?? captureTmuxPane
     this.sessionExists = options.sessionExists ?? hasTmuxSession
-    this.registrationTimeoutMs = options.registrationTimeoutMs ?? DEFAULT_REGISTRATION_TIMEOUT_MS
+    this.registrationTimeoutMs = options.registrationTimeoutMs ?? registrationTimeoutFromEnv() ?? DEFAULT_REGISTRATION_TIMEOUT_MS
     this.pollIntervalMs = options.pollIntervalMs ?? REGISTRATION_POLL_MS
     this.sleep = options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)))
   }
@@ -107,20 +141,31 @@ export class LivePiLauncher {
     if (options.thinkingLevel && !THINKING_LEVELS.has(options.thinkingLevel)) throw new Error('invalid_thinking_level')
     if (options.modelProvider && !options.modelId) throw new Error('model_id_required')
     if (options.modelId && !options.modelProvider) throw new Error('model_provider_required')
+    if (options.forkFrom && !path.isAbsolute(options.forkFrom)) throw new Error('invalid_fork_from')
+    if (options.sessionFile && !path.isAbsolute(options.sessionFile)) throw new Error('invalid_session_file')
 
     const cwd = decision.canonicalCwd
     const title = options.title?.trim().slice(0, 120) || `Live · ${path.basename(cwd)}`
+    const startedAt = Date.now()
     const before = new Set(this.registry.list().map(session => session.processInstanceId))
     const tmuxSession = this.createFreshSession(cwd, title, options)
 
     const registered = await this.awaitRegistration(before, cwd, tmuxSession)
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1)
 
     if (!registered) {
       // Never leave a half-started pane behind: without registration the UI
-      // cannot reach it, and an orphan Pi would keep burning tokens.
+      // cannot reach it, and an orphan Pi would keep burning tokens. The pane
+      // tail is attached because a start failure is otherwise undiagnosable
+      // ("did not register" says nothing about why).
+      const detail = this.paneTail(tmuxSession)
       try { this.killSession(tmuxSession) } catch { /* best effort */ }
-      throw new Error(`live_pi_registration_timeout: tmux session ${tmuxSession} was killed after ${this.registrationTimeoutMs}ms without registering`)
+      console.error(`[live-launcher] start failed after ${elapsed}s cwd=${cwd} tmux=${tmuxSession}`)
+      throw new Error(`live_pi_registration_timeout: tmux session ${tmuxSession} was killed after ${this.registrationTimeoutMs}ms without registering${detail}`)
     }
+    // Start latency is tracked because the registration timeout is a safety net:
+    // a slow trend here (or a cluster of 30s+ starts) is the signal to act on.
+    console.log(`[live-launcher] started ${tmuxSession} in ${elapsed}s cwd=${cwd} pid=${registered.pid ?? '?'}`)
     return {
       tmuxSession,
       cwd,
@@ -146,6 +191,8 @@ export class LivePiLauncher {
   private createFreshSession(cwd: string, title: string, options: LivePiStartOptions): string {
     const args = [
       ...(this.options.launch?.args ?? []),
+      ...(options.forkFrom ? ['--fork', options.forkFrom] : []),
+      ...(options.sessionFile ? ['--session', options.sessionFile] : []),
       ...(options.modelProvider && options.modelId ? ['--model', `${options.modelProvider}/${options.modelId}`] : []),
       ...(options.thinkingLevel ? ['--thinking', options.thinkingLevel] : []),
       '--name', title,
@@ -179,8 +226,10 @@ export class LivePiLauncher {
     before: ReadonlySet<string>,
     cwd: string,
     tmuxSession: string,
-  ): Promise<Pick<LiveSessionSummary, 'processInstanceId' | 'sessionId'> | undefined> {
+  ): Promise<Pick<LiveSessionSummary, 'processInstanceId' | 'sessionId' | 'pid'> | undefined> {
     const deadline = Date.now() + this.registrationTimeoutMs
+    /** A pane can read as gone for one poll while tmux settles; require two. */
+    let missingPolls = 0
     for (;;) {
       const panePid = this.panePid(tmuxSession)
       const candidates = this.registry.list()
@@ -188,8 +237,27 @@ export class LivePiLauncher {
         .sort((left, right) => right.startedAt - left.startedAt)
       const match = (panePid === undefined ? undefined : candidates.find(session => session.pid === panePid)) ?? candidates[0]
       if (match) return match
+      // The pane is gone: the Pi exited (bad flags, crash, missing provider) and
+      // no amount of waiting will register it. Fail now instead of burning the
+      // whole timeout, and let the caller report the pane output.
+      if (panePid === undefined) {
+        missingPolls += 1
+        if (missingPolls >= 2) return undefined
+      } else {
+        missingPolls = 0
+      }
       if (Date.now() >= deadline) return undefined
       await this.sleep(this.pollIntervalMs)
+    }
+  }
+
+  /** Last visible pane rows, for the timeout error message. */
+  private paneTail(tmuxSession: string): string {
+    try {
+      const lines = this.capturePane(tmuxSession).split('\n').map(line => line.trimEnd()).filter(line => line.trim()).slice(-PANE_TAIL_LINES)
+      return lines.length ? `\n--- Pi 启动输出（最后 ${lines.length} 行）---\n${lines.join('\n')}` : ''
+    } catch {
+      return ''
     }
   }
 }

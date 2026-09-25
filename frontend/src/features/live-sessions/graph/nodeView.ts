@@ -83,30 +83,49 @@ export function reduceToStructure(
   let hiddenSteps = 0
   const visited = new Set<string>()
 
-  const visit = (id: string, lastKept: SessionTreeNode | null, pending: number): void => {
-    if (visited.has(id)) return
-    visited.add(id)
-    const node = nodeById.get(id)
-    if (!node) return
-    let nextLast = lastKept
-    let nextPending = pending
-    if (keep.has(id)) {
-      if (pending > 0) {
-        badges[id] = pending
-        hiddenSteps += pending
+  const nodeById = new Map(nodes.map(node => [node.id, node]))
+  const stack: Array<{ id: string; lastKept: SessionTreeNode | null; pending: number }> = []
+
+  /**
+   * Iterative pre-order walk. The recursive form overflowed the JS stack once a
+   * session was long enough to be a several-thousand-deep chain (the “逐条记录”
+   * view gives one node per entry), which crashed the whole graph page with
+   * “Maximum call stack size exceeded”.
+   */
+  const drain = (): void => {
+    while (stack.length) {
+      const frame = stack.pop()!
+      if (visited.has(frame.id)) continue
+      visited.add(frame.id)
+      const node = nodeById.get(frame.id)
+      if (!node) continue
+      let nextLast = frame.lastKept
+      let nextPending = frame.pending
+      if (keep.has(frame.id)) {
+        if (frame.pending > 0) {
+          badges[frame.id] = frame.pending
+          hiddenSteps += frame.pending
+        }
+        kept.push({ ...node, parentId: frame.lastKept ? frame.lastKept.id : null })
+        nextLast = kept[kept.length - 1]
+        nextPending = 0
+      } else {
+        nextPending = frame.pending + stepsOf(node)
       }
-      kept.push({ ...node, parentId: lastKept ? lastKept.id : null })
-      nextLast = kept[kept.length - 1]
-      nextPending = 0
-    } else {
-      nextPending = pending + stepsOf(node)
+      const kids = children.get(frame.id) ?? []
+      for (let index = kids.length - 1; index >= 0; index -= 1) {
+        stack.push({ id: kids[index], lastKept: nextLast, pending: nextPending })
+      }
     }
-    for (const kid of children.get(id) ?? []) visit(kid, nextLast, nextPending)
   }
 
-  const nodeById = new Map(nodes.map(node => [node.id, node]))
-  for (const root of children.get(null) ?? []) visit(root, null, 0)
-  for (const node of nodes) if (!visited.has(node.id)) visit(node.id, null, 0)
+  const roots = children.get(null) ?? []
+  for (let index = roots.length - 1; index >= 0; index -= 1) stack.push({ id: roots[index], lastKept: null, pending: 0 })
+  drain()
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    if (!visited.has(nodes[index].id)) stack.push({ id: nodes[index].id, lastKept: null, pending: 0 })
+  }
+  drain()
 
   // Recompute child counts on the reduced list so branch badges stay truthful.
   const keptChildren = new Map<string, number>()

@@ -1,5 +1,6 @@
-import type { LiveSessionCommand, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
+import type { LiveSessionCommand, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionModelOption, LiveSessionReloadResult, LiveSessionSummary } from '@shared/live-sessions'
 import type { SessionTreeGraph } from '@shared/session-tree'
+import type { CompactionMark } from './compactionWatch'
 
 export class LiveSessionApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -33,11 +34,26 @@ export const liveSessionApi = {
   authenticate: (token: string) => post<{ ok: true; browserClientId: string }>('/api/live-sessions/auth', { token }),
   websocketTicket: () => post<{ ok: true; result: { ticket: string; expiresAt: number } }>('/api/live-sessions/ws-ticket', {})
     .then(result => result.result),
-  start: (input: { cwd: string; model?: string; thinkingLevel?: string; title?: string }) => post<{ ok: true; result: { slotKey: string; cwd: string; title: string } }>('/api/live-sessions/start', input)
+  start: (input: { cwd: string; model?: string; thinkingLevel?: string; title?: string; forkFrom?: string }) => post<{ ok: true; result: { slotKey: string; cwd: string; title: string; processInstanceId?: string; sessionId?: string; tmuxSession?: string } }>('/api/live-sessions/start', input)
     .then(result => result.result),
+  /**
+   * Entry-level fork. Extracts the source session's root→entry branch into a NEW
+   * session file and starts a fresh Pi on it; the source keeps running. Returns
+   * the new session's ids so the caller can place it beside the parent.
+   */
+  forkAtEntry: (processInstanceId: string, entryId: string) => post<{ ok: true; result: { processInstanceId?: string; sessionId?: string; tmuxSession?: string; forkedFrom?: string; entryId?: string } }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/fork`, { entryId },
+  ).then(result => result.result),
   rename: (processInstanceId: string, name: string) => post<{ ok: true; result: unknown }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'set_session_name', name } },
   ).then(result => result.result),
+  /**
+   * Bulk `/reload` of every main session — for after dashboard extensions, skills,
+   * prompts or themes changed, when reconnecting each session by hand is tedious.
+   * The backend skips subagent child processes so running tasks are not killed.
+   */
+  reloadAll: () => post<{ ok: true; result: LiveSessionReloadResult }>('/api/live-sessions/reload', {})
+    .then(result => result.result),
   list: () => fetch('/api/live-sessions', { credentials: 'same-origin' })
     .then(json<{ sessions: LiveSessionSummary[]; browserClientId?: string }>),
   listMeta: () => fetch('/api/live-session-meta', { credentials: 'same-origin' })
@@ -89,6 +105,14 @@ export const liveSessionApi = {
     method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
   }).then(json<{ ok: true }>),
   /**
+   * Close a subagent live session. tmux-backed ones die with their tmux session;
+   * plain subagent child processes are signalled directly. The registry drops the
+   * row on its own once the process is gone, so the caller only refreshes.
+   */
+  closeSession: (processInstanceId: string) => post<{ ok: true; result: { method: 'tmux' | 'signal'; pid: number; alreadyGone: boolean } }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/close`, {},
+  ).then(result => result.result),
+  /**
    * Session-family graph for the graph page. Keyed by absolute session file path
    * so sessions that are no longer running can be inspected too.
    *
@@ -111,6 +135,26 @@ export const liveSessionApi = {
         throw new LiveSessionApiError(502, 'session_tree_unavailable', '会话图谱接口不可用：后端可能是旧版本，请重启 dashboard（./run.sh）')
       }
       return graph
+    }),
+  /**
+   * Compaction markers of one session file.
+   *
+   * `/compact` is fire-and-forget agent-side (`ctx.compact()` does not await), so
+   * the command ack cannot say when compaction finished. The UI polls these
+   * markers and compares them against the returned server `now`, because the
+   * browser clock may be skewed from the machine writing the session file.
+   */
+  compactions: (file: string) => fetch(
+    `/api/session-compactions?file=${encodeURIComponent(file)}`,
+    { credentials: 'same-origin' },
+  )
+    .then(json<{ ok: true; result: { now: number; compactions: CompactionMark[] } }>)
+    .then(payload => {
+      const result = payload?.result
+      if (!result || !Array.isArray(result.compactions) || typeof result.now !== 'number') {
+        throw new LiveSessionApiError(502, 'compactions_unavailable', '压缩状态接口不可用：后端可能是旧版本，请重启 dashboard（./run.sh）')
+      }
+      return result
     }),
   /**
    * Session-tree write actions. These ride the EXISTING `input` command channel

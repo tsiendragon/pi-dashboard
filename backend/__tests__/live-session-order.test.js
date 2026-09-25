@@ -1,7 +1,7 @@
 /**
  * Tests for live-sessions/order.ts — manual sidebar order for live Pi sessions.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, rmSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { mkdtemp, rm } from 'fs/promises'
 import { EventEmitter } from 'events'
@@ -9,6 +9,8 @@ import express from 'express'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { LiveSessionOrderStore, normalizeOrder } from '../live-sessions/order.js'
+import { LiveSessionMetaStore } from '../live-sessions/meta.js'
+import { LiveSessionGroupStore } from '../live-sessions/groups.js'
 import { LiveSessionBrowserAuth } from '../live-sessions/auth.js'
 import { createLiveSessionRoutes } from '../routes/live-sessions.js'
 
@@ -60,6 +62,19 @@ describe('LiveSessionOrderStore', () => {
     writeFileSync(file, '{not json', 'utf8')
     expect(await new LiveSessionOrderStore(file).list()).toEqual([])
   })
+
+  it('re-keys one entry in place when the same live Pi switches session', async () => {
+    await store.replace(['session-a', 'session-b', 'session-c'])
+    expect(await store.rekey('session-b', 'session-cleared')).toEqual(['session-a', 'session-cleared', 'session-c'])
+    expect(await new LiveSessionOrderStore(file).list()).toEqual(['session-a', 'session-cleared', 'session-c'])
+  })
+
+  it('re-key is a no-op for unlisted ids, equal ids and a target that is already listed', async () => {
+    await store.replace(['session-a', 'session-b'])
+    expect(await store.rekey('session-missing', 'session-new')).toEqual(['session-a', 'session-b'])
+    expect(await store.rekey('session-a', 'session-a')).toEqual(['session-a', 'session-b'])
+    expect(await store.rekey('session-a', 'session-b')).toEqual(['session-b'])
+  })
 })
 
 describe('live-session order HTTP routes', () => {
@@ -79,7 +94,10 @@ describe('live-session order HTTP routes', () => {
     app.use(express.json())
     const auth = new LiveSessionBrowserAuth({ tokenPath: join(base, 'live-control-token') })
     const orderStore = new LiveSessionOrderStore(join(base, 'live-session-order.json'))
-    const routes = createLiveSessionRoutes({ app, registry: stubRegistry(), auth, orderStore })
+    const metaStore = new LiveSessionMetaStore(join(base, 'live-session-meta.json'))
+    const groupStore = new LiveSessionGroupStore(join(base, 'live-session-groups.json'))
+    const registry = stubRegistry()
+    const routes = createLiveSessionRoutes({ app, registry, auth, orderStore, metaStore, groupStore })
     await routes.start()
     const server = app.listen(0, '127.0.0.1')
     await new Promise(resolve => server.once('listening', resolve))
@@ -90,7 +108,7 @@ describe('live-session order HTTP routes', () => {
     })
     const cookie = login.headers.get('set-cookie')?.split(';')[0]
     return {
-      origin, cookie, orderStore,
+      origin, cookie, orderStore, metaStore, groupStore, registry,
       close: async () => {
         await routes.stop(); await auth.stop()
         await new Promise(resolve => server.close(resolve))
@@ -141,6 +159,27 @@ describe('live-session order HTTP routes', () => {
       })
       expect(garbage.status).toBe(200)
       expect(await srv.orderStore.list()).toEqual([])
+    } finally { await srv.close() }
+  })
+
+  it('re-keys every sidebar store when the same live Pi switches session in-process', async () => {
+    const srv = await serve()
+    try {
+      await srv.orderStore.replace(['session-a', 'session-b'])
+      await srv.metaStore.update('session-a', { tags: ['ocr'], pinned: true })
+      const [group] = await srv.groupStore.create('任务A')
+      await srv.groupStore.addMember(group.id, 'session-a')
+
+      // `/clear` (and `/ls-fork`) keep the process but hand it a new pi sessionId.
+      const detail = sessionId => ({ summary: { processInstanceId: 'process-a', sessionId }, entries: [] })
+      srv.registry.emit('snapshot', detail('session-a'))
+      srv.registry.emit('snapshot', detail('session-cleared'))
+
+      await vi.waitFor(async () => {
+        expect(await srv.orderStore.list()).toEqual(['session-cleared', 'session-b'])
+        expect(await srv.metaStore.list()).toEqual({ 'session-cleared': expect.objectContaining({ tags: ['ocr'], pinned: true }) })
+        expect((await srv.groupStore.list())[0].sessionIds).toEqual(['session-cleared'])
+      })
     } finally { await srv.close() }
   })
 })

@@ -6,6 +6,7 @@ import { authenticated } from '../../../store/liveSessionsSlice'
 import { AuthPanel } from '../LiveSessionPage'
 import { liveSessionApi } from '../api'
 import { useLiveSessionsRuntime } from '../useLiveSessions'
+import { forkLiveSessionAtStep } from '../forkPlacement'
 import { buildSessionTitles } from '../sessionTitle'
 import BranchDetailPanel from './BranchDetailPanel'
 import SessionFamilyGraph, { type GraphDetail } from './SessionFamilyGraph'
@@ -21,9 +22,6 @@ function baseName(file: string): string {
 const STEP_BATCH = 400
 /** Mirrors the server's `SESSION_TREE_STEPS_MAX`. */
 const STEP_LIMIT_MAX = 3000
-/** How long to wait for a forked session file to appear on disk. */
-const PENDING_FILE_POLL_MS = 2000
-const PENDING_FILE_MAX_TRIES = 30
 
 /**
  * Outcome of a `/ls-fork` or `/ls-navigate`, published by the Pi extension as a
@@ -65,29 +63,6 @@ export function treeActionFeedback(outcome: TreeActionOutcome): { toast?: string
   return outcome.ok ? { toast: outcome.message } : { error: outcome.message }
 }
 
-/**
- * What to do when the pi process we are watching reports a different session file.
- *
- * `/ls-fork` keeps the SAME pi process and gives it a NEW session file, so a fork is
- * only observable as a changed `sessionFile`. After a fork the reader wants to be in
- * the new branch's agent page at the entry they forked at; a plain session swap
- * (terminal `/tree` + `resume`) should instead keep the graph and just follow.
- */
-export function followSessionFile(
-  processInstanceId: string,
-  nextFile: string,
-  forkEntryId: string | null,
-): { kind: 'navigate'; to: string } | { kind: 'follow'; file: string } {
-  if (forkEntryId) {
-    // The fork copies the prefix with the same entry ids, so `?node=` still matches.
-    return {
-      kind: 'navigate',
-      to: `/live-sessions/${encodeURIComponent(processInstanceId)}?node=${encodeURIComponent(forkEntryId)}`,
-    }
-  }
-  return { kind: 'follow', file: nextFile }
-}
-
 export default function SessionGraphPage() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
@@ -124,24 +99,11 @@ export default function SessionGraphPage() {
   const [selectedId, setSelectedId] = useState<string | null>(nodeParam)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>(undefined)
-  /**
-   * A fork whose new session file is not on disk yet. pi defers that file until
-   * the new session produces its first assistant message, and the graph is read
-   * from disk — so jumping immediately would land on an empty/404 page and look
-   * like the fork never happened.
-   */
-  const [pendingFile, setPendingFile] = useState<{ processInstanceId: string; file: string; entryId: string } | null>(null)
-
-  // After `/ls-fork` the bridge swaps to a NEW session file, so the URL's `file`
-  // goes stale: the graph would neither refresh nor keep its write actions. Follow
-  // the process we were watching to whatever session file it now reports.
+  // The graph is keyed by session file. A Pi that swaps to another file without
+  // the dashboard asking (terminal `/fork` or `/clone`) must take the graph with
+  // it. The dashboard's own 「从此分叉」no longer does this — it starts a NEW
+  // process — so a swap is always somewhere to follow, never somewhere to jump.
   const followedProcess = useRef<string | null>(null)
-  /**
-   * Entry id the user forked at, while waiting for the snapshot that swaps the
-   * session file. `/ls-fork` creates a NEW session file for the SAME pi process, so
-   * the fork is only observable as a changed `sessionFile` on that process.
-   */
-  const pendingForkRef = useRef<string | null>(null)
   useEffect(() => {
     if (!file) { followedProcess.current = null; return }
     const owner = Object.values(state.sessions).find(session => session.sessionFile === file)
@@ -152,18 +114,9 @@ export default function SessionGraphPage() {
     if (!processInstanceId) return
     const nextFile = state.sessions[processInstanceId]?.sessionFile
     if (!nextFile || nextFile === file) return
-    const forkEntryId = pendingForkRef.current
-    pendingForkRef.current = null
-    const plan = followSessionFile(processInstanceId, nextFile, forkEntryId)
-    if (plan.kind === 'navigate') {
-      // pi defers the forked file until the new session's first reply, so wait
-      // for it instead of jumping to a graph that cannot be read yet.
-      setPendingFile({ processInstanceId, file: nextFile, entryId: forkEntryId ?? '' })
-      return
-    }
-    setParams({ file: plan.file })
-    setToast(`已跟随到新会话：${plan.file.split('/').pop() ?? plan.file}`)
-  }, [state.sessions, file, setParams, navigate])
+    setParams({ file: nextFile })
+    setToast(`已跟随到新会话：${nextFile.split('/').pop() ?? nextFile}`)
+  }, [state.sessions, file, setParams])
 
   // In-place expansions belong to one session file: drop them when the focus moves.
   useEffect(() => { setExpandedRuns([]); setStepLimit(STEP_BATCH) }, [file])
@@ -302,46 +255,39 @@ export default function SessionGraphPage() {
     setActionError(feedback.error)
   }, [lastTreeAction])
 
-  // Wait for a forked session file to land on disk, then jump to it.
-  useEffect(() => {
-    if (!pendingFile) return
-    let cancelled = false
-    let tries = 0
-    const poll = (): void => {
-      liveSessionApi.sessionTree(pendingFile.file)
-        .then(() => {
-          if (cancelled) return
-          setPendingFile(null)
-          setToast(null)
-          navigate(`/live-sessions/${encodeURIComponent(pendingFile.processInstanceId)}?node=${encodeURIComponent(pendingFile.entryId)}`)
-        })
-        .catch(() => {
-          if (cancelled) return
-          tries += 1
-          if (tries >= PENDING_FILE_MAX_TRIES) {
-            setPendingFile(null)
-            setActionError(`分叉已创建，但新会话文件 ${pendingFile.file.split('/').pop()} 还没写入磁盘；在它产出第一条回复后重新打开此页就能看到。`)
-            return
-          }
-          timer = setTimeout(poll, PENDING_FILE_POLL_MS)
-        })
-    }
-    let timer = setTimeout(poll, 600)
-    return () => { cancelled = true; clearTimeout(timer) }
-  }, [pendingFile, navigate])
-
   const handleNavigate = useCallback((node: SessionTreeNode) => {
     const previousHead = graph?.nodes.find(candidate => candidate.sessionKey === graph.focusKey && candidate.isHead)?.id ?? null
     // pi confirms via `tree_action`; this is only the request echo.
     void runCommand(`/ls-navigate ${node.id}`, `已请求切换到 ${node.id}，等待 pi 确认…`, previousHead)
   }, [graph, runCommand])
 
-  const handleFork = useCallback((node: SessionTreeNode) => {
-    pendingForkRef.current = node.id
-    // pi confirms via `tree_action`. Keep the echo honest: a refused fork must not
-    // look successful while the confirmation is still in flight.
-    void runCommand(`/ls-fork ${node.id}`, `已请求从 ${node.id} 分叉，等待 pi 确认…`, undefined)
-  }, [runCommand])
+  /**
+   * 「从此分叉」starts a NEW independent Pi session from this step (the source
+   * keeps running) and lands it beside its parent — the same operation as the
+   * sidebar's fork. 「切到此处」stays the in-place branch switch.
+   */
+  const handleFork = useCallback(async (node: SessionTreeNode) => {
+    if (!live) {
+      setActionError('图谱写操作不可用。')
+      setToast(null)
+      return
+    }
+    setBusy(true)
+    setActionError(undefined)
+    setToast(`已请求从 ${node.id} 分叉，正在启动新会话…`)
+    try {
+      const forked = await forkLiveSessionAtStep({ source: live, entryId: node.id, sessions: Object.values(state.sessions) })
+      await refresh()
+      setToast(`已从 ${node.id} 分叉出新会话`)
+      // The fork copies the prefix with the same entry ids, so `?node=` still matches.
+      navigate(`/live-sessions/${encodeURIComponent(forked.processInstanceId)}?node=${encodeURIComponent(node.id)}`)
+    } catch (cause) {
+      setToast(null)
+      setActionError(`分叉失败：${cause instanceof Error ? cause.message : String(cause)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [live, navigate, refresh, state.sessions])
 
   const handleOpenSession = useCallback((session: SessionTreeSessionEntry) => {
     const owner = Object.values(state.sessions).find(candidate => candidate.sessionFile === session.file)
@@ -463,11 +409,6 @@ export default function SessionGraphPage() {
           {claimedByOther
             ? '⚠ 写操作已禁用：该会话已被另一个浏览器接管（当前浏览器未持有 lease）。'
             : '⚠ 写操作已禁用：当前 Pi 进程加载的是旧版 live-session 扩展（没有 session_tree 能力）。请在右侧面板之外，于该 Pi 会话里执行一次 /reload（或重启该会话），然后刷新本页。'}
-        </div>
-      ) : null}
-      {pendingFile ? (
-        <div className="bg-accent-subtle px-4 py-2 text-2xs text-text">
-          已分叉：pi 已切到新会话，正在等待它的文件落盘（{(pendingFile.file.split('/').pop() ?? '').slice(0, 46)}）⋯ 该文件会随新会话的第一条回复生成。
         </div>
       ) : null}
       {live && live.sessionFile && graph && graph.sessions.find(session => session.isFocus)?.partial ? (

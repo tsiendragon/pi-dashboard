@@ -1,4 +1,55 @@
-import type { LiveSessionSummary } from '@shared/live-sessions'
+import type { LiveSessionGroup, LiveSessionMeta, LiveSessionSummary } from '@shared/live-sessions'
+
+/** Heading of the pinned block in the Live Pi sidebar. */
+export const PINNED_SECTION = '置顶'
+
+/** Sub-agent rows are summarised elsewhere, never listed as top-level rows. */
+export function isSubagent(session: LiveSessionSummary): boolean {
+  return session.role === 'subagent' || !!session.parentSessionId
+}
+
+/** The task group a session belongs to, or undefined when it is ungrouped. */
+export function groupOfSession(
+  session: LiveSessionSummary,
+  groups: readonly LiveSessionGroup[],
+): LiveSessionGroup | undefined {
+  return groups.find(group => group.sessionIds.includes(session.sessionId))
+}
+
+/** One block of the sidebar: the pinned block, a task group, or 未分组. */
+export interface SessionSection {
+  id: string
+  name: string
+  group?: LiveSessionGroup
+  pinnedSection?: boolean
+  sessions: LiveSessionSummary[]
+}
+
+/**
+ * Lay sessions out into the sidebar's blocks and their within-block order.
+ *
+ * Shared by the sidebar and by fork placement, so a newly forked row is put
+ * beside its source using exactly the order the reader sees. Block order is
+ * fixed: 置顶 → task groups (creation order) → 未分组.
+ */
+export function buildSessionSections(
+  sessions: readonly LiveSessionSummary[],
+  meta: Record<string, LiveSessionMeta>,
+  groups: readonly LiveSessionGroup[],
+  order: string[],
+): SessionSection[] {
+  const main = sessions.filter(session => !isSubagent(session))
+  const pinned = main.filter(session => meta[session.sessionId]?.pinned)
+  const pinnedIds = new Set(pinned.map(session => session.processInstanceId))
+  const rest = main.filter(session => !pinnedIds.has(session.processInstanceId))
+  const out: SessionSection[] = []
+  if (pinned.length) out.push({ id: '__pinned', name: PINNED_SECTION, pinnedSection: true, sessions: sortSessions(pinned, order) })
+  for (const group of groups) {
+    out.push({ id: group.id, name: group.name, group, sessions: sortSessions(rest.filter(session => group.sessionIds.includes(session.sessionId)), order) })
+  }
+  out.push({ id: '__ungrouped', name: '未分组', sessions: sortSessions(rest.filter(session => !groupOfSession(session, groups)), order) })
+  return out.filter(section => section.sessions.length > 0)
+}
 
 /**
  * Ordering rules for the Live Pi Sessions sidebar.

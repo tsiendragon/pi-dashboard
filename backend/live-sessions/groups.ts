@@ -111,6 +111,28 @@ export class LiveSessionGroupStore {
     return this.list()
   }
 
+  /**
+   * Move a member to a new `sessionId`, keeping its slot inside its group.
+   *
+   * A live Pi can switch session in-process (`/clear`, `/ls-fork`) while keeping
+   * its `processInstanceId`; without this the row silently leaves its task group.
+   */
+  async rekey(from: string, to: string): Promise<LiveSessionGroup[]> {
+    await this.start()
+    if (!from || !to || from === to) return this.list()
+    let touched = false
+    for (const group of this.groups) {
+      const index = group.sessionIds.indexOf(from)
+      if (index < 0) continue
+      group.sessionIds.splice(index, 1)
+      if (!group.sessionIds.includes(to)) group.sessionIds.splice(index, 0, to)
+      group.updatedAt = new Date().toISOString()
+      touched = true
+    }
+    if (touched) await this.persist()
+    return this.list()
+  }
+
   private find(groupId: string): LiveSessionGroup {
     const group = this.groups.find(candidate => candidate.id === groupId)
     if (!group) throw new Error('group_not_found')

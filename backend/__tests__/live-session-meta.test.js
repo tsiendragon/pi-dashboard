@@ -88,6 +88,20 @@ describe('LiveSessionMetaStore', () => {
     await store.remove('sess-1')
     expect(await store.list()).toEqual({})
   })
+
+  it('re-keys tags and pin when the same live Pi switches session in-process', async () => {
+    await store.update('sess-1', { tags: ['ocr'], pinned: true })
+    expect(await store.rekey('sess-1', 'sess-cleared')).toMatchObject({ 'sess-cleared': { tags: ['ocr'], pinned: true } })
+    expect(await new LiveSessionMetaStore(file).list()).toEqual({ 'sess-cleared': expect.objectContaining({ tags: ['ocr'], pinned: true }) })
+  })
+
+  it('re-key is a no-op for unknown ids, equal ids and an existing target entry', async () => {
+    expect(await store.rekey('sess-missing', 'sess-x')).toEqual({})
+    await store.update('sess-1', { tags: ['a'] })
+    expect(await store.rekey('sess-1', 'sess-1')).toMatchObject({ 'sess-1': { tags: ['a'] } })
+    await store.update('sess-2', { pinned: true })
+    expect(await store.rekey('sess-1', 'sess-2')).toEqual({ 'sess-2': expect.objectContaining({ pinned: true }) })
+  })
 })
 
 describe('live-session meta HTTP routes', () => {

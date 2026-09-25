@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { LiveSessionGroup, LiveSessionSummary } from '@shared/live-sessions'
+import type { LiveSessionGroup, LiveSessionReloadResult, LiveSessionSummary } from '@shared/live-sessions'
 import { displayWorktreePath } from '../../utils/displayPath'
 import { api } from '../../api/client'
 import type { ModelLike } from '../../utils/modelUtils'
@@ -7,10 +7,12 @@ import { modelFullId, modelLabel } from '../../utils/modelUtils'
 import { SearchInput } from '../../components/ui'
 import PathCompleteMenu from '../../components/PathCompleteMenu'
 import { TagChip, TagEditor, RowMenu, type RowMenuItem } from '../../components/sessionMetaUi'
+import MaterialIcon, { type MaterialIconName } from '../../components/MaterialIcon'
+import WorkingHammerIcon from '../../components/WorkingHammerIcon'
 import { relTime, projectName } from '../../pages/chat/sessionMeta'
 import { liveSessionApi } from './api'
 import type { SubagentTaskStatus } from './sessionTitle'
-import { moveInOrder, materializeOrder, resolveDropTarget, sortSessions, type DropTarget } from './sessionOrder'
+import { moveInOrder, materializeOrder, resolveDropTarget, buildSessionSections, groupOfSession, isSubagent, type DropTarget, type SessionSection } from './sessionOrder'
 import { useLiveSessionMeta } from './useLiveSessionMeta'
 import { useLiveSessionOrder } from './useLiveSessionOrder'
 
@@ -20,17 +22,46 @@ interface LiveSessionsListProps {
   subagentStatuses?: Record<string, SubagentTaskStatus>
   activeId?: string
   onRefresh?: () => Promise<void>
+  /** Unanswered extension dialogs per session — row badge so a blocked agent is visible. */
+  pendingUiCounts?: Record<string, number>
   onSelect: (processInstanceId: string) => void
 }
 
-const PINNED_SECTION = '置顶'
 const MAX_TAG_CHIPS = 2
+
+/**
+ * Launcher failures are accurate but cryptic (`live_pi_registration_timeout:
+ * ... was killed after 120000ms without registering`). Translate the ones users
+ * actually hit, and keep any Pi pane output the backend attached — that text is
+ * the only clue about why the start hung.
+ */
+function formatStartError(message: string): string {
+  const paneTail = message.split('\n').slice(1).join('\n').trim()
+  if (message.includes('live_pi_registration_timeout')) {
+    const waited = /after (\d+)ms/.exec(message)?.[1]
+    const seconds = waited ? Math.round(Number(waited) / 1000) : 120
+    const hint = 'Pi 进程没在限时内注册到 dashboard，已清理该 tmux 会话。常见原因：机器上常驻 Pi 会话过多、磁盘冷读导致冷启动变慢，或 Pi 启动即报错。'
+    return `${hint}（等待 ${seconds} 秒）${paneTail ? `\n${paneTail}` : ''}`
+  }
+  if (message.includes('tmux_unavailable')) return 'tmux 不可用（未安装或不在 PATH 上），无法启动 live session。'
+  if (message.includes('live_pi_start_failed')) return `无法创建 tmux 会话：${message}`
+  if (message.includes('is outside configured roots')) return `该目录不在允许启动 live session 的根目录内：${message}`
+  return message
+}
 const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 function statusLabel(status: LiveSessionSummary['status']): string {
   if (status === 'idle') return '等待输入'
   if (status === 'running') return '工作中'
   return '重连中'
+}
+
+/** One-line result of a bulk reload, e.g. 「已重载 5 个会话，跳过 2 个子 Agent」. */
+function reloadAllSummary(result: LiveSessionReloadResult): string {
+  const parts = [`已重载 ${result.reloaded.length} 个会话`]
+  if (result.skipped.length > 0) parts.push(`跳过 ${result.skipped.length} 个子 Agent`)
+  if (result.failed.length > 0) parts.push(`${result.failed.length} 个失败（${result.failed.map(item => item.code).join('、')}）`)
+  return parts.join('，')
 }
 
 function taskStatusLabel(status?: SubagentTaskStatus): string {
@@ -60,10 +91,6 @@ const DRAG_THRESHOLD = 4
  * an exiting session jump up during the workday.
  */
 
-function isSubagent(session: LiveSessionSummary): boolean {
-  return session.role === 'subagent' || !!session.parentSessionId
-}
-
 function shortSessionId(sessionId: string): string {
   return sessionId.length > 12 ? `${sessionId.slice(0, 8)}…${sessionId.slice(-4)}` : sessionId
 }
@@ -75,21 +102,13 @@ function sessionTitle(session: LiveSessionSummary, titles: Record<string, string
   return `pi ${session.pid}`
 }
 
-/** Primary status glyph — the user reads these at a glance faster than text.
- *  The 2px color rail stays as the peripheral-vision cue; the dot is dropped. */
-function sessionStatusEmoji(status: LiveSessionSummary['status']): string {
-  if (status === 'running') return '🔨'
-  if (status === 'reconnecting') return '🔄'
-  return '💤'
-}
-
-function taskStatusEmoji(status?: SubagentTaskStatus): string {
-  if (status === 'queued') return '⏳'
-  if (status === 'running') return '🔨'
-  if (status === 'completed') return '✅'
-  if (status === 'failed') return '⚠️'
-  if (status === 'killed' || status === 'cancelled') return '⛔'
-  return '❔'
+/** Subagent task status → Material icon, so the row keeps one glyph language. */
+function taskStatusIcon(status?: SubagentTaskStatus): MaterialIconName {
+  if (status === 'queued') return 'schedule'
+  if (status === 'completed') return 'check'
+  if (status === 'failed') return 'error'
+  if (status === 'killed' || status === 'cancelled') return 'block'
+  return 'remove'
 }
 
 /** `idle` is the resting state of a live Pi, so the rail stays quiet; it only
@@ -111,6 +130,7 @@ interface RowProps {
   taskStatus?: SubagentTaskStatus
   tags: string[]
   pinned: boolean
+  pendingUiCount?: number
   tagFilter: string | null
   allTags: string[]
   groups: LiveSessionGroup[]
@@ -121,6 +141,8 @@ interface RowProps {
   onPin: (pinned: boolean) => void
   onTags: (tags: string[]) => void
   onRename: (name: string) => void
+  /** Start a new independent Pi forked from this session (pi `--fork`). */
+  onFork: () => void
   onJoinGroup: (groupId: string) => void
   onLeaveGroup: (groupId: string) => void
   onCopySessionId: () => void
@@ -159,6 +181,7 @@ function SessionRow(p: RowProps) {
   const items: RowMenuItem[] = [
     { label: '✎ 重命名', onClick: () => { setRenameValue(p.title); setRenaming(true) } },
     { label: '🏷 标签', onClick: () => setTagEditing(true) },
+    ...(p.subagent ? [] : [{ label: '⑂ 从此分叉', hint: '新建一个独立的 Pi 会话，继承任务分组并排在下方', onClick: p.onFork } as RowMenuItem]),
     { separator: true },
     { label: p.pinned ? '📌 取消置顶' : '📌 置顶', onClick: () => p.onPin(!p.pinned) },
     ...(p.moveCount > 1 ? [{ separator: true } as RowMenuItem] : []),
@@ -205,15 +228,22 @@ function SessionRow(p: RowProps) {
           tone === 'running' ? 'bg-accent shadow-[0_0_7px_var(--accent-glow)]'
             : tone === 'reconnecting' ? 'bg-warn' : 'bg-transparent'
         }`} />
+        {/* status gutter — the running glyph spans both text lines so the swing
+            has room; every other status is a quiet dot or a spinner */}
+        <span
+          className="flex w-[26px] shrink-0 items-stretch justify-center self-stretch text-body-s leading-none"
+          role="status"
+          aria-label={`Session 状态：${statusLabel(p.session.status)}`}
+          data-session-status={p.session.status}
+          title={statusLabel(p.session.status)}
+        >{p.session.status === 'running'
+          ? <span className="flex w-full items-center justify-center"><WorkingHammerIcon className="working-hammer-row" /></span>
+          : p.session.status === 'reconnecting'
+            ? <span className="flex h-[18px] w-full items-center justify-center text-warn"><MaterialIcon name="sync" spin className="h-4 w-4" /></span>
+            : <span className="flex h-[18px] w-full items-center justify-center" aria-hidden="true"><span className="h-[7px] w-[7px] rounded-full border border-muted-strong opacity-60" /></span>}</span>
         <div className="min-w-0 flex-1">
           {/* line 1 — title */}
           <div className="flex h-[18px] items-center gap-1.5">
-            <span
-              className="shrink-0 text-body-s leading-none"
-              role="status"
-              aria-label={`Session 状态：${statusLabel(p.session.status)}`}
-              title={`${sessionStatusEmoji(p.session.status)} ${statusLabel(p.session.status)}`}
-            >{sessionStatusEmoji(p.session.status)}</span>
             {p.depth > 0 && <span className="shrink-0 text-2xs leading-none text-accent">↳</span>}
             {renaming ? (
               <input
@@ -234,30 +264,32 @@ function SessionRow(p: RowProps) {
             ) : (
               <span className={`min-w-0 flex-1 truncate text-body-s leading-[18px] ${tone === 'idle' && !p.active ? 'text-text' : 'text-text-strong'}`}>{p.title}</span>
             )}
-            {p.childCount > 0 && <span className="shrink-0 rounded bg-bg px-1 text-2xs leading-[14px] text-muted" title={`${p.childCount} 个子 Agent`}>{p.childCount} 子</span>}
-            {p.session.claim.state === 'claimed' && <span className="shrink-0 text-2xs leading-none" title="已被其他浏览器接管">🔒</span>}
+            {p.childCount > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1.5 text-2xs leading-[14px] text-muted" title={`${p.childCount} 个子 Agent`}>{p.childCount} 子</span>}
+            {p.session.claim.state === 'claimed' && <span className="flex shrink-0 items-center text-muted-strong" title="已被其他浏览器接管"><MaterialIcon name="lock" className="h-3.5 w-3.5" /></span>}
             <span className={`shrink-0 font-mono text-2xs leading-none text-muted-strong ${menuOpen ? 'invisible' : ''}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}`}>{relTime(p.session.lastActivityAt)}</span>
             <button
               type="button"
               aria-label="Session menu"
               onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
               onClick={() => setMenuOpen(v => !v)}
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-body-s leading-none text-muted transition-opacity hover:bg-bg-elevated hover:text-text-strong ${menuOpen ? 'bg-bg-elevated text-text-strong opacity-100' : 'opacity-50 group-hover:opacity-100 md:opacity-0'}`}
-            >⋯</button>
+              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition-opacity hover:bg-bg-hover hover:text-text-strong ${menuOpen ? 'bg-bg-hover text-text-strong opacity-100' : 'opacity-50 group-hover:opacity-100 md:opacity-0'}`}
+            ><MaterialIcon name="more_horiz" className="h-4 w-4" /></button>
           </div>
 
           {/* line 2 — status · tags · group · location */}
           <div className="flex h-[16px] items-center gap-1 overflow-hidden">
-            {p.pinned && <span className="shrink-0 text-2xs leading-none text-accent" title="已置顶">📌</span>}
-            {p.tmuxSession && <span className="shrink-0 text-2xs leading-none text-muted" title={`终端可访问：tmux attach -t ${p.tmuxSession}`}>🖥 终端</span>}
+            {p.pinned && <span className="flex shrink-0 items-center text-accent" title="已置顶"><MaterialIcon name="push_pin" className="h-3.5 w-3.5" /></span>}
+            {p.tmuxSession && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-1.5 text-2xs leading-[14px] text-muted-strong" title={`终端可访问：tmux attach -t ${p.tmuxSession}`}><MaterialIcon name="terminal" className="h-3 w-3" />终端</span>}
             {p.subagent
-              ? <span className={`shrink-0 text-2xs leading-none ${taskStatusClass(p.taskStatus)}`} title={`子 Agent 任务：${taskStatusLabel(p.taskStatus)}`}>{taskStatusEmoji(p.taskStatus)} 子 Agent · {taskStatusLabel(p.taskStatus)}</span>
+              ? <span className={`inline-flex shrink-0 items-center gap-0.5 text-2xs leading-none ${taskStatusClass(p.taskStatus)}`} title={`子 Agent 任务：${taskStatusLabel(p.taskStatus)}`}>{p.taskStatus === 'running' ? <WorkingHammerIcon className="h-3 w-3" /> : <MaterialIcon name={taskStatusIcon(p.taskStatus)} className="h-3.5 w-3.5" />}子 Agent · {taskStatusLabel(p.taskStatus)}</span>
               : <span className={`shrink-0 text-2xs leading-none ${tone === 'running' ? 'text-accent' : tone === 'reconnecting' ? 'text-warn' : 'text-muted-strong'}`}>{statusLabel(p.session.status)}</span>}
+            {(p.pendingUiCount ?? 0) > 0 && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-warn-subtle px-1.5 text-2xs leading-[14px] text-warn" title={`该会话有 ${p.pendingUiCount} 个待应答请求，agent 正在等待回答`}><MaterialIcon name="error" className="h-3 w-3" />待应答 {p.pendingUiCount}</span>}
             {chips.map(t => <TagChip key={t} tag={t} active={p.tagFilter === t} onClick={p.onToggleTagFilter} />)}
             {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-2xs font-semibold leading-[14px] text-muted-strong" title={p.tags.join(', ')}>+{extra}</span>}
-            {p.groupName && <span className="shrink-0 truncate text-2xs leading-none text-ok" title={`任务分组：${p.groupName}`}>{p.groupName}</span>}
+            {p.groupName && <span className="shrink-0 truncate rounded-full bg-ok-subtle px-1.5 text-2xs leading-[14px] text-ok" title={`任务分组：${p.groupName}`}>{p.groupName}</span>}
             <span className="ml-auto flex min-w-0 shrink items-center gap-1 text-2xs leading-none text-muted-strong">
               {branch && <span className="shrink-0 truncate" title={`分支：${branch}`}>{branch}</span>}
+              {branch && <span className="shrink-0 text-muted-strong opacity-40" aria-hidden="true">·</span>}
               <span className="min-w-0 truncate font-mono" title={cwd}>{projectName(cwd) || displayWorktreePath(cwd)}</span>
             </span>
           </div>
@@ -271,15 +303,7 @@ function SessionRow(p: RowProps) {
   )
 }
 
-interface Section {
-  id: string
-  name: string
-  group?: LiveSessionGroup
-  pinnedSection?: boolean
-  sessions: LiveSessionSummary[]
-}
-
-export default function LiveSessionsList({ sessions, sessionTitles = {}, subagentStatuses = {}, activeId, onSelect, onRefresh }: LiveSessionsListProps) {
+export default function LiveSessionsList({ sessions, sessionTitles = {}, subagentStatuses = {}, activeId, onSelect, onRefresh, pendingUiCounts = {} }: LiveSessionsListProps) {
   const [groups, setGroups] = useState<LiveSessionGroup[]>([])
   const [creating, setCreating] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
@@ -298,13 +322,19 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
   const [startError, setStartError] = useState<string>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  /** A bulk `/reload` of every main session is in flight. */
+  const [reloadingAll, setReloadingAll] = useState(false)
+  const [reloadNotice, setReloadNotice] = useState<{ text: string; danger: boolean } | null>(null)
+  /** processInstanceId of the session whose "从此分叉" launch is in flight. */
+  const [forkingId, setForkingId] = useState<string | null>(null)
+  const [forkError, setForkError] = useState<string>()
   const [filter, setFilter] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null)
   const [groupDraft, setGroupDraft] = useState('')
   const [armedGroup, setArmedGroup] = useState<string | null>(null)
   const { meta, allTags, tagCounts, patch, refresh: refreshMeta, error: metaError } = useLiveSessionMeta()
-  const { order, save: saveOrder, reset: resetOrder, error: orderError } = useLiveSessionOrder()
+  const { order, save: saveOrder, reset: resetOrder, refresh: refreshOrder, error: orderError } = useLiveSessionOrder()
 
   const refreshGroups = useCallback(async () => {
     try {
@@ -316,6 +346,61 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
   }, [])
 
   useEffect(() => { void refreshGroups() }, [refreshGroups])
+
+  /**
+   * Bulk counterpart of the per-session 重载 button.
+   *
+   * After dashboard extensions / skills / prompts / themes change, every running
+   * Pi has to re-read them, and reconnecting each session by hand is tedious.
+   * Subagent child processes are skipped by the backend, so only main sessions
+   * are counted here.
+   */
+  const reloadAllSessions = () => {
+    if (reloadingAll) return
+    const targets = sessions.filter(session => session.role !== 'subagent')
+    if (targets.length === 0) {
+      setReloadNotice({ text: '没有可重载的主会话（子 Agent 进程会被跳过）', danger: false })
+      return
+    }
+    if (!window.confirm(`重载全部 ${targets.length} 个会话？每个 Pi 进程会重新加载扩展 / 技能 / 提示词 / 主题，Web 端会短暂重连。`)) return
+    setReloadingAll(true)
+    setReloadNotice(null)
+    void liveSessionApi.reloadAll()
+      .then(result => setReloadNotice({ text: reloadAllSummary(result), danger: result.failed.length > 0 }))
+      .catch(reason => setReloadNotice({ text: `重载失败：${reason instanceof Error ? reason.message : String(reason)}`, danger: true }))
+      .finally(() => setReloadingAll(false))
+  }
+
+  // The notice is transient: rows recover on their own once each Pi reconnects.
+  useEffect(() => {
+    if (!reloadNotice) return
+    const timer = window.setTimeout(() => setReloadNotice(null), 8_000)
+    return () => window.clearTimeout(timer)
+  }, [reloadNotice])
+
+  /**
+   * Follow an in-process session switch (`/clear`, `/ls-fork`).
+   *
+   * Order, groups and tags are keyed by pi `sessionId`, which changes while the
+   * row's `processInstanceId` does not. The server re-keys its stores when it sees
+   * that change; the copies in this component are stale until re-read, and until
+   * then the row would fall back to the block tail with its tags and pin gone.
+   */
+  const knownSessionIds = useRef(new Map<string, string>())
+  useEffect(() => {
+    let switched = false
+    const next = new Map<string, string>()
+    for (const session of sessions) {
+      const previous = knownSessionIds.current.get(session.processInstanceId)
+      if (previous && previous !== session.sessionId) switched = true
+      next.set(session.processInstanceId, session.sessionId)
+    }
+    knownSessionIds.current = next
+    if (!switched) return
+    void refreshMeta()
+    void refreshOrder()
+    void refreshGroups()
+  }, [sessions, refreshMeta, refreshOrder, refreshGroups])
 
   useEffect(() => {
     if (!startOpen || startModels.length > 0 || startModelsLoading) return
@@ -363,13 +448,12 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
       setStartOpen(false)
       window.setTimeout(() => { void onRefresh?.() }, 1_000)
     } catch (reason) {
-      setStartError(reason instanceof Error ? reason.message : String(reason))
+      setStartError(formatStartError(reason instanceof Error ? reason.message : String(reason)))
       setStarting(false)
     }
   }
 
-  const groupOf = useCallback((session: LiveSessionSummary): LiveSessionGroup | undefined =>
-    groups.find(group => group.sessionIds.includes(session.sessionId)), [groups])
+  const groupOf = useCallback((session: LiveSessionSummary): LiveSessionGroup | undefined => groupOfSession(session, groups), [groups])
 
   const childrenByParent = useMemo(() => {
     const map = new Map<string, number>()
@@ -395,22 +479,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     })
   }, [sessions, meta, sessionTitles, filter, tagFilter, groupOf])
 
-  const sections = useMemo<Section[]>(() => {
-    const main = visible.filter(session => !isSubagent(session))
-    const pinned = main.filter(session => meta[session.sessionId]?.pinned)
-    const pinnedIds = new Set(pinned.map(session => session.processInstanceId))
-    const rest = main.filter(session => !pinnedIds.has(session.processInstanceId))
-    const out: Section[] = []
-    if (pinned.length) out.push({ id: '__pinned', name: PINNED_SECTION, pinnedSection: true, sessions: sortSessions(pinned, order) })
-    for (const group of groups) {
-      out.push({ id: group.id, name: group.name, group, sessions: sortSessions(rest.filter(session => group.sessionIds.includes(session.sessionId)), order) })
-    }
-    out.push({ id: '__ungrouped', name: '未分组', sessions: sortSessions(rest.filter(session => !groupOf(session)), order) })
-    // Block order is fixed: 置顶 → task groups (creation order) → 未分组. It used
-    // to follow each block's earliest `startedAt`, so a block jumped whenever
-    // one of its sessions exited or restarted.
-    return out.filter(section => section.sessions.length > 0)
-  }, [visible, groups, meta, groupOf, order])
+  const sections = useMemo<SessionSection[]>(() => buildSessionSections(visible, meta, groups, order), [visible, groups, meta, order])
 
   /** A block's rows without the dragged session — the coordinate system every
    *  drop index (and the insertion line) is expressed in. */
@@ -422,6 +491,52 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
 
   /** Every row currently on screen, in display order — the base a move edits. */
   const displayedIds = useMemo(() => sections.flatMap(section => section.sessions.map(session => session.sessionId)), [sections])
+
+  /**
+   * 「从此分叉」— start a NEW Pi forked from this session's file (pi `--fork`).
+   *
+   * The source session keeps running (unlike the graph's `/ls-fork`, which swaps
+   * the current process to the fork in place), so the fork shows up next to it:
+   * it inherits the source's task group (and pin, so it stays in the same block)
+   * and is inserted right after the parent in the manual order.
+   */
+  const forkSession = useCallback(async (session: LiveSessionSummary) => {
+    const sessionFile = session.sessionFile
+    if (!sessionFile) {
+      setForkError('该 session 还没有会话文件，无法分叉')
+      return
+    }
+    setForkingId(session.processInstanceId)
+    setForkError(undefined)
+    try {
+      const result = await liveSessionApi.start({
+        cwd: session.canonicalCwd || session.cwd,
+        ...(session.model ? { model: `${session.model.provider}/${session.model.id}` } : {}),
+        ...(session.thinkingLevel ? { thinkingLevel: session.thinkingLevel } : {}),
+        title: `${sessionTitle(session, sessionTitles)} · 分叉`,
+        forkFrom: sessionFile,
+      })
+      if (!result.processInstanceId || !result.sessionId) throw new Error('新 Pi 已启动，但没有拿到会话标识')
+      const forkedProcessInstanceId = result.processInstanceId
+      const forkedSessionId = result.sessionId
+      // Inherit the task group first: membership is keyed by sessionId, which the
+      // start response just gave us.
+      const parentGroup = groupOf(session)
+      if (parentGroup) setGroups(await liveSessionApi.addGroupMember(parentGroup.id, forkedProcessInstanceId))
+      if (meta[session.sessionId]?.pinned) await patch(forkedProcessInstanceId, forkedSessionId, { pinned: true })
+      // Sit right after the parent: both end up in the same block and the order
+      // list puts the new sessionId directly behind its source.
+      const base = materializeOrder(order, displayedIds)
+      const parentIndex = base.indexOf(session.sessionId)
+      const insertAt = parentIndex >= 0 ? parentIndex + 1 : base.length
+      await saveOrder([...base.slice(0, insertAt), forkedSessionId, ...base.slice(insertAt)])
+      window.setTimeout(() => { void onRefresh?.() }, 1_000)
+    } catch (reason) {
+      setForkError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setForkingId(null)
+    }
+  }, [displayedIds, groupOf, meta, onRefresh, order, patch, saveOrder, sessionTitles])
 
   // ─────────────────────── drag to reorder ──────────────────────
   //
@@ -538,17 +653,28 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     onSelect(session.processInstanceId)
   }
 
-  const groupSummary = (items: LiveSessionSummary[]): string => {
-    const waiting = items.filter(session => session.status === 'idle').length
-    const working = items.filter(session => session.status === 'running').length
-    const reconnecting = items.filter(session => session.status === 'reconnecting').length
-    return [waiting ? `${waiting} 等待` : '', working ? `${working} 工作` : '', reconnecting ? `${reconnecting} 重连` : ''].filter(Boolean).join(' · ') || '暂无在线 session'
+  /** Section subtitle as colored counts — a dot carries the state, so the line
+   *  reads as a status summary instead of a wall of grey text. */
+  const summaryNodes = (items: LiveSessionSummary[]): React.ReactNode => {
+    const parts = [
+      { key: 'waiting', label: '等待', dot: 'bg-muted-strong opacity-50', count: items.filter(session => session.status === 'idle').length },
+      { key: 'working', label: '工作', dot: 'bg-accent', count: items.filter(session => session.status === 'running').length },
+      { key: 'reconnecting', label: '重连', dot: 'bg-warn', count: items.filter(session => session.status === 'reconnecting').length },
+    ].filter(part => part.count > 0)
+    if (parts.length === 0) return <span>暂无在线 session</span>
+    return <>{parts.map(part => (
+      <span key={part.key} className="inline-flex items-center gap-1">
+        <span className={`h-1.5 w-1.5 rounded-full ${part.dot}`} aria-hidden="true" />
+        {part.count} {part.label}
+      </span>
+    ))}</>
   }
 
   const rowHandlers = (session: LiveSessionSummary) => ({
     onPin: (pinned: boolean) => void patch(session.processInstanceId, session.sessionId, { pinned }),
     onTags: (tags: string[]) => void patch(session.processInstanceId, session.sessionId, { tags }),
     onRename: (name: string) => { void liveSessionApi.rename(session.processInstanceId, name).then(() => onRefresh?.()) },
+    onFork: () => { void forkSession(session) },
     onJoinGroup: (groupId: string) => void mutateGroups(() => liveSessionApi.addGroupMember(groupId, session.processInstanceId)),
     onLeaveGroup: (groupId: string) => void mutateGroups(() => liveSessionApi.removeGroupMember(groupId, session.sessionId)),
     onCopySessionId: () => { void navigator.clipboard?.writeText(session.sessionId).catch(() => {}) },
@@ -567,7 +693,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     },
   })
 
-  const renderRows = (section: Section) => {
+  const renderRows = (section: SessionSection) => {
     const items = section.sessions
     const anchors = items.map(session => session.sessionId).filter(id => id !== drag?.sessionId)
     const target = dropTarget?.sectionId === section.id ? dropTarget.index : undefined
@@ -595,6 +721,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
         taskStatus={subagent && session.subagentWorkId ? subagentStatuses[session.subagentWorkId] : undefined}
           tags={meta[session.sessionId]?.tags || []}
           pinned={!!meta[session.sessionId]?.pinned}
+          pendingUiCount={pendingUiCounts[session.processInstanceId]}
           tagFilter={tagFilter}
           allTags={allTags}
           groups={groups}
@@ -619,11 +746,22 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
               {visible.length === sessions.length ? sessions.length : `${visible.length}/${sessions.length}`}
             </span>
           </div>
-          <button type="button" disabled={busy || starting} onClick={() => setStartOpen(value => !value)} className="shrink-0 rounded-md border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-50" title="启动一个新的 Live Pi">＋启动</button>
-          <button type="button" disabled={busy || starting} onClick={() => setCreating(value => !value)} className="shrink-0 rounded-md border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-50" title="新建任务分组">＋任务</button>
+          <button type="button" disabled={busy || starting} onClick={() => setStartOpen(value => !value)} className="flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-2 py-0.5 text-2xs text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="启动一个新的 Live Pi"><MaterialIcon name="add" className="h-3.5 w-3.5" />启动</button>
+          <button type="button" disabled={busy || starting} onClick={() => setCreating(value => !value)} className="flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-2 py-0.5 text-2xs text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="新建任务分组"><MaterialIcon name="add" className="h-3.5 w-3.5" />任务</button>
         </div>
 
-        <div className="mt-2"><SearchInput placeholder="搜索 session / 目录 / 标签…" value={filter} onChange={e => setFilter(e.target.value)} /></div>
+        <div className="mt-2 flex items-center gap-1.5">
+          <SearchInput className="min-w-0 flex-1" placeholder="搜索 session / 目录 / 标签…" value={filter} onChange={e => setFilter(e.target.value)} />
+          <button
+            type="button"
+            disabled={reloadingAll}
+            onClick={reloadAllSessions}
+            className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-bg px-2 py-1 text-2xs text-muted transition hover:border-accent hover:text-accent disabled:opacity-50"
+            title="重载所有会话：让每个 Pi 进程重新加载扩展 / 技能 / 提示词 / 主题（子 Agent 进程跳过）"
+          ><MaterialIcon name="sync" spin={reloadingAll} className="h-3.5 w-3.5" />重载全部</button>
+        </div>
+
+        {reloadNotice && <div role="status" aria-label="重载结果" className={`mt-1.5 text-2xs ${reloadNotice.danger ? 'text-danger' : 'text-muted-strong'}`}>{reloadNotice.text}</div>}
 
         {tagCounts.length > 0 && (
           <div className="mt-1.5 flex items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -691,7 +829,8 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
               <button type="submit" disabled={starting || !startCwd.trim()} className="flex-1 rounded bg-accent px-2 py-1 text-2xs text-accent-fg disabled:opacity-50">{starting ? '启动中…' : '启动'}</button>
               <button type="button" disabled={starting} onClick={() => setStartOpen(false)} className="rounded border border-border px-2 py-1 text-2xs text-muted">取消</button>
             </div>
-            {startError && <div className="text-2xs text-danger">启动失败：{startError}</div>}
+            {starting && <div className="text-2xs text-muted">冷启动通常 5–20 秒；机器繁忙时可能超过 1 分钟，请勿重复点击。</div>}
+            {startError && <div className="whitespace-pre-wrap break-words text-2xs text-danger">启动失败：{startError}</div>}
           </form>}
           {creating && <form onSubmit={event => { void createGroup(event) }} className="flex gap-1 border-t border-border pt-2">
             <input value={newGroupName} onChange={event => setNewGroupName(event.target.value)} placeholder="任务分组名称" className="min-w-0 flex-1 rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none focus:border-accent" />
@@ -700,6 +839,8 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
         </div>}
 
         {error && <div className="mt-2 text-2xs text-danger">分组同步失败：{error}</div>}
+        {forkingId && <div className="mt-2 text-2xs text-accent">正在分叉…（等待新 Pi 注册，最多 2 分钟）</div>}
+        {forkError && <div className="mt-2 whitespace-pre-wrap break-words text-2xs text-danger">分叉失败：{formatStartError(forkError)}</div>}
         {tagFilter && (
           <div className="mt-1.5 flex items-center gap-1.5 text-2xs text-muted-strong">
             仅显示 <TagChip tag={tagFilter} active /> 的 session
@@ -713,10 +854,10 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
       ) : sections.length === 0 ? (
         <div className="p-5 text-meta text-muted-strong">没有匹配的 session{filter || tagFilter ? '（清除筛选试试）' : ''}</div>
       ) : sections.map(section => (
-        <section key={section.id} data-live-block={section.id} className="border-b border-border/60">
-          <div className="flex items-center gap-1 px-2.5 pb-1 pt-2">
-            <span className={`text-2xs transition-transform ${section.pinnedSection ? 'text-accent' : 'text-muted-strong'}`}>▾</span>
-            {section.pinnedSection && <span className="text-2xs leading-none text-accent">📌</span>}
+        <section key={section.id} data-live-block={section.id} className="border-b border-border">
+          <div className="group/section flex items-center gap-1 px-2.5 pb-1 pt-2.5">
+            <span className={`flex shrink-0 items-center ${section.pinnedSection ? 'text-accent' : 'text-muted-strong'}`} aria-hidden="true"><MaterialIcon name="expand_more" className="h-4 w-4" /></span>
+            {section.pinnedSection && <span className="flex shrink-0 items-center text-accent" title="置顶分组"><MaterialIcon name="push_pin" className="h-3.5 w-3.5" /></span>}
             {renamingGroup === section.id ? (
               <input
                 autoFocus
@@ -734,9 +875,9 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
             ) : (
               <strong className="min-w-0 flex-1 truncate text-2xs font-semibold uppercase tracking-[.06em] text-text-strong" title={section.name}>{section.name}</strong>
             )}
-            <span className="shrink-0 font-mono text-2xs text-muted-strong">{section.sessions.length}</span>
+            <span className="shrink-0 rounded-full bg-bg-hover px-1.5 font-mono text-2xs leading-[14px] text-muted-strong">{section.sessions.length}</span>
             {section.group && <>
-              <button type="button" disabled={busy} aria-label="重命名任务分组按钮" onClick={() => { setRenamingGroup(section.id); setGroupDraft(section.name) }} className="rounded px-1 text-2xs text-muted hover:bg-bg-hover hover:text-accent" title="重命名任务">✎</button>
+              <button type="button" disabled={busy} aria-label="重命名任务分组按钮" onClick={() => { setRenamingGroup(section.id); setGroupDraft(section.name) }} className="flex items-center rounded px-1 text-muted opacity-60 transition-opacity hover:bg-bg-hover hover:text-accent focus-visible:opacity-100 md:opacity-0 md:group-hover/section:opacity-100" title="重命名任务"><MaterialIcon name="edit" className="h-3.5 w-3.5" /></button>
               <button
                 type="button"
                 disabled={busy}
@@ -745,30 +886,30 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
                   if (armedGroup === section.id) { setArmedGroup(null); void mutateGroups(() => liveSessionApi.deleteGroup(section.id!)) }
                   else setArmedGroup(section.id)
                 }}
-                className={`shrink-0 rounded px-1 text-2xs ${armedGroup === section.id ? 'bg-danger-subtle font-semibold text-danger' : 'text-muted hover:bg-danger-subtle hover:text-danger'}`}
+                className={`flex shrink-0 items-center rounded px-1 text-2xs transition-opacity ${armedGroup === section.id ? 'bg-danger-subtle font-semibold text-danger' : 'text-muted opacity-60 hover:bg-danger-subtle hover:text-danger focus-visible:opacity-100 md:opacity-0 md:group-hover/section:opacity-100'}`}
                 title={armedGroup === section.id ? '再点一次确认删除（session 不会被删除）' : '删除任务分组'}
-              >{armedGroup === section.id ? '确认删除' : '×'}</button>
+              >{armedGroup === section.id ? '确认删除' : <MaterialIcon name="close" className="h-3.5 w-3.5" />}</button>
             </>}
           </div>
-          <div className="px-2.5 pb-1 text-2xs text-muted-strong">{section.group || section.pinnedSection ? groupSummary(section.sessions) : `${section.sessions.length} 个 session`}</div>
+          <div className="flex items-center gap-2.5 px-2.5 pb-1 text-2xs text-muted-strong">{section.group || section.pinnedSection ? summaryNodes(section.sessions) : `${section.sessions.length} 个 session`}</div>
           <div className="pb-1.5">{renderRows(section)}</div>
         </section>
       ))}
 
       <div className="mt-auto flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-2xs text-muted-strong">
-        <span title="行位置来自手动拖动，不会因活跃时间或上线状态自行变化">⇅ 排序：手动</span>
+        <span className="flex items-center gap-1" title="行位置来自手动拖动，不会因活跃时间或上线状态自行变化"><MaterialIcon name="swap_vert" className="h-3.5 w-3.5" />排序：手动</span>
         <button
           type="button"
           disabled={busy}
           onClick={() => void resetOrder()}
-          className="ml-auto shrink-0 rounded border border-border px-1.5 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+          className="ml-auto flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-2xs text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50"
           title="清空手动顺序，行位置回到按启动时间排列"
-        >↺ 恢复自动排序</button>
+        ><MaterialIcon name="restore" className="h-3.5 w-3.5" /><span>恢复自动排序</span></button>
         {orderError !== undefined && <span className="shrink-0 text-danger" title={orderError}>顺序同步失败</span>}
       </div>
 
       <div className="px-3 py-2 text-2xs text-muted-strong">
-        拖动行可调顺序，拖到别的分组即改归属；触屏用 ⋯ 里的 ↑ ↓
+        拖动行可调顺序，拖到别的分组即改归属；触屏用 ⋯ 里的箭头菜单
         {metaError !== undefined && <button type="button" className="ml-1 text-danger underline" onClick={() => void refreshMeta()}>· 标签同步失败，点击重试</button>}
       </div>
     </aside>

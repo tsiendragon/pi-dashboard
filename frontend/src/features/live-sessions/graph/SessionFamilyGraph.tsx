@@ -9,6 +9,7 @@ import {
   NODE_W,
   STEP_ROW_H,
   activePathOf,
+  branchColorOf,
   defaultHeightOf,
   fitScale,
   GAP_Y,
@@ -105,6 +106,26 @@ const ROLE_STYLES: Record<string, RoleStyle> = {
   collapsed: { fill: 'fill-border-strong', label: '已折叠的对话', icon: '⋯' },
 }
 
+/**
+ * Fork colours. Complete Tailwind utilities on purpose: dynamically built class names
+ * are invisible to Tailwind's scanner. `accent` is deliberately absent — it stays
+ * reserved for the current branch so “blue” keeps exactly one meaning on the canvas,
+ * and `info` is out too (it is byte-identical to `accent` in some themes).
+ *
+ * Three slots is a colour-blindness decision, not a style one: measured with
+ * `scripts/check-theme-cvd.mjs`, `ok/warn/danger` hold a worst-case red/green ΔE of
+ * 11.3 across every bundled theme, while adding `info` drops it to 9 in manuscript.
+ */
+const BRANCH_CLASSES = [
+  { edge: 'stroke-ok', text: 'fill-ok', card: 'stroke-ok' },
+  { edge: 'stroke-warn', text: 'fill-warn', card: 'stroke-warn' },
+  { edge: 'stroke-danger', text: 'fill-danger', card: 'stroke-danger' },
+] as const
+
+function branchStyleOf(colorOf: Map<string, number>, nodeId: string): (typeof BRANCH_CLASSES)[number] {
+  return BRANCH_CLASSES[(colorOf.get(nodeId) ?? 0) % BRANCH_CLASSES.length]
+}
+
 function styleFor(node: SessionTreeNode): RoleStyle {
   if (node.kind === 'collapsed') return ROLE_STYLES.collapsed
   return ROLE_STYLES[node.role ?? 'system'] ?? ROLE_STYLES.system
@@ -174,7 +195,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
   /**
    * Cards the reader dragged themselves, in graph coordinates. The auto layout is a
    * good default but it cannot know that two crossing edges bother one particular
-   * reader, so a card can be moved and everything else (edges, group bands, 适配)
+   * reader, so a card can be moved and everything else (edges, group titles, 适配)
    * follows it. Cleared by the 重排 button or when the layout shape changes.
    */
   const [manualPositions, setManualPositions] = useState<Record<string, LayoutPosition>>({})
@@ -197,12 +218,14 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
     }
     return { width, height }
   }, [graph.nodes, positions])
-  /** Group-band rectangles + their labels, drawn in two layers so labels stay readable. */
+  /** Group rectangles → titles. The box itself is gone; `bounds` still anchors the title. */
   const bands = useMemo(() => graph.sessions
     .map(session => ({ session, bounds: sessionBounds(graph.nodes, positions, session.key) }))
     .filter((band): band is { session: typeof band.session, bounds: NonNullable<typeof band.bounds> } => band.bounds !== null),
   [graph.sessions, graph.nodes, positions])
   const activePath = useMemo(() => activePathOf(graph.nodes, graph.focusKey), [graph.nodes, graph.focusKey])
+  /** Fork colour slot per node: the shared source of edge + card colour. */
+  const branchColor = useMemo(() => branchColorOf(graph.nodes, BRANCH_CLASSES.length), [graph.nodes])
   const sessionByKey = useMemo(() => new Map(graph.sessions.map(session => [session.key, session])), [graph.sessions])
   const nodeById = useMemo(() => new Map(graph.nodes.map(node => [node.id, node])), [graph.nodes])
   const childCounts = useMemo(() => {
@@ -392,37 +415,32 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
         <defs>
           {/*
             Arrowheads: without them the edges only say “connected”, not which way the
-            conversation runs. Two variants so the arrow keeps the colour of its edge
-            (the focus branch is accent, everything else is muted).
+            conversation runs. One variant per fork colour plus the accent one, so an
+            arrow always keeps the colour of its edge (accent = the current branch).
           */}
-          <marker id="ls-graph-arrow" viewBox="0 0 12 10" refX="12" refY="5" markerWidth="11" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
-            <path d="M0,1 L10,5 L0,9 z" className="fill-border-strong" />
-          </marker>
+          {BRANCH_CLASSES.map((branch, index) => (
+            <marker
+              key={branch.edge}
+              id={`ls-graph-arrow-${index}`}
+              viewBox="0 0 12 10"
+              refX="12"
+              refY="5"
+              markerWidth="11"
+              markerHeight="9"
+              markerUnits="userSpaceOnUse"
+              orient="auto"
+            >
+              <path d="M0,1 L10,5 L0,9 z" className={branch.text} />
+            </marker>
+          ))}
           <marker id="ls-graph-arrow-active" viewBox="0 0 12 10" refX="12" refY="5" markerWidth="11" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
             <path d="M0,1 L10,5 L0,9 z" className="fill-accent" />
           </marker>
         </defs>
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
-          {/* Session group bands (rects only; labels are drawn ABOVE the cards so an
-              overlapping band can no longer bury them). */}
-          {bands.map(({ session, bounds }) => {
-            const current = session.key === graph.focusKey
-            return (
-              <rect
-                key={`band-${session.key}`}
-                data-band
-                x={bounds.x}
-                y={bounds.y}
-                width={bounds.width}
-                height={bounds.height}
-                rx={14}
-                className={current ? 'fill-accent-subtle stroke-accent' : 'fill-bg-elevated stroke-border'}
-                strokeWidth={1}
-                opacity={current ? 1 : 0.7}
-              />
-            )
-          })}
-
+          {/* No group boxes: which cards belong to one session file is carried by the
+              floating group title, and which cards belong to one fork is carried by
+              the branch colour (edge + card outline). */}
           {/* Edges — routed along whichever axis the tree grows on */}
           {graph.nodes.map(node => {
             if (!node.parentId) return null
@@ -432,6 +450,8 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
             if (!from || !to || !fromNode) return null
             const crossSession = fromNode.sessionKey !== node.sessionKey
             const onActivePath = activePath.has(node.id) && activePath.has(node.parentId)
+            const branch = branchStyleOf(branchColor, node.id)
+            const branchIndex = (branchColor.get(node.id) ?? 0) % BRANCH_CLASSES.length
             const fromHeight = defaultHeightOf(fromNode)
             const toHeight = defaultHeightOf(node)
             // Route along whichever axis the two nodes are actually separated on:
@@ -467,12 +487,12 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                   fill="none"
                   strokeWidth={2}
                   strokeDasharray={crossSession ? '5 4' : undefined}
-                  markerEnd={onActivePath ? 'url(#ls-graph-arrow-active)' : 'url(#ls-graph-arrow)'}
-                  className={onActivePath ? 'stroke-accent' : 'stroke-border-strong'}
-                  opacity={onActivePath ? 1 : 0.75}
+                  markerEnd={onActivePath ? 'url(#ls-graph-arrow-active)' : `url(#ls-graph-arrow-${branchIndex})`}
+                  className={onActivePath ? 'stroke-accent' : branch.edge}
+                  opacity={onActivePath ? 1 : 0.85}
                 />
                 {crossSession && (
-                  <text x={labelX} y={labelY} textAnchor="middle" className="text-2xs fill-info">
+                  <text x={labelX} y={labelY} textAnchor="middle" className={`text-2xs ${onActivePath ? 'fill-accent' : branch.text}`}>
                     fork
                   </text>
                 )}
@@ -515,6 +535,7 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
             const style = styleFor(node)
             const isCurrentSession = node.sessionKey === graph.focusKey
             const onActivePath = activePath.has(node.id)
+            const branch = branchStyleOf(branchColor, node.id)
             const { x, y } = position
             const height = defaultHeightOf(node)
             const branchCount = childCounts.get(node.id) ?? 0
@@ -567,8 +588,9 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
                   width={NODE_W}
                   height={height}
                   rx={10}
-                  className={onActivePath ? 'fill-card stroke-accent' : 'fill-card stroke-border'}
+                  className={`fill-card ${onActivePath ? 'stroke-accent' : branch.card}`}
                   strokeWidth={1}
+                  strokeOpacity={onActivePath ? 1 : 0.55}
                 />
                 <rect x={x} y={y + 9} width={3} height={Math.min(42, height - 18)} rx={1.5} className={style.fill} />
                 <text x={x + 13} y={y + 19} className="text-2xs">{style.icon}</text>
@@ -697,9 +719,9 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
           })}
         </g>
 
-        {/* Group labels last: a label must stay readable even when another band's cards
-            overlap its rectangle, hence the opaque halo. The name is truncated to the
-            room left by the count on the right, so the two never collide. */}
+        {/* Group titles last: a title must stay readable even when another group's cards
+            come close, hence the opaque halo. The name is truncated to the room left by
+            the count on the right, so the two never collide. */}
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`} pointerEvents="none">
           {bands.map(({ session, bounds }) => {
             const current = session.key === graph.focusKey
@@ -709,7 +731,11 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
             // a slightly wider real font still cannot collide.
             const roomForName = bounds.width - 24 - estimateTextWidth(countText) - 12 - estimateTextWidth(suffix) - 8
             return (
-              <g key={`band-label-${session.key}`}>
+              <g
+                key={`band-label-${session.key}`}
+                data-session-group={session.key}
+                data-band-width={bounds.width}
+              >
                 <text
                   x={bounds.x + 12}
                   y={bounds.y + 19}
@@ -777,26 +803,34 @@ export default function SessionFamilyGraph({ graph, selectedId, onSelect, onOpen
       <div className="absolute bottom-3 left-3 grid max-w-[19rem] gap-1 rounded-lg border border-border bg-panel px-2.5 py-2 shadow-md">
         <div className="flex items-center gap-2 text-2xs text-muted">
           <svg width="26" height="8" viewBox="0 0 26 8" className="shrink-0">
-            <line x1="0" y1="4" x2="15" y2="4" className="stroke-accent" strokeWidth="2" />
+            <line x1="0" y1="4" x2="15" y2="4" className="stroke-accent" strokeWidth="3" />
             <path d="M15,0.5 L24,4 L15,7.5 z" className="fill-accent" />
-            <line x1="0" y1="4" x2="15" y2="4" className="stroke-border-strong" strokeWidth="2" />
-            <path d="M15,0.5 L24,4 L15,7.5 z" className="fill-border-strong" />
+            <line x1="0" y1="4" x2="15" y2="4" className="stroke-ok" strokeWidth="2" />
+            <path d="M15,0.5 L24,4 L15,7.5 z" className="fill-ok" />
           </svg>
-          <span>箭头 = 下一步（蓝 = 当前分支）</span>
+          <span>箭头 = 下一步（加粗蓝 = 当前分支）</span>
+        </div>
+        <div className="flex items-center gap-2 text-2xs text-muted">
+          <svg width="46" height="16" viewBox="0 0 46 16" className="shrink-0">
+            <rect x="1" y="3" width="12" height="10" rx="3" className="fill-card stroke-ok" strokeWidth="1" />
+            <line x1="13" y1="8" x2="22" y2="8" className="stroke-ok" strokeWidth="2" />
+            <rect x="22" y="3" width="12" height="10" rx="3" className="fill-card stroke-warn" strokeWidth="1" />
+            <line x1="34" y1="8" x2="43" y2="8" className="stroke-warn" strokeWidth="2" />
+          </svg>
+          <span>颜色 = fork 分支（分叉后每个孩子各自换色）</span>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
           <svg width="26" height="8" viewBox="0 0 26 8" className="shrink-0">
-            <line x1="0" y1="4" x2="15" y2="4" className="stroke-info" strokeWidth="2" strokeDasharray="3 2" />
-            <path d="M15,0.5 L24,4 L15,7.5 z" className="fill-info" />
+            <line x1="0" y1="4" x2="15" y2="4" className="stroke-warn" strokeWidth="2" strokeDasharray="3 2" />
+            <path d="M15,0.5 L24,4 L15,7.5 z" className="fill-warn" />
           </svg>
-          <span>虚线 = 从这一步 fork 出的新会话</span>
+          <span>虚线 = 从这一步 fork 出的新会话（颜色 = 新分支）</span>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
           <svg width="26" height="16" viewBox="0 0 26 16" className="shrink-0">
             <rect x="2" y="2" width="22" height="12" rx="3" fill="none" strokeDasharray="4 3" className="stroke-accent" strokeWidth="1.5" />
-            <rect x="1" y="1" width="24" height="14" rx="4" className="fill-accent-subtle stroke-accent" strokeWidth="1" opacity="0" />
           </svg>
-          <span>虚线框 = 已选中；大圆角底色 = 同一会话文件</span>
+          <span>虚线框 = 已选中；顶部小字 = 同一会话文件</span>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted">
           <svg width="26" height="16" viewBox="0 0 26 16" className="shrink-0">

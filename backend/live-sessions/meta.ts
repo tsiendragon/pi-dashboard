@@ -132,6 +132,24 @@ export class LiveSessionMetaStore {
     return this.list()
   }
 
+  /**
+   * Move one session's tags/pin to a new `sessionId`.
+   *
+   * A live Pi can switch session in-process (`/clear`, `/ls-fork`) while keeping
+   * its `processInstanceId`; the row is the same row to the user, so its labels
+   * must follow the new id instead of disappearing.
+   */
+  async rekey(from: string, to: string): Promise<LiveSessionMetaMap> {
+    await this.start()
+    if (!from || !to || from === to) return this.list()
+    const entry = this.meta[from]
+    if (!entry) return this.list()
+    delete this.meta[from]
+    if (!this.meta[to]) this.meta[to] = entry
+    await this.persist()
+    return this.list()
+  }
+
   private async persist(): Promise<void> {
     const payload: StoredMeta = { version: 1, meta: this.meta }
     const content = `${JSON.stringify(payload, null, 2)}\n`

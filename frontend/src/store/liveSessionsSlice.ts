@@ -98,6 +98,28 @@ function appendEvent(detail: LiveSessionDetailState, message: LiveSessionEventMe
   const type = message.event.type
   const key = eventKey(message)
   removeMatchingOptimisticUserMessage(detail, message)
+  if (type === 'message_entry') {
+    // The bridge can only read a message's session-entry id AFTER pi persists it,
+    // so it arrives as a follow-up event. Fold it into the message it belongs to
+    // (the nearest preceding `message_end` — nothing else can complete in the one
+    // macrotask in between) and never render the carrier.
+    const carrier = message.event.data && typeof message.event.data === 'object' && !Array.isArray(message.event.data)
+      ? message.event.data as Record<string, unknown> : undefined
+    const entryId = typeof carrier?.entryId === 'string' ? carrier.entryId : undefined
+    if (entryId) {
+      for (let index = detail.entries.length - 1; index >= 0; index--) {
+        const candidate = detail.entries[index]
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+        const record = candidate as Record<string, unknown>
+        if (record.type !== 'message_end') continue
+        const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data)
+          ? record.data as Record<string, unknown> : {}
+        detail.entries[index] = { ...record, data: { ...data, entryId } }
+        break
+      }
+    }
+    return
+  }
   if (type === 'live_feature_snapshot') {
     const feature = message.event.data && typeof message.event.data === 'object' && !Array.isArray(message.event.data)
       ? (message.event.data as Record<string, unknown>).feature : undefined
@@ -164,6 +186,11 @@ function appendEvent(detail: LiveSessionDetailState, message: LiveSessionEventMe
   if (detail.entries.length > 1_000) detail.entries.splice(0, detail.entries.length - 1_000)
 }
 
+/** Index the registry's pending-dialog mirror by request id for the slice state. */
+function pendingUiBucket(requests: LiveSessionUiRequest[] | undefined): Record<string, LiveSessionUiRequest> {
+  return Object.fromEntries((requests ?? []).map(request => [request.id, request]))
+}
+
 function normalizeEntries(summary: LiveSessionSummary, entries: unknown[]): unknown[] {
   const detail: LiveSessionDetailState = { summary: { ...summary, claim: { ...summary.claim } }, entries: [] }
   entries.forEach((entry, index) => {
@@ -218,6 +245,9 @@ const liveSessionsSlice = createSlice({
         summary: { ...action.payload.summary, claim: { ...action.payload.summary.claim } },
         entries: normalizeEntries(action.payload.summary, action.payload.entries),
       }
+      // The registry is authoritative for unanswered dialogs, so a fresh attach
+      // restores them (a reconnected browser would otherwise never see them).
+      state.pendingUi[action.payload.summary.processInstanceId] = pendingUiBucket(action.payload.pendingUi)
     },
     liveSessionSnapshot(state, action: PayloadAction<LiveSessionDetail>) {
       const incoming = action.payload
@@ -240,6 +270,9 @@ const liveSessionsSlice = createSlice({
         summary: { ...incoming.summary, claim: { ...incoming.summary.claim } },
         entries: normalizeEntries(incoming.summary, incoming.entries),
       }
+      // Snapshot replaces the pending-dialog mirror too: it is what makes a
+      // page switch (WS reconnect) bring an unanswered dialog back.
+      state.pendingUi[incoming.summary.processInstanceId] = pendingUiBucket(incoming.pendingUi)
     },
     liveSessionEvent(state, action: PayloadAction<LiveSessionEventMessage>) {
       const message = action.payload
@@ -338,7 +371,7 @@ const liveSessionsSlice = createSlice({
       const detail = state.details[id]
       if (detail) detail.summary.claim = { state: 'unclaimed' }
     },
-    liveSessionUserMessageAdded(state, action: PayloadAction<{ processInstanceId: string; localId: string; text: string; images?: LiveSessionImage[] }>) {
+    liveSessionUserMessageAdded(state, action: PayloadAction<{ processInstanceId: string; localId: string; text: string; images?: LiveSessionImage[]; deliverAs?: 'steer' | 'followUp' }>) {
       const detail = state.details[action.payload.processInstanceId]
       if (!detail) return
       const content = action.payload.images?.length
@@ -347,8 +380,24 @@ const liveSessionsSlice = createSlice({
       detail.entries.push({
         type: 'message',
         dashboardLocalId: action.payload.localId,
+        // A prompt sent while Pi is working is queued, not handled. Remember how it
+        // was delivered so the bubble can say “排队中” until Pi echoes it back.
+        ...(action.payload.deliverAs
+          ? { dashboardDeliverAs: action.payload.deliverAs, dashboardQueueState: 'sending' as const }
+          : {}),
         message: { role: 'user', content },
       })
+    },
+    /** The bridge accepted a queued input: it is now Pi's turn to pick it up. */
+    liveSessionUserMessageAcknowledged(state, action: PayloadAction<{ processInstanceId: string; localId: string }>) {
+      const detail = state.details[action.payload.processInstanceId]
+      if (!detail) return
+      for (const entry of detail.entries) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+        const candidate = entry as Record<string, unknown>
+        if (candidate.dashboardLocalId !== action.payload.localId) continue
+        candidate.dashboardQueueState = 'queued'
+      }
     },
     liveSessionUserMessageRemoved(state, action: PayloadAction<{ processInstanceId: string; localId: string }>) {
       const detail = state.details[action.payload.processInstanceId]
@@ -382,7 +431,7 @@ export const {
   sessionsLoaded, liveSessionAttached, liveSessionSnapshot, liveSessionEvent,
   liveSessionClaimChanged, liveSessionReconnecting, liveSessionDetached,
   liveSessionOwned, liveSessionReleased, liveSessionUserMessageAdded,
-  liveSessionUserMessageRemoved, selectLiveSession, clearLiveSessions, uiAnswered,
+  liveSessionUserMessageRemoved, liveSessionUserMessageAcknowledged, selectLiveSession, clearLiveSessions, uiAnswered,
   dismissSessionNotifications,
 } = liveSessionsSlice.actions
 

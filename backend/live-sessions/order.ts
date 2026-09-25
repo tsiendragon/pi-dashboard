@@ -16,6 +16,9 @@ import { dirname } from 'node:path'
  *
  * Same shape/guarantees as the other two stores: single JSON file, 0700 dir,
  * 0600 file, temp-file + rename, serialized write queue.
+ *
+ * `rekey` moves one entry when the same live Pi switches session in-process
+ * (`/clear`, `/ls-fork`) and therefore reports a new `sessionId`.
  */
 export const DEFAULT_LIVE_SESSION_ORDER_PATH = '/mnt/workspace/lilong/agent/pi/live-session-order.json'
 
@@ -78,6 +81,28 @@ export class LiveSessionOrderStore {
   async replace(value: unknown): Promise<string[]> {
     await this.start()
     this.order = normalizeOrder(value)
+    await this.persist()
+    return this.list()
+  }
+
+  /**
+   * Move one entry to a new `sessionId`, keeping its slot.
+   *
+   * A live Pi can switch session in-process (`/clear`, `/ls-fork`): the row keeps
+   * its `processInstanceId` but gets a new `sessionId`. Without this the new id is
+   * unlisted and the row falls back to the block tail, i.e. the position the user
+   * dragged it to is silently lost.
+   */
+  async rekey(from: string, to: string): Promise<string[]> {
+    await this.start()
+    if (!from || !to || from === to) return this.list()
+    if (!this.order.includes(from)) return this.list()
+    const next: string[] = []
+    for (const id of this.order) {
+      const mapped = id === from ? to : id
+      if (!next.includes(mapped)) next.push(mapped)
+    }
+    this.order = next
     await this.persist()
     return this.list()
   }

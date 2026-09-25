@@ -232,7 +232,7 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
                 className="h-8 cursor-pointer rounded-md border border-border bg-transparent text-body-s font-medium text-text transition-colors hover:bg-bg-hover disabled:cursor-not-allowed disabled:opacity-40"
                 title={isFolded
                   ? '折叠段不是真实 entry，先展开再点具体某一轮'
-                  : '从这一轮分叉：同一个 Pi 进程会切到一个新会话文件（并复制本会话到这一步的前缀），随后自动进入新会话页面并定位到这一步'}
+                  : '从这一轮分叉：新建一个独立会话（复制本会话到这一步的前缀），原会话继续运行；新会话继承任务分组并排在它旁边'}
               >
                 从此分叉
               </button>
