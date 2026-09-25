@@ -271,20 +271,37 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
     .map((file) => ({ name: file.replace(/\.(ts|js|mjs)$/, ''), file, path: join(autoDir, file) }))
     .filter((item) => !appliedPaths.has(item.path))
 
-  // ── entries packages provide by themselves (autoload), without a settings entry ──
+  // ── entries packages provide by themselves, without a settings entry ──
+  // Mirrors pi's resource resolution: string form / `autoload !== false` starts from the package
+  // manifest (`pi.extensions`), `autoload: false` starts empty and only the settings filter applies;
+  // glob patterns are expanded alphabetically (package-manager.ts expandPackageGlob).
+  const expandGlob = (root: string, pattern: string): string[] => {
+    const cleaned = pattern.replace(/^\.\//, '')
+    if (!cleaned.includes('*')) return [cleaned]
+    const matcher = new RegExp(`^${cleaned.split('**').map((part) => part.split('*').map((chunk) => chunk.replace(/[.+^${}()|[\]\\]/g, '\\$&')).join('[^/]*')).join('.*')}$`)
+    return (io.listFilesRecursive?.(root) ?? []).filter((file) => matcher.test(file)).sort()
+  }
   const provided: PackageProvidedEntry[] = []
   for (const pkg of packages) {
-    if (!pkg.resolved || !pkg.exists || !pkg.autoload) continue
-    for (const declared of pkg.declaredEntries) {
-      const target = resolve(pkg.resolved, declared)
-      if (appliedPaths.has(target)) continue
-      provided.push({
-        packageId: pkg.id,
-        packageName: pkg.name,
-        path: target,
-        manifestPath: declared.replace(/^\.\//, ''),
-        exists: io.fileExists(target),
-      })
+    if (!pkg.resolved || !pkg.exists) continue
+    const patterns: Array<{ pattern: string; kind: 'manifest' | 'filter' }> = []
+    if (pkg.autoload) for (const pattern of pkg.declaredEntries) patterns.push({ pattern, kind: 'manifest' })
+    for (const pattern of pkg.filters.extensions ?? []) patterns.push({ pattern, kind: 'filter' })
+    for (const { pattern, kind } of patterns) {
+      for (const manifestPath of expandGlob(pkg.resolved, pattern)) {
+        const target = resolve(pkg.resolved, manifestPath)
+        if (appliedPaths.has(target)) continue
+        if (provided.some((item) => item.path === target)) continue
+        provided.push({
+          packageId: pkg.id,
+          packageName: pkg.name,
+          path: target,
+          manifestPath,
+          exists: io.fileExists(target),
+          kind,
+          pattern,
+        })
+      }
     }
   }
 

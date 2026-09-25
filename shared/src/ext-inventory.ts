@@ -71,6 +71,10 @@ export interface PackageProvidedEntry {
   /** Path relative to the package directory. */
   manifestPath: string
   exists: boolean
+  /** Where the entry comes from: the package manifest (`pi.extensions`) or the settings filter. */
+  kind: 'manifest' | 'filter'
+  /** The pattern that produced it (globs are expanded like pi does: alphabetically). */
+  pattern: string
 }
 
 export interface ExtensionEntry {
