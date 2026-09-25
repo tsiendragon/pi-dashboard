@@ -301,7 +301,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 - npm 命名限制：全小写、只允许 `a-z0-9-._`、不能以 `.`/`_` 开头、≤ 214 字符。
 - 发布只靠 npm 账号（不再需要 scope 名与账号名一致），因此之前的「scope 待确认」自动取消。
 
-**定稿清单（24 包 + web-tools 不发）**
+**定稿清单（25 包）**
 
 | # | 包名 | 对应扩展 / 内容 |
 |---|---|---|
@@ -330,7 +330,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 | 23 | `pi-tsien-observation-pack` | `observation-pack` |
 | 24 | `pi-tsien-trajectory-recorder` | `trajectory-recorder` |
 | 25 | `pi-tsien-capability` | `capability` |
-| 26 | `pi-tsien-web-tools-fork` | `vendor/pi-web-tools`（保留自维护副本；见下） |
+| 26 | `pi-tsien-web-tools` | **自研重写**（`vendor/pi-web-tools` 已停用、保留回滚） |
 
 ### 12.8.1 第三方代码审计（全仓扫过：PROVENANCE/VENDORED/ATTRIBUTION + 外部链接 + 比对 npm 同名包）
 
@@ -338,7 +338,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 
 | 包 | 第三方部分 | 上游 | 许可 | 能发 npm 吗 |
 |---|---|---|---|---|
-| `pi-tsien-web-tools-fork` | `vendor/pi-web-tools` 全量 | Brett Atoms（`VENDORED.md`） | **无 license**（GitHub API `license: None`） | ❌ **先拿许可**（无许可证=默认保留所有权利） |
+| ~~`pi-tsien-web-tools-fork`~~ | ~~`vendor/pi-web-tools`~~ | Brett Atoms | **无 license** | **已由自研重写替代（2026-09-25）**：不再分发第三方代码，无需许可 |
 | `pi-tsien-rtk-fork` | `extensions/tool-result-pipeline/rtk/`（从 `pi-rtk` 0.1.4 合并） | Matt Cowger `pi-rtk` / RTK 规范（`PROVENANCE.md`） | **MIT** | ✅ 随包带 license + 出处 |
 | `pi-tsien-session-ui-fork` | `extensions/pi-zero/ccstyle/tool-diff/` | `MasuRii/pi-tool-display`（`ATTRIBUTION.md`） | **MIT** | ✅ 随包带 `ATTRIBUTION.md` + license 全文 |
 
@@ -353,20 +353,19 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 - **本仓库目前没有 LICENSE 文件**（GitHub API：`license: None`），`package.json` 也无 `license` 字段。
   无许可证的 npm 包别人不敢用（法律上不可再分发）⇒ **首次发布前必须先加**（建议 MIT）+ 每个包写 `license`。
 - Fork 包必须随 tarball 带上游许可与出处（`files` 字段里包含 `ATTRIBUTION.md`/`PROVENANCE.md`）。
-- `pi-tsien-web-tools-fork`：**先把两处修补提给上游**（bug + 性能）并请其补 license；
-  在那之前只做 monorepo 内的本地路径包，不发 npm。
+- `pi-tsien-web-tools-fork`：**已取消**（改为自研重写，见 §12.10）；仍建议把两处修补提给上游（bug + 性能）。
 
-**web-tools：保留自维护副本，但发布受限**
+**web-tools：已自研重写（见 §12.10）**
 
-- 包名定为 `pi-tsien-web-tools-fork`（按 fork 规则），在 monorepo 内继续自维护。
+- 包名 `pi-tsien-web-tools`（不再是 fork）；`vendor/pi-web-tools` 停用并保留作回滚。
 - 我们确定落地的**两处自家修改**（与上游 `master` 逐文件 diff 得出）：
   1. `src/providers/duckduckgo.ts`（±76 行）：DDG lite 解析器修复 —— 属性顺序无关、单/双引号都收、
      并解开 `//duckduckgo.com/l/?uddg=…` 重定向；上游正则仍要求 `class` 在前 + 双引号（未修）。
   2. `src/web-fetch.ts`（±21 行）：重量级依赖（jsdom/readability/turndown）改懒加载，
      启动耗时 1.7s → 0.6~0.8s。
   - 守护测试：`test/pi-web-tools-vendor.test.ts`（两版本 markup 都验）。
-- **发布仍受阻**：上游无 license ⇒ 发 npm 前需得到许可（或上游自己补 license），见 §12.8.2。
-- 建议：把这两处改动提 PR/issue 给上游（一个是真 bug，一个是性能）；若被合并，便可不再 vendored。
+- **发布不再受第三方许可限制**（代码是我们的）；仍只差仓库/包自己的 license（§12.8.2）。
+- 建议：把这两处修补提 PR/issue 给上游（一个是真 bug，一个是性能）。
 
 ### 12.9 已确认的决策
 
@@ -380,3 +379,18 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 | npm 账号 | 不再需要 scope/账号名一致性；发布时用你的 npm 账号即可 |
 | 真源冲突 | 待定：甲（同步器保留 `+/-/!` 前缀，推荐）或 乙（回写 config） |
 | 许可 | **待补**：仓库与各包目前无 LICENSE（发布前必须加，建议 MIT） |
+## 13. 已落地记录（2026-09-25）
+
+| 项 | 提交 | 证据 |
+|---|---|---|
+| 同步器保留 `+/-/!` 覆盖条目（方案甲） | `pi-tsien-extension@80408c7` | 新增回归测试；`node --test test/pi-extension-sync.test.mjs` 5 pass；本机真实配置 dry-run 正常 |
+| WebSearch/WebFetch 自研重写 `packages/pi-tsien-web-tools` | `pi-tsien-extension@60079fe` | 包内 26 单测；A/B：3 查询 × 10 条结果 URL/标题/摘要归一化后逐条一致；`example.com` 提取一致；`nodejs.org/en/about` 去空白后逐字符相同；真实 `pi -p` 内 WebSearch 返回 `Pi Coding Agent / https://pi.dev/` |
+| devDependencies 可移植性修复 | `pi-tsien-extension@e993ccf` | 原指向已删除的 `/home/tsien/pi-lical-dist/*.tgz`（任何新 clone 都无法 `npm install`）；改为补丁版 Release URL + 放宽 peer 范围；`npm install` exit=0、`tsc --noEmit` 干净、`test:node` 245 pass |
+| 配置与文档切换到新包 | `pi-tsien-extension@e2e20d9` | `config/extensions.standalone.json`、`config/examples/*`、README/CHANGELOG、`VENDORED.md` 状态标注 |
+| 本机 live 切换（外科手术式，未触发无关 quarantine） | 本机配置 | 备份 `settings.json.pre-webtools-switch-20260925-232326` 与同名 config；切换后 dry-run 只剩既有的 `security-guard` 项 |
+
+**回滚**：把 `~/.pi/agent/{settings.json,extensions.config.json}` 恢复为上述备份，或把 `extensions.config.json` 的 web-tools 来源改回
+`${PI_TSIEN_EXTENSION_ROOT}/vendor/pi-web-tools` 后重新同步（`vendor/` 未删除）。
+
+**仍未做**：P0 monorepo 拆分（24 个扩展还留在 `extensions/`，尚未迁到 `packages/*`）、仓库与各包 LICENSE、npm 首次发布、
+dashboard 的 Extensions 管理页面（§4/§5）。
