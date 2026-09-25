@@ -210,7 +210,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 > 包名以 §12.8 为准（本节表内的是早期草案名）。
 
 原则：**一个具体功能 = 一个包**，一个包只声明一个扩展；共享代码下沉到 `core`
-（依赖图是一棵树、无环，feature 包保持纯粹）。共 **25 个包发布**（1 共享库 + 24 功能扩展），
+（依赖图是一棵树、无环，feature 包保持纯粹）。共 **25 个包**（1 共享库 + 24 功能扩展；其中 3 个为 `-fork`），
 另有 `web-tools` 保持 vendored 本地路径、**不发布**（见 §12.8）。
 
 **共享基础（不是扩展，不声明 `pi.extensions`）**
@@ -294,6 +294,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 **规则**
 
 - 统一格式 **`pi-tsien-<name>`**；直接发到公开 npm（**不需要 scope**）。
+- **Fork 规则（已定）**：包内含第三方代码 → `pi-tsien-<name>-fork`；自研 → `pi-tsien-<name>`。
 - 已核实：25 个 `pi-tsien-*` 名字在 registry 上**全部可用**（逐个查，0 占用）；
   而**不加前缀的短名已被别人占用**（`pi-memory`、`pi-sidebar`、`pi-web-tools` 均为他人 pi 扩展，keywords 含 `pi-package`）
   ⇒ 前缀不是装饰，是避让。
@@ -305,11 +306,11 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 | # | 包名 | 对应扩展 / 内容 |
 |---|---|---|
 | 1 | `pi-tsien-shared` | 共享库（lib/ + 压缩工具），不是扩展 |
-| 2 | `pi-tsien-session-ui` | `00-zero`/`pi-zero`（`/ccstyle` `/context` `/powerline` `/transcript` `/vibe`） |
+| 2 | `pi-tsien-session-ui-fork` | `00-zero`/`pi-zero`（`/ccstyle` `/context` `/powerline` `/transcript` `/vibe`）—— 含第三方代码，见下 |
 | 3 | `pi-tsien-side-chat` | `btw`（命令仍叫 `/btw`） |
 | 4 | `pi-tsien-thinking-level` | `effort` |
 | 5 | `pi-tsien-code-mode` | `ptc`（工具 `run_code`） |
-| 6 | `pi-tsien-rtk` | `tool-result-pipeline`（`rtk-*` 命令，含 bash-digest） |
+| 6 | `pi-tsien-rtk-fork` | `tool-result-pipeline`（`rtk-*` 命令，含 bash-digest）—— 含合并的第三方 RTK，见下 |
 | 7 | `pi-tsien-auto-compact` | `auto-compact-target`（功能层） |
 | 8 | `pi-tsien-context-powerline` | `context-powerline` |
 | 9 | `pi-tsien-compact-continue` | `compact-continue` |
@@ -329,29 +330,53 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 | 23 | `pi-tsien-observation-pack` | `observation-pack` |
 | 24 | `pi-tsien-trajectory-recorder` | `trajectory-recorder` |
 | 25 | `pi-tsien-capability` | `capability` |
+| 26 | `pi-tsien-web-tools-fork` | `vendor/pi-web-tools`（保留自维护副本；见下） |
 
-**web-tools：不发布，继续本地路径**
+### 12.8.1 第三方代码审计（全仓扫过：PROVENANCE/VENDORED/ATTRIBUTION + 外部链接 + 比对 npm 同名包）
 
-- 它是第三方代码副本（Brett Atoms，`VENDORED.md` 已注明）；**上游仓库本身无 license**
-  （GitHub API `license: None`），我们的副本也无 license ⇒ 无许可证 = 默认「保留所有权利」，
-  公开重新分发及发 npm 都不合规。
+仓库里只有 **3 处第三方代码**，全部有出处文档：
+
+| 包 | 第三方部分 | 上游 | 许可 | 能发 npm 吗 |
+|---|---|---|---|---|
+| `pi-tsien-web-tools-fork` | `vendor/pi-web-tools` 全量 | Brett Atoms（`VENDORED.md`） | **无 license**（GitHub API `license: None`） | ❌ **先拿许可**（无许可证=默认保留所有权利） |
+| `pi-tsien-rtk-fork` | `extensions/tool-result-pipeline/rtk/`（从 `pi-rtk` 0.1.4 合并） | Matt Cowger `pi-rtk` / RTK 规范（`PROVENANCE.md`） | **MIT** | ✅ 随包带 license + 出处 |
+| `pi-tsien-session-ui-fork` | `extensions/pi-zero/ccstyle/tool-diff/` | `MasuRii/pi-tool-display`（`ATTRIBUTION.md`） | **MIT** | ✅ 随包带 `ATTRIBUTION.md` + license 全文 |
+
+其余 **22 个包未发现第三方痕迹**（自研）：侧边栏/记忆/目标/定时/`git-graph`/指标/提示词检查器/观测归档/
+能力注册/实时会话/后台命令/别名/子代理工作台/用量分析/轨迹记录/紧凑继续/默认系统提示/上下文状态栏/
+侧聊/思考等级/代码模式/自动压缩。其中 4 个（`sidebar`、`git-graph`、`context-powerline`、`compact-continue`）
+无法从 git 历史判定初始来源，但已确认：无外部链接、无出处文件、代码与 npm 上同名第三方扩展不同
+（如我方 `sidebar.ts` 674 行 vs npm `pi-sidebar` 43 行，共享特征字符串 0 个）⇒ 按自研处理。
+
+### 12.8.2 发布前的许可前置（重要）
+
+- **本仓库目前没有 LICENSE 文件**（GitHub API：`license: None`），`package.json` 也无 `license` 字段。
+  无许可证的 npm 包别人不敢用（法律上不可再分发）⇒ **首次发布前必须先加**（建议 MIT）+ 每个包写 `license`。
+- Fork 包必须随 tarball 带上游许可与出处（`files` 字段里包含 `ATTRIBUTION.md`/`PROVENANCE.md`）。
+- `pi-tsien-web-tools-fork`：**先把两处修补提给上游**（bug + 性能）并请其补 license；
+  在那之前只做 monorepo 内的本地路径包，不发 npm。
+
+**web-tools：保留自维护副本，但发布受限**
+
+- 包名定为 `pi-tsien-web-tools-fork`（按 fork 规则），在 monorepo 内继续自维护。
 - 我们确定落地的**两处自家修改**（与上游 `master` 逐文件 diff 得出）：
   1. `src/providers/duckduckgo.ts`（±76 行）：DDG lite 解析器修复 —— 属性顺序无关、单/双引号都收、
      并解开 `//duckduckgo.com/l/?uddg=…` 重定向；上游正则仍要求 `class` 在前 + 双引号（未修）。
   2. `src/web-fetch.ts`（±21 行）：重量级依赖（jsdom/readability/turndown）改懒加载，
      启动耗时 1.7s → 0.6~0.8s。
   - 守护测试：`test/pi-web-tools-vendor.test.ts`（两版本 markup 都验）。
-- 建议：把这两处改动提 PR/issue 给上游（一个是真 bug，一个是性能）；若被合并，就可不再 vendored，
-  直接依赖上游。在此之前保持本地路径包。
+- **发布仍受阻**：上游无 license ⇒ 发 npm 前需得到许可（或上游自己补 license），见 §12.8.2。
+- 建议：把这两处改动提 PR/issue 给上游（一个是真 bug，一个是性能）；若被合并，便可不再 vendored。
 
 ### 12.9 已确认的决策
 
 | 项 | 决定 |
 |---|---|
-| 拆分粒度 | **一功能一包**，含 19 行的 `session-aliases`（**25 个发布包**：1 共享库 + 24 功能） |
+| 拆分粒度 | **一功能一包**，含 19 行的 `session-aliases`（25 个包 = 1 共享库 + 24 功能；其中 3 个是 `-fork`） |
 | 版本策略 | **各包独立版本**（依赖写 `^x.y.z`） |
 | 发布渠道 | **公开 npm（npmjs.org）**，不带 scope 的 `pi-tsien-*` 名 |
-| web-tools | **不发布**（第三方 vendored + 名字被占），保留本地路径 |
-| 命名 | §12.8：统一 `pi-tsien-<name>`，直接发公开 npm（**不要 scope**；25 个名字已逐个验证可用） |
+| web-tools | 包名 `pi-tsien-web-tools-fork`（fork 规则），自维护；**发 npm 需先拿上游许可**（上游无 license） |
+| 命名 | §12.8：自研 `pi-tsien-<name>`、含第三方代码的加 `-fork`；不带 scope，名字均已验证可用 |
 | npm 账号 | 不再需要 scope/账号名一致性；发布时用你的 npm 账号即可 |
 | 真源冲突 | 待定：甲（同步器保留 `+/-/!` 前缀，推荐）或 乙（回写 config） |
+| 许可 | **待补**：仓库与各包目前无 LICENSE（发布前必须加，建议 MIT） |
