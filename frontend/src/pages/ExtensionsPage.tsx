@@ -41,7 +41,27 @@ function SummaryCard({ label, value, hint }: { label: string; value: string | nu
   )
 }
 
-function EntryRow({ entry, expanded, onToggle }: { entry: ExtensionEntry; expanded: boolean; onToggle: () => void }) {
+interface EntryActions {
+  onEnable: () => void
+  onDisable: () => void
+  onMove: (direction: -1 | 1) => void
+  canMoveUp: boolean
+  canMoveDown: boolean
+}
+
+function EntryRow({
+  entry,
+  expanded,
+  onToggle,
+  actions,
+  busy,
+}: {
+  entry: ExtensionEntry
+  expanded: boolean
+  onToggle: () => void
+  actions?: EntryActions
+  busy?: boolean
+}) {
   const state = STATE_STYLES[entry.state]
   return (
     <div className="border-b border-border/60 last:border-b-0">
@@ -63,6 +83,27 @@ function EntryRow({ entry, expanded, onToggle }: { entry: ExtensionEntry; expand
         )}
         <span className="ml-auto text-2xs text-muted">{expanded ? '收起' : '详情'}</span>
       </button>
+      {actions && (
+        <div className="flex items-center gap-1 px-3 pb-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void (entry.state === 'disabled' ? actions.onEnable() : actions.onDisable())}
+            className="rounded border border-border px-2 py-0.5 text-2xs text-muted hover:text-text-strong disabled:opacity-50"
+          >
+            {entry.state === 'disabled' ? '启用' : '禁用'}
+          </button>
+          {entry.state !== 'disabled' && (
+            <>
+              <button type="button" disabled={busy || !actions.canMoveUp} onClick={() => void actions.onMove(-1)}
+                className="rounded border border-border px-1.5 py-0.5 text-2xs text-muted hover:text-text-strong disabled:opacity-30">↑</button>
+              <button type="button" disabled={busy || !actions.canMoveDown} onClick={() => void actions.onMove(1)}
+                className="rounded border border-border px-1.5 py-0.5 text-2xs text-muted hover:text-text-strong disabled:opacity-30">↓</button>
+            </>
+          )}
+          {entry.state === 'disabled' && <span className="text-2xs text-muted">禁用只改前缀，代码仍会被别的扩展 import</span>}
+        </div>
+      )}
       {expanded && (
         <div className="space-y-1 bg-card/40 px-4 py-3 text-2xs text-muted">
           <div className="font-mono break-all">settings.json: {entry.raw}</div>
@@ -88,6 +129,9 @@ export default function ExtensionsPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [pending, setPending] = useState<{ title: string; diff: string[]; note: string; run: () => Promise<void> } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -116,6 +160,55 @@ export default function ExtensionsPage() {
     })
   }
 
+  /** Managed (unprefixed) paths in applied order — the only entries reorder may touch. */
+  const managedPaths = useMemo(
+    () => (data?.extensions ?? []).filter(entry => entry.path && !/^[+\-!]/.test(entry.raw)).map(entry => entry.path as string),
+    [data],
+  )
+
+  const post = useCallback(async (url: string, method: string, body: unknown) => {
+    const response = await fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const payload = (await response.json()) as { error?: string; diff?: string[]; backupPath?: string | null; changed?: boolean }
+    if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`)
+    return payload
+  }, [])
+
+  const requestToggle = (entry: ExtensionEntry) => {
+    const enabling = entry.state === 'disabled'
+    setPending({
+      title: `${enabling ? '启用' : '禁用'} ${entry.name ?? entry.raw}`,
+      diff: [`${enabling ? '~ 去掉 - 前缀' : '~ 加 - 前缀'}：${entry.raw}`],
+      note: enabling
+        ? '恢复为默认包含（原样回到未加前缀的写法）。'
+        : '禁用只让 Pi 不加载这一条，不会卸载代码：别的扩展仍可能 import 它的模块。',
+      run: async () => {
+        const payload = await post('/api/pi/ext/toggle', 'POST', { path: entry.path, enabled: enabling })
+        setNotice(`${enabling ? '已启用' : '已禁用'} ${entry.name ?? entry.raw}｜备份：${payload.backupPath ?? '（无变化，未写盘）'}`)
+        await load()
+      },
+    })
+  }
+
+  const requestMove = (entry: ExtensionEntry, direction: -1 | 1) => {
+    const path = entry.path as string
+    const index = managedPaths.indexOf(path)
+    const target = index + direction
+    if (index < 0 || target < 0 || target >= managedPaths.length) return
+    const reordered = [...managedPaths]
+    reordered.splice(index, 1)
+    reordered.splice(target, 0, path)
+    setPending({
+      title: `调整 ${entry.name ?? entry.raw} 的顺序`,
+      diff: [`~ ${index + 1} → ${target + 1}（受管条目内）`],
+      note: '顺序约束：tool-result-pipeline 必须紧跟 web-tools；trajectory-recorder 与 capability 通常在最后。',
+      run: async () => {
+        const payload = await post('/api/pi/ext/order', 'PUT', { paths: reordered })
+        setNotice(`顺序已更新｜备份：${payload.backupPath ?? '（无变化，未写盘）'}`)
+        await load()
+      },
+    })
+  }
+
   const groups = useMemo(() => {
     const entries = data?.extensions ?? []
     return {
@@ -140,6 +233,42 @@ export default function ExtensionsPage() {
       </div>
 
       {error && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs text-red-300">读取失败：{error}</div>}
+      {notice && <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-200">{notice}</div>}
+      {pending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg border border-border bg-card p-4 shadow-xl">
+            <div className="text-sm font-semibold text-text-strong">{pending.title}</div>
+            <ul className="mt-2 space-y-0.5 font-mono text-2xs text-muted">
+              {pending.diff.map(line => <li key={line} className="break-all">{line}</li>)}
+            </ul>
+            <div className="mt-2 text-2xs text-amber-300">{pending.note}</div>
+            <div className="mt-2 text-2xs text-muted">写前会把 settings.json 备份到 agent 目录的 backups/，改动是原子写入；取消不会写盘。</div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button type="button" disabled={busy} onClick={() => setPending(null)}
+                className="rounded border border-border px-3 py-1 text-xs text-muted hover:text-text-strong disabled:opacity-50">取消</button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true)
+                  setError(null)
+                  try {
+                    await pending.run()
+                    setPending(null)
+                  } catch (cause) {
+                    setError(cause instanceof Error ? cause.message : String(cause))
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+                className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+              >
+                {busy ? '写入中…' : '确认'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {data && (
         <>
@@ -180,7 +309,20 @@ export default function ExtensionsPage() {
             {groups.package.length === 0
               ? <div className="px-4 py-3 text-xs text-muted">无</div>
               : groups.package.map(entry => (
-                  <EntryRow key={`${entry.appliedOrder}-${entry.raw}`} entry={entry} expanded={expanded.has(entry.raw)} onToggle={() => toggle(entry.raw)} />
+                  <EntryRow
+                    key={`${entry.appliedOrder}-${entry.raw}`}
+                    entry={entry}
+                    expanded={expanded.has(entry.raw)}
+                    onToggle={() => toggle(entry.raw)}
+                    busy={busy}
+                    actions={{
+                      onEnable: () => requestToggle(entry),
+                      onDisable: () => requestToggle(entry),
+                      onMove: direction => requestMove(entry, direction),
+                      canMoveUp: entry.path !== null && managedPaths.indexOf(entry.path) > 0,
+                      canMoveDown: entry.path !== null && managedPaths.indexOf(entry.path) < managedPaths.length - 1,
+                    }}
+                  />
                 ))}
           </section>
 
