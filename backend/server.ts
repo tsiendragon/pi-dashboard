@@ -902,9 +902,9 @@ registerJobsRoutes(routeDeps)
 registerIntegrationRoutes(routeDeps)
 registerUsageRoutes({ app, ledger: usageLedger })
 registerTimingRoutes({ app, ledger: timingLedger })
-registerExtConfigRoutes({ app })
+registerExtConfigRoutes({ app, auth: liveSessionAuth })
 registerPiExtListRoutes({ app })
-registerPiExtWriteRoutes({ app })
+registerPiExtWriteRoutes({ app, auth: liveSessionAuth })
 registerPtyRoutes({ app, auth: liveSessionAuth })
 
 const taskService = new TaskService({

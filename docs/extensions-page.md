@@ -31,6 +31,21 @@
 统一写入模块 `backend/settings-store.ts`：所有写者共享一个实例 → 串行执行「读 → 备份到 `<agent>/backups/settings-<ts>.json` → 内存改 → 原子写（tmp + rename）」，
 响应返回 `before`/`after`/`backupPath`/`diff`；无变化时不写盘、不产生备份。
 
+### 鉴权（必须）
+
+dashboard 默认 `PI_DASH_HOST=0.0.0.0`（网络可达）且**没有全局鉴权中间件**，所以会改机器状态的接口必须自带门禁：
+
+| 接口 | 门禁 |
+|---|---|
+| `POST /api/pi/ext/toggle`、`PUT /api/pi/ext/order` | 必须带 live-session 浏览器认证（`pi_live_session` HttpOnly cookie）；跨域 Origin → 403，未认证 → 401 + 可操作提示 |
+| `PUT /api/ext/config/:name` | 同上 |
+| `GET` 系列（清单、配置读取） | 保持开放，与 dashboard 其它只读接口一致 |
+
+实现复用现有信任边界（`backend/live-sessions/auth.ts`，与终端中继 `/api/pty/*` 同一套）：`backend/routes/require-browser-auth.ts`。
+首次使用写操作前，需要在 dashboard 的终端/live-session 页粘贴启动日志里的令牌完成一次认证（浏览器随后自动带 cookie）。
+
+隔离实例实测：无 cookie → 401（带提示）、`Origin: http://evil.example` → 403、用 `/api/pty/auth` 认证后 → 200 且 `settings.json` 已改、备份已生成。
+
 页面：每行有「启用/禁用」与 `↑`/`↓`；点击后弹出**确认框**，列出 diff、提示「禁用 ≠ 卸载代码」（别的扩展仍可能 import 它）与备份位置，确认后才写。
 写成功后刷新清单并在顶部显示备份路径。
 

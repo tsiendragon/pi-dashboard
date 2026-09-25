@@ -168,8 +168,11 @@ export default function ExtensionsPage() {
 
   const post = useCallback(async (url: string, method: string, body: unknown) => {
     const response = await fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-    const payload = (await response.json()) as { error?: string; diff?: string[]; backupPath?: string | null; changed?: boolean }
-    if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`)
+    const payload = (await response.json()) as { error?: string; hint?: string; diff?: string[]; backupPath?: string | null; changed?: boolean }
+    if (!response.ok) {
+      const detail = payload.hint ? `${payload.error ?? `HTTP ${response.status}`} —— ${payload.hint}` : payload.error ?? `HTTP ${response.status}`
+      throw new Error(detail)
+    }
     return payload
   }, [])
 

@@ -6,9 +6,14 @@
  *
  * Both go through `SettingsStore` (serialized + backed up + atomic). The response always carries the
  * before/after arrays, the backup path and a readable diff, so the page can show what happened.
+ *
+ * Both require the Live Session browser auth: the server binds `0.0.0.0` and has no global auth
+ * middleware, so a route that rewrites `settings.json` must not be reachable unauthenticated.
  */
 import type { Express, Request, Response } from 'express'
+import type { LiveSessionBrowserAuth } from '../live-sessions/auth.js'
 import { applyOrder, applyToggle, describeDiff } from '../ext-writes.js'
+import { requireBrowserAuth } from './require-browser-auth.js'
 import { settingsStore } from '../settings-store.js'
 
 function readEntries(settings: Record<string, unknown>): string[] {
@@ -16,10 +21,11 @@ function readEntries(settings: Record<string, unknown>): string[] {
   return Array.isArray(extensions) ? (extensions as unknown[]).filter((entry): entry is string => typeof entry === 'string') : []
 }
 
-export function registerPiExtWriteRoutes({ app }: { app: Express }): void {
+export function registerPiExtWriteRoutes({ app, auth }: { app: Express; auth: LiveSessionBrowserAuth }): void {
   const store = settingsStore
+  const requireAuth = requireBrowserAuth(auth)
 
-  app.post('/api/pi/ext/toggle', async (req: Request, res: Response) => {
+  app.post('/api/pi/ext/toggle', requireAuth, async (req: Request, res: Response) => {
     const body = req.body as { path?: unknown; enabled?: unknown } | undefined
     const path = typeof body?.path === 'string' ? body.path : null
     const enabled = typeof body?.enabled === 'boolean' ? body.enabled : null
@@ -57,7 +63,7 @@ export function registerPiExtWriteRoutes({ app }: { app: Express }): void {
     }
   })
 
-  app.put('/api/pi/ext/order', async (req: Request, res: Response) => {
+  app.put('/api/pi/ext/order', requireAuth, async (req: Request, res: Response) => {
     const body = req.body as { paths?: unknown } | undefined
     const paths = Array.isArray(body?.paths) ? (body.paths as unknown[]) : null
     if (!paths || !paths.every((item): item is string => typeof item === 'string')) {
