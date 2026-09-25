@@ -1,5 +1,6 @@
 import type { LiveSessionDetail, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
+import WorkingHammerIcon from '../../components/WorkingHammerIcon'
 import { displayWorktreePath } from '../../utils/displayPath'
 
 interface LiveSubagentPanelProps {
@@ -106,21 +107,21 @@ function roleLabel(role: string): string {
 export default function LiveSubagentPanel({ summary, detail, loading = false, onClose, onOpenFull }: LiveSubagentPanelProps) {
   const items = detail ? panelItems(detail.entries) : []
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(620px,92vw)] flex-col border-l border-accent/30 bg-bg shadow-2xl shadow-black/40">
+    <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(620px,92vw)] flex-col border-l border-accent bg-bg shadow-2xl shadow-black/40">
       <header className="shrink-0 border-b border-border bg-card px-4 py-3">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="rounded bg-accent/15 px-1.5 py-0.5 text-2xs text-accent">子 Agent</span>
+              <span className="rounded bg-accent-subtle px-1.5 py-0.5 text-2xs text-accent">子 Agent</span>
               <h2 className="truncate text-sm font-semibold text-text-strong" title={summary.sessionName || `PID ${summary.pid}`}>
                 {summary.sessionName || `子 Agent · PID ${summary.pid}`}
               </h2>
               <span className="shrink-0 text-2xs" title={`Session 状态：${summary.status === 'running' ? '工作中' : summary.status === 'reconnecting' ? '重连中' : '等待输入'}`}>
-                {sessionStatusEmoji(summary.status)} {summary.status === 'running' ? '工作中' : summary.status === 'reconnecting' ? '重连中' : '等待输入'}
+                {summary.status === 'running' ? <WorkingHammerIcon /> : sessionStatusEmoji(summary.status)} {summary.status === 'running' ? '工作中' : summary.status === 'reconnecting' ? '重连中' : '等待输入'}
               </span>
             </div>
             <div className="mt-1 truncate text-2xs text-muted" title={summary.canonicalCwd}>{displayWorktreePath(summary.canonicalCwd)}</div>
-            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-2xs text-muted/80">
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-2xs text-muted opacity-80">
               <span title={`完整 session ID：${summary.sessionId}`}>sid {shortSessionId(summary.sessionId)}</span>
               <span>PID {summary.pid}</span>
               {summary.model && <span>{summary.model.provider}/{summary.model.id}</span>}
@@ -139,17 +140,17 @@ export default function LiveSubagentPanel({ summary, detail, loading = false, on
         {!loading && detail && items.length === 0 && <div className="flex h-full items-center justify-center text-sm text-muted">该子 Agent 暂无可显示内容。</div>}
         {!loading && detail && items.length > 0 && <div className="space-y-2">
           {items.map(item => item.kind === 'tool' ? (
-            <details key={`${item.kind}-${item.index}`} className="rounded border border-border bg-card/70">
+            <details key={`${item.kind}-${item.index}`} className="rounded border border-border bg-card">
               <summary className="cursor-pointer list-none px-2 py-1.5 text-2xs text-muted hover:text-accent">
                 <span className="mr-1.5 rounded bg-bg px-1 py-0.5 font-mono text-2xs text-accent">工具</span>
-                {item.name} <span className={item.status === '失败' ? 'text-danger' : 'text-muted/60'}>· {item.status}</span>
+                {item.name} <span className={item.status === '失败' ? 'text-danger' : 'text-muted opacity-60'}>· {item.status}</span>
               </summary>
-              {item.output && <pre className="max-h-40 overflow-auto border-t border-border/70 px-2 py-1.5 font-mono text-2xs leading-4 text-muted">{item.output}</pre>}
+              {item.output && <pre className="max-h-40 overflow-auto border-t border-border px-2 py-1.5 font-mono text-2xs leading-4 text-muted">{item.output}</pre>}
             </details>
           ) : (
-            <article key={`${item.kind}-${item.index}`} className={`rounded border px-2.5 py-2 ${item.role === 'user' ? 'ml-8 border-accent/20 bg-accent-subtle/50' : 'mr-2 border-border bg-card'}`}>
+            <article key={`${item.kind}-${item.index}`} className={`rounded border px-2.5 py-2 ${item.role === 'user' ? 'ml-8 border-accent bg-accent-subtle' : 'mr-2 border-border bg-card'}`}>
               <div className="mb-1 text-2xs font-medium text-muted">{roleLabel(item.role)}</div>
-              {item.thinking && <details className="mb-1 rounded bg-bg/60 px-2 py-1 text-2xs text-muted">
+              {item.thinking && <details className="mb-1 rounded bg-bg px-2 py-1 text-2xs text-muted">
                 <summary className="cursor-pointer">思考过程</summary>
                 <div className="mt-1 whitespace-pre-wrap leading-4">{item.thinking}</div>
               </details>}

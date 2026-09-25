@@ -1,7 +1,7 @@
 /**
  * Card-dragging tests. The auto layout is only a default: crossing edges and a
- * crowded band are judgement calls, so a card can be dragged and the rest of the
- * drawing (edges, group bands, 适配) follows it.
+ * crowded family are judgement calls, so a card can be dragged and the rest of the
+ * drawing (edges, group titles, 适配) follows it.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render } from '@testing-library/react'
@@ -114,9 +114,9 @@ describe('card dragging', () => {
 
   it('grows the drawn bounds so 适配 can bring the card back into view', () => {
     const { container, svg } = renderGraph(chain)
-    const bandBefore = Number(container.querySelector('[data-band]')?.getAttribute('width'))
+    const bandBefore = Number(container.querySelector('[data-band-width]')?.getAttribute('data-band-width'))
     dragCard(container, svg, 'b', 200, 0)
-    const bandAfter = Number(container.querySelector('[data-band]')?.getAttribute('width'))
+    const bandAfter = Number(container.querySelector('[data-band-width]')?.getAttribute('data-band-width'))
     expect(bandAfter).toBeCloseTo(bandBefore + 200, 0)
   })
 

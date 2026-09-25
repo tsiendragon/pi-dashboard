@@ -85,26 +85,60 @@ export function computeTreeOrder(nodes: SessionTreeNode[]): TreeOrder {
   let slot = 0
   let maxDepth = 0
 
-  const walk = (id: string, depth: number): number => {
-    if (visited.has(id)) return Math.max(0, slot - 1)
-    visited.add(id)
-    depthOf.set(id, depth)
-    maxDepth = Math.max(maxDepth, depth)
-    const kids = children.get(id) ?? []
-    let row: number
-    if (!kids.length) {
-      row = slot
-      slot += 1
-    } else {
-      const childRows = kids.map(kid => walk(kid, depth + 1))
-      row = (childRows[0] + childRows[childRows.length - 1]) / 2
-    }
-    slotOf.set(id, row)
-    return row
+  interface Frame {
+    id: string
+    depth: number
+    /** Children already pushed; `entered` marks the frame as visited-in. */
+    index: number
+    /** Rows of the children that already finished, in order. */
+    rows: number[]
+    entered: boolean
   }
 
-  for (const root of children.get(null) ?? []) walk(root, 0)
-  for (const node of nodes) if (!visited.has(node.id)) walk(node.id, 0)
+  /**
+   * Iterative post-order DFS.
+   *
+   * This has to stay iterative: the recursive form overflowed the JS stack on a
+   * long single-file session, because “逐条记录” gives one node per entry and a big
+   * session file is a 5 000-deep chain. The crash surfaced as an app-wide
+   * “Maximum call stack size exceeded” error page on the graph route.
+   */
+  const run = (rootId: string): void => {
+    const stack: Frame[] = [{ id: rootId, depth: 0, index: 0, rows: [], entered: false }]
+    while (stack.length) {
+      const frame = stack[stack.length - 1]
+      if (!frame.entered) {
+        // Already walked (shared descendant or a second root): its parent still
+        // records a row, exactly like the recursive `return` used to.
+        if (visited.has(frame.id)) {
+          stack.pop()
+          const parent = stack[stack.length - 1]
+          if (parent) parent.rows.push(Math.max(0, slot - 1))
+          continue
+        }
+        frame.entered = true
+        visited.add(frame.id)
+        depthOf.set(frame.id, frame.depth)
+        maxDepth = Math.max(maxDepth, frame.depth)
+      }
+      const kids = children.get(frame.id) ?? []
+      if (frame.index < kids.length) {
+        const kid = kids[frame.index]
+        frame.index += 1
+        stack.push({ id: kid, depth: frame.depth + 1, index: 0, rows: [], entered: false })
+        continue
+      }
+      const row = kids.length ? (frame.rows[0] + frame.rows[frame.rows.length - 1]) / 2 : slot
+      if (!kids.length) slot += 1
+      slotOf.set(frame.id, row)
+      stack.pop()
+      const parent = stack[stack.length - 1]
+      if (parent) parent.rows.push(row)
+    }
+  }
+
+  for (const root of children.get(null) ?? []) run(root)
+  for (const node of nodes) if (!visited.has(node.id)) run(node.id)
   return { depthOf, slotOf, maxDepth }
 }
 
@@ -275,13 +309,56 @@ export function serpentineLayout(
   return boundsOf(nodes, positions, heightOf)
 }
 
+/**
+ * Lane id per node — “which branch line does this node belong to”.
+ *
+ * A lane starts at every root and at every child of a fork, and a plain chain keeps
+ * its lane, so the grouping matches what {@link branchColorOf} paints. The layout uses
+ * it to refuse shapes that would let two lanes share a row: sharing is what makes a
+ * forked graph read as one single long path (see {@link serpentineCohesion}).
+ */
+export function laneOf(nodes: SessionTreeNode[]): Map<string, number> {
+  const ids = new Set(nodes.map(node => node.id))
+  const children = new Map<string | null, string[]>()
+  for (const node of nodes) {
+    const parent = node.parentId && ids.has(node.parentId) ? node.parentId : null
+    const list = children.get(parent)
+    if (list) list.push(node.id)
+    else children.set(parent, [node.id])
+  }
+
+  const lane = new Map<string, number>()
+  let next = 0
+  const roots = children.get(null) ?? []
+  const stack: { id: string; lane: number }[] = []
+  for (let index = roots.length - 1; index >= 0; index -= 1) stack.push({ id: roots[index], lane: next++ })
+  while (stack.length) {
+    const frame = stack.pop() as { id: string; lane: number }
+    if (lane.has(frame.id)) continue
+    lane.set(frame.id, frame.lane)
+    const kids = children.get(frame.id) ?? []
+    // One child continues the lane; every child of a fork opens its own.
+    const kidLanes = kids.length === 1 ? [frame.lane] : kids.map(() => next++)
+    for (let index = kids.length - 1; index >= 0; index -= 1) stack.push({ id: kids[index], lane: kidLanes[index] })
+  }
+  // Defensive: a `parentId` cycle leaves nodes unreached, and each of those is its own lane.
+  for (const node of nodes) if (!lane.has(node.id)) lane.set(node.id, next++)
+  return lane
+}
+
 /** One candidate layout together with how big it renders in the current container. */
 export interface LayoutCandidate {
   orientation: GraphOrientation
   /** Depth columns per row; only set for `serpentine`. */
   columns?: number
   layout: TreeLayout
+  /** Pure canvas fill, ignoring branch mixing. */
   scale: number
+  /**
+   * 0..1 factor on top of `scale`: how much of that fill the shape may claim once
+   * branch mixing is priced in. Only `serpentine` sets it below 1.
+   */
+  cohesion?: number
 }
 
 /** Padding `fit()` leaves around the content, mirrored here for scoring. */
@@ -328,11 +405,45 @@ export function canvasFill(
 }
 
 /**
+ * How safe a serpentine wrap is for a tree, as a 0..1 factor to multiply into the fill
+ * score.
+ *
+ * The wrap folds the **depth** axis only, so it knows nothing about branches: as soon
+ * as several lanes are alive at the same depth they all land in one wrap row band,
+ * their rows end up stacked in one column, and each lane's (now vertical) edge runs
+ * through the other lanes' cards. “auto” then looks like one single long path — the
+ * exact reading the graph is there to prevent.
+ *
+ * A single lane (the several-thousand-step chain the wrap exists for) is unaffected:
+ * its bands hold one lane, so the factor is 1.
+ */
+function serpentineCohesion(
+  depthOf: Map<string, number>,
+  lanes: Map<string, number>,
+  columns: number,
+): number {
+  const lanesPerBand = new Map<number, Set<number>>()
+  for (const [id, depth] of depthOf) {
+    const band = Math.floor(depth / columns)
+    const lane = lanes.get(id) ?? 0
+    const set = lanesPerBand.get(band)
+    if (set) set.add(lane)
+    else lanesPerBand.set(band, new Set([lane]))
+  }
+  let worst = 1
+  for (const set of lanesPerBand.values()) worst = Math.max(worst, set.size)
+  return 1 / worst
+}
+
+/**
  * Every layout worth considering for this container, each scored by
  * {@link canvasFill} — “can this shape be drawn large enough to fill the canvas”.
  * The caller picks the maximum: a wide desktop keeps a left→right tree, a portrait
  * phone turns it top→down, and a 1000-step chain wraps into rows instead of becoming
  * a 300 000px line.
+ *
+ * Serpentine candidates carry a {@link serpentineCohesion} factor on top of the fill,
+ * so a forked tree keeps a shape in which one branch stays on one line.
  */
 export function layoutCandidates(
   nodes: SessionTreeNode[],
@@ -347,7 +458,8 @@ export function layoutCandidates(
     { orientation: 'horizontal', layout: tidyLayout(nodes, heightOf, 'horizontal', rowGap), scale: 0 },
     { orientation: 'vertical', layout: tidyLayout(nodes, heightOf, 'vertical', rowGap), scale: 0 },
   ]
-  const { maxDepth } = computeTreeOrder(nodes)
+  const { maxDepth, depthOf } = computeTreeOrder(nodes)
+  const lanes = laneOf(nodes)
   const columnLimit = Math.min(maxDepth + 1, maxColumns)
   for (let columns = 2; columns <= columnLimit; columns += 1) {
     candidates.push({
@@ -355,10 +467,16 @@ export function layoutCandidates(
       columns,
       layout: serpentineLayout(nodes, heightOf, columns, rowGap),
       scale: 0,
+      cohesion: serpentineCohesion(depthOf, lanes, columns),
     })
   }
   for (const candidate of candidates) candidate.scale = score(candidate.layout)
   return candidates
+}
+
+/** A candidate's score once branch mixing is priced in. */
+export function candidateScore(candidate: LayoutCandidate): number {
+  return candidate.scale * (candidate.cohesion ?? 1)
 }
 
 /**
@@ -368,7 +486,7 @@ export function layoutCandidates(
 export function pickBestLayout(candidates: LayoutCandidate[], minorImprovement = 1.02): LayoutCandidate {
   let best = candidates[0]
   for (const candidate of candidates) {
-    if (candidate.scale > best.scale * minorImprovement) best = candidate
+    if (candidateScore(candidate) > candidateScore(best) * minorImprovement) best = candidate
   }
   return best
 }
@@ -418,4 +536,82 @@ export function sessionBounds(
     width: maxX - minX + BAND_PAD_X * 2,
     height: maxY - minY + BAND_PAD_TOP + BAND_PAD_BOTTOM,
   }
+}
+
+/** Distinct fork colours the graph can hand out (the caller maps these to classes). */
+export const BRANCH_PALETTE_SIZE = 4
+
+/**
+ * Colour slot per node, so a glance tells which fork lineage a card or edge belongs
+ * to. The walk is a pre-order DFS: a single child inherits its parent's colour (a
+ * plain chain stays one colour), while every child of a **fork** gets a colour of its
+ * own that no sibling (and not the parent) already wears.
+ *
+ * Iterative on purpose: sessions run thousands of entries deep and the recursive form
+ * blows the JS stack (see `computeTreeOrder`). Unreachable nodes — a `parentId` cycle,
+ * which a healthy payload never has — fall back to slot 0 instead of being dropped.
+ */
+export function branchColorOf(
+  nodes: SessionTreeNode[],
+  paletteSize: number = BRANCH_PALETTE_SIZE,
+): Map<string, number> {
+  const ids = new Set(nodes.map(node => node.id))
+  const children = new Map<string | null, string[]>()
+  for (const node of nodes) {
+    const parent = node.parentId && ids.has(node.parentId) ? node.parentId : null
+    const list = children.get(parent)
+    if (list) list.push(node.id)
+    else children.set(parent, [node.id])
+  }
+
+  const colorOf = new Map<string, number>()
+  const visited = new Set<string>()
+  /** Rotating cursor, so unrelated forks in the same graph do not all start at slot 0. */
+  let next = 0
+  const take = (avoid: number[]): number => {
+    for (let step = 0; step < paletteSize; step += 1) {
+      const candidate = (next + step) % paletteSize
+      if (!avoid.includes(candidate)) {
+        next = (candidate + 1) % paletteSize
+        return candidate
+      }
+    }
+    // More children than colours: keep rotating, so adjacent siblings still differ.
+    const fallback = next
+    next = (next + 1) % paletteSize
+    return fallback
+  }
+
+  const seeded: { id: string; color: number }[] = []
+  const rootUsed: number[] = []
+  ;(children.get(null) ?? []).forEach((root, index) => {
+    // The mainline keeps slot 0; extra roots (a truncated family) rotate on.
+    const color = index === 0 ? 0 : take(rootUsed)
+    rootUsed.push(color)
+    seeded.push({ id: root, color })
+  })
+
+  const stack = [...seeded].reverse()
+  while (stack.length) {
+    const frame = stack.pop() as { id: string; color: number }
+    if (visited.has(frame.id)) continue
+    visited.add(frame.id)
+    colorOf.set(frame.id, frame.color)
+    const kids = children.get(frame.id) ?? []
+    if (kids.length === 1) {
+      stack.push({ id: kids[0], color: frame.color })
+      continue
+    }
+    if (kids.length > 1) {
+      const used = [frame.color]
+      for (const kid of kids) {
+        const color = take(used)
+        used.push(color)
+        stack.push({ id: kid, color })
+      }
+    }
+  }
+
+  for (const node of nodes) if (!colorOf.has(node.id)) colorOf.set(node.id, 0)
+  return colorOf
 }

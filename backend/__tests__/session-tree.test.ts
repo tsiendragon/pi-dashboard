@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import {
   buildSessionFamilyGraph,
   collapseLinearRuns,
+  readSessionCompactions,
   resetSessionTreeCaches,
   sessionKeyForFile,
   turnSteps,
@@ -485,5 +486,41 @@ describe('collapseLinearRuns', () => {
   it('keeps short runs unfolded and never folds structural nodes', () => {
     const nodes = [node('a1', null, { childCount: 1 }), node('a2', 'a1', { isLeaf: true, isHead: true })]
     expect(collapseLinearRuns(nodes, new Set(['a1'])).map(candidate => candidate.id)).toEqual(['a1', 'a2'])
+  })
+})
+describe('readSessionCompactions', () => {
+  it('returns every compaction marker with the token count measured before it', async () => {
+    const file = writeSession('compactions', [
+      header('compactions-id'),
+      user('u1', null),
+      entry('compaction', 'c2', 'u1', { summary: 'first summary', tokensBefore: 165196 }),
+      assistant('a3', 'c2'),
+      entry('compaction', 'c4', 'a3', { summary: 'second summary', tokensBefore: 900 }),
+    ])
+
+    expect(await readSessionCompactions(file)).toEqual([
+      { timestamp: TS, tokensBefore: 165196 },
+      { timestamp: TS, tokensBefore: 900 },
+    ])
+  })
+
+  it('ignores non-compaction entries and tolerates a missing token count', async () => {
+    const file = writeSession('compactions-plain', [
+      header('plain-id'),
+      user('u1', null),
+      entry('compaction', 'c2', 'u1', { summary: 'no usage recorded' }),
+    ])
+
+    expect(await readSessionCompactions(file)).toEqual([{ timestamp: TS }])
+  })
+
+  it('refuses session files outside the sessions directory', async () => {
+    const outside = join(tmpdir(), `pi-outside-${process.pid}.jsonl`)
+    writeFileSync(outside, `${header('outside-id')}\n`, 'utf8')
+    try {
+      await expect(readSessionCompactions(outside)).rejects.toMatchObject({ code: 'session_file_out_of_scope' })
+    } finally {
+      rmSync(outside, { force: true })
+    }
   })
 })

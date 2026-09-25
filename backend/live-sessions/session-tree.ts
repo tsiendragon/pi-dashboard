@@ -96,6 +96,8 @@ interface ParsedEntry {
   title: string
   preview?: string
   tools?: string[]
+  /** `compaction` entries only: context tokens measured before that compaction ran. */
+  tokensBefore?: number
 }
 
 interface ParsedFile {
@@ -174,7 +176,6 @@ export async function resolveSessionFileInScope(file: string): Promise<string> {
 }
 
 // ─ header index (one line read per session file) ──
-
 let headerIndexCache: { at: number; byFile: Map<string, SessionHeaderInfo> } | null = null
 
 async function readFirstLine(file: string): Promise<string | null> {
@@ -281,7 +282,7 @@ function convertEntry(obj: Record<string, unknown>): { entry: ParsedEntry | null
     case 'branch_summary':
       return { entry: { ...base, kind: 'branchSummary', role: 'system', title: 'Branch summary', ...(clip(String(obj.summary ?? '')) ? { preview: clip(String(obj.summary ?? ''))! } : {}) } }
     case 'compaction':
-      return { entry: { ...base, kind: 'compaction', role: 'system', title: 'Compaction', ...(clip(String(obj.summary ?? '')) ? { preview: clip(String(obj.summary ?? ''))! } : {}) } }
+      return { entry: { ...base, kind: 'compaction', role: 'system', title: 'Compaction', ...(clip(String(obj.summary ?? '')) ? { preview: clip(String(obj.summary ?? ''))! } : {}), ...(typeof obj.tokensBefore === 'number' ? { tokensBefore: obj.tokensBefore } : {}) } }
     case 'model_change':
       return { entry: { ...base, kind: 'system', role: 'system', title: `Model → ${String(obj.modelId ?? obj.model ?? '')}`.trim() } }
     case 'thinking_level_change':
@@ -346,6 +347,38 @@ async function parseSessionFile(file: string): Promise<ParsedFile> {
     parsedCache.delete(oldest)
   }
   return value
+}
+
+// ── compaction markers ──
+
+export interface SessionCompactionMark {
+  /** Entry timestamp pi wrote when the compaction landed (ISO 8601). */
+  timestamp?: string
+  /** Context tokens measured before that compaction ran. */
+  tokensBefore?: number
+}
+
+/**
+ * Compaction markers of one session file, oldest first.
+ *
+ * `/compact` is fire-and-forget on the agent side (`ctx.compact()` deliberately
+ * does not await), so the command ack says nothing about when compaction really
+ * finished. The compaction entry landing in the session file is the real signal.
+ * This reuses the mtime-cached parser the graph already uses, so polling costs one
+ * `stat` per call until the file actually changes.
+ */
+export async function readSessionCompactions(file: string): Promise<SessionCompactionMark[]> {
+  const target = await resolveSessionFileInScope(file)
+  const parsed = await parseSessionFile(target)
+  const marks: SessionCompactionMark[] = []
+  for (const entry of parsed.entries) {
+    if (entry.type !== 'compaction') continue
+    marks.push({
+      ...(entry.timestamp ? { timestamp: entry.timestamp } : {}),
+      ...(typeof entry.tokensBefore === 'number' ? { tokensBefore: entry.tokensBefore } : {}),
+    })
+  }
+  return marks
 }
 
 // ── family assembly ──

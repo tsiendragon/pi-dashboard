@@ -134,6 +134,57 @@ describe('LivePiLauncher.start', () => {
     expect(killed).toEqual([expect.stringMatching(/^pi-dash-live-/)])
   })
 
+  it('attaches the pane tail so a start failure is diagnosable', async () => {
+    const registry = { list: () => [] }
+    const { launcher } = makeLauncher({
+      roots: [dir], registry,
+      over: { capturePane: () => 'Error: missing API key\nserver refused to start\n\n' },
+    })
+    await expect(launcher.start({ cwd: app })).rejects.toThrow(/Pi 启动输出（最后 2 行）[\s\S]*missing API key[\s\S]*server refused to start/)
+  })
+
+  it('fails fast when the pane is gone instead of burning the whole timeout', async () => {
+    const registry = { list: () => [] }
+    let sleeps = 0
+    const dead = makeLauncher({
+      roots: [dir], registry,
+      over: { panePid: () => undefined, sleep: () => { sleeps += 1; return Promise.resolve() } },
+    })
+    await expect(dead.launcher.start({ cwd: app })).rejects.toThrow(/live_pi_registration_timeout/)
+    // Two consecutive missing reads are enough evidence that Pi exited.
+    expect(sleeps).toBeLessThanOrEqual(2)
+
+    let aliveSleeps = 0
+    const alive = makeLauncher({
+      roots: [dir], registry,
+      over: { panePid: () => 4242, sleep: () => { aliveSleeps += 1; return Promise.resolve() } },
+    })
+    await expect(alive.launcher.start({ cwd: app })).rejects.toThrow(/live_pi_registration_timeout/)
+    // A live pane keeps the full budget: it may still be a slow cold start.
+    expect(aliveSleeps).toBeGreaterThan(2)
+  })
+
+  it('lets a slow machine stretch the registration timeout via env', async () => {
+    const registry = { list: () => [] }
+    const previous = process.env.PI_DASH_LIVE_START_TIMEOUT_MS
+    process.env.PI_DASH_LIVE_START_TIMEOUT_MS = '45000'
+    try {
+      const launcher = new LivePiLauncher({
+        registry, roots: [dir],
+        createSession: name => sanitizeTmuxSession(name),
+        killSession: () => {},
+        panePid: () => undefined,
+        piCommand: '/usr/bin/pi',
+        pollIntervalMs: 0,
+        sleep: () => Promise.resolve(),
+      })
+      await expect(launcher.start({ cwd: app })).rejects.toThrow(/killed after 45000ms/)
+    } finally {
+      if (previous === undefined) delete process.env.PI_DASH_LIVE_START_TIMEOUT_MS
+      else process.env.PI_DASH_LIVE_START_TIMEOUT_MS = previous
+    }
+  })
+
   it('never reuses an existing tmux name, and reports a missing tmux binary clearly', async () => {
     const registry = { list: () => [] }
     const taken = makeLauncher({ roots: [dir], registry, over: { sessionExists: () => true } })
@@ -177,6 +228,36 @@ describe('LivePiLauncher.start', () => {
     await expect(launcher.start({ cwd: app, thinkingLevel: 'ludicrous' })).rejects.toThrow('invalid_thinking_level')
     await expect(launcher.start({ cwd: app, modelProvider: 'dashscope' })).rejects.toThrow('model_id_required')
     await expect(launcher.start({ cwd: app, modelId: 'qwen3-coder-plus' })).rejects.toThrow('model_provider_required')
+    expect(created).toEqual([])
+  })
+
+  it('forks an existing session file into the new pane when forkFrom is given', async () => {
+    const registry = registeringRegistry([], [summary({ canonicalCwd: app, processInstanceId: 'pi-new', sessionId: 'session-new' })])
+    const { launcher, created } = makeLauncher({ roots: [dir], registry })
+    const source = join(dir, 'sessions', 'parent.jsonl')
+    await launcher.start({ cwd: app, title: 'T', forkFrom: source })
+    expect(created[0].options.args).toEqual(['--fork', source, '--name', 'T'])
+  })
+
+  it('rejects a relative forkFrom before touching tmux', async () => {
+    const registry = { list: () => [] }
+    const { launcher, created } = makeLauncher({ roots: [dir], registry })
+    await expect(launcher.start({ cwd: app, forkFrom: 'relative/session.jsonl' })).rejects.toThrow('invalid_fork_from')
+    expect(created).toEqual([])
+  })
+
+  it('resumes a specific session file when sessionFile is given', async () => {
+    const registry = registeringRegistry([], [summary({ canonicalCwd: app, processInstanceId: 'pi-new', sessionId: 'session-new' })])
+    const { launcher, created } = makeLauncher({ roots: [dir], registry })
+    const branched = join(dir, 'sessions', 'branch.jsonl')
+    await launcher.start({ cwd: app, title: 'T', sessionFile: branched })
+    expect(created[0].options.args).toEqual(['--session', branched, '--name', 'T'])
+  })
+
+  it('rejects a relative sessionFile before touching tmux', async () => {
+    const registry = { list: () => [] }
+    const { launcher, created } = makeLauncher({ roots: [dir], registry })
+    await expect(launcher.start({ cwd: app, sessionFile: 'branch.jsonl' })).rejects.toThrow('invalid_session_file')
     expect(created).toEqual([])
   })
 

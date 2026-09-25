@@ -210,6 +210,23 @@ export function listTmuxSessions(): string[] {
 }
 
 /** Kill a namespaced tmux session (idempotent). */
+/**
+ * Last visible rows of a pane, for failure diagnostics.
+ *
+ * A launcher timeout only says "did not register"; the pane is where Pi wrote
+ * the actual reason (crash, bad flag, provider refusal).
+ */
+export function captureTmuxPane(fullName: string, lines = 200): string {
+  try {
+    return execFileSync('tmux', ['capture-pane', '-p', '-t', sanitizeTmuxSession(fullName), '-S', `-${lines}`], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+  } catch {
+    return ''
+  }
+}
+
 export function killTmuxSession(name: string): void {
   const fullName = sanitizeTmuxSession(name)
   if (!hasTmuxSession(fullName)) return
