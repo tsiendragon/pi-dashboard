@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { readFileSync, readdirSync, statSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { buildExtensionInventory, type InventoryIo } from '../ext-inventory.js'
+import { buildExtensionInventory, deriveExtensionDependencies, type InventoryIo } from '../ext-inventory.js'
 
 let dir: string
 
@@ -218,6 +218,36 @@ describe('buildExtensionInventory', () => {
       },
     ])
     expect(inventory.counts.provided).toBe(1)
+  })
+
+  it('keeps the list payload free of the heavy scan (perf guard)', () => {
+    const { agentDir } = seed()
+    const inventory = buildExtensionInventory({ agentDir, env: { MISSING_ROOT: undefined }, io })
+    expect('crossImports' in inventory).toBe(false)
+    expect('sharedPackages' in inventory).toBe(false)
+    expect('crossImports' in inventory.counts).toBe(false)
+  })
+
+  it('derives cross-package imports (谁 import 了别的包的代码)', () => {
+    const { agentDir, pkgDir } = seed()
+    // a second package that imports into the first one, exactly like live-session -> auto-compact core
+    const otherDir = join(dir, 'repo/packages/pi-tsien-live-session')
+    write(join(otherDir, 'package.json'), JSON.stringify({ name: 'pi-tsien-live-session', version: '0.1.0', pi: { extensions: ['./src/index.ts'] } }))
+    write(join(otherDir, 'src/index.ts'), 'import { shared } from "pi-tsien-goal/src/shared.ts";\nexport default function live() {}\n')
+    write(join(pkgDir, 'src/shared.ts'), 'export const shared = 1\n')
+
+    const settings = JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf-8'))
+    settings.packages.push({ source: otherDir, autoload: false })
+    settings.extensions.push(`${otherDir}/src/index.ts`)
+    writeFileSync(join(agentDir, 'settings.json'), JSON.stringify(settings), 'utf-8')
+
+    const scan = deriveExtensionDependencies({ agentDir, env: { MISSING_ROOT: undefined }, io, maxFilesPerPackage: 50 })
+    const edge = scan.crossImports.find((item) => item.from === 'pi-tsien-live-session')
+    expect(edge?.toPackageId).toBe('pi-tsien-goal')
+    expect(edge?.toManifestPath).toBe('src/shared.ts')
+    const shared = scan.sharedPackages.find((item) => item.packageId === 'pi-tsien-goal')
+    expect(shared?.importedBy).toEqual(['pi-tsien-live-session'])
+    expect(scan.scannedFiles).toBeGreaterThan(0)
   })
 
   it('survives a missing settings.json instead of throwing', () => {

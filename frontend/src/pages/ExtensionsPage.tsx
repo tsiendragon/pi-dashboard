@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { ExtInventory, ExtensionEntry } from '@shared/ext-inventory'
+import type { ExtDependencies, ExtInventory, ExtensionEntry } from '@shared/ext-inventory'
 
 interface GalleryPackage { name: string; description: string; version: string; author: string; date: string }
 interface AuditRecord { id: string; ts: string; action: string; target: string; ok: boolean; backupPath: string | null; error?: string }
@@ -58,12 +58,14 @@ function EntryRow({
   onToggle,
   actions,
   busy,
+  importedBy,
 }: {
   entry: ExtensionEntry
   expanded: boolean
   onToggle: () => void
   actions?: EntryActions
   busy?: boolean
+  importedBy?: string[]
 }) {
   const state = STATE_STYLES[entry.state]
   return (
@@ -79,6 +81,11 @@ function EntryRow({
         {!entry.declared && entry.group === 'package' && <Badge tone="warn" title="包内文件但未在该包 manifest 的 pi.extensions 里声明">undeclared</Badge>}
         {entry.duplicate && <Badge tone="warn" title="同一路径在 settings.json 里出现多次">duplicate</Badge>}
         {!entry.exists && <Badge tone="bad" title="文件不存在，Pi 会跳过">missing</Badge>}
+        {importedBy && importedBy.length > 0 && (
+          <Badge tone="warn" title={`静态扫描：${importedBy.join('、')} 会 import 这个包的代码（禁用本条目不会卸载代码）`}>
+            被 {importedBy.length} 个条目 import
+          </Badge>
+        )}
         {entry.patchedApi.length > 0 && (
           <Badge tone="warn" title={`推断（扫描源码得到，非声明依赖）：${entry.patchedApi.join(', ')}；需要补丁版 pi`}>
             需要补丁版 pi
@@ -118,7 +125,12 @@ function EntryRow({
             {entry.state === 'disabled' && ' ｜ 禁用只改前缀，不会卸载代码'}
           </div>
           {entry.description && <div>{entry.description}</div>}
-          {entry.patchedApi.length > 0 && (
+          {importedBy && importedBy.length > 0 && (
+          <Badge tone="warn" title={`静态扫描：${importedBy.join('、')} 会 import 这个包的代码（禁用本条目不会卸载代码）`}>
+            被 {importedBy.length} 个条目 import
+          </Badge>
+        )}
+        {entry.patchedApi.length > 0 && (
             <div>补丁 API（推断）：{entry.patchedApi.join('、')} —— 由源码文本扫描得到，不代表真实依赖关系</div>
           )}
         </div>
@@ -139,6 +151,7 @@ export default function ExtensionsPage() {
   const [galleryQuery, setGalleryQuery] = useState('')
   const [audit, setAudit] = useState<AuditRecord[]>([])
   const [source, setSource] = useState('')
+  const [deps, setDeps] = useState<ExtDependencies | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -174,10 +187,21 @@ export default function ExtensionsPage() {
     }
   }, [])
 
+  const loadDeps = useCallback(async () => {
+    try {
+      const response = await fetch('/api/pi/ext/deps')
+      if (!response.ok) return
+      setDeps((await response.json()) as ExtDependencies)
+    } catch {
+      /* the section simply stays empty */
+    }
+  }, [])
+
   useEffect(() => {
     void load()
     void loadAudit()
-  }, [load, loadAudit])
+    void loadDeps()
+  }, [load, loadAudit, loadDeps])
 
   const toggle = (key: string) => {
     setExpanded(previous => {
@@ -211,7 +235,12 @@ export default function ExtensionsPage() {
       diff: [`${enabling ? '~ 去掉 - 前缀' : '~ 加 - 前缀'}：${entry.raw}`],
       note: enabling
         ? '恢复为默认包含（原样回到未加前缀的写法）。'
-        : '禁用只让 Pi 不加载这一条，不会卸载代码：别的扩展仍可能 import 它的模块。',
+        : (() => {
+            const importers = entry.packageId ? sharedByPackage.get(entry.packageId) : undefined
+            return importers && importers.length > 0
+              ? `禁用只让 Pi 不加载这一条，不会卸载代码：${importers.join('、')} 仍会 import 这个包的模块（静态扫描结论）。`
+              : '禁用只让 Pi 不加载这一条，不会卸载代码：别的扩展仍可能 import 它的模块。'
+          })(),
       run: async () => {
         const payload = await post('/api/pi/ext/toggle', 'POST', { path: entry.path, enabled: enabling })
         setNotice(`${enabling ? '已启用' : '已禁用'} ${entry.name ?? entry.raw}｜备份：${payload.backupPath ?? '（无变化，未写盘）'}`)
@@ -278,6 +307,14 @@ export default function ExtensionsPage() {
       },
     })
   }
+
+  const sharedByPackage = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const item of deps?.sharedPackages ?? []) {
+      if (item.packageId) map.set(item.packageId, item.importedBy)
+    }
+    return map
+  }, [deps])
 
   const groups = useMemo(() => {
     const entries = data?.extensions ?? []
@@ -350,6 +387,7 @@ export default function ExtensionsPage() {
             <SummaryCard label="直接路径" value={data.counts.pathEntries} />
             <SummaryCard label="未纳管文件" value={data.counts.auto} hint="agent dir 的 extensions/ 下自动发现" />
             <SummaryCard label="异常 / 需补丁" value={`${data.counts.broken} / ${data.counts.patched}`} hint="文件缺失 / 用到补丁 API" />
+            <SummaryCard label="跨包引用" value={deps ? deps.crossImports.length : '…'} hint={deps ? `静态扫描 ${deps.scannedFiles} 个文件${deps.truncated ? '（已截断）' : ''}` : '扫描中…'} />
           </div>
 
           {data.drift.length > 0 && (
@@ -385,6 +423,7 @@ export default function ExtensionsPage() {
                     expanded={expanded.has(entry.raw)}
                     onToggle={() => toggle(entry.raw)}
                     busy={busy}
+                    importedBy={entry.packageId ? sharedByPackage.get(entry.packageId) : undefined}
                     actions={{
                       onEnable: () => requestToggle(entry),
                       onDisable: () => requestToggle(entry),
@@ -523,6 +562,28 @@ export default function ExtensionsPage() {
                       <button type="button" onClick={() => requestRollback(record.backupPath as string)}
                         className="ml-auto rounded border border-border px-2 py-0.5 text-2xs text-muted hover:text-text-strong">回滚</button>
                     )}
+                  </div>
+                ))}
+          </section>
+
+          <section className="overflow-hidden rounded-lg border border-border bg-card/40">
+            <header className="flex items-center gap-2 border-b border-border px-3 py-2">
+              <span className="text-sm font-medium text-text-strong">⑦ 共享代码（静态扫描）</span>
+              <span className="text-2xs text-muted">
+                这些包的代码被别的条目 import —— 禁用/删除条目不会卸载它们；只覆盖显式 import
+                {deps ? `（扫描 ${deps.scannedFiles} 个文件${deps.truncated ? '，已达上限截断' : ''}；外部依赖 ${deps.externalPackages.length} 个不计入）` : ''}
+              </span>
+            </header>
+            {!deps
+              ? <div className="px-4 py-3 text-xs text-muted">扫描中…（独立端点 /api/pi/ext/deps，按 settings.json 修改时间缓存）</div>
+              : deps.sharedPackages.length === 0
+              ? <div className="px-4 py-3 text-xs text-muted">无</div>
+              : deps.sharedPackages.map(item => (
+                  <div key={item.packageName ?? item.packageId ?? 'unknown'} className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5 last:border-b-0">
+                    <span className="text-xs text-text-strong">{item.packageName ?? item.packageId}</span>
+                    <Badge tone="warn">被 {item.importedBy.length} 个条目 import</Badge>
+                    <Badge>{item.files} 个文件</Badge>
+                    <span className="truncate text-2xs text-muted">{item.importedBy.join('、')}</span>
                   </div>
                 ))}
           </section>
