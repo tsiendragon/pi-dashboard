@@ -17,6 +17,8 @@
  *   - `tsien-memory.json` / `rtk-config.json` — resolved per project (`<cwd>/.pi/...`), not per machine.
  */
 import type { Express, Request, Response } from 'express'
+import type { LiveSessionBrowserAuth } from '../live-sessions/auth.js'
+import { requireBrowserAuth } from './require-browser-auth.js'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname, join, resolve, sep } from 'path'
 import os from 'os'
@@ -191,8 +193,10 @@ function readConfig(spec: ConfigSpec): unknown | undefined {
   }
 }
 
-export function registerExtConfigRoutes(options: { app: Express }): void {
-  const { app } = options
+export function registerExtConfigRoutes(options: { app: Express; auth: LiveSessionBrowserAuth }): void {
+  const { app, auth } = options
+  // Writing config files is a machine-state change; reads stay open like the other read APIs.
+  const requireAuth = requireBrowserAuth(auth)
 
   app.get('/api/ext/config', (_req: Request, res: Response) => {
     const dir = agentDir()
@@ -216,7 +220,7 @@ export function registerExtConfigRoutes(options: { app: Express }): void {
     })
   })
 
-  app.put('/api/ext/config/:name', (req: Request, res: Response) => {
+  app.put('/api/ext/config/:name', requireAuth, (req: Request, res: Response) => {
     const raw = req.params.name as string | string[] | undefined
     const name = Array.isArray(raw) ? raw[0] : raw
     if (!name || !Object.prototype.hasOwnProperty.call(CONFIG_SPECS, name)) {

@@ -132,6 +132,10 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 
 ## 8. 安全与边界
 
+> **已落地（2026-09-26）**：写接口（toggle / order / 扩展配置 PUT）统一走 `backend/routes/require-browser-auth.ts`，
+> 复用 live-session 浏览器认证（`pi_live_session` cookie）；未认证 401、跨域 403。只读接口保持开放。
+> 原设计里 P3 的「先确认 dashboard 是否已有鉴权」由此回答：**没有全局鉴权，但已有可复用的 live-session 信任边界**。
+
 - **安装 = 任意代码执行**：npm/git package 在会话启动时被 import。必须二次确认 + 展示来源
   （包名、版本、维护者、发布时间、下载量），并记录审计日志；默认不允许「一次装多个」的批量静默安装。
 - **鉴权**：dashboard 现有部署可能是内网/隧道（`docs/remote-access-deployment.md`）。暴露公网时该页必须鉴权。
