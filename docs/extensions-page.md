@@ -89,6 +89,22 @@ pi update self                -> 400 拒绝
 > 另：`settings.json` 的 `packages[]` 是 **string | object 的联合**（上游 `settings-manager.ts` 的 `PackageSource`）：
 > `pi install` 写的是**纯字符串**（相对 agent 目录，等价「加载该包全部资源」）。清单页已按此实现，并把这类包自带的条目列在「③ 由 package 自带（autoload）」组。
 
+## 依赖关系（P4，静态扫描）
+
+`GET /api/pi/ext/deps` —— **刻意独立于清单接口**：它要读几百个文件，放在列表里会让页面卡住（实测过：早期版本 list 直接超时）。
+
+- 解析方式与 Node 一致：相对路径按文件所在目录解析，包名先查 `settings.packages` 的包名，再走 `node_modules`（npm workspaces 软链），因此**不在 settings 里的库**（如 `pi-tsien-shared`）也能解析出来。
+- 归属按**最近的 `package.json`**（真实包边界）判定，而不是按路径前缀取第一个匹配（仓库根包会匹配一切，那样会把子包全归到根上）。
+- 只统计**显式 import**；动态 import、运行时反射不算。上限：每包 80 个文件、单文件 256KB（超出标 `truncated`）。
+- 结果按 `settings.json` 的 mtime+size 缓存（首次约 1s，之后 1ms 级）。
+- 第三方依赖（`jsdom`、`tree-sitter` …）单独列为 `externalPackages`，不混进「共享代码」。
+
+**页面用途**：每行显示「被 N 个条目 import」徽章；启用/禁用确认框会写出具体是哪些条目会继续 import 它的模块——把设计文档里「禁用 ≠ 卸载代码」从一句提醒变成可核对的事实。
+当前真实结论（本机 25 个条目）：`pi-tsien-shared` 13 个文件被 **7 个条目** import；另有 5 条单文件跨包引用（observation-pack、default-system-prompt、subagent-workbench、trajectory-recorder）。
+
+> 顺带清理：`extensions.config.json` / `settings.json` 里那条 **仓库根** package 声明（扩展搬到 `packages/*` 后已过时）已移除，
+> 另加「按目录名兜底匹配」使 `${VAR}` 未注入时仍能认到包 id（否则 `packageId` 与 drift 检查都会失效）。
+
 ## 已知边界
 
 - **禁用 ≠ 卸载代码**：`-` 前缀只让 Pi 不加载该条目，别的条目仍可能 `import` 它的模块（例如关掉 `pi-tsien-auto-compact`，`pi-tsien-live-session` 仍会 import 其 core）。写操作阶段（P2）必须在确认框里写清。
