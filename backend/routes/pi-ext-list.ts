@@ -6,10 +6,10 @@
  * vs `heuristic`). Read-only: writing stays with the syncer and `pi config`.
  */
 import type { Express, Request, Response } from 'express'
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'fs'
 import { join } from 'path'
 import os from 'os'
-import { buildExtensionInventory, type InventoryIo } from '../ext-inventory.js'
+import { buildExtensionInventory, deriveExtensionDependencies, type InventoryIo } from '../ext-inventory.js'
 
 function agentDir(): string {
   return process.env['PI_CODING_AGENT_DIR'] ?? join(os.homedir(), '.pi', 'agent')
@@ -52,6 +52,47 @@ const io: InventoryIo = {
       return []
     }
   },
+  realPath(path: string) {
+    try {
+      return realpathSync(path)
+    } catch {
+      return path
+    }
+  },
+  listFilesRecursive(dir: string) {
+    const out: string[] = []
+    const walk = (current: string): void => {
+      let items: import('fs').Dirent[] = []
+      try {
+        items = readdirSync(current, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const item of items) {
+        if (item.name === 'node_modules' || item.name.startsWith('.git')) continue
+        const full = join(current, item.name)
+        if (item.isDirectory()) walk(full)
+        else out.push(full.slice(dir.length + 1))
+      }
+    }
+    walk(dir)
+    return out
+  },
+}
+
+/**
+ * Cache for the dependency scan: keyed by settings.json mtime+size. The scan reads many files, so
+ * repeated page loads must not redo it; any settings change invalidates it.
+ */
+const depsCache = new Map<string, { key: string; payload: unknown }>()
+
+function depsCacheKey(agentDirectory: string): string {
+  try {
+    const stats = statSync(join(agentDirectory, 'settings.json'))
+    return `${stats.mtimeMs}:${stats.size}`
+  } catch {
+    return 'missing'
+  }
 }
 
 export function registerPiExtListRoutes({ app }: { app: Express }): void {
@@ -62,6 +103,23 @@ export function registerPiExtListRoutes({ app }: { app: Express }): void {
       res.json(inventory)
     } catch (error) {
       // Never fail the page because one manifest is malformed.
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error), agentDir: dir })
+    }
+  })
+
+  app.get('/api/pi/ext/deps', (_req: Request, res: Response) => {
+    const dir = agentDir()
+    const key = depsCacheKey(dir)
+    const cached = depsCache.get(dir)
+    if (cached && cached.key === key) {
+      res.json({ ...(cached.payload as Record<string, unknown>), cached: true })
+      return
+    }
+    try {
+      const payload = deriveExtensionDependencies({ agentDir: dir, env: process.env, io, maxFilesPerPackage: 80 })
+      depsCache.set(dir, { key, payload })
+      res.json({ ...payload, cached: false })
+    } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : String(error), agentDir: dir })
     }
   })

@@ -251,12 +251,12 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
 
   // Dashboard config
   app.get('/api/dash/config', (_req: Request, res: Response) => res.json(piEnv.getDashConfig()))
-  app.put('/api/dash/config', (req: Request, res: Response) => {
+  app.put('/api/dash/config', requireAuth((req: Request, res: Response) => {
     try {
       const saved = piEnv.saveDashConfig(req.body)
       res.json(saved)
     } catch (e: any) { res.status(500).json({ error: e.message }) }
-  })
+  }))
 
   // Vault
   app.get('/api/pi/vault', (_req: Request, res: Response) => res.json(piEnv.getVaultStats()))
@@ -311,7 +311,7 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
     res.json(settingsStore.read())
   })
 
-  app.put('/api/pi/settings', async (req: Request, res: Response) => {
+  app.put('/api/pi/settings', requireAuth(async (req: Request, res: Response) => {
     try {
       // Whole-file PUT goes through the shared store: serialized against the Extensions page's
       // enable/disable and reorder writes, backed up before writing, atomic rename.
@@ -320,7 +320,7 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
       })
       res.json({ ok: true, changed: outcome.changed, backupPath: outcome.backupPath })
     } catch (e: any) { res.status(500).json({ error: e.message }) }
-  })
+  }))
 
   // Package management — kept for the Settings page, but now the same gated implementation the
   // Extensions page uses (no shell, settings backup, audit record, browser auth).
