@@ -77,8 +77,8 @@ function Shell({ icon, title, subtitle, badge, children, isError }: {
   isError?: boolean
 }) {
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">{icon}</span>
         <span className="text-[13px] font-semibold text-text">{title}</span>
         {subtitle && <span className="text-[11px] text-muted font-mono truncate min-w-0">{subtitle}</span>}
@@ -91,10 +91,10 @@ function Shell({ icon, title, subtitle, badge, children, isError }: {
 
 function Badge({ tone, children }: { tone: 'ok' | 'warn' | 'danger' | 'info' | 'muted'; children: React.ReactNode }) {
   const map = {
-    ok: 'bg-ok/15 text-ok',
+    ok: 'bg-ok-subtle text-ok',
     warn: 'bg-warning/15 text-warning',
-    danger: 'bg-danger/15 text-danger',
-    info: 'bg-accent/15 text-accent',
+    danger: 'bg-danger-subtle text-danger',
+    info: 'bg-accent-subtle text-accent',
     muted: 'bg-bg-hover text-muted',
   }
   return (
@@ -208,7 +208,7 @@ export function EnsembleListRenderer({ toolResult, isError }: ToolProps) {
       {!isError && count > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {personas.map(p => (
-            <div key={p.name} className="rounded-md border border-border bg-bg-hover/30 p-2">
+            <div key={p.name} className="rounded-md border border-border bg-bg-hover p-2">
               <div className="flex items-center gap-2">
                 <span className="text-[13px] font-semibold text-accent font-mono">{p.name}</span>
                 {p.source && (
@@ -217,7 +217,7 @@ export function EnsembleListRenderer({ toolResult, isError }: ToolProps) {
                   </span>
                 )}
               </div>
-              <div className="text-[12px] text-text/80 mt-0.5">{p.description}</div>
+              <div className="text-[12px] text-text opacity-80 mt-0.5">{p.description}</div>
               <div className="flex flex-wrap gap-1 mt-1.5">
                 {p.model && p.model !== 'inherited' && <Badge tone="muted">{p.model}</Badge>}
                 {p.thinking && p.thinking !== 'inherited' && <Badge tone="muted">think:{p.thinking}</Badge>}
@@ -345,9 +345,9 @@ export function EnsembleStatusRenderer({ toolInput, toolResult, isError }: ToolP
                 </div>
                 <div className="space-y-1">
                   {list.map(e => (
-                    <div key={e.id} className="rounded border border-border/60 bg-bg-hover/30 px-2 py-1 text-[12px] flex items-center gap-2 flex-wrap">
+                    <div key={e.id} className="rounded border border-border bg-bg-hover px-2 py-1 text-[12px] flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-accent">{e.id}</span>
-                      <span className="text-text/80">{e.persona}</span>
+                      <span className="text-text opacity-80">{e.persona}</span>
                       <span className="text-muted">{e.elapsed}</span>
                       {e.usage && <span className="text-muted font-mono text-[11px]">[{e.usage}]</span>}
                       {e.lastToolCall && (
@@ -698,9 +698,9 @@ function ActivityRow({ ev }: { ev: ActivityEvent }) {
     )
   }
   const icon = ev.kind === 'tool' ? '🔧' : ev.kind === 'thinking' ? '💭' : '💬'
-  const tone = ev.kind === 'tool' ? 'text-accent' : ev.kind === 'thinking' ? 'text-muted italic' : 'text-text/80'
+  const tone = ev.kind === 'tool' ? 'text-accent' : ev.kind === 'thinking' ? 'text-muted italic' : 'text-text opacity-80'
   return (
-    <div className="flex items-start gap-2 px-1.5 py-0.5 text-[12px] hover:bg-bg-hover/30 rounded">
+    <div className="flex items-start gap-2 px-1.5 py-0.5 text-[12px] hover:bg-bg-hover rounded">
       <span className="shrink-0">{icon}</span>
       <div className="min-w-0 flex-1">
         <span className={`font-mono ${tone}`}>{ev.label}</span>
@@ -758,13 +758,13 @@ function LiveRunInline({ p, taskInput, sendInput }: {
 
       {/* Task / message — collapsed by default to keep card compact */}
       {taskOrMsg && (
-        <div className="rounded border border-border/60 bg-bg-hover/30 overflow-hidden">
+        <div className="rounded border border-border bg-bg-hover overflow-hidden">
           <button
             onClick={() => setShowTask(s => !s)}
-            className="w-full flex items-center gap-2 px-2 py-1 hover:bg-bg-hover/60 text-left"
+            className="w-full flex items-center gap-2 px-2 py-1 hover:bg-bg-hover text-left"
           >
             <span className="text-[10px] uppercase tracking-wider text-muted">{taskLabel}</span>
-            <span className="text-[11px] text-text/70 truncate flex-1 min-w-0">
+            <span className="text-[11px] text-text opacity-70 truncate flex-1 min-w-0">
               {taskOrMsg.replace(/\s+/g, ' ').slice(0, 100)}
               {taskOrMsg.length > 100 ? '…' : ''}
             </span>
@@ -773,7 +773,7 @@ function LiveRunInline({ p, taskInput, sendInput }: {
             </span>
           </button>
           {showTask && (
-            <pre className="px-2 pb-2 pt-0 text-[12px] text-text/85 whitespace-pre-wrap font-mono leading-snug max-h-72 overflow-y-auto">
+            <pre className="px-2 pb-2 pt-0 text-[12px] text-text opacity-85 whitespace-pre-wrap font-mono leading-snug max-h-72 overflow-y-auto">
               {taskOrMsg}
             </pre>
           )}
@@ -782,10 +782,10 @@ function LiveRunInline({ p, taskInput, sendInput }: {
 
       {/* Live activity (only meaningful if we have a transcript). */}
       {p.agentId && (transcript !== null || isActive) && (
-        <div className="rounded border border-border/60 overflow-hidden">
+        <div className="rounded border border-border overflow-hidden">
           <button
             onClick={() => setShowActivity(s => !s)}
-            className="w-full flex items-center gap-2 px-2 py-1 bg-bg-hover/40 hover:bg-bg-hover/70 text-left"
+            className="w-full flex items-center gap-2 px-2 py-1 bg-bg-hover hover:bg-bg-hover text-left"
           >
             <span className="text-[11px]">📜</span>
             <span className="text-[11px] font-semibold text-text">Activity</span>
@@ -813,17 +813,17 @@ function LiveRunInline({ p, taskInput, sendInput }: {
 
       {/* Final output / excerpt on terminal status. */}
       {!isActive && status === 'completed' && (final || p.excerpt) && (
-        <div className="rounded border border-ok/20 bg-ok/5 overflow-hidden">
+        <div className="rounded border border-ok bg-ok-subtle overflow-hidden">
           <button
             onClick={() => setShowFinal(s => !s)}
-            className="w-full flex items-center gap-2 px-2 py-1 hover:bg-ok/10 text-left"
+            className="w-full flex items-center gap-2 px-2 py-1 hover:bg-ok-subtle text-left"
           >
             <span className="text-[11px]">📝</span>
             <span className="text-[11px] font-semibold text-text">Final output</span>
             <span className="text-[10px] text-muted ml-auto">{showFinal ? '▾' : '▸'}</span>
           </button>
           {showFinal && (
-            <div className="px-2 pb-2 pt-0 text-[12px] text-text/85 whitespace-pre-wrap font-mono leading-relaxed max-h-96 overflow-y-auto">
+            <div className="px-2 pb-2 pt-0 text-[12px] text-text opacity-85 whitespace-pre-wrap font-mono leading-relaxed max-h-96 overflow-y-auto">
               {final !== null && final !== '' ? final
                 : p.excerpt ? `"${p.excerpt}"`
                 : <span className="text-muted italic">loading…</span>}
@@ -834,7 +834,7 @@ function LiveRunInline({ p, taskInput, sendInput }: {
 
       {/* Error / non-completed terminal */}
       {!isActive && status !== 'completed' && (record?.errorMessage || p.errorMessage) && (
-        <div className="rounded border border-danger/20 bg-danger/5 p-2 text-[12px] text-text/90">
+        <div className="rounded border border-danger bg-danger-subtle p-2 text-[12px] text-text opacity-90">
           {record?.errorMessage || p.errorMessage}
         </div>
       )}
@@ -912,7 +912,7 @@ export function EnsembleSpawnRenderer({ toolInput, toolResult, partialResult, is
         <div className="mt-2 flex items-center gap-2">
           <button
             onClick={handleDetach}
-            className="text-[11px] px-2 py-0.5 rounded border border-accent/50 text-accent hover:bg-accent/10 cursor-pointer bg-transparent transition-colors"
+            className="text-[11px] px-2 py-0.5 rounded border border-accent text-accent hover:bg-accent-subtle cursor-pointer bg-transparent transition-colors"
             title="Detach to background (Esc)"
           >
             → BG
@@ -995,13 +995,13 @@ function ActionRenderer({
     >
       {isError && <ErrorBody text={toolResult} />}
       {!isError && !noop && (
-        <div className="text-[12px] text-text/80">
+        <div className="text-[12px] text-text opacity-80">
           Sub-agent <span className="font-mono text-accent">{agentId}</span> {okWord.toLowerCase()}.
         </div>
       )}
       {!isError && noop && noopMatch && (
         <div className="text-[12px] text-muted">
-          Already <span className="font-mono text-text/80">{noopMatch[1]}</span>; no action taken.
+          Already <span className="font-mono text-text opacity-80">{noopMatch[1]}</span>; no action taken.
         </div>
       )}
     </Shell>
@@ -1051,7 +1051,7 @@ export function EnsembleFocusRenderer({ toolInput, toolResult, isError }: ToolPr
     >
       {isError && <ErrorBody text={toolResult} />}
       {!isError && (
-        <div className="text-[12px] text-text/80">
+        <div className="text-[12px] text-text opacity-80">
           {text || '(no output)'}
         </div>
       )}

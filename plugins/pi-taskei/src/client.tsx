@@ -16,8 +16,8 @@ function CardShell({ icon, title, subtitle, badge, children, isError }: {
   icon: string; title: string; subtitle?: string; badge?: React.ReactNode; children: React.ReactNode; isError?: boolean
 }) {
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">{icon}</span>
         <span className="text-[13px] font-semibold text-text">{title}</span>
         {subtitle && <span className="text-[11px] text-muted truncate">{subtitle}</span>}
@@ -33,10 +33,10 @@ function tryParseJSON(text: string): any {
 }
 
 const statusColors: Record<string, string> = {
-  Open: 'bg-accent/15 text-accent',
-  'In Progress': 'bg-warn/15 text-warn',
-  Closed: 'bg-ok/15 text-ok',
-  Blocked: 'bg-danger/15 text-danger',
+  Open: 'bg-accent-subtle text-accent',
+  'In Progress': 'bg-warn-subtle text-warn',
+  Closed: 'bg-ok-subtle text-ok',
+  Blocked: 'bg-danger-subtle text-danger',
 }
 
 const priorityColors: Record<string, string> = {
@@ -65,7 +65,7 @@ export function TaskeiListRenderer({ toolInput, toolResult, isError }: ToolProps
             {expanded ? '▼' : '▶'} {tasks.length} task{tasks.length !== 1 ? 's' : ''}
           </button>
           {expanded && tasks.map((t: any, i: number) => (
-            <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover/50 text-[13px]">
+            <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover text-[13px]">
               <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${statusColors[t.status] || 'bg-bg-hover text-muted'}`}>
                 {t.status || '?'}
               </span>
@@ -74,7 +74,7 @@ export function TaskeiListRenderer({ toolInput, toolResult, isError }: ToolProps
                 {t.assignee && <span className="text-[11px] text-muted">👤 {t.assignee}</span>}
               </div>
               {t.priority && <span className={`text-[11px] shrink-0 ${priorityColors[t.priority] || 'text-muted'}`}>{t.priority}</span>}
-              {t.id && <span className="text-[10px] text-muted/50 font-mono shrink-0">{t.id}</span>}
+              {t.id && <span className="text-[10px] text-muted opacity-50 font-mono shrink-0">{t.id}</span>}
             </div>
           ))}
         </div>
@@ -98,7 +98,7 @@ export function TaskeiGetRenderer({ toolInput, toolResult, isError }: ToolProps)
       {!isError && !data && <pre className="text-muted text-[12px] font-mono whitespace-pre-wrap">{toolResult}</pre>}
       {!isError && data && (
         <div className="space-y-2">
-          {task.description && <p className="text-[13px] text-text/80">{task.description}</p>}
+          {task.description && <p className="text-[13px] text-text opacity-80">{task.description}</p>}
           <div className="flex flex-wrap gap-3 text-[12px]">
             {task.assignee && <span className="text-muted">👤 {task.assignee}</span>}
             {task.priority && <span className={priorityColors[task.priority] || 'text-muted'}>⚡ {task.priority}</span>}
@@ -108,7 +108,7 @@ export function TaskeiGetRenderer({ toolInput, toolResult, isError }: ToolProps)
           {task.tags?.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {task.tags.map((tag: string, i: number) => (
-                <span key={i} className="px-1.5 py-0.5 rounded bg-accent/10 text-accent text-[10px] font-medium">{tag}</span>
+                <span key={i} className="px-1.5 py-0.5 rounded bg-accent-subtle text-accent text-[10px] font-medium">{tag}</span>
               ))}
             </div>
           )}
@@ -127,13 +127,13 @@ export function TaskeiUpdateRenderer({ toolInput, toolResult, isError }: ToolPro
 
   return (
     <CardShell icon="✏️" title="Update Task" subtitle={id}
-      badge={!isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok/15 text-ok">✓ Updated</span> : null}
+      badge={!isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok-subtle text-ok">✓ Updated</span> : null}
       isError={isError}>
       {isError && <pre className="text-danger text-[12px] font-mono whitespace-pre-wrap">{toolResult}</pre>}
       {!isError && (
         <div className="space-y-1.5">
           {status && <div className="text-[13px]">Status → <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${statusColors[status] || 'bg-bg-hover text-muted'}`}>{status}</span></div>}
-          {comment && <div className="px-2 py-1.5 rounded bg-bg-hover/50 text-[13px] text-text/80 italic">💬 {comment}</div>}
+          {comment && <div className="px-2 py-1.5 rounded bg-bg-hover text-[13px] text-text opacity-80 italic">💬 {comment}</div>}
           {!status && !comment && <p className="text-muted text-[13px]">{toolResult}</p>}
         </div>
       )}
@@ -148,7 +148,7 @@ export function TaskeiCreateRenderer({ toolInput, toolResult, isError }: ToolPro
 
   return (
     <CardShell icon="➕" title="Create Task"
-      badge={!isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok/15 text-ok">✓ Created</span> : null}
+      badge={!isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok-subtle text-ok">✓ Created</span> : null}
       isError={isError}>
       {isError && <pre className="text-danger text-[12px] font-mono whitespace-pre-wrap">{toolResult}</pre>}
       {!isError && (
@@ -176,9 +176,9 @@ export function TaskeiRoomsRenderer({ toolResult, isError }: ToolProps) {
       {!isError && rooms.length > 0 && (
         <div className="space-y-1">
           {rooms.map((r: any, i: number) => (
-            <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-hover/50 text-[13px]">
+            <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-hover text-[13px]">
               <span className="text-text font-medium">{r.name || r.title}</span>
-              {r.id && <span className="text-[10px] text-muted/50 font-mono ml-auto">{r.id}</span>}
+              {r.id && <span className="text-[10px] text-muted opacity-50 font-mono ml-auto">{r.id}</span>}
             </div>
           ))}
         </div>

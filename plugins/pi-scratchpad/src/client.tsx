@@ -42,17 +42,17 @@ export function NoteRenderer({ toolInput, toolResult, isError }: ToolProps) {
   const notes = isList ? parseNoteList(toolResult || '') : []
 
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">{cfg.icon}</span>
         <span className="text-[13px] font-semibold text-text">{cfg.label}</span>
         {key && action !== 'list' && <span className="text-[12px] font-mono text-accent">{key}</span>}
         {isList && notes.length > 0 && <span className="text-[11px] text-muted ml-auto">{notes.length} note{notes.length !== 1 ? 's' : ''}</span>}
         {!isList && !isError && (
-          <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok/15 text-ok">✓</span>
+          <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok-subtle text-ok">✓</span>
         )}
         {isError && (
-          <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger/15 text-danger">✗</span>
+          <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger-subtle text-danger">✗</span>
         )}
       </div>
       <div className="p-3">
@@ -60,7 +60,7 @@ export function NoteRenderer({ toolInput, toolResult, isError }: ToolProps) {
 
         {/* set action — show key = value */}
         {!isError && action === 'set' && (
-          <div className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover/50 text-[13px]">
+          <div className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover text-[13px]">
             <span className="font-mono text-accent font-medium shrink-0">{key}</span>
             <span className="text-muted">=</span>
             <span className="text-text flex-1">{value}</span>
@@ -69,7 +69,7 @@ export function NoteRenderer({ toolInput, toolResult, isError }: ToolProps) {
 
         {/* get action — show value */}
         {!isError && action === 'get' && (
-          <div className="px-2 py-1.5 rounded bg-bg-hover/50 text-[13px]">
+          <div className="px-2 py-1.5 rounded bg-bg-hover text-[13px]">
             <span className="text-text">{toolResult}</span>
           </div>
         )}
@@ -84,7 +84,7 @@ export function NoteRenderer({ toolInput, toolResult, isError }: ToolProps) {
               {expanded ? '▼' : '▶'} {notes.length} note{notes.length !== 1 ? 's' : ''}
             </button>
             {expanded && notes.map((n, i) => (
-              <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover/50 text-[13px]">
+              <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover text-[13px]">
                 <span className="font-mono text-accent font-medium shrink-0">{n.key}</span>
                 <span className="text-text flex-1">{n.value}</span>
               </div>

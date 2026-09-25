@@ -17,8 +17,8 @@ const mdStyles = '[&_p]:my-1 [&_code]:text-accent [&_code]:text-[11px] [&_pre]:b
 
 function CardShell({ icon, title, subtitle, children, isError }: { icon: string; title: string; subtitle?: string; children: React.ReactNode; isError?: boolean }) {
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">{icon}</span>
         <span className="text-[13px] font-semibold text-text">{title}</span>
         {subtitle && <span className="text-[11px] text-muted ml-auto">{subtitle}</span>}
@@ -82,7 +82,7 @@ export function SessionSearchRenderer({ toolInput, toolResult, isError }: ToolPr
           {results.map((r, i) => (
             <div key={i} className="rounded border border-border overflow-hidden">
               <button
-                className="w-full flex items-center gap-2 px-2.5 py-2 text-left bg-transparent border-none cursor-pointer hover:bg-bg-hover/50 transition-colors"
+                className="w-full flex items-center gap-2 px-2.5 py-2 text-left bg-transparent border-none cursor-pointer hover:bg-bg-hover transition-colors"
                 onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
               >
                 <span className={`text-[10px] transition-transform ${expandedIdx === i ? 'rotate-90' : ''}`}>▶</span>
@@ -90,11 +90,11 @@ export function SessionSearchRenderer({ toolInput, toolResult, isError }: ToolPr
                 <span className="text-[11px] text-accent font-mono shrink-0">{r.score.includes('%') ? r.score : r.score + '%'}</span>
               </button>
               {expandedIdx === i && (
-                <div className="px-3 pb-2.5 space-y-1 border-t border-border/50 bg-bg-hover/30">
+                <div className="px-3 pb-2.5 space-y-1 border-t border-border bg-bg-hover">
                   {r.date && <div className="text-[11px] text-muted">📅 {r.date}</div>}
                   {r.cwd && <div className="text-[11px] text-muted font-mono">📁 {r.cwd}</div>}
                   {r.file && <div className="text-[11px] text-muted font-mono">📄 {r.file}</div>}
-                  {r.summary && <div className={`text-[12px] text-text/80 mt-1 ${mdStyles}`}><MarkdownRenderer content={r.summary} /></div>}
+                  {r.summary && <div className={`text-[12px] text-text opacity-80 mt-1 ${mdStyles}`}><MarkdownRenderer content={r.summary} /></div>}
                 </div>
               )}
             </div>
@@ -151,7 +151,7 @@ export function SessionListRenderer({ toolInput, toolResult, isError }: ToolProp
       {!isError && items.length > 0 && (
         <div className="space-y-1">
           {items.map((s, i) => (
-            <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover/50 text-[13px]">
+            <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover text-[13px]">
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-text truncate">{s.title}</div>
                 <div className="flex items-center gap-2 text-[11px] text-muted mt-0.5">
@@ -188,7 +188,7 @@ export function SessionReadRenderer({ toolInput, toolResult, isError }: ToolProp
             {expanded ? '▼ Collapse' : '▶ Show conversation'} ({lineCount} lines)
           </button>
           {expanded && (
-            <div className={`text-[12px] text-text/80 leading-relaxed max-h-[400px] overflow-y-auto ${mdStyles}`}>
+            <div className={`text-[12px] text-text opacity-80 leading-relaxed max-h-[400px] overflow-y-auto ${mdStyles}`}>
               <MarkdownRenderer content={toolResult || ''} />
             </div>
           )}

@@ -16,8 +16,8 @@ function CardShell({ icon, title, subtitle, badge, children, isError }: {
   icon: string; title: string; subtitle?: string; badge?: React.ReactNode; children: React.ReactNode; isError?: boolean
 }) {
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">{icon}</span>
         <span className="text-[13px] font-semibold text-text">{title}</span>
         {subtitle && <span className="text-[11px] text-muted font-mono truncate">{subtitle}</span>}
@@ -36,7 +36,7 @@ function FileLocation({ loc }: { loc: string }) {
     <span className="font-mono text-[12px]">
       <span className="text-accent">{match[1]}</span>
       <span className="text-muted">:{match[2]}</span>
-      {match[3] && <span className="text-muted/60">:{match[3]}</span>}
+      {match[3] && <span className="text-muted opacity-60">:{match[3]}</span>}
     </span>
   )
 }
@@ -74,9 +74,9 @@ function parseDiagnostics(text: string): { diagnostics: Diagnostic[]; summary: s
 }
 
 const severityConfig = {
-  error: { icon: '✗', color: 'text-danger', bg: 'bg-danger/10 border-danger/20' },
-  warning: { icon: '⚠', color: 'text-warn', bg: 'bg-warn/10 border-warn/20' },
-  info: { icon: 'ℹ', color: 'text-accent', bg: 'bg-accent/10 border-accent/20' },
+  error: { icon: '✗', color: 'text-danger', bg: 'bg-danger-subtle border-danger' },
+  warning: { icon: '⚠', color: 'text-warn', bg: 'bg-warn-subtle border-warn' },
+  info: { icon: 'ℹ', color: 'text-accent', bg: 'bg-accent-subtle border-accent' },
   hint: { icon: '💡', color: 'text-muted', bg: 'bg-bg-hover border-border' },
 }
 
@@ -88,11 +88,11 @@ export function DiagnosticsRenderer({ toolInput, toolResult, isError }: ToolProp
   const warnings = diagnostics.filter(d => d.severity === 'warning').length
 
   const badge = clean
-    ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok/15 text-ok">✓ Clean</span>
+    ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok-subtle text-ok">✓ Clean</span>
     : errors > 0
-      ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger/15 text-danger">{errors} error{errors !== 1 ? 's' : ''}{warnings > 0 ? `, ${warnings} warn` : ''}</span>
+      ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger-subtle text-danger">{errors} error{errors !== 1 ? 's' : ''}{warnings > 0 ? `, ${warnings} warn` : ''}</span>
       : warnings > 0
-        ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-warn/15 text-warn">{warnings} warning{warnings !== 1 ? 's' : ''}</span>
+        ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-warn-subtle text-warn">{warnings} warning{warnings !== 1 ? 's' : ''}</span>
         : null
 
   return (
@@ -110,9 +110,9 @@ export function DiagnosticsRenderer({ toolInput, toolResult, isError }: ToolProp
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <FileLocation loc={`${d.file}:${d.line}:${d.col}`} />
-                    {d.code && <span className="text-muted/60 text-[10px]">({d.code})</span>}
+                    {d.code && <span className="text-muted opacity-60 text-[10px]">({d.code})</span>}
                   </div>
-                  <div className="text-text/80 mt-0.5">{d.message}</div>
+                  <div className="text-text opacity-80 mt-0.5">{d.message}</div>
                 </div>
               </div>
             )
@@ -163,7 +163,7 @@ export function DefinitionRenderer({ toolInput, toolResult, isError }: ToolProps
       {!isError && locations.length > 0 && (
         <div className="space-y-1">
           {locations.map((loc, i) => (
-            <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-hover/50">
+            <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-hover">
               <span className="text-[12px]">📍</span>
               <FileLocation loc={loc} />
             </div>
@@ -212,7 +212,7 @@ export function ReferencesRenderer({ toolInput, toolResult, isError }: ToolProps
             {expanded ? '▼' : '▶'} {byFile.size} file{byFile.size !== 1 ? 's' : ''}
           </button>
           {expanded && Array.from(byFile.entries()).map(([file, locs]) => (
-            <div key={file} className="rounded bg-bg-hover/50 px-2 py-1.5">
+            <div key={file} className="rounded bg-bg-hover px-2 py-1.5">
               <div className="text-[12px] font-mono text-accent font-medium">{file}</div>
               <div className="flex flex-wrap gap-1 mt-1">
                 {locs.map((loc, i) => (
@@ -275,9 +275,9 @@ export function SymbolsRenderer({ toolInput, toolResult, isError }: ToolProps) {
           {expanded && symbols.map((s, i) => (
             <div key={i} className="flex items-center gap-1.5 text-[12px] font-mono" style={{ paddingLeft: `${s.indent * 8 + 8}px` }}>
               <span className="text-[11px] w-4 text-center shrink-0">{symbolIcons[s.kind.toLowerCase()] || '•'}</span>
-              <span className="text-muted/60 text-[10px] w-16 shrink-0">{s.kind}</span>
+              <span className="text-muted opacity-60 text-[10px] w-16 shrink-0">{s.kind}</span>
               <span className="text-text font-medium">{s.name}</span>
-              {s.line && <span className="text-muted/50 ml-auto">:{s.line}</span>}
+              {s.line && <span className="text-muted opacity-50 ml-auto">:{s.line}</span>}
             </div>
           ))}
         </div>
@@ -311,7 +311,7 @@ export function CompletionsRenderer({ toolInput, toolResult, isError }: ToolProp
             {expanded ? '▼' : '▶'} {header}
           </button>
           {expanded && (
-            <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre max-h-[300px] overflow-y-auto text-text/80">
+            <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre max-h-[300px] overflow-y-auto text-text opacity-80">
               {completions.join('\n')}
             </pre>
           )}
@@ -371,18 +371,18 @@ export function AstSearchRenderer({ toolInput, toolResult, isError }: ToolProps)
       {!isError && matches.length === 0 && <p className="text-muted text-[13px] italic">{toolResult || 'No matches.'}</p>}
       {!isError && matches.length > 0 && (
         <div className="space-y-1">
-          <div className="px-2 py-1 rounded bg-bg-hover/50 text-[12px] font-mono text-muted truncate" title={pattern}>{pattern}</div>
+          <div className="px-2 py-1 rounded bg-bg-hover text-[12px] font-mono text-muted truncate" title={pattern}>{pattern}</div>
           <button onClick={() => setExpanded(!expanded)} className="text-[11px] text-muted hover:text-text bg-transparent border-none cursor-pointer">
             {expanded ? '▼' : '▶'} {matches.length} match{matches.length !== 1 ? 'es' : ''}
           </button>
           {expanded && matches.map((m, i) => (
             <div key={i} className="rounded border border-border overflow-hidden">
-              <div className="px-2 py-1 bg-bg-hover/30">
+              <div className="px-2 py-1 bg-bg-hover">
                 <FileLocation loc={m.location} />
               </div>
-              <pre className="px-2 py-1 text-[12px] font-mono text-text/80 overflow-x-auto whitespace-pre-wrap">{m.code}</pre>
+              <pre className="px-2 py-1 text-[12px] font-mono text-text opacity-80 overflow-x-auto whitespace-pre-wrap">{m.code}</pre>
               {m.captures.length > 0 && (
-                <div className="px-2 py-1 border-t border-border/50 bg-accent/5">
+                <div className="px-2 py-1 border-t border-border bg-accent-subtle">
                   {m.captures.map((c, j) => (
                     <div key={j} className="text-[11px] font-mono text-accent">{c}</div>
                   ))}
@@ -411,7 +411,7 @@ export function CodeRewriteRenderer({ toolInput, toolResult, isError }: ToolProp
     <CardShell icon={dryRun ? '🔍' : '✏️'} title={dryRun ? 'Code Rewrite (dry run)' : 'Code Rewrite'}
       badge={
         count > 0
-          ? <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${dryRun ? 'bg-warn/15 text-warn' : 'bg-ok/15 text-ok'}`}>
+          ? <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${dryRun ? 'bg-warn-subtle text-warn' : 'bg-ok-subtle text-ok'}`}>
               {dryRun ? `${count} would change` : `${count} applied`}
             </span>
           : null
@@ -421,11 +421,11 @@ export function CodeRewriteRenderer({ toolInput, toolResult, isError }: ToolProp
       {!isError && (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2 text-[12px]">
-            <div className="px-2 py-1.5 rounded bg-bg-hover/50">
+            <div className="px-2 py-1.5 rounded bg-bg-hover">
               <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Pattern</div>
-              <code className="font-mono text-text/80">{pattern}</code>
+              <code className="font-mono text-text opacity-80">{pattern}</code>
             </div>
-            <div className="px-2 py-1.5 rounded bg-bg-hover/50">
+            <div className="px-2 py-1.5 rounded bg-bg-hover">
               <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Replacement</div>
               <code className="font-mono text-accent">{replacement}</code>
             </div>
@@ -436,7 +436,7 @@ export function CodeRewriteRenderer({ toolInput, toolResult, isError }: ToolProp
                 {expanded ? '▼ Hide diff' : '▶ Show diff'}
               </button>
               {expanded && (
-                <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto text-text/80">
+                <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto text-text opacity-80">
                   {toolResult}
                 </pre>
               )}
@@ -464,7 +464,7 @@ export function CodeOverviewRenderer({ toolInput, toolResult, isError }: ToolPro
             {expanded ? '▼ Collapse' : '▶ Expand'}
           </button>
           {expanded && (
-            <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre-wrap max-h-[400px] overflow-y-auto text-text/80">
+            <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre-wrap max-h-[400px] overflow-y-auto text-text opacity-80">
               {toolResult}
             </pre>
           )}
