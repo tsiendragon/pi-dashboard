@@ -20,8 +20,8 @@ function CardShell({ icon, title, subtitle, badge, children, isError }: {
   icon: string; title: string; subtitle?: string; badge?: React.ReactNode; children: React.ReactNode; isError?: boolean
 }) {
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">{icon}</span>
         <span className="text-[13px] font-semibold text-text">{title}</span>
         {subtitle && <span className="text-[11px] text-muted font-mono truncate">{subtitle}</span>}
@@ -44,8 +44,8 @@ export function InitExperimentRenderer({ toolInput, toolResult, isError }: ToolP
 
   return (
     <CardShell icon="🧪" title="Init Experiment" badge={
-      ok ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok/15 text-ok">✓ Ready</span>
-         : isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger/15 text-danger">✗ Failed</span>
+      ok ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok-subtle text-ok">✓ Ready</span>
+         : isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger-subtle text-danger">✗ Failed</span>
          : null
     } isError={isError}>
       {isError && <pre className="text-danger text-[12px] font-mono whitespace-pre-wrap">{toolResult}</pre>}
@@ -53,17 +53,17 @@ export function InitExperimentRenderer({ toolInput, toolResult, isError }: ToolP
         <div className="space-y-2">
           <div className="text-[15px] font-semibold text-text">{name}</div>
           <div className="flex gap-4 text-[12px]">
-            <div className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg bg-bg-hover/50">
+            <div className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg bg-bg-hover">
               <span className="text-muted text-[10px] uppercase tracking-wider">Metric</span>
               <span className="text-accent font-mono font-medium">{metric}</span>
             </div>
             {unit && (
-              <div className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg bg-bg-hover/50">
+              <div className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg bg-bg-hover">
                 <span className="text-muted text-[10px] uppercase tracking-wider">Unit</span>
                 <span className="text-text font-mono">{unit}</span>
               </div>
             )}
-            <div className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg bg-bg-hover/50">
+            <div className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg bg-bg-hover">
               <span className="text-muted text-[10px] uppercase tracking-wider">Direction</span>
               <span className="text-text font-mono">{direction === 'lower' ? '↓ lower' : '↑ higher'} is better</span>
             </div>
@@ -121,14 +121,14 @@ export function RunExperimentRenderer({ toolInput, toolResult, isError }: ToolPr
   const statusBadge = running
     ? <span className="inline-block w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
     : result.crashed || isError
-      ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger/15 text-danger">✗ {result.timedOut ? 'Timeout' : 'Failed'}</span>
-      : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok/15 text-ok">✓ Passed</span>
+      ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger-subtle text-danger">✗ {result.timedOut ? 'Timeout' : 'Failed'}</span>
+      : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok-subtle text-ok">✓ Passed</span>
 
   return (
     <CardShell icon="⚡" title="Run Experiment" subtitle={result.duration} badge={statusBadge} isError={isError}>
       <div className="space-y-2">
         {/* Command */}
-        <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-hover/50">
+        <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-bg-hover">
           <span className="text-muted text-[11px] shrink-0">$</span>
           <code className="text-[12px] font-mono text-text truncate">{command}</code>
           {result.exitCode && <span className="text-muted text-[11px] ml-auto shrink-0">exit {result.exitCode}</span>}
@@ -138,7 +138,7 @@ export function RunExperimentRenderer({ toolInput, toolResult, isError }: ToolPr
         {result.metrics.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {result.metrics.map((m, i) => (
-              <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded bg-accent/10 border border-accent/20 text-[12px]">
+              <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded bg-accent-subtle border border-accent text-[12px]">
                 <span className="text-muted font-mono">{m.name}</span>
                 <span className="text-accent font-mono font-bold">{m.value}</span>
               </div>
@@ -156,7 +156,7 @@ export function RunExperimentRenderer({ toolInput, toolResult, isError }: ToolPr
               {expanded ? '▼ Hide output' : '▶ Show output'}
             </button>
             {expanded && (
-              <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto text-text/80">
+              <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto text-text opacity-80">
                 {toolResult}
               </pre>
             )}
@@ -170,10 +170,10 @@ export function RunExperimentRenderer({ toolInput, toolResult, isError }: ToolPr
 // ── log_experiment ───────────────────────────────────────────────────────────
 
 const statusStyles: Record<string, { icon: string; bg: string; text: string; label: string }> = {
-  keep:          { icon: '✓', bg: 'bg-ok/15',     text: 'text-ok',     label: 'Keep' },
-  discard:       { icon: '✗', bg: 'bg-muted/15',  text: 'text-muted',  label: 'Discard' },
-  crash:         { icon: '💥', bg: 'bg-danger/15', text: 'text-danger', label: 'Crash' },
-  checks_failed: { icon: '⚠', bg: 'bg-warn/15',  text: 'text-warn',   label: 'Checks Failed' },
+  keep:          { icon: '✓', bg: 'bg-ok-subtle',     text: 'text-ok',     label: 'Keep' },
+  discard:       { icon: '✗', bg: 'bg-muted',  text: 'text-muted',  label: 'Discard' },
+  crash:         { icon: '💥', bg: 'bg-danger-subtle', text: 'text-danger', label: 'Crash' },
+  checks_failed: { icon: '⚠', bg: 'bg-warn-subtle',  text: 'text-warn',   label: 'Checks Failed' },
 }
 
 function parseConfidence(text: string): { value: number; label: string } | null {
@@ -224,7 +224,7 @@ export function LogExperimentRenderer({ toolInput, toolResult, isError }: ToolPr
 
           {/* Primary metric with delta */}
           <div className="flex items-center gap-3">
-            <div className="flex flex-col items-center gap-0.5 px-4 py-2.5 rounded-lg bg-bg-hover/50 min-w-[80px]">
+            <div className="flex flex-col items-center gap-0.5 px-4 py-2.5 rounded-lg bg-bg-hover min-w-[80px]">
               <span className="text-muted text-[10px] uppercase tracking-wider">Metric</span>
               <span className={`text-[18px] font-bold font-mono ${status === 'keep' ? 'text-ok' : status === 'crash' ? 'text-danger' : 'text-text'}`}>
                 {metric === 0 && status === 'crash' ? '—' : metric}
@@ -244,7 +244,7 @@ export function LogExperimentRenderer({ toolInput, toolResult, isError }: ToolPr
           {secondaryMetrics && Object.keys(secondaryMetrics).length > 0 && (
             <div className="flex flex-wrap gap-2">
               {Object.entries(secondaryMetrics).map(([name, value]) => (
-                <div key={name} className="flex items-center gap-1.5 px-2 py-1 rounded bg-bg-hover/50 text-[11px] font-mono">
+                <div key={name} className="flex items-center gap-1.5 px-2 py-1 rounded bg-bg-hover text-[11px] font-mono">
                   <span className="text-muted">{name}</span>
                   <span className="text-text font-medium">{value}</span>
                 </div>
@@ -255,9 +255,9 @@ export function LogExperimentRenderer({ toolInput, toolResult, isError }: ToolPr
           {/* Confidence */}
           {confidence && (
             <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-[12px] ${
-              confidence.value >= 2.0 ? 'bg-ok/10 border border-ok/20' :
-              confidence.value >= 1.0 ? 'bg-warn/10 border border-warn/20' :
-              'bg-danger/10 border border-danger/20'
+              confidence.value >= 2.0 ? 'bg-ok-subtle border border-ok' :
+              confidence.value >= 1.0 ? 'bg-warn-subtle border border-warn' :
+              'bg-danger-subtle border border-danger'
             }`}>
               <span className="font-mono font-bold">{confidence.value.toFixed(1)}×</span>
               <span className="text-muted">{confidence.label}</span>
@@ -266,9 +266,9 @@ export function LogExperimentRenderer({ toolInput, toolResult, isError }: ToolPr
 
           {/* ASI hypothesis */}
           {asi?.hypothesis && (
-            <div className="px-2 py-1.5 rounded bg-bg-hover/50 text-[12px]">
+            <div className="px-2 py-1.5 rounded bg-bg-hover text-[12px]">
               <span className="text-muted text-[10px] uppercase tracking-wider mr-2">Hypothesis:</span>
-              <span className="text-text/80">{String(asi.hypothesis)}</span>
+              <span className="text-text opacity-80">{String(asi.hypothesis)}</span>
             </div>
           )}
         </div>
