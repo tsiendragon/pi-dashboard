@@ -11,13 +11,20 @@
 
 | 组件 | 作用 | 来源 |
 |---|---|---|
-| **pi CLI** | agent 运行时，负责模型调用、会话、工具 | `@earendil-works/pi-coding-agent`（npm） |
+| **pi CLI（补丁构建）** | agent 运行时，负责模型调用、会话、工具；dashboard 的 live session / `run_code` / 子 Agent 原生全屏依赖本 fork 的扩展 API | `github.com/tsiendragon/pi` 的 GitHub Release 资产（10 个 tgz，默认 `v0.85.1-tsien.1`） |
 | **pi-dashboard** | Web/iOS 前端 + 后端，管理多会话、文件、终端 | `github.com/tsiendragon/pi-dashboard` |
 | **pi-tsien-extension** | 一批配套 Pi 扩展（sidebar / schedule / subagent / live session / 后台命令 / goal / memory / git-graph …） | `github.com/tsiendragon/pi-tsien-extension` |
 | **pi-web-tools** | 网页抓取工具扩展，已 vendored 在 pi-tsien-extension 内 | 同上 `vendor/pi-web-tools` |
 
 **不包含**：内部 marketplace（eagleeye-ai-dev）及其业务插件、规则、技能；
 `task-pilot` / `taskspace` / `security-guard` / `remote-notifications` / `pi-knowledge` 默认都不装。
+
+> **为什么不用官方 npm 版 pi**：官方 `@earendil-works/pi-coding-agent`（至少到 `0.87.1`）缺少
+> `executeTool`、`extension_ui` / `respondExtensionUi` / `extension_ui_notify`、`aboveStatus`、
+> `fullscreen` 这些扩展 API。用官方版时 `run_code` 会直接报错（`Code Mode requires a Pi runtime
+> with executeTool support`），live session 断桥，子 Agent 降级为非全屏布局。
+> 所以本套默认装 fork 构建；确实想用官方版时用 `--official-pi`，想换其他 fork 构建用
+> `--pi-release <repo@tag>`。
 
 扩展的安装机制：pi-tsien-extension 提供同步器 `scripts/pi-extension-sync.mjs`，
 读取 `~/.pi/agent/extensions.config.json`，把有序的 `packages` / `extensions` 写进 Pi 的
@@ -55,6 +62,9 @@ bash scripts/install-standalone.sh -y --service        # 装成 systemd 服务�
 bash scripts/install-standalone.sh --dry-run           # 只打印将要执行的动作
 bash scripts/install-standalone.sh --dir ~/tools --port 8899
 bash scripts/install-standalone.sh --ext-dir ~/src/pi-tsien-extension   # 复用已有 checkout
+bash scripts/install-standalone.sh --pi-release tsiendragon/pi@v0.85.1-tsien.1   # 指定 fork 构建
+bash scripts/install-standalone.sh --official-pi        # 改装官方 npm 版（功能会降级）
+bash scripts/install-standalone.sh --skip-pi --pi-prefix ~/pi/bin   # 自备 pi
 ```
 
 全部参数见 `bash scripts/install-standalone.sh --help`。
@@ -66,7 +76,10 @@ bash scripts/install-standalone.sh --ext-dir ~/src/pi-tsien-extension   # 复用
 3. `npm install` 扩展依赖
 4. 备份 `~/.pi/agent/extensions.config.json` → 写入 standalone 配置 → 先 dry-run 预览，再 `--apply` 同步到 Pi 设置
 5. `npm install` dashboard 依赖，构建前端（`npm run build-frontend`）
-6. 可选：全局安装 `pi` CLI / 安装 systemd 服务 / 后台启动
+6. 装 pi：默认从 `tsiendragon/pi` 的 Release 下载 10 个 tgz，一起装到 `<安装根>/pi`，
+   并把 `PI_SCRIPT=<安装根>/pi/bin/pi` 写进 `<agent dir>/dashboard.env`（dashboard 启动时自动加载，
+   并传给每个 pi 子进程；见 [env-configuration.md](env-configuration.md)）
+7. 可选：安装 systemd 服务（unit 带 `PI_CODING_AGENT_DIR`）/ 后台启动
 
 > 安全提示：同步器是**严格模式**——不在配置里的 package/extension 会从 Pi 设置移除，
 > `~/.pi/agent/extensions/` 下未托管的单文件扩展会被移入 `extension-quarantine/`。
@@ -90,6 +103,18 @@ node "$EXT/scripts/pi-extension-sync.mjs" --apply         # 应用
 cd ~/pi-stack/pi-dashboard            # 或你 clone pi-dashboard 的位置
 npm install --no-audit --no-fund
 npm run build-frontend
+
+# 装补丁版 pi（等价于脚本第 6 步；命名可预测，因此不必查 Release API）
+REPO=tsiendragon/pi; TAG=v0.85.1-tsien.1; VER=${TAG#v}
+mkdir -p ~/pi-stack/pi ~/pi-stack/pi-tgz
+for n in chord pi-ai pi-agent-core pi-client pi-coding-agent pi-protocol pi-server \
+         pi-session-backend-sqlite-node pi-telemetry pi-tui; do
+  curl -fsSL -o ~/pi-stack/pi-tgz/earendil-works-$n-$VER.tgz \
+    "https://github.com/$REPO/releases/download/$TAG/earendil-works-$n-$VER.tgz"
+done
+npm install -g --prefix ~/pi-stack/pi ~/pi-stack/pi-tgz/*.tgz --no-audit --no-fund
+~/pi-stack/pi/bin/pi --version        # 期望 0.85.1-tsien.1
+mkdir -p ~/.pi/agent && printf 'PI_SCRIPT=%s\n' ~/pi-stack/pi/bin/pi >> ~/.pi/agent/dashboard.env
 ```
 
 预期结果：同步器最后一行是 `Reload or restart Pi to use the ordered extension set.`，
@@ -106,20 +131,30 @@ PI_DASH_PORT=7777 ./run.sh     # 构建前端并前台启动
 
 浏览器打开 `http://localhost:7777`。
 
-- 后端会用**仓库内自带的 pi**（`node_modules/.bin/pi`）；找不到时回退到 `which pi`。
-- 因此不必全局装 pi CLI 也能用 dashboard；想在自己终端里用 pi，再执行
-  `npm install -g @earendil-works/pi-coding-agent`。
+- 后端用哪个 pi：`PI_SCRIPT` → 仓库内自带的 pi（`node_modules/.bin/pi`）→ `which pi`。
+  一键安装脚本会把 `PI_SCRIPT` 写进 `<agent dir>/dashboard.env`，所以推荐路径无需手工配置。
 - 扩展配置改动后需要让 Pi 生效：在 pi 里执行 `/reload`，或重启 dashboard 的会话进程。
 
 ### 模型凭证
 
+三种写法，效果一样（都会传给它派生的每个 pi 子进程），选你顺手的：
+
 ```bash
+# 1) 写进 dashboard 环境文件（推荐：重启 dashboard 后一直有效，systemd 也适用）
+cat >> ~/.pi/agent/dashboard.env <<'EOF'
+DASHSCOPE_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+EOF
+
+# 2) pi 自己的登录（交互式）
 pi            # 首次运行后执行 /login，或按提示写入 auth.json
-# 或者
-export DASHSCOPE_API_KEY=...   # 必须在启动 ./run.sh 的那个 shell 里导出
+
+# 3) 导出到启动 dashboard 的那个 shell
+./run.sh      # 之前的 shell 里 export DASHSCOPE_API_KEY=...
 ```
 
-dashboard 派生的 pi 子进程继承 `run.sh` 所在 shell 的环境，所以环境变量方式要在启动前设置。
+dashboard 启动日志里能看到 `[env] loaded env file(s): …`，说明环境文件被读到。
+完整规则（加载顺序、不覆盖已有变量、排查）见 [env-configuration.md](env-configuration.md)。
 
 ### 开机自启（systemd）
 
