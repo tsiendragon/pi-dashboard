@@ -12,6 +12,7 @@
  */
 import type { Express, Request, Response } from 'express'
 import type { LiveSessionBrowserAuth } from '../live-sessions/auth.js'
+import { appendAuditRecord } from '../ext-audit.js'
 import { applyOrder, applyToggle, describeDiff } from '../ext-writes.js'
 import { requireBrowserAuth } from './require-browser-auth.js'
 import { settingsStore } from '../settings-store.js'
@@ -49,9 +50,19 @@ export function registerPiExtWriteRoutes({ app, auth }: { app: Express; auth: Li
 
       const result = outcome.result as { error?: string; before: string[]; after: string[]; unchanged?: boolean }
       if (result.error) return res.status(404).json({ error: result.error })
+      const audit = appendAuditRecord(store.agentDir, {
+        action: 'toggle',
+        target: path,
+        actor: auth.getIdentity(req)?.browserClientId ?? null,
+        ok: outcome.changed,
+        backupPath: outcome.backupPath,
+        before: result.before,
+        after: result.after,
+      })
       return res.json({
         ok: true,
         changed: outcome.changed,
+        audit,
         backupPath: outcome.backupPath,
         before: result.before,
         after: result.after,
@@ -87,9 +98,19 @@ export function registerPiExtWriteRoutes({ app, auth }: { app: Express; auth: Li
 
       const result = outcome.result as { error?: string; before: string[]; after: string[]; unchanged?: boolean }
       if (result.error) return res.status(400).json({ error: result.error })
+      const audit = appendAuditRecord(store.agentDir, {
+        action: 'order',
+        target: `loadOrder(${paths.length})`,
+        actor: auth.getIdentity(req)?.browserClientId ?? null,
+        ok: outcome.changed,
+        backupPath: outcome.backupPath,
+        before: result.before,
+        after: result.after,
+      })
       return res.json({
         ok: true,
         changed: outcome.changed,
+        audit,
         backupPath: outcome.backupPath,
         before: result.before,
         after: result.after,
