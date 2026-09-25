@@ -1104,3 +1104,68 @@ pi 会明确抛错：
 ### 27.5 仍不稳定的一点（已知）
 
 `tree_action` 在 **fork 场景**下偶尔投不到 dashboard：fork 会替换 runtime，live 连接短暂断开，`client.ready` 实测会在新会话开始后再次变 false；`/ls-navigate` 与「被拒绝」路径已实测可达（`eventSequence` 递增且事件出现在 dashboard 侧）。影响面：只少了那句「pi 侧结果」的文案（前端仍有乐观 toast 与等待落盘提示），**不影响创建会话与跟随**。下一步需要抓 fork 前后的 `session_shutdown`/`session_start`/`onDisconnected` 时序。
+
+---
+
+## 28. fork 分支配色，去掉分组大框（v7.3）
+
+### 28.1 问题
+
+同一张画布上，会话文件外面套了一圈半透明大圆角框（band）。框与框之间、框与卡片之间都在抢注意力，而真正要看的信息——**哪几张卡是同一条 fork 血统**——反而没有表达：两条从同一点分出去的支，画出来完全一样（灰色细线）。
+
+### 28.2 修正
+
+| # | 内容 |
+|---|---|
+| 1 | **删掉 band 矩形**：分组信息只由浮动**组标题**承担（会话 key + 条数），画布上不再有大色块 |
+| 2 | **新增分支配色** `branchColorOf()`（`graph/layout.ts`，纯函数）：先序遍历，单链继承父色；遇到分叉（`childCount ≥ 2`）时，每个孩子拿一个**与父色、与兄弟都不同**的颜色槽 |
+| 3 | 颜色落到三处：**边的描边 + 箭头**（`marker#ls-graph-arrow-<slot>`）、**卡片描边**（`strokeOpacity 0.55`，避免过重）、**`fork` 文字** |
+| 4 | 调色板 = **`ok / warn / danger` 三色**，`accent` 与 `info` 都不进：蓝色在图上只保留一个含义（当前分支），且 `info` 在部分主题里与 `accent` 字面相同 |
+| 5 | 图例重写：加粗蓝 = 当前分支；颜色 = fork 分支；虚线（带色）= fork 出的新会话；虚线框 = 已选中，顶部小字 = 同一会话文件 |
+| 6 | 组标题组补 `data-session-group` / `data-band-width`，作为原 `rect[data-band]` 的测试锚点（band 宽就是组宽，不再需要画出来） |
+
+**边界**：只有 3 个颜色槽，**同一分叉点的兄弟一定不同色**；一个分叉超过 3 个孩子（鸽笼原理）时颜色必然重复，不相关的两条支也会轮回到同一个颜色——所以颜色表达的是“分叉点之后各自一条线”，不是全局唯一 id。
+
+**为什么是 3 色**（而不是 4 色）：用 `scripts/check-theme-cvd.mjs` 的同一套 Machado 模拟算过所有候选组合，`ok/warn/danger` 在全主题下最坏红/绿 ΔE = **11.3**（仓库阈值 <10 算塌陷）；换成 4 色（含 `info`）在 manuscript 主题降到 **9.0**，含 `accent` 的组合更是低到 0（accent 与 info 在 manuscript 完全同色）。
+
+### 28.3 验证
+
+- `sessionGraphLayout.test.ts` 新增 `branchColorOf` 5 例：单链同色、分叉兄弟互不同色且不同于父色、子分支继承后可在下游再分叉、6000 深链不爆栈、`parentId` 成环不挂死。- `sessionGraphEdges.test.tsx`：每个颜色槽一个 `marker`；非当前分支的两兄弟箭头 `marker-end` 不同；当前分支保持 accent。
+- `sessionGraphDrag.test.tsx` / `sessionGraphEdges.test.tsx` 的 band 断言改读 `data-band-width`。
+
+---
+
+## 29. 分叉被折进同一列（v7.4）
+
+### 29.1 现象
+
+真实截图（4 个会话文件：235 / 462 / 420 / 370 条，trunk 在 HEAD 处分出 3 支）+ 真实数据复算：
+
+`reduceToStructure` 后 8 个节点，**`serpentine×3`** 被选中（fill 0.69 > 竖排 0.45），于是
+
+| 节点 | x | y |
+|---|---|---|
+| trunk `dfda8856` / `19ddeecd` | 0 / 288 | 72 / 72 |
+| 462 支 `d9d730eb` / `6a38ba2a` | 576 / 576 | 0 / 216 |
+| 420 支 `a11c4a20` / `c541cb74` | 576 / 576 | 72 / 288 |
+| 370 支 `c4705f2a` / `d396e1ac` | 576 / 576 | 144 / 360 |
+
+**三个分叉支的 6 张卡全部落在同一列 x=576**（y=0/72/144/216/288/360，与截图逐张对上），每条支的边变成一条竖线，穿过另外两支的卡片。"不同的路径混到一起" = 这里，与分组大框无关。
+
+### 29.2 根因
+
+蛇形折行只折**深度**轴，不认识分支：depth 2 与 depth 3 在 `width=3` 的翻转行里都映射到 column 2，于是各支同时出现在同一列；而 `canvasFill` 恰好**奖励**这种密度（0.69），所以自动布局主动选了它。
+
+### 29.3 修正
+
+| # | 内容 |
+|---|---|
+| 1 | `layout.ts` 新增 `laneOf()`（纯函数）：lane = 从「根」与「每个分叉的孩子」开始的一条线，单链继承（与 `branchColorOf` 同一套分组） |
+| 2 | `LayoutCandidate` 新增 `cohesion`（0..1，默认 1）；`serpentineCohesion()` 统计「每个折行 band 里有几条 lane」，取 `1 / max`，横向/竖排恒为 1 |
+| 3 | `pickBestLayout` 改用 `candidateScore = scale × cohesion`；`candidateScore` 单独导出以便测试 | 
+| 4 | 效果：同一张图 `serpentine×3` 由 0.69 → 0.17，自动改为横排（1950×1050）/ 竖排（1680×900）：**每条 lane 一行/一列**，分叉点三条边分别向左下、正下、右下；单链长会话 cohesion=1，折行行为完全不变 |
+
+### 29.4 验证
+
+- `sessionGraphLayout.test.ts` 新增：`laneOf` 2 例；分叉图 `serpentine` 的 `cohesion < 1` 且 `pickBestLayout` 不选它；单链折行 `cohesion === 1`（不回归）；**核心不变量**：3 个分叉兄弟必须落在 3 条不同线上，且每条 lane 的后续节点仍在自己那条线上。
+- 用真实数据（`/tmp/family.json`）复算 4 种画布尺寸：自动布局不再选蛇形，且没有边穿过其他分支的卡片。

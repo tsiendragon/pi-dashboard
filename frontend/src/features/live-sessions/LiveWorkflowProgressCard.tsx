@@ -58,7 +58,7 @@ export default function LiveWorkflowProgressCard({ workflow, sessions, onOpen }:
   const progress = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : stages.length > 0 ? Math.round(stages.filter(stage => ['completed', 'succeeded', 'done'].includes(stringValue(stage.status))).length / stages.length * 100) : 0
   const terminal = ['completed', 'succeeded', 'done', 'failed', 'error', 'cancelled', 'interrupted'].includes(workflowStatus)
 
-  return <button type="button" onClick={() => onOpen(workflow)} className="w-full rounded-lg border border-border bg-card/70 p-3 text-left shadow-sm transition-colors hover:border-accent/60 hover:bg-accent-subtle/30">
+  return <button type="button" onClick={() => onOpen(workflow)} className="w-full rounded-lg border border-border bg-card p-3 text-left shadow-sm transition-colors hover:border-accent hover:bg-accent-subtle">
     <div className="flex items-start gap-2">
       <span className={`mt-0.5 text-sm ${statusClass(workflowStatus)} ${workflowStatus === 'running' || workflowStatus === 'in_progress' ? 'animate-pulse' : ''}`}>{statusIcon(workflowStatus)}</span>
       <div className="min-w-0 flex-1">
@@ -80,7 +80,7 @@ export default function LiveWorkflowProgressCard({ workflow, sessions, onOpen }:
             const status = stringValue(stage.status)
             return <div key={String(stage.id || stage.label)} className="flex items-center gap-1.5 text-2xs text-muted"><span className={statusClass(status)}>{statusIcon(status)}</span><span className="truncate">{stringValue(stage.label, String(stage.id || '阶段'))}</span></div>
           })}
-          {stages.length > 4 && <div className="text-2xs text-muted/70">还有 {stages.length - 4} 个阶段 · 点击查看详情</div>}
+          {stages.length > 4 && <div className="text-2xs text-muted opacity-70">还有 {stages.length - 4} 个阶段 · 点击查看详情</div>}
         </div>}
       </div>
       <span className="shrink-0 text-xs text-muted">›</span>

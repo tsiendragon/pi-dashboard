@@ -6,6 +6,7 @@ import reducer, {
   liveSessionReleased,
   liveSessionSnapshot,
   liveSessionUserMessageAdded,
+  liveSessionUserMessageAcknowledged,
   liveSessionUserMessageRemoved,
   sessionsLoaded,
 } from '../store/liveSessionsSlice'
@@ -30,7 +31,48 @@ function event(processInstanceId: string, sequence: number, type = 'agent_start'
   return { type: 'event', processInstanceId, sequence, event: { type, data: {} } }
 }
 
+function uiEvent(processInstanceId: string, sequence: number, type: 'extension_ui' | 'extension_ui_closed', data: unknown): LiveSessionEventMessage {
+  return { type: 'event', processInstanceId, sequence, event: { type, data } }
+}
+
 describe('liveSessionsSlice', () => {
+  it('restores an unanswered dialog from a snapshot (page switch / reconnect)', () => {
+    const request = { id: 'ui-1', method: 'select' as const, title: '选择目标', options: ['x', 'y'] }
+    let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a')] }))
+    state = reducer(state, liveSessionSnapshot({ ...detail(summary('a')), pendingUi: [request] }))
+    expect(state.pendingUi.a).toEqual({ 'ui-1': request })
+
+    // Snapshot is authoritative: a dialog answered elsewhere disappears again.
+    state = reducer(state, liveSessionSnapshot({ ...detail(summary('a', 2, 1)), pendingUi: [] }))
+    expect(state.pendingUi.a).toEqual({})
+  })
+
+  it('tracks dialog open/close events and drops them on detach', () => {
+    let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a')] }))
+    state = reducer(state, liveSessionSnapshot(detail(summary('a'))))
+    state = reducer(state, liveSessionEvent(uiEvent('a', 1, 'extension_ui', { id: 'ui-9', method: 'confirm', title: '继续？' })))
+    expect(state.pendingUi.a).toEqual({ 'ui-9': { id: 'ui-9', method: 'confirm', title: '继续？' } })
+
+    state = reducer(state, liveSessionEvent(uiEvent('a', 2, 'extension_ui_closed', { id: 'ui-9' })))
+    expect(state.pendingUi.a).toEqual({})
+  })
+
+  it('binds a message_entry carrier to the message it belongs to, and hides the carrier', () => {
+    let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a', 1, 1)] }))
+    state = reducer(state, liveSessionSnapshot(detail(summary('a', 1, 1))))
+    state = reducer(state, liveSessionEvent({
+      type: 'event', processInstanceId: 'a', sequence: 2,
+      event: { type: 'message_end', data: { message: { role: 'user', content: 'fork me' } } },
+    }))
+    state = reducer(state, liveSessionEvent({
+      type: 'event', processInstanceId: 'a', sequence: 3,
+      event: { type: 'message_entry', data: { entryId: 'entry-7' } },
+    }))
+    expect(state.details.a.entries).toEqual([
+      expect.objectContaining({ type: 'message_end', data: expect.objectContaining({ entryId: 'entry-7' }) }),
+    ])
+  })
+
   it('keeps every process in one cwd and accepts independent snapshots', () => {
     let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a'), summary('b')] }))
     expect(Object.keys(state.sessions)).toEqual(['a', 'b'])
@@ -108,6 +150,31 @@ describe('liveSessionsSlice', () => {
     state = reducer(state, liveSessionUserMessageAdded({ processInstanceId: 'a', localId: 'local-2', text: 'retry' }))
     state = reducer(state, liveSessionUserMessageRemoved({ processInstanceId: 'a', localId: 'local-2' }))
     expect(state.details.a.entries).toHaveLength(1)
+  })
+
+  it('marks a queued prompt as sending, then accepted-and-queued until Pi echoes it', () => {
+    let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a')] }))
+    state = reducer(state, liveSessionSnapshot(detail(summary('a', 2))))
+    state = reducer(state, liveSessionUserMessageAdded({
+      processInstanceId: 'a', localId: 'local-q', text: 'then run the tests', deliverAs: 'followUp',
+    }))
+    expect(state.details.a.entries[0]).toMatchObject({ dashboardDeliverAs: 'followUp', dashboardQueueState: 'sending' })
+
+    // The bridge accepted the input: it is queued inside Pi, not handled yet.
+    state = reducer(state, liveSessionUserMessageAcknowledged({ processInstanceId: 'a', localId: 'local-q' }))
+    expect(state.details.a.entries[0]).toMatchObject({ dashboardQueueState: 'queued' })
+
+    // Pi echoing the message is what ends the pending state.
+    state = reducer(state, liveSessionEvent({
+      type: 'event', processInstanceId: 'a', sequence: 1,
+      event: { type: 'message_end', data: { message: { role: 'user', content: 'then run the tests' } } },
+    }))
+    expect(state.details.a.entries.some(entry => (entry as Record<string, unknown>).dashboardLocalId === 'local-q')).toBe(false)
+
+    // A plain prompt sent while idle carries no queue state at all.
+    state = reducer(state, liveSessionUserMessageAdded({ processInstanceId: 'a', localId: 'local-3', text: 'plain' }))
+    expect(state.details.a.entries.at(-1)).toMatchObject({ dashboardLocalId: 'local-3' })
+    expect((state.details.a.entries.at(-1) as Record<string, unknown>).dashboardQueueState).toBeUndefined()
   })
 
   it('tracks only leases acquired by this browser and clears them on release', () => {
