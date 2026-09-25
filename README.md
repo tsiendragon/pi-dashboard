@@ -48,6 +48,18 @@ npm start        # starts server with auto-restart
 
 Open http://localhost:7777.
 
+### Standalone install (dashboard + companion extensions)
+
+To stand up this dashboard together with the generic `pi-tsien-extension` set on a clean machine
+(no org-specific marketplace packages, no `task-pilot`/`taskspace`):
+
+```bash
+bash scripts/install-standalone.sh            # -y to skip prompts, --help for options
+```
+
+Step-by-step manual equivalent, prerequisites, service setup, and troubleshooting:
+[docs/standalone-install.md](docs/standalone-install.md).
+
 ### Requirements
 
 - Node.js 18+
