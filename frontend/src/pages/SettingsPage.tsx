@@ -16,6 +16,28 @@ import { SettingsSectionSlot } from '../plugins/slot-consumers'
 import { ACTIONS, formatKey, setShortcut, resetShortcut, resetAllShortcuts, hasCustomShortcuts, subscribeShortcuts, eventToKeyString, type ActionCategory } from '../shortcuts'
 import { modelFullId, splitModelFullId, splitThinkingSuffix } from '../utils/modelUtils'
 
+/**
+ * PUT helper for the settings dashboards.
+ *
+ * `fetch` does not throw on HTTP errors, so the old code reported "Saved" even when the server
+ * rejected the write (e.g. 401 from the browser-auth gate on settings/extension writes). Surface the
+ * server's reason — including the auth hint — instead of pretending success.
+ */
+async function putJson(url: string, body: unknown): Promise<{ ok: boolean; error?: string; hint?: string; data?: unknown }> {
+  try {
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    })
+    const payload = (await response.json().catch(() => ({}))) as { error?: string; hint?: string }
+    if (response.ok) return { ok: true, data: payload }
+    return { ok: false, error: payload.error ?? `HTTP ${response.status}`, hint: payload.hint }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 type Tab = 'general' | 'model' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'voice' | 'display' | 'vault' | 'tasks' | 'lark' | 'developer' | 'shortcuts'
 
 /* ── Shared form components ── */
@@ -183,11 +205,11 @@ function usePiSettings() {
 
   const save = useCallback(async (next: PiSettings) => {
     setSettings(next)
-    try {
-      await fetch('/api/pi/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) })
-      setFeedback({ type: 'ok', msg: 'Saved' })
-    } catch { setFeedback({ type: 'err', msg: 'Save failed' }) }
-    setTimeout(() => setFeedback(null), 2000)
+    const result = await putJson('/api/pi/settings', next)
+    setFeedback(result.ok
+      ? { type: 'ok', msg: 'Saved' }
+      : { type: 'err', msg: result.hint ? `未保存：${result.error} —— ${result.hint}` : `未保存：${result.error}` })
+    setTimeout(() => setFeedback(null), result.ok ? 2000 : 8000)
   }, [])
 
   const set = useCallback((key: string, value: unknown) => {
@@ -592,7 +614,7 @@ function GeneralTab() {
               setSettings(next)
             }}
             onBlur={() => {
-              fetch('/api/pi/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) })
+              void putJson('/api/pi/settings', settings)
             }}
             placeholder={placeholder}
             spellCheck={false}
@@ -1230,12 +1252,12 @@ function VaultTab() {
     setSaving(true)
     setConfig(next)
     try {
-      const saved = await fetch('/api/dash/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      }).then(j)
-      setConfig(saved)
+      const result = await putJson('/api/dash/config', next)
+      if (!result.ok) {
+        setFeedback({ type: 'err', msg: result.hint ? `未保存：${result.error} —— ${result.hint}` : `未保存：${result.error}` })
+        return
+      }
+      setConfig(next)
       setFeedback({ type: 'ok', msg: 'Saved' })
     } catch {
       setFeedback({ type: 'err', msg: 'Save failed' })
@@ -1333,11 +1355,12 @@ function TasksTab() {
     setSaving(true)
     setConfig(next)
     try {
-      const saved = await fetch('/api/dash/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      }).then(j) as DashConfig
+      const result = await putJson('/api/dash/config', next)
+      if (!result.ok) {
+        setFeedback({ type: 'err', msg: result.hint ? `未保存：${result.error} —— ${result.hint}` : `未保存：${result.error}` })
+        return
+      }
+      const saved = next as DashConfig
       setConfig(saved)
       setRootsText((saved.tasks?.journal?.roots ?? []).join('\n'))
       setProvidersText(JSON.stringify(saved.tasks?.providers ?? [], null, 2))
@@ -1449,7 +1472,11 @@ function DeveloperTab() {
   const saveRawJson = useCallback(async () => {
     try {
       JSON.parse(rawJson) // validate
-      await fetch('/api/pi/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: rawJson })
+      const result = await putJson('/api/pi/settings', rawJson)
+      if (!result.ok) {
+        setJsonFeedback({ type: 'err', msg: result.hint ? `未保存：${result.error} —— ${result.hint}` : `未保存：${result.error}` })
+        return
+      }
       setJsonDirty(false)
       setJsonFeedback({ type: 'ok', msg: 'Saved' })
     } catch (e: any) {
