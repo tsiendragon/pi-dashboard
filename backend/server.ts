@@ -32,6 +32,7 @@ import {
   registerPtyRoutes,
   registerLarkRoutes,
   registerTaskRoutes,
+  registerVoiceRoutes,
   type LiveSessionRoutes,
 } from './routes/index.js'
 import { extensionBridgeRegistry } from './extension-bridge/registry.js'
@@ -910,6 +911,7 @@ const taskService = new TaskService({
   })),
 })
 registerTaskRoutes({ app, service: taskService })
+registerVoiceRoutes({ app })
 registerLarkRoutes(app)
 void liveSessionAuth.start().then(() => {
   console.log(`[pty] Terminal control token: ${liveSessionAuth.tokenPath}`)
