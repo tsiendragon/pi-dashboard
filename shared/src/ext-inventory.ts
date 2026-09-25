@@ -1,0 +1,80 @@
+/**
+ * Extension inventory types — shared by the backend builder (`backend/ext-inventory.ts`) and the
+ * Extensions page. See the backend module for how each field is derived and its confidence.
+ */
+
+export type ExtState = 'enabled' | 'disabled' | 'forced'
+export type ExtGroup = 'package' | 'path' | 'auto'
+export type PackageKind = 'local' | 'npm' | 'git' | 'unresolved'
+
+export interface ExtensionPackage {
+  /** id from `extensions.config.json`, when the package is also declared there. */
+  id: string | null
+  rawSource: string
+  resolved: string | null
+  exists: boolean
+  kind: PackageKind
+  unresolvedVars: string[]
+  name: string | null
+  version: string | null
+  description: string | null
+  /** Entry points declared in the package manifest (`pi.extensions`). */
+  declaredEntries: string[]
+  autoload: boolean
+}
+
+export interface ExtensionEntry {
+  /** Exactly as written in `settings.json` (prefix included). */
+  raw: string
+  state: ExtState
+  group: ExtGroup
+  /** Absolute path, or null when the entry cannot be resolved. */
+  path: string | null
+  exists: boolean
+  /** 1-based position in `settings.json` — the applied load order. */
+  appliedOrder: number
+  /** 1-based position in `extensions.config.json` loadOrder, when managed there. */
+  managedOrder: number | null
+  packageId: string | null
+  packageSource: string | null
+  /** Path relative to the providing package directory. */
+  manifestPath: string | null
+  declared: boolean
+  duplicate: boolean
+  name: string | null
+  version: string | null
+  description: string | null
+  /** Patched-pi APIs used by this entry (heuristic scan, not a real dependency). */
+  patchedApi: string[]
+}
+
+export interface AutoDiscovered {
+  name: string
+  file: string
+  path: string
+}
+
+export interface ExtInventory {
+  agentDir: string
+  settingsPath: string
+  configPath: string
+  configExists: boolean
+  packages: ExtensionPackage[]
+  extensions: ExtensionEntry[]
+  auto: AutoDiscovered[]
+  /** Declared in the syncer config but absent from settings, or the other way round. */
+  drift: string[]
+  warnings: string[]
+  counts: {
+    packages: number
+    applied: number
+    enabled: number
+    disabled: number
+    packageEntries: number
+    pathEntries: number
+    auto: number
+    broken: number
+    /** Entries whose source uses patched APIs — they need the tsien patched pi. */
+    patched: number
+  }
+}
