@@ -288,41 +288,60 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 - 估时：目录迁移 + 26 个 `package.json` + import 改写 + 测试路径修正 + workspace 配置 ≈ **1.5~2 天**；
   发布流程（脚本 + README + 首次 dry-run）≈ 0.5 天。
 
-### 12.8 最终包名（简单直白优先）
+### 12.8 最终包名（定稿：`pi-tsien-<name>`）
 
 **规则**
 
-- **必须带 scope**（`@<npm 账号或组织>/…`），不是可选项。已核实 npm 上 `pi-memory`、`pi-sidebar`、
-  `pi-web-tools` 均已被**别人的 pi 扩展**占用（registry 返回 200，keywords 含 `pi-package`）。
-- scope 内**不再重复 `pi-tsien-`**；名字只描述功能。
+- 统一格式 **`pi-tsien-<name>`**；直接发到公开 npm（**不需要 scope**）。
+- 已核实：25 个 `pi-tsien-*` 名字在 registry 上**全部可用**（逐个查，0 占用）；
+  而**不加前缀的短名已被别人占用**（`pi-memory`、`pi-sidebar`、`pi-web-tools` 均为他人 pi 扩展，keywords 含 `pi-package`）
+  ⇒ 前缀不是装饰，是避让。
 - npm 命名限制：全小写、只允许 `a-z0-9-._`、不能以 `.`/`_` 开头、≤ 214 字符。
-- **前置待办**：scope 必须等于你的 npm 账号名或你拥有的组织。`@tsiendragon/*` 目前 0 个包，
-  但账号名是否就是 `tsiendragon` 我无法从外部确认（npmjs 用户页/registry 用户端点都需登录）⇒ 请跑 `npm whoami`。
+- 发布只靠 npm 账号（不再需要 scope 名与账号名一致），因此之前的「scope 待确认」自动取消。
 
-**需要改名的（8 个）**
+**定稿清单（24 包 + web-tools 不发）**
 
-| 早期草案名 | 建议最终名（scope 内） | 为什么改 |
+| # | 包名 | 对应扩展 / 内容 |
 |---|---|---|
-| `pi-tsien-core` | `pi-shared` | 它不是扩展而是共享库，「core」会和 pi 本体混淆 |
-| `pi-tsien-zero` | `pi-session-ui` | 它实际是 `/ccstyle` `/context` `/powerline` `/transcript` `/vibe` 五个命令的合集，「zero」无法自解释（后续可再细分） |
-| `pi-tsien-btw` | `pi-side-chat` | 命令 `/btw` 保留，但包名要对外可读（侧聊=side chat） |
-| `pi-tsien-effort` | `pi-thinking-level` | 它调的是 thinking level（`off\|minimal\|…\|max`） |
-| `pi-tsien-ptc` | `pi-code-mode` | PTC 是内部缩写；工具名就是 `run_code` |
-| `pi-tsien-tool-result-pipeline` | `pi-rtk` | 它注册的命令就是 `rtk-on/off/stats/toggle-*`（嫌 RTK 内部化可改 `pi-token-reduction`） |
-| `pi-tsien-auto-compact-target` | `pi-auto-compact` | 去掉多余的 `-target` |
-| `pi-tsien-web-tools` | —— **不发**（见下） | 第三方 vendored 代码 + `pi-web-tools` 名字已被占 |
+| 1 | `pi-tsien-shared` | 共享库（lib/ + 压缩工具），不是扩展 |
+| 2 | `pi-tsien-session-ui` | `00-zero`/`pi-zero`（`/ccstyle` `/context` `/powerline` `/transcript` `/vibe`） |
+| 3 | `pi-tsien-side-chat` | `btw`（命令仍叫 `/btw`） |
+| 4 | `pi-tsien-thinking-level` | `effort` |
+| 5 | `pi-tsien-code-mode` | `ptc`（工具 `run_code`） |
+| 6 | `pi-tsien-rtk` | `tool-result-pipeline`（`rtk-*` 命令，含 bash-digest） |
+| 7 | `pi-tsien-auto-compact` | `auto-compact-target`（功能层） |
+| 8 | `pi-tsien-context-powerline` | `context-powerline` |
+| 9 | `pi-tsien-compact-continue` | `compact-continue` |
+| 10 | `pi-tsien-default-system-prompt` | `default-system-prompt` |
+| 11 | `pi-tsien-git-graph` | `git-graph` |
+| 12 | `pi-tsien-goal` | `goal` |
+| 13 | `pi-tsien-live-session` | `live-session`（要求补丁版 pi） |
+| 14 | `pi-tsien-memory` | `memory` |
+| 15 | `pi-tsien-metrics-sidebar` | `metrics-sidebar` |
+| 16 | `pi-tsien-running-commands` | `running-commands` |
+| 17 | `pi-tsien-schedule` | `schedule` |
+| 18 | `pi-tsien-session-aliases` | `session-aliases` |
+| 19 | `pi-tsien-sidebar` | `sidebar` |
+| 20 | `pi-tsien-subagent-workbench` | `subagent-workbench` |
+| 21 | `pi-tsien-usage-analytics` | `usage-analytics` |
+| 22 | `pi-tsien-prompt-inspector` | `prompt-inspector` |
+| 23 | `pi-tsien-observation-pack` | `observation-pack` |
+| 24 | `pi-tsien-trajectory-recorder` | `trajectory-recorder` |
+| 25 | `pi-tsien-capability` | `capability` |
 
-**保留的（去 `tsien-` 前缀即可，18 个）**
+**web-tools：不发布，继续本地路径**
 
-`pi-sidebar`、`pi-memory`、`pi-goal`、`pi-schedule`、`pi-git-graph`、`pi-metrics-sidebar`、`pi-prompt-inspector`、
-`pi-observation-pack`、`pi-capability`、`pi-live-session`、`pi-running-commands`、`pi-session-aliases`、
-`pi-subagent-workbench`、`pi-usage-analytics`、`pi-trajectory-recorder`、`pi-compact-continue`、
-`pi-default-system-prompt`、`pi-context-powerline`
-
-**合规前提（web-tools）**：`vendor/pi-web-tools` 是 Brett Atoms 的第三方代码副本
-（`VENDORED.md` 已注明来源），但其 `package.json` **无 `license` 也无 `author`**。
-公开分发第三方代码必须带许可证与出处 ⇒ **本轮不发布它**，继续用本地路径；
-若日后要发，必须是自己的 fork 名（如 `@scope/pi-web-tools-fork`）+ 补 license/NOTICE。
+- 它是第三方代码副本（Brett Atoms，`VENDORED.md` 已注明）；**上游仓库本身无 license**
+  （GitHub API `license: None`），我们的副本也无 license ⇒ 无许可证 = 默认「保留所有权利」，
+  公开重新分发及发 npm 都不合规。
+- 我们确定落地的**两处自家修改**（与上游 `master` 逐文件 diff 得出）：
+  1. `src/providers/duckduckgo.ts`（±76 行）：DDG lite 解析器修复 —— 属性顺序无关、单/双引号都收、
+     并解开 `//duckduckgo.com/l/?uddg=…` 重定向；上游正则仍要求 `class` 在前 + 双引号（未修）。
+  2. `src/web-fetch.ts`（±21 行）：重量级依赖（jsdom/readability/turndown）改懒加载，
+     启动耗时 1.7s → 0.6~0.8s。
+  - 守护测试：`test/pi-web-tools-vendor.test.ts`（两版本 markup 都验）。
+- 建议：把这两处改动提 PR/issue 给上游（一个是真 bug，一个是性能）；若被合并，就可不再 vendored，
+  直接依赖上游。在此之前保持本地路径包。
 
 ### 12.9 已确认的决策
 
@@ -332,5 +351,6 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 | 版本策略 | **各包独立版本**（依赖写 `^x.y.z`） |
 | 发布渠道 | **公开 npm（npmjs.org）**，scoped + `publishConfig.access=public` |
 | web-tools | **不发布**（第三方 vendored + 名字被占），保留本地路径 |
-| 命名 | §12.8（必须带 scope，scope 内不带 `tsien-`） |
+| 命名 | §12.8：统一 `pi-tsien-<name>`，直接发公开 npm（**不要 scope**；25 个名字已逐个验证可用） |
+| npm 账号 | 不再需要 scope/账号名一致性；发布时用你的 npm 账号即可 |
 | 真源冲突 | 待定：甲（同步器保留 `+/-/!` 前缀，推荐）或 乙（回写 config） |
