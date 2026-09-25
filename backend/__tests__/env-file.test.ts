@@ -10,6 +10,11 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'pi-dash-env-'))
 })
 
+/** An env whose agent dir is an empty temp dir, so no machine-wide dashboard.env leaks in. */
+function isolatedEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return { PI_CODING_AGENT_DIR: join(dir, 'empty-agent'), ...extra }
+}
+
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
@@ -66,7 +71,7 @@ describe('dashboardEnvFilePaths / loadDashboardEnv', () => {
   it('loads the explicit PI_DASH_ENV_FILE', () => {
     const file = join(dir, 'explicit.env')
     writeFileSync(file, 'PI_TIMING_DIR=/tmp/timing\n')
-    const env: NodeJS.ProcessEnv = { PI_DASH_ENV_FILE: file }
+    const env = isolatedEnv({ PI_DASH_ENV_FILE: file })
 
     const result = loadDashboardEnv(env)
 
@@ -77,7 +82,7 @@ describe('dashboardEnvFilePaths / loadDashboardEnv', () => {
   })
 
   it('reports a requested but missing file instead of failing silently', () => {
-    const env: NodeJS.ProcessEnv = { PI_DASH_ENV_FILE: join(dir, 'nope.env') }
+    const env = isolatedEnv({ PI_DASH_ENV_FILE: join(dir, 'nope.env') })
 
     const result = loadDashboardEnv(env)
 
@@ -90,7 +95,7 @@ describe('dashboardEnvFilePaths / loadDashboardEnv', () => {
     mkdirSync(agent, { recursive: true })
     writeFileSync(join(agent, 'dashboard.env'), 'PI_OBSERVATION_DIR=/tmp/obs\n')
 
-    const env: NodeJS.ProcessEnv = { PI_CODING_AGENT_DIR: agent }
+    const env = isolatedEnv({ PI_CODING_AGENT_DIR: agent })
 
     expect(dashboardEnvFilePaths(env)).toContain(join(agent, 'dashboard.env'))
     const result = loadDashboardEnv(env)
