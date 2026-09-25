@@ -37,6 +37,7 @@ import {
   registerExtConfigRoutes,
   registerPiExtListRoutes,
   registerPiExtWriteRoutes,
+  registerPiExtPackagesRoutes,
   type LiveSessionRoutes,
 } from './routes/index.js'
 import { extensionBridgeRegistry } from './extension-bridge/registry.js'
@@ -896,7 +897,7 @@ const routeDeps = {
 
 registerChatRoutes(routeDeps)
 registerFileRoutes(routeDeps)
-registerSystemRoutes(routeDeps)
+registerSystemRoutes(routeDeps, liveSessionAuth)
 registerSessionRoutes(routeDeps)
 registerJobsRoutes(routeDeps)
 registerIntegrationRoutes(routeDeps)
@@ -905,6 +906,7 @@ registerTimingRoutes({ app, ledger: timingLedger })
 registerExtConfigRoutes({ app, auth: liveSessionAuth })
 registerPiExtListRoutes({ app })
 registerPiExtWriteRoutes({ app, auth: liveSessionAuth })
+registerPiExtPackagesRoutes({ app, auth: liveSessionAuth })
 registerPtyRoutes({ app, auth: liveSessionAuth })
 
 const taskService = new TaskService({

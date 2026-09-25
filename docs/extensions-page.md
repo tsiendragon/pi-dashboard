@@ -56,6 +56,39 @@ dashboard 默认 `PI_DASH_HOST=0.0.0.0`（网络可达）且**没有全局鉴权
 - 交换两条受管条目 → 顺序变化、`-`/`+`/`!` 条目索引未变；提交非全集 → 400；未知路径 → 404；
 - **并发**：整份 `PUT /api/pi/settings` 与 toggle 同时发出，两份改动都保留（`theme` 保留 + 该条目已禁用）。
 
+## 安装 / 审计 / 回滚（P3）
+
+| 方法 | 行为 |
+|---|---|
+| `POST /api/pi/ext/install` `{source}` | `pi install <source>`（用 `execFile`，无 shell，杜绝参数注入） |
+| `POST /api/pi/ext/remove` `{source}` | `pi remove <source>` |
+| `POST /api/pi/ext/update` `{source}` | `pi update <source>`；**拒绝 `self`/`pi`**（那会替换 pi 二进制本身） |
+| `GET /api/pi/ext/audit?limit=` | 审计记录（JSONL，最新在前） |
+| `POST /api/pi/ext/rollback` `{backupPath}` | 用某份 `backups/settings-*.json` 覆盖 settings.json（回滚前会再备份一次，可回滚回来） |
+
+- 装/卸/更新/回滚都**必须通过浏览器认证**（同 §鉴权）；旧的 `/api/pi/packages/install|remove` 保留给 Settings 页，但已改为同一实现 + 同一门禁。
+- 审计文件：`<agent dir>/extension-audit.jsonl`，每条含 `ts / action / target / actor(浏览器 clientId) / ok / backupPath / before / after / output|error`。
+- 启停与排序也记审计（action `toggle` / `order`）。
+- 回滚路径必须落在 `<agent dir>/backups/` 且形如 `settings-*.json`（越界路径 400）。
+
+### P3 验收（隔离实例实测）
+
+```
+未认证安装                    -> 401
+认证后安装（探针包）           -> 200，packages 29 -> 30，provided 组出现该包的 manifest 条目
+npm 假包                      -> 400 + 审计 ok=false（不执行任何第三方代码）
+卸载                          -> 200，从 packages 移除
+回滚到「卸载前」               -> 等于安装后状态
+回滚到「安装前」               -> 等于初始状态
+越界 backupPath (/etc/passwd)  -> 400
+pi update self                -> 400 拒绝
+审计列表                       -> install/remove/rollback 三条，均带 backupPath 与 actor
+```
+
+> 说明：为**不在你的机器上执行第三方代码**，全链路用我们自己的零依赖本地包做验证；npm registry 路径只验证了失败分支。
+> 另：`settings.json` 的 `packages[]` 是 **string | object 的联合**（上游 `settings-manager.ts` 的 `PackageSource`）：
+> `pi install` 写的是**纯字符串**（相对 agent 目录，等价「加载该包全部资源」）。清单页已按此实现，并把这类包自带的条目列在「③ 由 package 自带（autoload）」组。
+
 ## 已知边界
 
 - **禁用 ≠ 卸载代码**：`-` 前缀只让 Pi 不加载该条目，别的条目仍可能 `import` 它的模块（例如关掉 `pi-tsien-auto-compact`，`pi-tsien-live-session` 仍会 import 其 core）。写操作阶段（P2）必须在确认框里写清。

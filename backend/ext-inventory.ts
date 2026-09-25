@@ -15,6 +15,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'path'
 
 import type {
   AutoDiscovered,
+  PackageProvidedEntry,
   ExtGroup,
   ExtInventory,
   ExtensionEntry,
@@ -115,29 +116,67 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
   const packages: ExtensionPackage[] = []
   const settingsPackages = Array.isArray(settings?.['packages']) ? (settings!['packages'] as unknown[]) : []
   for (const item of settingsPackages) {
-    const record = asRecord(item)
-    const rawSource = asString(record?.['source'])
+    // String form = load all resources; object form can filter resources and disable autoload.
+    const objectForm = asRecord(item)
+    const rawSource = typeof item === 'string' ? item : asString(objectForm?.['source'])
     if (!rawSource) continue
     const { resolved, missing } = expandVars(rawSource, env)
-    const exists = missing.length === 0 && io.isDirectory(resolved)
-    const manifest = exists ? io.readJson(join(resolved, 'package.json')) : null
+    const bases: Array<{ label: 'agent-dir' | 'pi-dir' | 'cwd'; dir: string }> = isAbsolute(resolved) || classifySource(resolved) !== 'local'
+      ? []
+      : [
+          { label: 'agent-dir', dir: agentDir },
+          { label: 'pi-dir', dir: resolve(agentDir, '..') },
+          { label: 'cwd', dir: process.cwd?.() ?? agentDir },
+        ]
+    let resolvedPath: string | null = null
+    let resolvedBase: ExtensionPackage['resolvedBase'] = null
+    if (missing.length === 0) {
+      if (bases.length === 0) {
+        resolvedPath = resolved
+        resolvedBase = 'agent-dir'
+      } else {
+        for (const candidate of bases) {
+          const attempt = resolve(candidate.dir, resolved)
+          if (io.isDirectory(attempt)) {
+            resolvedPath = attempt
+            resolvedBase = candidate.label
+            break
+          }
+        }
+        if (resolvedPath === null) {
+          resolvedPath = resolve(bases[0]!.dir, resolved)
+          resolvedBase = bases[0]!.label
+        }
+      }
+    }
+    const exists = missing.length === 0 && resolvedPath !== null && io.isDirectory(resolvedPath)
+    const manifest = exists && resolvedPath ? io.readJson(join(resolvedPath, 'package.json')) : null
     const piField = asRecord(manifest?.['pi'])
     const declared = Array.isArray(piField?.['extensions']) ? (piField!['extensions'] as unknown[]) : []
+    const filters: ExtensionPackage['filters'] = {}
+    for (const resource of ['extensions', 'skills', 'prompts', 'themes'] as const) {
+      const value = objectForm?.[resource]
+      if (Array.isArray(value)) filters[resource] = value.filter((entry): entry is string => typeof entry === 'string')
+    }
     packages.push({
-      id: configPackageIds.get(missing.length === 0 ? resolved : rawSource) ?? null,
+      // Match the config's declared package by resolved path first (string form may be relative).
+      id: configPackageIds.get(resolvedPath ?? resolved) ?? configPackageIds.get(resolved) ?? null,
       rawSource,
-      resolved: missing.length === 0 ? resolved : null,
+      form: typeof item === 'string' ? 'string' : 'object',
+      resolved: resolvedPath,
       exists,
       kind: missing.length > 0 ? 'unresolved' : classifySource(rawSource),
       unresolvedVars: missing,
+      resolvedBase,
       name: asString(manifest?.['name']),
       version: asString(manifest?.['version']),
       description: asString(manifest?.['description']),
       declaredEntries: declared.filter((entry): entry is string => typeof entry === 'string'),
-      autoload: record?.['autoload'] === true,
+      filters,
+      autoload: typeof item === 'string' ? true : objectForm?.['autoload'] !== false,
     })
     if (missing.length > 0) warnings.push(`package source ${rawSource} references unset variable(s): ${missing.join(', ')}`)
-    else if (!exists) warnings.push(`package source not found on disk: ${resolved}`)
+    else if (!exists) warnings.push(`package source not found on disk: ${resolvedPath}`)
   }
 
   // ── applied extensions ──
@@ -161,7 +200,7 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
     for (const pkg of packages) {
       if (!pkg.resolved) continue
       if (bare === pkg.resolved || bare.startsWith(pkg.resolved + sep)) {
-        absolute = bare === pkg.resolved ? bare : bare
+        absolute = bare
         break
       }
     }
@@ -214,6 +253,23 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
     .map((file) => ({ name: file.replace(/\.(ts|js|mjs)$/, ''), file, path: join(autoDir, file) }))
     .filter((item) => !appliedPaths.has(item.path))
 
+  // ── entries packages provide by themselves (autoload), without a settings entry ──
+  const provided: PackageProvidedEntry[] = []
+  for (const pkg of packages) {
+    if (!pkg.resolved || !pkg.exists || !pkg.autoload) continue
+    for (const declared of pkg.declaredEntries) {
+      const target = resolve(pkg.resolved, declared)
+      if (appliedPaths.has(target)) continue
+      provided.push({
+        packageId: pkg.id,
+        packageName: pkg.name,
+        path: target,
+        manifestPath: declared.replace(/^\.\//, ''),
+        exists: io.fileExists(target),
+      })
+    }
+  }
+
   // ── declared-vs-applied drift ──
   // Only compare packages whose source resolves here; an unresolved `${VAR}` source must not turn
   // every applied entry into bogus drift (it is a dashboard env problem, reported as a warning).
@@ -246,10 +302,11 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
     disabled: entries.filter((entry) => entry.state === 'disabled').length,
     packageEntries: entries.filter((entry) => entry.group === 'package').length,
     pathEntries: entries.filter((entry) => entry.group === 'path').length,
+    provided: provided.length,
     auto: auto.length,
     broken: entries.filter((entry) => !entry.exists).length,
     patched: entries.filter((entry) => entry.patchedApi.length > 0).length,
   }
 
-  return { agentDir, settingsPath, configPath, configExists: config !== null, packages, extensions: entries, auto, drift, warnings, counts }
+  return { agentDir, settingsPath, configPath, configExists: config !== null, packages, extensions: entries, provided, auto, drift, warnings, counts }
 }

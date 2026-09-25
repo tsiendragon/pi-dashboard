@@ -10,6 +10,10 @@ import { promisify } from 'util'
 import { exec } from 'child_process'
 import os from 'os'
 import type { RouteDeps } from './types.js'
+import type { LiveSessionBrowserAuth } from '../live-sessions/auth.js'
+import { runPackageOperation } from '../ext-packages.js'
+import { resolvePiScript } from '../pi-manager.js'
+import { requireBrowserAuth } from './require-browser-auth.js'
 import * as piEnv from '../pi-env.js'
 
 const execAsync = promisify(exec)
@@ -20,7 +24,7 @@ function getDashboardToken(): string {
   try { return readFileSync(DASHBOARD_TOKEN_PATH, 'utf-8').trim() } catch { return '' }
 }
 
-export function registerSystemRoutes(deps: RouteDeps): void {
+export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserAuth): void {
   const { app, manager } = deps
 
   app.get('/api/status', (_req: Request, res: Response) => res.json(manager.status()))
@@ -223,6 +227,14 @@ export function registerSystemRoutes(deps: RouteDeps): void {
   app.get('/api/memory/settings', (_req: Request, res: Response) => res.json({}))
   app.get('/api/memory/stats', (_req: Request, res: Response) => res.json(piEnv.getMemoryStats()))
   app.get('/api/memory/embedding-status', (_req: Request, res: Response) => res.json({ enabled: false }))
+  // Writes require the Live Session browser auth. Without an injected auth object we fail closed.
+  const requireAuth = (handler: (req: Request, res: Response) => unknown | Promise<unknown>) =>
+    (req: Request, res: Response) => {
+      if (!auth) { res.status(503).json({ error: 'auth_unavailable' }); return }
+      return requireBrowserAuth(auth)(req, res, () => { void handler(req, res) })
+    }
+  const authOf = (req: Request): string | null => auth?.getIdentity(req)?.browserClientId ?? null
+
   app.put('/api/memory/preferences', (_req: Request, res: Response) => res.json({ ok: true }))
   app.put('/api/memory/projects', (_req: Request, res: Response) => res.json({ ok: true }))
   app.put('/api/memory/history', (_req: Request, res: Response) => res.json({ ok: true }))
@@ -310,24 +322,23 @@ export function registerSystemRoutes(deps: RouteDeps): void {
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
-  // Package management
-  app.post('/api/pi/packages/install', (req: Request, res: Response) => {
-    const { source } = req.body
-    if (!source) return res.status(400).json({ error: 'source required' })
-    try {
-      const out = execSync(`pi install ${JSON.stringify(source)} 2>&1`, { encoding: 'utf-8', timeout: 60000 })
-      res.json({ ok: true, output: out })
-    } catch (e: any) { res.status(500).json({ error: e.stderr || e.message }) }
+  // Package management — kept for the Settings page, but now the same gated implementation the
+  // Extensions page uses (no shell, settings backup, audit record, browser auth).
+  const runPackageAction = (action: 'install' | 'remove') => requireAuth(async (req: Request, res: Response) => {
+    const source = typeof (req.body as { source?: unknown } | undefined)?.source === 'string' ? (req.body as { source: string }).source : ''
+    const result = await runPackageOperation({
+      action,
+      source,
+      store: settingsStore,
+      piBin: resolvePiScript(),
+      actor: authOf(req),
+    })
+    if (!result.ok) return res.status(400).json({ error: result.error ?? 'operation failed', ...result })
+    return res.json(result)
   })
 
-  app.post('/api/pi/packages/remove', (req: Request, res: Response) => {
-    const { source } = req.body
-    if (!source) return res.status(400).json({ error: 'source required' })
-    try {
-      const out = execSync(`pi remove ${JSON.stringify(source)} 2>&1`, { encoding: 'utf-8', timeout: 30000 })
-      res.json({ ok: true, output: out })
-    } catch (e: any) { res.status(500).json({ error: e.stderr || e.message }) }
-  })
+  app.post('/api/pi/packages/install', runPackageAction('install'))
+  app.post('/api/pi/packages/remove', runPackageAction('remove'))
 
   // Package gallery (npm search)
   app.get('/api/pi/gallery', async (_req: Request, res: Response) => {
