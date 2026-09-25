@@ -164,6 +164,26 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 - gallery 目前只搜 npm 公开包（keyword `pi-package`）；内部 marketplace 的扩展是否需要一并展示，待定。
 - 并发写同一 `settings.json` 的具体冲突场景未实测（预案见 §5）。
 
+### 12.6 npm workspaces 机制（已实测）
+
+- **一个 repo 管多个包**：根 `package.json` 加 `"workspaces": ["packages/*"]`；每个子包有自己的
+  `package.json`（含 `name`/`version`/`files`/`pi` manifest）。共用一份 `node_modules` 与 lockfile，
+  可 `npm test --workspaces` 一次跑全部。
+- **实测（npm 11.17.0）**：内部依赖写 `"@tsiendragon/pi-tsien-core": "workspace:*"` 时，
+  `npm pack`/publish 出来的 tarball **原样保留 `workspace:*`**（npm 不会像 pnpm/yarn 那样改写）
+  ⇒ 发布后依赖无法解析。**结论：内部依赖写普通 semver**（如 `"^0.1.0"`），workspaces 会在本地链接到位。
+- 发布：`npm publish --workspaces`（或按包 `npm publish -w @tsiendragon/pi-tsien-x`）。
+  scoped 包默认是 restricted → 每个包需 `"publishConfig": {"access": "public"}`。
+- 每个包 `files: ["index.ts", "<自有目录>"]`，避免把测试/数据发上公网。
+- CI/发布凭证：GitHub Actions + `NPM_TOKEN` secret（属你的凭证动作，我不代跑）。
+
+### 12.7 风险与估时
+
+- 包名在 npm 上是**永久占用**的（72 小时内可 unpublish，之后名字烧掉）→ 首次发布先 `--dry-run` 并把名字定死。
+- 版本策略：各包独立版本（简单），或统一版本号（好记）→ 待定。
+- 估时：目录迁移 + 26 个 `package.json` + import 改写 + 测试路径修正 + workspace 配置 ≈ **1.5~2 天**；
+  发布流程（脚本 + README + 首次 dry-run）≈ 0.5 天。
+
 ## 12. 按功能拆成多个 package（monorepo，repo 仍统一管理）
 
 **结论：可行，而且是现有机制的自然延伸** —— `vendor/pi-web-tools` 本来就是第二个包，
@@ -186,29 +206,63 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
   - `auto-compact-target/core.ts` ← `live-session`、`context-powerline`
 - ⇒ **必须把 `lib/` 与 `auto-compact-target/core.ts` 抽成基础包被依赖**，不能靠复制，否则 4 份 `lib/` 必然漂移。
 
-### 12.3 建议切法（5 + 1 个包，按「用户会一起选/不选」切）
+### 12.3 细粒度切法（一功能一包，采纳）
 
-| 包 | 内容 | 依赖 |
+原则：**一个具体功能 = 一个包**，一个包只声明一个扩展；共享代码下沉到 `core`
+（依赖图是一棵树、无环，feature 包保持纯粹）。共 **26 个包**。
+
+**共享基础（不是扩展，不声明 `pi.extensions`）**
+
+| 包 | 内容 | 被谁依赖 |
 |---|---|---|
-| `pi-tsien-core` | `lib/`（dashboard-bridge、live-observer、command-ui、background-commands 配置）、`auto-compact-target/core.ts` | 无 |
-| `pi-tsien-live` | live-session、btw、running-commands、schedule、session-aliases、metrics-sidebar、sidebar、context-powerline | core |
-| `pi-tsien-tools` | tool-result-pipeline(+bash-digest)、ptc、subagent-workbench、observation-pack、trajectory-recorder、compact-continue、auto-compact-target(功能层) | core |
-| `pi-tsien-memory` | memory(tsien-memory)、capability、prompt-inspector、default-system-prompt、goal、00-zero(pi-zero) | core |
-| `pi-tsien-extra` | git-graph、usage-analytics、effort（展示/统计类） | 无 |
-| `pi-web-tools`（已独立） | `src/index.ts` | 无 |
+| `pi-tsien-core` | `lib/`（dashboard-bridge、live-observer、command-ui、background-commands）+ 压缩工具 `auto-compact-target/core.ts` | btw、live-session、running-commands、schedule、auto-compact-target、context-powerline |
 
-原则：**包内允许耦合，包间只允许依赖 core**；每包 `package.json` 的 `pi.extensions` **显式列序**（不用 glob）。
+**功能包（每包一个扩展；「自有目录」一并移入该包）**
+
+| # | 包名（均在 `@tsiendragon/` 下） | 内容 | 依赖 core | 备注 |
+|---|---|---|---|---|
+| 1 | `pi-tsien-web-tools` | `vendor/pi-web-tools`（已独立） | — | 排第一初始化 |
+| 2 | `pi-tsien-tool-result-pipeline` | 目录（含 `bash-digest/`） | — | |
+| 3 | `pi-tsien-zero` | 桩 + `pi-zero/` | — | |
+| 4 | `pi-tsien-btw` | 目录 | ✅ | |
+| 5 | `pi-tsien-auto-compact-target` | 目录（功能层；共享部分已在 core） | ✅ | |
+| 6 | `pi-tsien-context-powerline` | 单文件 209 行 | ✅ | 用 core 的压缩工具 |
+| 7 | `pi-tsien-compact-continue` | 单文件 40 行 | — | |
+| 8 | `pi-tsien-default-system-prompt` | 单文件 69 行 | — | |
+| 9 | `pi-tsien-effort` | 单文件 47 行 | — | |
+| 10 | `pi-tsien-git-graph` | 单文件 393 行 | — | |
+| 11 | `pi-tsien-goal` | 桩 + `goal/src` | — | |
+| 12 | `pi-tsien-live-session` | 目录 1119 行 | ✅ | 要求补丁版 pi（`extension_ui`） |
+| 13 | `pi-tsien-memory` | 桩 + `memory/src` | — | |
+| 14 | `pi-tsien-metrics-sidebar` | 单文件 499 行 | — | |
+| 15 | `pi-tsien-ptc` | 目录 842 行 | — | 要求补丁版 pi（`executeTool`） |
+| 16 | `pi-tsien-running-commands` | 单文件 367 行 | ✅ | |
+| 17 | `pi-tsien-schedule` | 单文件 360 行 | ✅ | |
+| 18 | `pi-tsien-session-aliases` | 单文件 19 行 | — | 小但功能独立 |
+| 19 | `pi-tsien-sidebar` | 单文件 675 行 | — | |
+| 20 | `pi-tsien-subagent-workbench` | 桩 + `subagent-workbench/src` | — | 要求补丁版 pi |
+| 21 | `pi-tsien-usage-analytics` | 单文件 564 行 | — | |
+| 22 | `pi-tsien-prompt-inspector` | 单文件 604 行 | — | |
+| 23 | `pi-tsien-observation-pack` | 目录 303 行 | — | |
+| 24 | `pi-tsien-trajectory-recorder` | 单文件 798 行 | — | |
+| 25 | `pi-tsien-capability` | 目录 214 行 | — | |
+
+说明：
+- 全量 24 个 tsien 扩展中 **18 个零外部依赖**，6 个依赖 core；改包只是把相对 import
+  （`./lib/live-observer.ts`、`./auto-compact-target/core.ts`）换成包名 import。
+- **「包被安装」≠「扩展被启用」**：pi 只看 `settings.packages`，npm 传递依赖不会自动启用扩展。
+  这是想要的语义（core 作为库被依赖，而 core 本身不是扩展）。
+- peer 依赖必须是 `@earendil-works/*`；现有扩展已按包名 import 它们，说明裸包名解析没问题。
 
 ### 12.4 成本与风险
 
-- 内部依赖跨包：npm 安装时依赖必须能在 registry 解析。走私服则 `core` 必须一起发布；走本地路径则不涉 registry，但用户要 clone。
-- 顺序：包内顺序由 manifest 决定；**包间顺序**仍需约定（`packages[]` 的相对顺序 + `loadOrder` 全局序）。
-- 机械改动量大（移动目录 + 改 import 路径 + workspace 配置 + CI 从 1 套变 N 套），测试是主要保障；npm workspaces 可一条命令全跑。
+- 内部依赖跨包：npm 安装时依赖必须能在 registry 解析 ⇒ 已定「公开发布」，故 core 必须同时发布。
+- 顺序：包内顺序由 manifest 决定；**包间顺序**仍需约定（`packages[]` 相对序 + 全局 `loadOrder`）。
+- 机械改动量大（移动目录 + 改 import 路径 + workspace 配置 + CI 从 1 套变 N 套），测试是主要保障。
+- **测试路径改动是真成本**：现有测试引用 `extensions/...` 路径，随目录迁移需要改（估算见 §12.7）。
 - 收益：①可按需装 ②依赖图变成**真实的包级边** ③改一个功能不动整包 ④版本独立。
-- 代价 vs 收益提示：**只在本机/受管环境选装**时，§5 的前缀启停就够；拆包的净收益在「分发给别人 + 独立版本」。
 
 ### 12.5 与其它部分的关系
 
 - 同步器：只需支持多个本地/私有来源（已支持），`loadOrder` 变为「按包分组、保持全局序」；§3 的前缀保留仍需先做。
 - 页面（§4/§6）：列表按包分组展示，依赖图直接画包级边 + 包内扩展；`pi install` 粒度=包，与页面一致。
-- 估时：拆分重构 + workspaces + 测试绿 ≈ 1 天（机械但面广）；发布到私服再 +0.5 天。
