@@ -119,3 +119,15 @@ npx vitest run backend/__tests__/ext-inventory.test.ts   # 5 passed
 #   HOME=/tmp/xxx PI_DASH_PORT=7802 npx tsx backend/server.ts
 #   curl -s localhost:7802/api/pi/ext/list | jq '.counts'
 ```
+
+## 运维速查
+
+| 事项 | 位置 / 做法 |
+|---|---|
+| 备份 | `<agent dir>/backups/settings-<ISO时间>.json`（每次写操作前自动生成；无变化则不写盘、不备份） |
+| 审计 | `<agent dir>/extension-audit.jsonl`（JSONL，字段：`ts/action/target/actor/ok/backupPath/before/after/output\|error`） |
+| 回滚 | 页面上审计条目右侧「回滚」，或 `POST /api/pi/ext/rollback {backupPath}`（只接受 `backups/settings-*.json`） |
+| 认证 | 终端/live-session 页粘贴启动日志里的令牌 → HttpOnly cookie；未认证时写操作返回 401 + 提示 |
+| 只让本机访问 | `PI_DASH_HOST=127.0.0.1`（默认 `0.0.0.0` 网络可达） |
+| 依赖扫描 | `GET /api/pi/ext/deps`（首次约 1s，之后按 settings 修改时间缓存） |
+| 相关代码 | `backend/ext-inventory.ts`（清单/扫描）、`backend/ext-writes.ts`（纯写逻辑）、`backend/settings-store.ts`（串行+备份+原子写）、`backend/ext-audit.ts`、`backend/ext-packages.ts`、`backend/routes/{pi-ext-list,pi-ext-write,pi-ext-packages,require-browser-auth}.ts` |
