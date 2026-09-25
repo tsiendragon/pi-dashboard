@@ -83,6 +83,15 @@ Logs: `~/Library/Logs/pi-dashboard/stdout.log` and `stderr.log`.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PI_DASH_PORT` | `7777` | Server port |
+| `PI_SCRIPT` | bundled pi | pi executable used for every chat slot |
+
+Anything else the dashboard **and every pi slot it spawns** should see (provider keys, extension data
+roots such as `PI_TRACE_DIR` / `PI_OBSERVATION_DIR`) can live in an env file instead of a shell profile
+or a systemd unit. Files are loaded at startup in this order, and variables already set in the shell
+win: `$PI_DASH_ENV_FILE` → `<repo>/.env` → `<PI_CODING_AGENT_DIR | ~/.pi/agent>/dashboard.env`.
+
+Template: [`.env.example`](.env.example). Rules, full variable list and troubleshooting:
+[docs/env-configuration.md](docs/env-configuration.md).
 
 ## Architecture
 
