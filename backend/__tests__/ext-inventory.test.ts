@@ -45,6 +45,25 @@ const io: InventoryIo = {
       return []
     }
   },
+  listFilesRecursive(dir) {
+    const out: string[] = []
+    const walk = (current: string): void => {
+      let items: import('fs').Dirent[] = []
+      try {
+        items = readdirSync(current, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const item of items) {
+        if (item.name === 'node_modules') continue
+        const full = join(current, item.name)
+        if (item.isDirectory()) walk(full)
+        else out.push(full.slice(dir.length + 1))
+      }
+    }
+    walk(dir)
+    return out
+  },
 }
 
 function write(path: string, content: string): void {
@@ -215,6 +234,8 @@ describe('buildExtensionInventory', () => {
         path: `${pkgDir}/src/index.ts`,
         manifestPath: 'src/index.ts',
         exists: true,
+        kind: 'manifest',
+        pattern: './src/index.ts',
       },
     ])
     expect(inventory.counts.provided).toBe(1)
@@ -228,7 +249,8 @@ describe('buildExtensionInventory', () => {
     expect('crossImports' in inventory.counts).toBe(false)
   })
 
-  it('derives cross-package imports (谁 import 了别的包的代码)', () => {
+  // fs-heavy (tmp dir + recursive walk); the scan itself is ~3ms, the budget is for the harness.
+  it('derives cross-package imports (谁 import 了别的包的代码)', { timeout: 20_000 }, () => {
     const { agentDir, pkgDir } = seed()
     // a second package that imports into the first one, exactly like live-session -> auto-compact core
     const otherDir = join(dir, 'repo/packages/pi-tsien-live-session')
@@ -248,6 +270,34 @@ describe('buildExtensionInventory', () => {
     const shared = scan.sharedPackages.find((item) => item.packageId === 'pi-tsien-goal')
     expect(shared?.importedBy).toEqual(['pi-tsien-live-session'])
     expect(scan.scannedFiles).toBeGreaterThan(0)
+  })
+
+  it('expands manifest globs and honors the settings filter for autoload:false packages', () => {
+    const { agentDir } = seed()
+    const globDir = join(dir, 'repo/packages/pi-tsien-globpkg')
+    write(join(globDir, 'package.json'), JSON.stringify({
+      name: 'pi-tsien-globpkg',
+      version: '0.1.0',
+      pi: { extensions: ['./ext/*.ts'] },
+    }))
+    write(join(globDir, 'ext/b-second.ts'), 'export default function b() {}\n')
+    write(join(globDir, 'ext/a-first.ts'), 'export default function a() {}\n')
+
+    const settings = JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf-8'))
+    // autoload:false + explicit filter → only the filtered file loads (not the glob)
+    settings.packages.push({ source: globDir, autoload: false, extensions: ['./ext/a-first.ts'] })
+    writeFileSync(join(agentDir, 'settings.json'), JSON.stringify(settings), 'utf-8')
+
+    const filtered = buildExtensionInventory({ agentDir, env: { MISSING_ROOT: undefined }, io })
+    const globEntries = filtered.provided.filter((item) => item.path.includes('globpkg'))
+    expect(globEntries.map((item) => `${item.kind}:${item.manifestPath}`)).toEqual(['filter:ext/a-first.ts'])
+
+    // autoload true (default) → the glob expands, alphabetically like pi does
+    settings.packages[settings.packages.length - 1] = { source: globDir }
+    writeFileSync(join(agentDir, 'settings.json'), JSON.stringify(settings), 'utf-8')
+    const autoloaded = buildExtensionInventory({ agentDir, env: { MISSING_ROOT: undefined }, io })
+    expect(autoloaded.provided.filter((item) => item.path.includes('globpkg')).map((item) => item.manifestPath))
+      .toEqual(['ext/a-first.ts', 'ext/b-second.ts'])
   })
 
   it('survives a missing settings.json instead of throwing', () => {
