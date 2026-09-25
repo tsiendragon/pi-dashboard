@@ -41,6 +41,10 @@
 - **Node.js 22+**、npm、git
 - 编译 `node-pty` 需要的构建工具（Debian/Ubuntu：`sudo apt install -y build-essential python3`）
 - 模型凭证之一：`pi` 里 `/login`，或对应的环境变量（如 `DASHSCOPE_API_KEY` / `ANTHROPIC_API_KEY`）
+- `npm install` 请用项目脚本：前端依赖里存在几处历史 peer 冲突（`@xterm/addon-web-fonts` vs
+  `@xterm/xterm 6.0.0`、`@vitest/mocker` 要求 vite ≥6 而项目是 vite 5），这份 lockfile 就是在忽略
+  peer 冲突的模式下生成的。`npm run build-frontend` 已经带上 `--legacy-peer-deps`，所以**用脚本装**；
+  如果你要手动装前端依赖，请自己加同样参数：`cd frontend && npm install --legacy-peer-deps`。
 
 不需要 GPU，不需要 conda，不需要 Tailscale（远程访问另见 §8）。
 
@@ -99,6 +103,10 @@ mkdir -p ~/.pi/agent
 cp "$EXT/config/extensions.standalone.json" ~/.pi/agent/extensions.config.json
 node "$EXT/scripts/pi-extension-sync.mjs"                 # 预览
 node "$EXT/scripts/pi-extension-sync.mjs" --apply         # 应用
+
+# 注意：同步器默认读 ~/.pi/agent。要装到别的 agent 目录（或用隔离环境测试）时必须显式指定，
+# 一行都不能少，否则它会去读你原来的配置：
+node "$EXT/scripts/pi-extension-sync.mjs" --agent-dir /tmp/agent --apply
 
 cd ~/pi-stack/pi-dashboard            # 或你 clone pi-dashboard 的位置
 npm install --no-audit --no-fund
