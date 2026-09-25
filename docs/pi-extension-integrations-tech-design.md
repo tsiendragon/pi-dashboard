@@ -33,14 +33,15 @@ RPC deployment prerequisite: the effective Pi extension graph must not contain d
 5. Open BTW as a right-side drawer with streaming answers, abort, parent-context refresh, and copy-to-draft.
 6. Preserve BTW's read-only tool allowlist and keep BTW messages out of the parent transcript.
 7. Display session-owned background Bash tasks with live status/output and cancellation.
-8. Prevent state leakage between dashboard slots in SDK mode.
-9. Support both dashboard SDK and RPC transports with one frontend contract.
-10. Preserve existing TUI behavior.
+8. Move a running foreground Bash command to the background from the dashboard, matching the TUI `Ctrl+B` handoff.
+9. Prevent state leakage between dashboard slots in SDK mode.
+10. Support both dashboard SDK and RPC transports with one frontend contract.
+11. Preserve existing TUI behavior.
 
 ## 3. Non-goals
 
 - Replacing `pi-conductor` or translating Workbench tools into `ensemble_*` tools.
-- Letting the browser execute arbitrary Bash directly. WebUI background-command controls are read/output/cancel only.
+- Letting the browser execute arbitrary Bash directly. WebUI background-command controls stay limited to refresh/output/cancel plus moving an already-running foreground command to the background; the browser never starts a process.
 - Persisting volatile Workbench or BTW state across host process restarts.
 - Automatically managing arbitrary OS processes that were not created by `background_command_start`.
 - Exposing extension runtime objects, process handles, credentials, or auth material to the browser.
@@ -342,15 +343,16 @@ Closing the drawer dispatches `close`, disposes the temporary AgentSession, and 
 
 ### 8.1 Adapter
 
-The existing manager becomes a bridge adapter with snapshots containing public task fields and a bounded output tail. Commands:
+The existing manager becomes a bridge adapter with snapshots containing public task fields and a bounded output tail. Running foreground commands are listed too, carrying `mode: "foreground"` and their `toolCallId`; retained tasks carry `mode: "background"`. Commands:
 
 ```text
 refresh
 output { taskId, tailLines }
 cancel { taskId }
+background { toolCallId }
 ```
 
-There is intentionally no browser `start` command.
+There is intentionally no browser `start` command. `background` never starts a process: it only hands off a foreground command this session already runs, resolving the blocking `bash` tool with exit code 0 and a notice to read `background_command_status`/`background_command_output` while the child process keeps running.
 
 ### 8.2 WebUI
 
@@ -361,6 +363,8 @@ Components live under:
 ```
 
 A compact floating dock appears only when the active slot owns retained tasks. It shows status, title, command, cwd, elapsed time, output size, exit information, a bounded live tail, and cancel control.
+
+Running foreground commands appear in the same dock and offer **Move to background** instead of Cancel; background tasks keep Cancel. The dock therefore shows up as soon as a command starts, and the handoff refreshes the snapshot through the regular command path.
 
 For a Workbench child Agent, ordinary background-command tool calls already appear in its projected timeline. Full nested child-process task control is not part of the first bridge version because those managers live in Workbench-owned child Pi processes; the timeline remains truthful and the child can call status/output/cancel. A later protocol version may forward nested manager snapshots with explicit parent ownership.
 
