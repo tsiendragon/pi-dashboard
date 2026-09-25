@@ -1,0 +1,14 @@
+{
+  "name": "pi-extension-config-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "pi-dashboard-plugin": {
+    "id": "pi-extension-config",
+    "name": "Pi Extension Config",
+    "description": "Edit the per-extension JSON configs under the pi agent dir (bash-digest, observation-pack, auto-compact-target, …)",
+    "client": "src/client.tsx",
+    "claims": [
+      { "slot": "settings-section", "componentName": "ExtensionConfigSettings", "tab": "general", "priority": 60 }
+    ]
+  }
+}
