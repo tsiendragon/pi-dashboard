@@ -10,7 +10,9 @@ import { LiveSessionOrderStore } from '../live-sessions/order.js'
 import { LivePiLauncher } from '../live-sessions/launcher.js'
 import { LiveSessionProtocolError } from '../live-sessions/protocol.js'
 import { LiveSessionRegistry, LiveSessionRegistryError } from '../live-sessions/registry.js'
-import { SessionTreeError, buildSessionFamilyGraph } from '../live-sessions/session-tree.js'
+import { LiveSessionCloseError, closeLiveSession } from '../live-sessions/session-close.js'
+import { SessionForkError, createBranchedSessionFile } from '../live-sessions/session-fork.js'
+import { SessionTreeError, buildSessionFamilyGraph, readSessionCompactions } from '../live-sessions/session-tree.js'
 
 export interface LiveSessionRouteOptions {
   app: Express
@@ -21,23 +23,29 @@ export interface LiveSessionRouteOptions {
   metaStore?: LiveSessionMetaStore
   orderStore?: LiveSessionOrderStore
   launcher?: LivePiLauncher
+  /** Overridable in tests so the close path never signals a real process. */
+  closeSession?: typeof closeLiveSession
 }
 
 type AuthenticatedRequest = Request & { liveSessionIdentity?: LiveSessionBrowserIdentity }
 
 function errorStatus(error: unknown): number {
-  const code = error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError ? error.code : ''
+  const code = error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError || error instanceof SessionForkError || error instanceof LiveSessionCloseError ? error.code : ''
   if (code === 'live_session_not_found') return 404
+  if (code === 'not_a_subagent') return 403
+  if (code === 'live_session_pid_invalid') return 400
+  if (code === 'live_session_pid_unverifiable') return 409
   if (code === 'session_already_claimed') return 423
   if (code === 'command_timeout') return 504
   if (code === 'out_of_scope') return 403
   if (code === 'invalid_lease' || code === 'deliver_as_required' || code === 'live_session_unavailable') return 409
   if (code === 'session_file_out_of_scope') return 403
   if (code === 'session_file_not_found') return 404
+  if (code === 'session_entry_not_found') return 400
   if (code === 'session_file_unavailable') return 400
   if (code.startsWith('invalid_') || code === 'unsupported_command' || code === 'command_too_large') return 400
   if (error instanceof Error && error.message === 'group_not_found') return 404
-  if (error instanceof Error && (error.message === 'group_name_required' || error.message === 'invalid_thinking_level' || error.message === 'model_id_required' || error.message === 'model_provider_required')) return 400
+  if (error instanceof Error && (error.message === 'group_name_required' || error.message === 'invalid_thinking_level' || error.message === 'model_id_required' || error.message === 'model_provider_required' || error.message === 'invalid_fork_from')) return 400
   if (error instanceof Error && error.message === 'live_pi_start_failed') return 500
   if (error instanceof Error && error.message.includes('outside configured live session roots')) return 403
   return 500
@@ -45,7 +53,7 @@ function errorStatus(error: unknown): number {
 
 function errorBody(error: unknown): { error: string; message: string } {
   return {
-    error: error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError ? error.code : 'live_session_error',
+    error: error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError || error instanceof SessionForkError || error instanceof LiveSessionCloseError ? error.code : 'live_session_error',
     message: error instanceof Error ? error.message : String(error),
   }
 }
@@ -73,10 +81,13 @@ export class LiveSessionRoutes {
   private readonly metaStore: LiveSessionMetaStore
   private readonly orderStore: LiveSessionOrderStore
   private readonly launcher?: LivePiLauncher
+  private readonly closeSession: typeof closeLiveSession
   private readonly wss = new WebSocketServer({ noServer: true })
   private readonly clients = new Map<WebSocket, LiveSessionBrowserIdentity>()
   private readonly releaseTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly listeners = new Map<string, (...args: any[]) => void>()
+  /** Last pi `sessionId` seen per process, so an in-process session switch can be told apart from a plain refresh. */
+  private readonly knownSessionIds = new Map<string, string>()
   private registered = false
   private active = false
   private startPromise?: Promise<void>
@@ -90,6 +101,7 @@ export class LiveSessionRoutes {
     this.metaStore = options.metaStore ?? new LiveSessionMetaStore()
     this.orderStore = options.orderStore ?? new LiveSessionOrderStore()
     this.launcher = options.launcher
+    this.closeSession = options.closeSession ?? closeLiveSession
   }
 
   start(): Promise<void> {
@@ -194,11 +206,13 @@ export class LiveSessionRoutes {
         if (!cwd) throw new LiveSessionProtocolError('invalid_cwd', 'cwd is required')
         const model = typeof body.model === 'string' ? body.model.trim() : ''
         const separator = model.indexOf('/')
+        const forkFrom = typeof body.forkFrom === 'string' ? body.forkFrom.trim() : ''
         const result = await this.launcher.start({
           cwd,
           ...(separator > 0 ? { modelProvider: model.slice(0, separator), modelId: model.slice(separator + 1) } : model ? { modelId: model } : {}),
           ...(typeof body.thinkingLevel === 'string' ? { thinkingLevel: body.thinkingLevel } : {}),
           ...(typeof body.title === 'string' ? { title: body.title } : {}),
+          ...(forkFrom ? { forkFrom } : {}),
         })
         // The tmux session is the terminal access path and the close handle, so
         // it is stored with the session (keyed by pi sessionId, like tags/pin).
@@ -208,8 +222,47 @@ export class LiveSessionRoutes {
       })
     })
 
+    // Entry-level fork: extract the source session's root→entry branch into a NEW
+    // session file and start a fresh Pi on it. The source session keeps running,
+    // so the fork can sit beside it in the sidebar (group/pin/order are applied
+    // by the caller once it knows the new sessionId).
+    this.app.post('/api/live-sessions/:processInstanceId/fork', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => {
+        if (!this.launcher) throw new LiveSessionRegistryError('live_sessions_unavailable', 'live Pi launcher is unavailable')
+        const detail = this.registry.get(req.params.processInstanceId as string)
+        if (!detail) throw new LiveSessionRegistryError('live_session_not_found', 'live session is not available')
+        const entryId = typeof req.body?.entryId === 'string' ? req.body.entryId.trim() : ''
+        if (!entryId) throw new LiveSessionProtocolError('invalid_entry_id', 'entryId is required')
+        const summary = detail.summary
+        if (!summary.sessionFile) throw new LiveSessionProtocolError('session_file_unavailable', 'the session has no session file yet')
+        const branched = createBranchedSessionFile(summary.sessionFile, entryId)
+        const result = await this.launcher.start({
+          cwd: summary.canonicalCwd || summary.cwd,
+          ...(summary.model ? { modelProvider: summary.model.provider, modelId: summary.model.id } : {}),
+          ...(summary.thinkingLevel ? { thinkingLevel: summary.thinkingLevel } : {}),
+          title: `${summary.sessionName || `Pi ${summary.pid}`} · 分叉`,
+          sessionFile: branched,
+        })
+        if (result.sessionId) await this.metaStore.update(result.sessionId, { tmux: result.tmuxSession })
+        return { ok: true, result: { ...result, forkedFrom: summary.sessionFile, entryId } }
+      })
+    })
+
     this.app.get('/api/live-sessions', requireAuth, (req: AuthenticatedRequest, res: Response) => {
       res.json({ sessions: this.registry.list(), browserClientId: req.liveSessionIdentity!.browserClientId })
+    })
+
+    /**
+     * Reload every attached session at once.
+     *
+     * Bulk counterpart of the per-session `重载` button: after dashboard
+     * extensions / skills / prompts / themes change, each running Pi has to
+     * re-read them, and doing that session by session is tedious. Subagent child
+     * processes are skipped so a running task is not killed, and per-session
+     * failures come back in `result.failed` instead of failing the whole request.
+     */
+    this.app.post('/api/live-sessions/reload', requireMutationOrigin, requireAuth, async (_req: Request, res: Response) => {
+      await this.respond(res, async () => ({ ok: true, result: await this.registry.reloadAll() }))
     })
 
     this.app.get('/api/live-session-groups', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
@@ -300,6 +353,22 @@ export class LiveSessionRoutes {
       })
     })
 
+    /**
+     * Compaction markers for one session file.
+     *
+     * `/compact` is fire-and-forget on the agent side (`ctx.compact()` does not
+     * await), so a browser cannot learn from the command ack when compaction really
+     * finished. It polls these markers instead, comparing them against the server
+     * `now` (browser clocks may be skewed from the machine that writes the file).
+     */
+    this.app.get('/api/session-compactions', requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => {
+        const file = typeof req.query.file === 'string' ? req.query.file.trim() : ''
+        if (!file) throw new SessionTreeError('session_file_unavailable', 'file query parameter is required')
+        return { ok: true, result: { now: Date.now(), compactions: await readSessionCompactions(file) } }
+      })
+    })
+
     this.app.post('/api/live-sessions/:processInstanceId/claim', requireMutationOrigin, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
       await this.respond(res, async () => {
         const requestedLeaseMs = req.body?.requestedLeaseMs ?? 30_000
@@ -328,6 +397,31 @@ export class LiveSessionRoutes {
         result: await this.registry.sendBrowserCommand(req.params.processInstanceId as string, req.liveSessionIdentity!.browserClientId, req.body?.command),
       }))
     })
+
+    /**
+     * Close one live session.
+     *
+     * A tmux-first session dies with its tmux session (the same handle the
+     * sidebar row uses). A subagent child process has no tmux session, so it is
+     * signalled directly and the registry drops the row once it exits.
+     *
+     * Only subagent sessions are closable here: ending a main session is a much
+     * bigger action and stays with the sidebar's explicit tmux close.
+     */
+    this.app.post('/api/live-sessions/:processInstanceId/close', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => {
+        const detail = this.registry.get(req.params.processInstanceId as string)
+        if (!detail) throw new LiveSessionRegistryError('live_session_not_found', 'live session is not available')
+        const { summary } = detail
+        if (summary.role !== 'subagent') throw new LiveSessionRegistryError('not_a_subagent', 'only subagent live sessions can be closed from here')
+        const tmuxSession = (await this.metaStore.list())[summary.sessionId]?.tmux
+        const result = await this.closeSession({
+          pid: summary.pid,
+          ...(tmuxSession ? { tmuxSession } : {}),
+        })
+        return { ok: true, result }
+      })
+    })
   }
 
   private async respond(res: Response, operation: () => Promise<unknown>): Promise<void> {
@@ -345,10 +439,40 @@ export class LiveSessionRoutes {
       ['session_error', 'live_session_error'],
     ]
     for (const [registryEvent, browserEvent] of bindings) {
-      const listener = (data: unknown) => this.broadcast({ type: browserEvent, data })
+      const listener = (data: unknown) => {
+        // `attached` / `snapshot` carry the summary; the other bindings do not.
+        if (registryEvent === 'attached' || registryEvent === 'snapshot') this.followSessionSwitch(data)
+        this.broadcast({ type: browserEvent, data })
+      }
       this.listeners.set(registryEvent, listener)
       this.registry.on(registryEvent, listener)
     }
+  }
+
+  /**
+   * Follow an in-process session switch (`/clear`, `/ls-fork`).
+   *
+   * The row is a `processInstanceId`, but every sidebar store (manual order, task
+   * groups, tags/pin) is keyed by the pi `sessionId`, which `/clear` changes while
+   * the process keeps running. Detected from the summary itself instead of from
+   * registry entry state, so it also covers a row whose entry was torn down and
+   * recreated in between.
+   */
+  private followSessionSwitch(data: unknown): void {
+    const summary = (data as { summary?: { processInstanceId?: unknown; sessionId?: unknown } } | undefined)?.summary
+    const processInstanceId = typeof summary?.processInstanceId === 'string' ? summary.processInstanceId : ''
+    const sessionId = typeof summary?.sessionId === 'string' ? summary.sessionId : ''
+    if (!processInstanceId || !sessionId) return
+    const previous = this.knownSessionIds.get(processInstanceId)
+    this.knownSessionIds.set(processInstanceId, sessionId)
+    if (!previous || previous === sessionId) return
+    // Storage keys move; a failed write only logs so the switch itself is never
+    // held back by sidebar bookkeeping.
+    void Promise.all([
+      this.orderStore.rekey(previous, sessionId),
+      this.metaStore.rekey(previous, sessionId),
+      this.groupStore.rekey(previous, sessionId),
+    ]).catch(error => console.error('[live-sessions] Failed to re-key sidebar stores:', error))
   }
 
   private unsubscribeRegistry(): void {

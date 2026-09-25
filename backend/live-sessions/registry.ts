@@ -1,6 +1,5 @@
 import { EventEmitter } from 'events'
 import { randomUUID } from 'crypto'
-import { readFileSync } from 'fs'
 import {
   type LiveSessionCommand,
   type LiveSessionCommandEnvelope,
@@ -8,9 +7,12 @@ import {
   type LiveSessionDetail,
   type LiveSessionEventMessage,
   type LiveSessionHello,
+  type LiveSessionReloadResult,
   type LiveSessionSnapshot,
   type LiveSessionSummary,
+  type LiveSessionUiRequest,
 } from '../../shared/src/live-sessions.js'
+import { PI_SUBAGENT_CHILD_ENV, readProcessEnviron } from './process-env.js'
 import { validateLiveSessionCommand } from './protocol.js'
 
 export interface LiveSessionTransport {
@@ -45,6 +47,8 @@ type Entry = {
   awaitingResync: boolean
   attached: boolean
   pending: Map<string, PendingCommand>
+  /** Unanswered extension UI requests, mirrored for reconnect/page-switch recovery. */
+  pendingUi: Map<string, LiveSessionUiRequest>
   dispatchTail: Promise<unknown>
   reconnectTimer?: ReturnType<typeof setTimeout>
   leaseTimer?: ReturnType<typeof setTimeout>
@@ -62,14 +66,25 @@ function resultRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 }
 
+/** Project a bridge `extension_ui` payload into the dashboard-side request shape. */
+function uiRequestFromEvent(id: string, data: Record<string, unknown> | undefined): LiveSessionUiRequest {
+  const options = Array.isArray(data?.options) ? data.options.filter((option): option is string => typeof option === 'string') : undefined
+  return {
+    id,
+    method: (typeof data?.method === 'string' ? data.method : 'confirm') as LiveSessionUiRequest['method'],
+    title: typeof data?.title === 'string' ? data.title : '',
+    ...(typeof data?.message === 'string' ? { message: data.message } : {}),
+    ...(options ? { options } : {}),
+    ...(typeof data?.placeholder === 'string' ? { placeholder: data.placeholder } : {}),
+    ...(typeof data?.prefill === 'string' ? { prefill: data.prefill } : {}),
+  }
+}
+
 function inferProcessLineage(pid: number): SessionLineage | undefined {
   try {
-    const values = readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0')
-    const env = new Map(values.map(value => {
-      const separator = value.indexOf('=')
-      return separator > 0 ? [value.slice(0, separator), value.slice(separator + 1)] as const : ['', ''] as const
-    }).filter(([key]) => key))
-    if (env.get('PI_SUBAGENT_WORKBENCH_CHILD') !== '1') return { role: 'main' }
+    const env = readProcessEnviron(pid)
+    if (!env) return undefined
+    if (env.get(PI_SUBAGENT_CHILD_ENV) !== '1') return { role: 'main' }
     const raw = env.get('PI_TRACE_CONTEXT')
     const trace = raw ? JSON.parse(raw) as Record<string, unknown> : {}
     const bounded = (value: unknown): string | undefined => typeof value === 'string' && value.length > 0 ? value.slice(0, 512) : undefined
@@ -124,6 +139,7 @@ export class LiveSessionRegistry extends EventEmitter {
       awaitingResync: true,
       attached: false,
       pending: new Map(),
+      pendingUi: new Map(),
       dispatchTail: Promise.resolve(),
     })
   }
@@ -133,9 +149,17 @@ export class LiveSessionRegistry extends EventEmitter {
     if (snapshot.summary.processInstanceId !== entry.hello.processInstanceId || snapshot.summary.pid !== entry.hello.pid) {
       throw new LiveSessionRegistryError('identity_mismatch', 'snapshot identity does not match hello')
     }
-    if (snapshot.revision <= entry.revision) return false
-    const sessionChanged = !!entry.summary && entry.summary.sessionId !== snapshot.summary.sessionId
+    const previousSessionId = entry.summary?.sessionId
+    const sessionChanged = !!previousSessionId && previousSessionId !== snapshot.summary.sessionId
+    // An in-process session switch (`/clear`, `/ls-fork`) rebuilds the extension's
+    // projector, whose revision/sequence restart at 1/0, while the entry's cursor
+    // still holds the finished numbering of the previous session. Applying that
+    // cursor would reject every snapshot of the new session until it happened to
+    // count past the old position — i.e. the row would sit on “重连中” for ages.
+    if (!sessionChanged && snapshot.revision <= entry.revision) return false
     if (sessionChanged) this.clearLease(entry)
+    // A session switch (`/clear`, `/ls-fork`) ends the previous session's dialogs.
+    if (sessionChanged) entry.pendingUi.clear()
     entry.canonicalCwd = canonicalCwd
     entry.revision = snapshot.revision
     entry.sequence = snapshot.sequence
@@ -162,6 +186,12 @@ export class LiveSessionRegistry extends EventEmitter {
     if (sessionChanged || orphanedLeaseId) this.emit('claim_changed', entry.summary)
     if (orphanedLeaseId) {
       void this.dispatch(snapshot.processInstanceId, { type: 'release', leaseId: orphanedLeaseId }).catch(() => {})
+    }
+    // A brand-new entry starts with an empty dialog mirror, so ask the bridge to
+    // replay the unanswered dialogs pi is still holding (a browser alone cannot
+    // reconstruct them from the snapshot protocol).
+    if (!wasAttached) {
+      void this.dispatch(entry.hello.processInstanceId, { type: 'resync' }).catch(() => {})
     }
     return true
   }
@@ -329,6 +359,44 @@ export class LiveSessionRegistry extends EventEmitter {
     await Promise.allSettled(releases)
   }
 
+  /**
+   * Reload every attached session in one shot — the bulk counterpart of the
+   * per-session `重载` button, for when dashboard extensions, skills, prompts or
+   * themes changed and every running Pi has to re-read them.
+   *
+   * Each session is dispatched independently so one unreachable process cannot
+   * hold up the rest; per-session failures are collected rather than thrown.
+   * Subagent child processes are skipped: restarting one mid-run would silently
+   * discard the task it is executing.
+   */
+  async reloadAll(): Promise<LiveSessionReloadResult> {
+    const sessions = this.list()
+    const reloaded: string[] = []
+    const skipped: string[] = []
+    const failed: LiveSessionReloadResult['failed'] = []
+    await Promise.all(sessions.map(async session => {
+      if (session.role === 'subagent') { skipped.push(session.processInstanceId); return }
+      try {
+        await this.dispatch(session.processInstanceId, { type: 'reload' })
+        reloaded.push(session.processInstanceId)
+      } catch (error) {
+        failed.push({
+          processInstanceId: session.processInstanceId,
+          code: error instanceof LiveSessionRegistryError ? error.code : 'reload_failed',
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }))
+    // Dispatches settle in arbitrary order; report in the sidebar's own order.
+    const rank = new Map(sessions.map((session, index) => [session.processInstanceId, index]))
+    const byRank = (left: string, right: string) => (rank.get(left) ?? 0) - (rank.get(right) ?? 0)
+    return {
+      reloaded: reloaded.sort(byRank),
+      skipped: skipped.sort(byRank),
+      failed: failed.sort((left, right) => byRank(left.processInstanceId, right.processInstanceId)),
+    }
+  }
+
   async stop(): Promise<void> {
     const entries = [...this.entries.values()]
     this.entries.clear()
@@ -358,6 +426,28 @@ export class LiveSessionRegistry extends EventEmitter {
   private appendTimelineEvent(entry: Entry, event: LiveSessionEventMessage['event']): void {
     const type = event.type
     if (type === 'message_start') return
+    // Dialog and notify events surface as pending-dialog / notification state, not
+    // as transcript rows. They are also replayed on resync, so keeping them out of
+    // the timeline avoids duplicate "extension ui" noise.
+    if (type === 'extension_ui' || type === 'extension_ui_closed' || type === 'extension_ui_notify') return
+    if (type === 'message_entry') {
+      // The bridge can only read a message's session-entry id AFTER pi persists
+      // it, so it publishes the id as a follow-up event. Fold it into the message
+      // it belongs to (the nearest preceding `message_end` — nothing else can
+      // complete in the one macrotask in between) and never render the carrier.
+      const raw = resultRecord(event.data)?.entryId
+      const entryId = typeof raw === 'string' ? raw : undefined
+      if (entryId) {
+        for (let index = entry.entries.length - 1; index >= 0; index--) {
+          const candidate = resultRecord(entry.entries[index])
+          if (candidate?.type !== 'message_end') continue
+          const data = resultRecord(candidate.data) ?? {}
+          entry.entries[index] = { ...candidate, data: { ...data, entryId } }
+          break
+        }
+      }
+      return
+    }
     const identity = this.timelineIdentity(event)
     const matches = (candidate: unknown, candidateType: string): boolean => {
       const record = resultRecord(candidate)
@@ -418,6 +508,16 @@ export class LiveSessionRegistry extends EventEmitter {
       if (typeof model?.provider === 'string' && typeof model.id === 'string') summary.model = { provider: model.provider, id: model.id }
     }
     if (message.event.type === 'thinking_level_select' && typeof data?.level === 'string') summary.thinkingLevel = data.level
+    if (message.event.type === 'extension_ui' || message.event.type === 'extension_ui_closed') {
+      // Mirror the bridge's one-shot dialog events so a browser that reconnects
+      // (or comes back to this page) can re-open an unanswered dialog instead of
+      // leaving pi blocked on a request nobody can see.
+      const uiId = typeof data?.id === 'string' ? data.id : undefined
+      if (uiId) {
+        if (message.event.type === 'extension_ui') entry.pendingUi.set(uiId, uiRequestFromEvent(uiId, data))
+        else entry.pendingUi.delete(uiId)
+      }
+    }
     if (message.event.type === 'claim_changed') {
       const claim = resultRecord(data?.claim)
       if (claim?.state === 'unclaimed') {
@@ -484,7 +584,11 @@ export class LiveSessionRegistry extends EventEmitter {
   }
 
   private detailOf(entry: Entry): LiveSessionDetail {
-    return { summary: { ...entry.summary!, claim: { ...entry.summary!.claim } }, entries: [...entry.entries] }
+    return {
+      summary: { ...entry.summary!, claim: { ...entry.summary!.claim } },
+      entries: [...entry.entries],
+      pendingUi: [...entry.pendingUi.values()],
+    }
   }
 
   private rejectPending(entry: Entry, code: string, message: string): void {

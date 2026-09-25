@@ -74,6 +74,9 @@ export type LiveSessionCommand =
   | { type: 'get_models' }
   | { type: 'set_session_name'; name: string }
   | { type: 'feature_command'; leaseId: string; feature: 'btw'; command: { type: 'open' | 'close' } }
+  | { type: 'feature_command'; leaseId: string; feature: 'background-commands'; command: { type: 'background'; toolCallId: string } }
+    // background-commands：把运行中的前台 bash 转入后台，语义同 TUI 的 Ctrl+B（进程不重启，
+    // 被阻塞的 bash 以 exit 0 返回）。需要 lease，因此 dashboard 点击按钮时先 claim。
 
 // 不再出现 expandPromptTemplates 字段：extension 端对 input 恒按 true 处理。
 ```
@@ -198,7 +201,7 @@ mobile/...                             新增（app-token 认证、WS 订阅、�
 
 1. **统一输入模型**：一个 `input` 文本流，`expandPromptTemplates` 恒 true，等价 TUI；废弃结构化文本命令。
 2. **命令/skill 直接派发，不经 tool approval**：如实接受这是「对齐 TUI」的语义，不再额外加权限闸门。
-3. **只保留非文本命令**：`claim/renew/release`、`abort`、`get_models`、`set_session_name`、`feature_command`。
+3. **只保留非文本命令**：`claim/renew/release`、`abort`、`get_models`、`set_session_name`、`compact`、`reload`、`feature_command`、`answer_ui`。
 4. **单一 FIFO + claim 并发协调**：claim 是「谁在打字」的防打架机制，不是权限分级。
 5. **手机认证独立新增**：app-token + 安全存储，不复用浏览器 cookie 语义。
 6. **输出按端口渲染，协议零新增**（除 channel 归因字段）。

@@ -143,3 +143,23 @@ describe('applyNodeView', () => {
     expect(applyNodeView(realShape, [session('s')], 'key').badges).toEqual({})
   })
 })
+
+/**
+ * Regression: the same long chain must survive 骨架 too. Every node is walked to
+ * count the hidden steps, so the old recursive version overflowed the JS stack here
+ * as well and crashed the whole graph page.
+ */
+describe('long linear sessions', () => {
+  it('reduces a 20000-deep chain instead of overflowing the stack', () => {
+    const size = 20000
+    const long = Array.from({ length: size }, (_, index) => node(
+      `n${index}`,
+      index === 0 ? null : `n${index - 1}`,
+      index === size - 1 ? { isLeaf: true, isHead: true } : { childCount: 1 },
+    ))
+    const view = reduceToStructure(long, [session('s')])
+    expect(view.nodes.map(entry => entry.id)).toEqual(['n0', `n${size - 1}`])
+    expect(view.nodes[1].parentId).toBe('n0')
+    expect(view.hiddenSteps).toBe(size - 2)
+  })
+})
