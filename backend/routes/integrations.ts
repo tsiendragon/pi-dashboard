@@ -8,7 +8,7 @@ const MAX_COMMAND_BYTES = 1024 * 1024
 const ALLOWED_COMMANDS: Record<DashboardFeatureName, ReadonlySet<string>> = {
   'subagent-workbench': new Set(['refresh', 'start-agent', 'start-workflow', 'send-agent', 'interrupt-agent', 'interrupt-workflow']),
   btw: new Set(['open', 'submit', 'abort', 'refresh-parent', 'close']),
-  'background-commands': new Set(['refresh', 'output', 'cancel']),
+  'background-commands': new Set(['refresh', 'output', 'cancel', 'background']),
 }
 
 function commandType(value: unknown): string | undefined {
@@ -16,7 +16,7 @@ function commandType(value: unknown): string | undefined {
   return typeof (value as { type?: unknown }).type === 'string' ? (value as { type: string }).type : undefined
 }
 
-function validateCommand(feature: DashboardFeatureName, command: unknown): string | undefined {
+export function validateCommand(feature: DashboardFeatureName, command: unknown): string | undefined {
   let bytes = 0
   try { bytes = Buffer.byteLength(JSON.stringify(command), 'utf8') } catch { return 'command must be JSON serializable' }
   if (bytes > MAX_COMMAND_BYTES) return 'command exceeds 1 MiB'
@@ -25,6 +25,10 @@ function validateCommand(feature: DashboardFeatureName, command: unknown): strin
   if (feature === 'background-commands' && type === 'cancel') {
     const taskId = (command as any).taskId
     if (typeof taskId !== 'string' || !/^bash-[a-z0-9]{4,16}$/.test(taskId)) return 'invalid background task id'
+  }
+  if (feature === 'background-commands' && type === 'background') {
+    const toolCallId = (command as any).toolCallId
+    if (typeof toolCallId !== 'string' || !toolCallId.trim() || toolCallId.length > 256) return 'invalid tool call id'
   }
   if (feature === 'background-commands' && type === 'output') {
     const taskId = (command as any).taskId
