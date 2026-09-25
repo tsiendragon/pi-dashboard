@@ -91,7 +91,10 @@ or a systemd unit. Files are loaded at startup in this order, and variables alre
 win: `$PI_DASH_ENV_FILE` → `<repo>/.env` → `<PI_CODING_AGENT_DIR | ~/.pi/agent>/dashboard.env`.
 
 Template: [`.env.example`](.env.example). Rules, full variable list and troubleshooting:
-[docs/env-configuration.md](docs/env-configuration.md).
+[docs/env-configuration.md](docs/env-configuration.md). Per-extension JSON configs (bash-digest,
+observation-pack, auto-compact-target, …) are editable in **Settings → general → Extension config**:
+[docs/extension-config-ui.md](docs/extension-config-ui.md). Where every config file lives:
+[docs/config-inventory.md](docs/config-inventory.md).
 
 ## Architecture
 
