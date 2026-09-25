@@ -215,7 +215,7 @@ standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsi
 | `sidebar.ts` | 当前会话信息侧栏：模型、上下文组成、用量、缓存（不展示子代理/子会话） | `/sidebar [show\|hide\|toggle\|close]`、`Ctrl+Alt+S` |
 | `btw.ts` | 与主任务隔离的只读侧聊浮窗（不能写文件/执行命令），用来临时问一句不污染主会话 | `/btw` |
 | `git-graph.ts` | 当前仓库提交概览浮层，含本地/远端引用 | `/git-graph [1-2000]` |
-| `session-aliases.ts` | 补上 `/clear`（新会话）与 `/exit`（退出）两个别名 | `/clear`、`/exit` |
+| `pi-tsien-session-aliases` | 补上 `/clear`（新会话）与 `/exit`（退出）两个别名 | `/clear`、`/exit` |
 | `prompt-inspector.ts` | 把「模型实际收到的最终 payload」可视化：优先用 `before_provider_request` 落盘的真实载荷，没有时实时重建一份近似视图 | `/prompt [raw\|path]` |
 | `effort.ts` | 直接调整当前模型的 thinking level | `/effort [off\|minimal\|low\|medium\|high\|xhigh\|max]` |
 | `default-system-prompt.ts` | 用 `~/.pi/agent/DefaultSystemPrompt.md` 覆盖系统提示开头并调整 Guidelines 段落 | 无命令；缺该文件时静默跳过 |
@@ -232,7 +232,7 @@ standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsi
 | 扩展 | 做什么 | 入口 |
 |---|---|---|
 | `ptc.ts`（Code Mode） | 用一个模型生成的 TypeScript 程序编排多个已有工具，把中间结果留在程序里而不是上下文里，减少往返 | `run_code` 工具 |
-| `capability.ts` | 注册工作区里可复用的「能力」，区分 draft/trusted，并作为技能暴露给 agent | `capability_ls`、`capability_run`、`/capability [ls\|promote\|demote]` |
+| `pi-tsien-capability` | 注册工作区里可复用的「能力」，区分 draft/trusted，并作为技能暴露给 agent | `capability_ls`、`capability_run`、`/capability [ls\|promote\|demote]` |
 | `vendor/pi-web-tools` | 联网检索与网页正文抓取；没有搜索 provider key 时回退到 DuckDuckGo lite | `WebSearch`、`WebFetch` 工具 |
 | `schedule.ts` | 当前会话内的定时/周期任务，用于长任务跟进与轮询 | `schedule` 工具、`/schedule` |
 | `usage-analytics.ts` | 本地统计工具与技能使用频率（不上传提示词/参数/输出，也不自动卸载） | `/usage [tools\|skills\|unused\|export\|reset]`；数据在 `~/.pi/agent/usage-analytics.json` |
