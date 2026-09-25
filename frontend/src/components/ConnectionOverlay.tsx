@@ -37,17 +37,17 @@ export default function ConnectionOverlay() {
   if (state === 'connected') return null
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-bg/80 backdrop-blur-sm animate-rise">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-bg backdrop-blur-sm animate-rise">
       <div className="bg-card border border-border rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
         {state === 'reconnecting' ? (
           <>
             <div className="flex items-center gap-3 mb-3">
-              <span className="inline-block w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+              <span className="inline-block w-5 h-5 border-2 border-accent border-t-accent rounded-full animate-spin" />
               <span className="text-sm font-semibold text-text-strong">Reconnecting…</span>
             </div>
             <div className="text-body-s text-muted">
               Lost connection to Pi Dashboard. Retrying automatically…
-              <span className="font-mono text-muted/60 ml-1">{elapsed}s</span>
+              <span className="font-mono text-muted opacity-60 ml-1">{elapsed}s</span>
             </div>
           </>
         ) : (
@@ -56,7 +56,7 @@ export default function ConnectionOverlay() {
             <div className="text-sm font-semibold text-text-strong mb-2">Connection Lost</div>
             <div className="text-body-s text-muted mb-4">
               Can't reach the Pi Dashboard server. This usually means the SSH tunnel dropped or the server stopped.
-              <span className="font-mono text-muted/60 ml-1">({elapsed}s)</span>
+              <span className="font-mono text-muted opacity-60 ml-1">({elapsed}s)</span>
             </div>
 
             <div className="space-y-3 text-body-s">

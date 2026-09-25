@@ -43,7 +43,7 @@ const ChatFooter = memo(function ChatFooter({ running, stopping, state, lastRole
   if (!running || lastRole === 'streaming') return null
 
   const timer = elapsed >= 3
-    ? <span className="text-muted/50 text-meta font-mono tabular-nums ml-2">{elapsed}s</span>
+    ? <span className="text-muted opacity-50 text-meta font-mono tabular-nums ml-2">{elapsed}s</span>
     : null
 
   return (
@@ -52,21 +52,21 @@ const ChatFooter = memo(function ChatFooter({ running, stopping, state, lastRole
       <div className="px-4 py-3 rounded-lg rounded-bl-[4px] bg-card border border-border shadow-[inset_0_1px_0_var(--card-hl)] min-w-[140px]">
         {stopping ? (
           <div className="flex items-center gap-2">
-            <span className="inline-block w-4 h-4 border-2 border-muted/30 border-t-muted rounded-full animate-spin" />
+            <span className="inline-block w-4 h-4 border-2 border-muted border-t-muted rounded-full animate-spin" />
             <span className="text-muted text-body-s">Pulling from the oven…</span>
           </div>
         ) : state === 'tool_running' ? (
           <div className="flex items-center gap-2">
-            <span className="inline-block w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+            <span className="inline-block w-4 h-4 border-2 border-accent border-t-accent rounded-full animate-spin" />
             <span className="text-body-s text-muted">Greasing the pan…</span>
             {timer}
           </div>
         ) : (
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-[3px]">
-              <span className="block w-[6px] h-[6px] rounded-full bg-accent/70 animate-[pulse-dot_1.4s_ease-in-out_infinite]" />
-              <span className="block w-[6px] h-[6px] rounded-full bg-accent/70 animate-[pulse-dot_1.4s_ease-in-out_0.2s_infinite]" />
-              <span className="block w-[6px] h-[6px] rounded-full bg-accent/70 animate-[pulse-dot_1.4s_ease-in-out_0.4s_infinite]" />
+              <span className="block w-[6px] h-[6px] rounded-full bg-accent-subtle animate-[pulse-dot_1.4s_ease-in-out_infinite]" />
+              <span className="block w-[6px] h-[6px] rounded-full bg-accent-subtle animate-[pulse-dot_1.4s_ease-in-out_0.2s_infinite]" />
+              <span className="block w-[6px] h-[6px] rounded-full bg-accent-subtle animate-[pulse-dot_1.4s_ease-in-out_0.4s_infinite]" />
             </div>
             <span className="text-body-s text-muted transition-opacity duration-300">{label}</span>
             {timer}

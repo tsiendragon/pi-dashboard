@@ -120,14 +120,14 @@ function CostChart({ points }: { points: UsageDailyPoint[] }) {
           ))}
         </svg>
         {hoveredPoint && (
-          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[250px] max-w-[340px] rounded-md border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur-sm">
+          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[250px] max-w-[340px] rounded-md border border-border bg-card px-3 py-2 shadow-lg backdrop-blur-sm">
             <div className="text-xs font-medium text-text-strong">{hoveredPoint.date}</div>
             <div className="mt-1 grid grid-cols-3 gap-2 text-2xs">
               <div><div className="text-muted">费用</div><div className="text-accent">{formatCost(hoveredPoint.costUsd)}</div></div>
               <div><div className="text-muted">输入</div><div className="text-info">{formatTokens(hoveredPoint.inputTokens)}</div></div>
               <div><div className="text-muted">输出</div><div className="text-ok">{formatTokens(hoveredPoint.outputTokens)}</div></div>
             </div>
-            <div className="mt-2 space-y-1 border-t border-border/60 pt-1.5">
+            <div className="mt-2 space-y-1 border-t border-border pt-1.5">
               {hoveredPoint.models.length === 0 ? <div className="text-2xs text-muted">当天没有模型费用</div> : hoveredPoint.models.map(model => (
                 <div key={model.key} className="flex items-start justify-between gap-3 text-2xs">
                   <span className="min-w-0 flex-1 whitespace-normal break-all text-muted" title={model.key}>{model.key}</span>
@@ -221,7 +221,7 @@ function DualCostChart({ points, series }: { points: UsageDailyPoint[]; series: 
           ))}
         </svg>
         {hoveredPoint && (
-          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[210px] rounded-md border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur-sm">
+          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[210px] rounded-md border border-border bg-card px-3 py-2 shadow-lg backdrop-blur-sm">
             <div className="text-xs font-medium text-text-strong">{hoveredPoint.date}</div>
             <div className="mt-1 space-y-1 text-2xs">
               {series.map(spec => (
@@ -312,10 +312,10 @@ function CacheRatioChart({ points }: { points: UsageDailyPoint[] }) {
           })}
         </svg>
         {hoveredPoint && (
-          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[230px] rounded-md border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur-sm">
+          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[230px] rounded-md border border-border bg-card px-3 py-2 shadow-lg backdrop-blur-sm">
             <div className="text-xs font-medium text-text-strong">{hoveredPoint.date}</div>
             <div className="mt-1 text-2xs text-info">Cache 命中率：{hoveredPoint.ratio.toFixed(1)}%</div>
-            <div className="mt-2 space-y-1 border-t border-border/60 pt-1.5 text-2xs text-muted">
+            <div className="mt-2 space-y-1 border-t border-border pt-1.5 text-2xs text-muted">
               <div className="flex justify-between gap-4"><span>Cache read</span><span className="text-text">{formatTokens(hoveredPoint.cacheReadTokens)}</span></div>
               <div className="flex justify-between gap-4"><span>普通输入</span><span className="text-text">{formatTokens(hoveredPoint.inputTokens)}</span></div>
               <div className="flex justify-between gap-4"><span>Cache write</span><span className="text-text">{formatTokens(hoveredPoint.cacheWriteTokens)}</span></div>
@@ -325,7 +325,7 @@ function CacheRatioChart({ points }: { points: UsageDailyPoint[] }) {
         )}
       </div>
       {selectedPoint && (
-        <div className="mt-3 rounded-md border border-border bg-bg/30 p-3">
+        <div className="mt-3 rounded-md border border-border bg-bg p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs font-medium text-text-strong">
               {selectedPoint.date} · 各模型 Cache 命中率
@@ -349,7 +349,7 @@ function CacheRatioChart({ points }: { points: UsageDailyPoint[] }) {
                 </thead>
                 <tbody>
                   {modelRows.map(row => (
-                    <tr key={row.model.key} className="border-t border-border/60">
+                    <tr key={row.model.key} className="border-t border-border">
                       <td className="py-1.5 pr-3 font-mono whitespace-normal break-all text-text" title={row.model.key}>{row.model.key}</td>
                       <td className="py-1.5 pr-3 text-info">{row.inputTotal > 0 ? `${row.ratio.toFixed(1)}%` : '—'}</td>
                       <td className="py-1.5 pr-3 text-text">{formatTokens(row.model.cacheReadTokens)}</td>
@@ -382,7 +382,7 @@ function ModelTable({ items }: { items: UsageModelSummary[] }) {
       <table className="w-full text-left text-xs">
         <thead className="text-2xs text-muted uppercase"><tr><th className="py-2 pr-3">模型</th><th className="py-2 pr-3">加权单价</th><th className="py-2 pr-3">费用</th><th className="py-2 pr-3">Token</th><th className="py-2">输入 / 输出</th></tr></thead>
         <tbody>{items.length === 0 ? <tr><td colSpan={5} className="py-5 text-center text-muted">本月暂无记录</td></tr> : items.map(item => (
-          <tr key={item.key} className="border-t border-border/60"><td className="py-2 pr-3 font-mono whitespace-normal break-all text-text" title={item.key}>{item.key}</td><td className="py-2 pr-3 text-text">{formatUnitCost(item.effectiveUsdPerMillionTokens)}</td><td className="py-2 pr-3 text-text-strong">{formatCost(item.costUsd)}</td><td className="py-2 pr-3"><Totals item={item} /></td><td className="py-2 text-muted">{formatTokens(item.inputTokens)} / {formatTokens(item.outputTokens)}</td></tr>
+          <tr key={item.key} className="border-t border-border"><td className="py-2 pr-3 font-mono whitespace-normal break-all text-text" title={item.key}>{item.key}</td><td className="py-2 pr-3 text-text">{formatUnitCost(item.effectiveUsdPerMillionTokens)}</td><td className="py-2 pr-3 text-text-strong">{formatCost(item.costUsd)}</td><td className="py-2 pr-3"><Totals item={item} /></td><td className="py-2 text-muted">{formatTokens(item.inputTokens)} / {formatTokens(item.outputTokens)}</td></tr>
         ))}</tbody>
       </table>
     </div>
@@ -395,7 +395,7 @@ function SessionTable({ items }: { items: UsageSessionSummary[] }) {
       <table className="w-full text-left text-xs">
         <thead className="text-2xs text-muted uppercase"><tr><th className="py-2 pr-3">Session</th><th className="py-2 pr-3">费用</th><th className="py-2 pr-3">Token</th><th className="py-2">缓存读取</th></tr></thead>
         <tbody>{items.length === 0 ? <tr><td colSpan={4} className="py-5 text-center text-muted">本月暂无记录</td></tr> : items.map(item => (
-          <tr key={item.key} className="border-t border-border/60"><td className="py-2 pr-3"><div className="whitespace-normal break-words text-text" title={item.label}>{displayWorktreePath(item.label)}</div><div className="text-2xs text-muted font-mono whitespace-normal break-all" title={item.cwd || item.sessionFile || item.key}>{displayWorktreePath(item.cwd || item.sessionFile || item.key)}</div></td><td className="py-2 pr-3 text-text-strong">{formatCost(item.costUsd)}</td><td className="py-2 pr-3"><Totals item={item} /></td><td className="py-2 text-muted">{formatTokens(item.cacheReadTokens)}</td></tr>
+          <tr key={item.key} className="border-t border-border"><td className="py-2 pr-3"><div className="whitespace-normal break-words text-text" title={item.label}>{displayWorktreePath(item.label)}</div><div className="text-2xs text-muted font-mono whitespace-normal break-all" title={item.cwd || item.sessionFile || item.key}>{displayWorktreePath(item.cwd || item.sessionFile || item.key)}</div></td><td className="py-2 pr-3 text-text-strong">{formatCost(item.costUsd)}</td><td className="py-2 pr-3"><Totals item={item} /></td><td className="py-2 text-muted">{formatTokens(item.cacheReadTokens)}</td></tr>
         ))}</tbody>
       </table>
     </div>
@@ -443,7 +443,7 @@ export default function UsagePage() {
           <div><h1 className="text-lg font-semibold text-text-strong">Token Cost</h1><p className="text-xs text-muted mt-1">Terminal、Web 和 Dashboard session 的统一用量统计</p></div>
           <label className="text-xs text-muted flex items-center gap-2">月份<input type="month" value={month} onChange={event => setMonth(event.target.value)} className="rounded-md border border-border bg-card px-2 py-1.5 text-text" /></label>
         </header>
-        {error && <div className="rounded-md border border-danger/30 bg-danger-subtle px-3 py-2 text-xs text-danger">统计读取失败：{error}</div>}
+        {error && <div className="rounded-md border border-danger bg-danger-subtle px-3 py-2 text-xs text-danger">统计读取失败：{error}</div>}
         {loading && !report && <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted">读取统计中…</div>}
         {report && <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

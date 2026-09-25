@@ -90,7 +90,7 @@ export default function SpreadsheetRenderer({ filePath }: SpreadsheetRendererPro
           )}
           <tbody>
             {data.slice(1).map((row, ri) => (
-              <tr key={ri} className={ri % 2 ? 'bg-bg-elevated/50' : ''}>
+              <tr key={ri} className={ri % 2 ? 'bg-bg-elevated' : ''}>
                 {row.map((cell, ci) => (
                   <td key={ci} className="px-3 py-2 border-b border-border text-sm whitespace-nowrap">
                     {String(cell)}

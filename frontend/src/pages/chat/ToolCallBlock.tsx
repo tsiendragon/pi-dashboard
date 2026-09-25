@@ -44,9 +44,9 @@ function diffStats(diff: string): { additions: number; deletions: number } {
 }
 
 /** Expandable tool call block with args and result — shows diff view for edit tool, code preview for write */
-export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { content: string; meta?: Record<string, unknown>; onFileOpen?: (path: string) => void; slotKey?: string }) {
+export default function ToolCallBlock({ content, meta, onFileOpen, slotKey, defaultExpanded = false }: { content: string; meta?: Record<string, unknown>; onFileOpen?: (path: string) => void; slotKey?: string; defaultExpanded?: boolean }) {
   const toolName = (meta?.toolName as string) || content.replace('🔧 ', '')
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const args = meta?.args as string | undefined
   const result = meta?.result as string | undefined
   const partialText = meta?.partialResult as string | undefined
@@ -70,10 +70,10 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
   const resultSummary = summarizeToolResult(result || partialText)
   const summaryText = argsSummary || resultSummary
   const statusTone = isError
-    ? 'border-danger/45 bg-danger-subtle/15'
+    ? 'border-danger bg-danger-subtle'
     : result
-      ? 'border-ok/35 bg-ok-subtle/10'
-      : 'border-accent/35 bg-accent-subtle/10'
+      ? 'border-ok bg-ok-subtle'
+      : 'border-accent bg-accent-subtle'
 
   const handleDownload = (e: React.MouseEvent, path: string) => {
     e.stopPropagation()
@@ -133,7 +133,7 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
 
   if (isEdit) {
     return (
-      <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border/60 rounded-md animate-scale-in ${statusTone}`}>
+      <div className={`msg-content bg-transparent border border-border md:bg-card md:border-border rounded-md animate-scale-in ${statusTone}`}>
         <button
           className="w-full flex items-center gap-1.5 px-2 py-1.5 text-2xs text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
           onClick={() => setEditExpanded(!editExpanded)}
@@ -143,7 +143,7 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
           {onFileOpen && <button className="text-accent text-2xs font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(editDiff.path) }}>Open</button>}
           <button className="text-muted text-2xs hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, editDiff.path)} title="Download">⬇</button>
         </button>
-        <div className="flex items-center gap-1.5 border-t border-border/40 px-2 pb-1 text-2xs font-mono text-muted/60">
+        <div className="flex items-center gap-1.5 border-t border-border px-2 pb-1 text-2xs font-mono text-muted opacity-60">
           <span>↳ diff</span>
           <span className="text-diff-add-text">+{editStats.additions}</span>
           <span className="text-diff-del-text">-{editStats.deletions}</span>
@@ -174,7 +174,7 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
       const match = result.match(/!\[image\]\(([^)]+)\)/)
       const src = match ? match[1] : imgUrl
       return (
-        <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border/60 rounded-md animate-scale-in ${statusTone}`}>
+        <div className={`msg-content bg-transparent border border-border md:bg-card md:border-border rounded-md animate-scale-in ${statusTone}`}>
           <button
             className="w-full flex items-center gap-1.5 px-2 py-1.5 text-2xs text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
             onClick={() => setReadExpanded(!readExpanded)}
@@ -196,7 +196,7 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
     const lineCount = result.split('\n').length
     const rangeLabel = readInfo.offset ? `lines ${readInfo.offset}–${readInfo.offset + (readInfo.limit || lineCount) - 1}` : `${lineCount} lines`
     return (
-      <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border/60 rounded-md animate-scale-in ${statusTone}`}>
+      <div className={`msg-content bg-transparent border border-border md:bg-card md:border-border rounded-md animate-scale-in ${statusTone}`}>
         <button
           className="w-full flex items-center gap-1.5 px-2 py-1.5 text-2xs text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
           onClick={() => setReadExpanded(!readExpanded)}
@@ -205,7 +205,7 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
           <ToolSummaryLine toolName={toolName} args={args} timestamp={timestamp} status={summaryStatus} className="min-w-0 flex-1" />
           {onFileOpen && <button className="text-accent text-2xs font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(readInfo.path) }}>Open</button>}
           <button className="text-muted text-2xs hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, readInfo.path)} title="Download">⬇</button>
-          <span className="text-muted/50 text-meta font-normal shrink-0">{rangeLabel}</span>
+          <span className="text-muted opacity-50 text-meta font-normal shrink-0">{rangeLabel}</span>
         </button>
         {readExpanded && (
           <div className="px-2 pb-2">
@@ -228,7 +228,7 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
     const lang = langFromPath(writeInfo.path)
     const lineCount = writeInfo.content.split('\n').length
     return (
-      <div className={`msg-content bg-transparent border border-border/30 md:bg-card md:border-border/60 rounded-md animate-scale-in ${statusTone}`}>
+      <div className={`msg-content bg-transparent border border-border md:bg-card md:border-border rounded-md animate-scale-in ${statusTone}`}>
         <button
           className="w-full flex items-center gap-1.5 px-2 py-1.5 text-2xs text-muted font-body bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
           onClick={() => setWriteExpanded(!writeExpanded)}
@@ -237,7 +237,7 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
           <ToolSummaryLine toolName={toolName} args={args} timestamp={timestamp} status={summaryStatus} className="min-w-0 flex-1" />
           {onFileOpen && <button className="text-accent text-2xs font-medium hover:underline shrink-0 bg-transparent border-none cursor-pointer" onClick={e => { e.stopPropagation(); onFileOpen(writeInfo.path) }}>Open</button>}
           <button className="text-muted text-2xs hover:text-accent shrink-0 bg-transparent border-none cursor-pointer" onClick={e => handleDownload(e, writeInfo.path)} title="Download">⬇</button>
-          <span className="text-muted/50 text-meta font-normal shrink-0">{lineCount} lines</span>
+          <span className="text-muted opacity-50 text-meta font-normal shrink-0">{lineCount} lines</span>
         </button>
         {writeExpanded && (
           <div className="px-2 pb-2">
@@ -262,7 +262,7 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey }: { 
   }
 
   return (
-    <div className={`pidash-tool-card msg-content bg-transparent border border-border/30 md:bg-card md:border-border/60 rounded-md animate-scale-in ${statusTone} ${hasDetails ? 'cursor-pointer' : ''}`} data-pidash-tool-name={toolName} data-pidash-tool-status={isError ? 'error' : result ? 'ok' : 'running'}>
+    <div className={`pidash-tool-card msg-content bg-transparent border border-border md:bg-card md:border-border rounded-md animate-scale-in ${statusTone} ${hasDetails ? 'cursor-pointer' : ''}`} data-pidash-tool-name={toolName} data-pidash-tool-status={isError ? 'error' : result ? 'ok' : 'running'}>
       <button
         className="w-full min-w-0 flex items-center gap-1.5 px-2 py-1.5 text-2xs text-muted font-mono bg-transparent border-none text-left hover:text-text transition-colors"
         onClick={() => hasDetails && setExpanded(!expanded)}

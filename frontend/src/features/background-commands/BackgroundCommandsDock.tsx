@@ -3,6 +3,7 @@ import { useIntegration } from '../useIntegration'
 
 type Task = {
   taskId: string; title: string; status: string; command: string; cwd: string
+  mode?: 'foreground' | 'background'; toolCallId?: string
   pid?: number; startedAt: number; endedAt?: number; exitCode?: number | null
   exitReason?: string; outputBytes: number; outputFile: string; outputTail: string
   outputTruncated?: boolean; error?: string
@@ -21,6 +22,8 @@ export default function BackgroundCommandsDock({ slot }: { slot: string }) {
   const [now, setNow] = useState(Date.now())
   const tasks = snapshot?.tasks ?? []
   const task = tasks.find(item => item.taskId === selected) ?? tasks[tasks.length - 1]
+  // Foreground commands can be moved to the background; background commands can be cancelled.
+  const handoffToolCallId = task?.mode === 'foreground' ? task.toolCallId : undefined
 
   useEffect(() => {
     if (!tasks.some(item => item.status === 'running' || item.status === 'starting')) return
@@ -40,11 +43,11 @@ export default function BackgroundCommandsDock({ slot }: { slot: string }) {
     </button>
     {!minimized && <>
       <div className="flex gap-1 p-2 overflow-x-auto border-b border-border">
-        {tasks.map(item => <button key={item.taskId} onClick={() => setSelected(item.taskId)} className={`shrink-0 rounded px-2 py-1 text-xs border ${task?.taskId === item.taskId ? 'border-accent text-accent bg-accent/10' : 'border-border text-muted'}`}>{item.title}</button>)}
+        {tasks.map(item => <button key={item.taskId} onClick={() => setSelected(item.taskId)} className={`shrink-0 rounded px-2 py-1 text-xs border ${task?.taskId === item.taskId ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted'}`}>{item.title}</button>)}
       </div>
       {task && <div className="min-h-0 flex flex-col">
         <div className="px-3 py-2 border-b border-border">
-          <div className="flex items-center gap-2"><span className="font-mono text-xs text-accent">{task.taskId}</span><span className="text-xs text-muted">{task.status} · {elapsed(task, now)}{task.pid ? ` · pid ${task.pid}` : ''}</span>{(task.status === 'running' || task.status === 'starting') && <button className="ml-auto text-xs text-danger border border-danger/40 rounded px-2 py-0.5" onClick={() => void send({ type: 'cancel', taskId: task.taskId })}>Cancel</button>}</div>
+          <div className="flex items-center gap-2"><span className="font-mono text-xs text-accent">{task.taskId}</span><span className="text-xs text-muted">{task.status} · {elapsed(task, now)}{task.pid ? ` · pid ${task.pid}` : ''}</span>{(task.status === 'running' || task.status === 'starting') && (handoffToolCallId ? <button className="ml-auto text-xs text-accent border border-accent rounded px-2 py-0.5" onClick={() => void send({ type: 'background', toolCallId: handoffToolCallId })}>Move to background</button> : <button className="ml-auto text-xs text-danger border border-danger rounded px-2 py-0.5" onClick={() => void send({ type: 'cancel', taskId: task.taskId })}>Cancel</button>)}</div>
           <div className="text-xs text-text mt-1 font-mono break-all">{task.command}</div>
           <div className="text-2xs text-muted truncate mt-1">{task.cwd} · {task.outputBytes.toLocaleString()} bytes</div>
         </div>

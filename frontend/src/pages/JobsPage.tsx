@@ -42,9 +42,9 @@ function fmt(ts?: string | null): string {
 }
 
 function statusClass(status?: string | null): string {
-  if (status === 'success') return 'bg-ok/15 text-ok border-ok/25'
-  if (status === 'failed') return 'bg-danger/15 text-danger border-danger/25'
-  if (status === 'running') return 'bg-warn/15 text-warn border-warn/25'
+  if (status === 'success') return 'bg-ok-subtle text-ok border-ok'
+  if (status === 'failed') return 'bg-danger-subtle text-danger border-danger'
+  if (status === 'running') return 'bg-warn-subtle text-warn border-warn'
   return 'bg-bg-elevated text-muted border-border'
 }
 
@@ -127,7 +127,7 @@ export default function JobsPage() {
         </button>
       </div>
 
-      {error && <div className="rounded-lg border border-danger/30 bg-danger-subtle text-danger text-sm px-3 py-2">{error}</div>}
+      {error && <div className="rounded-lg border border-danger bg-danger-subtle text-danger text-sm px-3 py-2">{error}</div>}
 
       {formOpen && (
         <div className="rounded-xl border border-border bg-card p-4 space-y-3 animate-scale-in">
@@ -162,7 +162,7 @@ export default function JobsPage() {
 
       <section className="grid gap-3">
         {jobs.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card/50 p-8 text-center text-muted">
+          <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-muted">
             <div className="text-3xl mb-2">⏰</div>
             <div className="text-text-strong font-semibold mb-1">No scheduled jobs yet</div>
             <div className="text-sm">Create one for recurring reviews, digests, or monitoring checks.</div>
@@ -175,7 +175,7 @@ export default function JobsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
                     <h2 className="text-base font-semibold text-text-strong">{job.name}</h2>
-                    <span className={`text-2xs px-2 py-0.5 rounded-full border ${job.enabled ? 'bg-ok/10 text-ok border-ok/25' : 'bg-bg-elevated text-muted border-border'}`}>{job.enabled ? 'enabled' : 'paused'}</span>
+                    <span className={`text-2xs px-2 py-0.5 rounded-full border ${job.enabled ? 'bg-ok-subtle text-ok border-ok' : 'bg-bg-elevated text-muted border-border'}`}>{job.enabled ? 'enabled' : 'paused'}</span>
                     <span className={`text-2xs px-2 py-0.5 rounded-full border ${statusClass(job.lastStatus)}`}>{job.lastStatus || 'never run'}</span>
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-muted mb-2">
@@ -189,15 +189,15 @@ export default function JobsPage() {
                 <div className="flex md:flex-col gap-2 shrink-0">
                   <button className="px-3 py-1.5 rounded-lg bg-bg-elevated border border-border text-sm text-text cursor-pointer hover:border-border-strong" onClick={() => runNow(job)}>Run</button>
                   <button className="px-3 py-1.5 rounded-lg bg-bg-elevated border border-border text-sm text-text cursor-pointer hover:border-border-strong" onClick={() => toggle(job)}>{job.enabled ? 'Pause' : 'Enable'}</button>
-                  <button className="px-3 py-1.5 rounded-lg bg-danger/10 border border-danger/25 text-sm text-danger cursor-pointer hover:bg-danger/15" onClick={() => remove(job)}>Delete</button>
+                  <button className="px-3 py-1.5 rounded-lg bg-danger-subtle border border-danger text-sm text-danger cursor-pointer hover:bg-danger-subtle" onClick={() => remove(job)}>Delete</button>
                 </div>
               </div>
               {jobRuns.length > 0 && (
-                <div className="border-t border-border bg-bg/40 px-4 py-3">
+                <div className="border-t border-border bg-bg px-4 py-3">
                   <div className="text-meta uppercase tracking-wide text-muted font-semibold mb-2">Recent runs</div>
                   <div className="grid gap-1.5">
                     {jobRuns.slice(0, 5).map(run => (
-                      <button key={run.id} className="w-full text-left flex items-center gap-2 rounded-lg bg-bg-elevated/70 border border-border px-2.5 py-2 cursor-pointer hover:border-border-strong" onClick={() => navigate(`/chat?slot=${encodeURIComponent(run.slotKey)}`)}>
+                      <button key={run.id} className="w-full text-left flex items-center gap-2 rounded-lg bg-bg-elevated border border-border px-2.5 py-2 cursor-pointer hover:border-border-strong" onClick={() => navigate(`/chat?slot=${encodeURIComponent(run.slotKey)}`)}>
                         <span className={`text-2xs px-2 py-0.5 rounded-full border ${statusClass(run.status)}`}>{run.status}</span>
                         <span className="text-meta text-muted">{fmt(run.startedAt)}</span>
                         <span className="text-meta font-mono text-accent">{run.slotKey}</span>
