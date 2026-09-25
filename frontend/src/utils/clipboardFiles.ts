@@ -43,10 +43,30 @@ export function splitFilesByKind(files: File[]): { images: File[]; documents: Fi
 }
 
 const FILE_URL_RE = /^file:\/\//i
+/** Whitespace means the paste is prose (or a command line), never a lone path. */
+const HAS_WHITESPACE_RE = /\s/
 /** `/abs`, `~/x`, `./x`, `../x` — an explicit path, safe to resolve as a file. */
 const PATH_LIKE_RE = /^(?:[/~]|\.\.?\/)/
 /** A bare file name (`notes.md`) — names with an extension, no spaces or separators. */
 const BARE_NAME_RE = /^[^\s/\\:*?"<>|]+\.[A-Za-z0-9]{1,8}$/
+/** A trailing file extension (`notes.md`, `/tmp/a.json`). */
+const FILE_EXTENSION_RE = /\.[A-Za-z0-9]{1,8}$/
+
+/**
+ * Whether a pasted single-line text is worth resolving as a file.
+ *
+ * Tighter than a bare "starts like a path" check: a pasted slash command such
+ * as `/taskspace start …` also begins with `/` but must stay ordinary text, so a
+ * leading slash only counts when the rest behaves like a real path (a second
+ * separator or a file extension). Whitespace always disqualifies a candidate.
+ */
+function looksLikePath(raw: string): boolean {
+  if (HAS_WHITESPACE_RE.test(raw)) return false
+  if (BARE_NAME_RE.test(raw)) return true
+  if (!PATH_LIKE_RE.test(raw)) return false
+  if (raw.startsWith('~/') || raw.startsWith('./') || raw.startsWith('../')) return true
+  return raw.indexOf('/', 1) > 0 || FILE_EXTENSION_RE.test(raw)
+}
 
 /** Turn a `file://` URL into a filesystem path (Windows `file:///C:/…` included). */
 export function decodeFileUrl(value: string): string | null {
@@ -75,5 +95,5 @@ export function pastedFileRef({ uriList, text }: { uriList?: string | null; text
   }
   const raw = (text ?? '').trim().replace(/^["']|["']$/g, '')
   if (!raw || /[\r\n]/.test(raw)) return null
-  return decodeFileUrl(raw) ?? (PATH_LIKE_RE.test(raw) || BARE_NAME_RE.test(raw) ? raw : null)
+  return decodeFileUrl(raw) ?? (looksLikePath(raw) ? raw : null)
 }

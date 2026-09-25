@@ -6,6 +6,7 @@ import { api } from '../api/client'
 import { SearchInput } from '../components/ui'
 import InfoTip from '../components/InfoTip'
 import TypewriterText from '../components/TypewriterText'
+import WorkingHammerIcon from '../components/WorkingHammerIcon'
 import {
   type SlotMeta, projectName, visibleTags,
   relTime, slotOrder, tagCounts,
@@ -174,16 +175,21 @@ function SlotRow(p: RowProps) {
                 : p.unread ? 'bg-info' : 'bg-transparent'
         }`} />
 
+        {/* status gutter — the running glyph spans both text lines so the swing
+            has room; other status glyphs stay on the title line */}
+        <span className="flex w-[26px] shrink-0 items-stretch justify-center self-stretch text-body-s leading-none">
+          {status === 'Needs Input' && <span role="status" title="Waiting for approval" aria-label="状态：等待输入" className="flex h-[18px] w-full items-center justify-center text-body-s leading-none">⚠️</span>}
+          {s.stopping && <span role="status" title="Stopping" aria-label="状态：停止中" className="flex h-[18px] w-full items-center justify-center text-2xs leading-none">■</span>}
+          {s.running && status !== 'Needs Input' && !s.stopping && (p.active
+            ? <span className="flex h-[18px] w-full items-center justify-center"><span className="typing-dots-sm"><span /><span /><span /></span></span>
+            : <span role="status" title="Running" aria-label="状态：工作中" className="flex w-full items-center justify-center"><WorkingHammerIcon className="working-hammer-row" /></span>)}
+          {status === 'Idle' && !s.stopping && !p.unread && <span title="Idle" aria-label="状态：空闲" className="flex h-[18px] w-full items-center justify-center text-body-s leading-none opacity-60">💤</span>}
+          {p.unread && status === 'Idle' && !s.stopping && <span role="status" title="Unread — 有新回复未查看" aria-label="状态：未读" className="flex h-[18px] w-full items-center justify-center text-body-s leading-none">📬</span>}
+        </span>
+
         <div className="min-w-0 flex-1">
           {/* line 1 — title */}
           <div className="flex h-[18px] items-center gap-1.5">
-            {status === 'Needs Input' && <span role="status" title="Waiting for approval" aria-label="状态：等待输入" className="shrink-0 text-body-s leading-none">⚠️</span>}
-            {s.stopping && <span role="status" title="Stopping" aria-label="状态：停止中" className="shrink-0 text-2xs leading-none">■</span>}
-            {s.running && status !== 'Needs Input' && !s.stopping && (p.active
-              ? <span className="typing-dots-sm shrink-0"><span /><span /><span /></span>
-              : <span role="status" title="Running" aria-label="状态：工作中" className="shrink-0 text-body-s leading-none">🔨</span>)}
-            {status === 'Idle' && !s.stopping && !p.unread && <span title="Idle" aria-label="状态：空闲" className="shrink-0 text-body-s leading-none opacity-60">💤</span>}
-            {p.unread && status === 'Idle' && !s.stopping && <span role="status" title="Unread — 有新回复未查看" aria-label="状态：未读" className="shrink-0 text-body-s leading-none">📬</span>}
             {renaming ? (
               <input
                 autoFocus

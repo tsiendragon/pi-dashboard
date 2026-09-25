@@ -42,7 +42,7 @@ export default function ProcessCard({ meta }: Props) {
   })()
 
   return (
-    <div className="msg-content bg-card border border-border/60 rounded-md animate-scale-in">
+    <div className="msg-content bg-card border border-border rounded-md animate-scale-in">
       <button
         className="w-full flex items-center gap-2 px-3 py-2.5 text-body-s font-mono bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
         onClick={() => (result || listItems) && setExpanded(!expanded)}
@@ -68,7 +68,7 @@ export default function ProcessCard({ meta }: Props) {
         {!name && procId && <span className="text-text text-meta shrink-0">{procId}</span>}
 
         {command && (
-          <span className="text-muted/60 text-meta font-normal truncate flex-1">{truncate(command, 50)}</span>
+          <span className="text-muted opacity-60 text-meta font-normal truncate flex-1">{truncate(command, 50)}</span>
         )}
 
         {action === 'start' && !result && (
@@ -101,7 +101,7 @@ export default function ProcessCard({ meta }: Props) {
                 </thead>
                 <tbody>
                   {listItems.map((p, i) => (
-                    <tr key={i} className="border-b border-border/50 last:border-0">
+                    <tr key={i} className="border-b border-border last:border-0">
                       <td className="py-1 pr-3 text-muted">{String(p.id ?? '')}</td>
                       <td className="py-1 pr-3 text-text">{String(p.name ?? '')}</td>
                       <td className={`py-1 ${p.running ? 'text-ok' : 'text-muted'}`}>{p.running ? 'running' : 'stopped'}</td>

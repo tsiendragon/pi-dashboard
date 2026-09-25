@@ -449,7 +449,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
             <span className="cmdk-search-icon cursor-pointer text-sm hover:text-accent" onClick={goBack} title="Back">←</span>
             <div className="flex items-center gap-1 flex-1 min-w-0">
               {(currentSlot?.tags || []).map(t => (
-                <span key={t} className="px-1.5 py-[1px] rounded-full text-2xs font-semibold bg-accent/15 text-accent border border-accent/25 whitespace-nowrap shrink-0">{t}</span>
+                <span key={t} className="px-1.5 py-[1px] rounded-full text-2xs font-semibold bg-accent-subtle text-accent border border-accent whitespace-nowrap shrink-0">{t}</span>
               ))}
               <input
                 ref={inputRef}

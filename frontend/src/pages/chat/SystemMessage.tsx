@@ -98,13 +98,13 @@ function EnsembleNotificationCard({ n }: { n: EnsembleNotif }) {
   let label = n.status ?? 'update'
 
   if (n.kind === 'stalled') {
-    if (n.severity === 'hard') { icon = '⚠'; tone = 'border-danger/30 bg-danger/5'; iconColor = 'text-danger'; label = 'hard-stalled' }
+    if (n.severity === 'hard') { icon = '⚠'; tone = 'border-danger bg-danger-subtle'; iconColor = 'text-danger'; label = 'hard-stalled' }
     else { icon = '·'; tone = 'border-warning/30 bg-warning/5'; iconColor = 'text-warning'; label = 'soft-stalled' }
   } else if (n.kind === 'completed') {
     switch (n.status) {
-      case 'completed': icon = '✓'; tone = 'border-ok/30 bg-ok/5'; iconColor = 'text-ok'; break
-      case 'failed': icon = '✗'; tone = 'border-danger/30 bg-danger/5'; iconColor = 'text-danger'; break
-      case 'killed': icon = '■'; tone = 'border-danger/30 bg-danger/5'; iconColor = 'text-danger'; break
+      case 'completed': icon = '✓'; tone = 'border-ok bg-ok-subtle'; iconColor = 'text-ok'; break
+      case 'failed': icon = '✗'; tone = 'border-danger bg-danger-subtle'; iconColor = 'text-danger'; break
+      case 'killed': icon = '■'; tone = 'border-danger bg-danger-subtle'; iconColor = 'text-danger'; break
       case 'timeout': icon = '⏱'; tone = 'border-warning/30 bg-warning/5'; iconColor = 'text-warning'; break
       default: icon = '·'
     }
@@ -158,7 +158,7 @@ function EnsembleNotificationCard({ n }: { n: EnsembleNotif }) {
                 {expanded ? '▾ hide result' : '▸ show result'}
               </button>
               {expanded && (
-                <pre className="mt-1 text-meta text-text whitespace-pre-wrap break-words max-h-[320px] overflow-y-auto p-2 rounded bg-bg-hover/40 border border-border">{n.result}</pre>
+                <pre className="mt-1 text-meta text-text whitespace-pre-wrap break-words max-h-[320px] overflow-y-auto p-2 rounded bg-bg-hover border border-border">{n.result}</pre>
               )}
             </div>
           )}
@@ -226,7 +226,7 @@ const SystemMessage = memo(function SystemMessage({ content, meta }: Props) {
   if (customType?.startsWith('ad-process:')) {
     const { name, isSuccess, isFail, isStart, duration, output } = parseProcessUpdate(content)
 
-    const colorClass = isSuccess ? 'border-ok/30 bg-ok/5' : isFail ? 'border-danger/30 bg-danger/5' : isStart ? 'border-accent/30 bg-accent/5' : 'border-border bg-card'
+    const colorClass = isSuccess ? 'border-ok bg-ok-subtle' : isFail ? 'border-danger bg-danger-subtle' : isStart ? 'border-accent bg-accent-subtle' : 'border-border bg-card'
     const iconColorClass = isSuccess ? 'text-ok' : isFail ? 'text-danger' : isStart ? 'text-accent' : 'text-muted'
     const icon = isSuccess ? '✓' : isFail ? '✗' : isStart ? '▶' : '⚙'
     const statusLabel = isSuccess ? 'completed' : isFail ? 'failed' : isStart ? 'started' : 'update'
@@ -254,7 +254,7 @@ const SystemMessage = memo(function SystemMessage({ content, meta }: Props) {
     const isComplete = /complete|finished|done/i.test(text)
     const isFail = /failed|crashed|error/i.test(text)
 
-    const colorClass = isComplete ? 'border-ok/30 bg-ok/5' : isFail ? 'border-danger/30 bg-danger/5' : 'border-accent/30 bg-accent/5'
+    const colorClass = isComplete ? 'border-ok bg-ok-subtle' : isFail ? 'border-danger bg-danger-subtle' : 'border-accent bg-accent-subtle'
     const icon = isComplete ? '✓' : isFail ? '✗' : '⧖'
     const iconColor = isComplete ? 'text-ok' : isFail ? 'text-danger' : 'text-accent'
 
@@ -350,9 +350,9 @@ function SubagentResultCard({ content }: { content: string }) {
   let tone = 'border-border bg-card'
   let iconColor = 'text-muted'
   switch (header?.status) {
-    case 'completed': icon = '✓'; tone = 'border-ok/30 bg-ok/5'; iconColor = 'text-ok'; break
-    case 'failed':    icon = '✗'; tone = 'border-danger/30 bg-danger/5'; iconColor = 'text-danger'; break
-    case 'killed':    icon = '■'; tone = 'border-danger/30 bg-danger/5'; iconColor = 'text-danger'; break
+    case 'completed': icon = '✓'; tone = 'border-ok bg-ok-subtle'; iconColor = 'text-ok'; break
+    case 'failed':    icon = '✗'; tone = 'border-danger bg-danger-subtle'; iconColor = 'text-danger'; break
+    case 'killed':    icon = '■'; tone = 'border-danger bg-danger-subtle'; iconColor = 'text-danger'; break
     case 'timeout':   icon = '⏱'; tone = 'border-warning/30 bg-warning/5'; iconColor = 'text-warning'; break
     default: icon = '🤖'
   }
@@ -407,8 +407,8 @@ function CollapsibleMarkdownCard({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const toneClass =
-    tone === 'info' ? 'border-accent/30 bg-accent/5' :
-    tone === 'ok'   ? 'border-ok/30 bg-ok/5' :
+    tone === 'info' ? 'border-accent bg-accent-subtle' :
+    tone === 'ok'   ? 'border-ok bg-ok-subtle' :
     tone === 'warn' ? 'border-warning/30 bg-warning/5' :
                       'border-border bg-card'
 

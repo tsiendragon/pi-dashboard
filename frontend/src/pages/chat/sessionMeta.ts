@@ -42,10 +42,10 @@ export function visibleTags(tags?: string[] | null): string[] {
  * reloads, uses only theme tokens that read well in every theme.
  */
 const TAG_PALETTE = [
-  'bg-accent/15 text-accent border-accent/25',
-  'bg-ok/15 text-ok border-ok/25',
-  'bg-warn/15 text-warn border-warn/25',
-  'bg-danger/15 text-danger border-danger/25',
+  'bg-accent-subtle text-accent border-accent',
+  'bg-ok-subtle text-ok border-ok',
+  'bg-warn-subtle text-warn border-warn',
+  'bg-danger-subtle text-danger border-danger',
   'bg-bg-hover text-text border-border-strong',
 ]
 export function tagColorClass(tag: string): string {

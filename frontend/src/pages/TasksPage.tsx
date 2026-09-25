@@ -117,14 +117,14 @@ function CollapsibleGroup({ title, items, limit = GROUP_LIMIT, onDrop, laneId, h
   return (
     <div
       data-lane={laneId}
-      className={`min-w-0 rounded-lg transition ${over || highlight ? 'ring-1 ring-accent/50 bg-accent-subtle/20' : ''}`}
+      className={`min-w-0 rounded-lg transition ${over || highlight ? 'ring-1 ring-accent bg-accent-subtle' : ''}`}
       onDragOver={onDrop ? e => { e.preventDefault(); setOver(true) } : undefined}
       onDragLeave={onDrop ? () => setOver(false) : undefined}
       onDrop={onDrop ? e => { e.preventDefault(); setOver(false); const uid = e.dataTransfer.getData('text/plain'); if (uid) onDrop(uid) } : undefined}
     >
       <div className="flex items-center gap-2 mb-2 px-0.5">
         <span className="text-meta font-medium text-muted">{title}</span>
-        <span className="text-2xs text-muted/70">{items.length}</span>
+        <span className="text-2xs text-muted opacity-70">{items.length}</span>
       </div>
       <div className="grid gap-2">
         {items.length === 0
@@ -427,7 +427,7 @@ export default function TasksPage() {
               <button
                 key={t.uid}
                 onClick={() => openTask(t.uid)}
-                className="shrink-0 max-w-[240px] text-left bg-accent-subtle border border-accent/25 rounded-md px-2.5 py-1.5 hover:border-accent/50"
+                className="shrink-0 max-w-[240px] text-left bg-accent-subtle border border-accent rounded-md px-2.5 py-1.5 hover:border-accent"
               >
                 <div className="font-mono text-2xs text-accent">{t.id}</div>
                 <div className="text-body-s text-text-strong truncate">{t.title}</div>
@@ -442,7 +442,7 @@ export default function TasksPage() {
           <button
             key={c.id}
             onClick={() => setStatus(c.id)}
-            className={`px-2.5 py-1 rounded-md text-body-s border ${status === c.id ? 'border-accent/40 bg-accent-subtle text-accent' : 'border-border text-muted hover:bg-bg-hover'}`}
+            className={`px-2.5 py-1 rounded-md text-body-s border ${status === c.id ? 'border-accent bg-accent-subtle text-accent' : 'border-border text-muted hover:bg-bg-hover'}`}
           >
             {c.label}
           </button>

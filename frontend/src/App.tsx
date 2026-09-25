@@ -18,6 +18,7 @@ import JobsPage from './pages/JobsPage'
 import TasksPage from './pages/TasksPage'
 import SettingsPage from './pages/SettingsPage'
 import LiveSessionPage from './features/live-sessions/LiveSessionPage'
+import LiveSessionExtensionUiModal from './features/live-sessions/LiveSessionExtensionUiModal'
 import LiveSessionGalleryPage from './features/live-sessions/LiveSessionGalleryPage'
 import SessionGraphPage from './features/live-sessions/graph/SessionGraphPage'
 import UsagePage from './pages/UsagePage'
@@ -204,7 +205,7 @@ export default function App() {
         const byCategory = getShortcutsByCategory()
         const categoryLabels: Record<string, string> = { navigation: 'Navigation', general: 'General', editing: 'Editing' }
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/60 backdrop-blur-sm animate-rise" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onClick={() => setShowShortcuts(false)}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg backdrop-blur-sm animate-rise" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onClick={() => setShowShortcuts(false)}>
             <div className="bg-card border border-border rounded-xl p-6 w-full max-w-sm mx-4 shadow-xl" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-4">
                 <div className="text-sm font-bold text-text-strong">⌨ Keyboard Shortcuts</div>
@@ -233,7 +234,7 @@ export default function App() {
 
       {/* Changelog modal */}
       {showChangelog && !updating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/60 backdrop-blur-sm animate-rise" role="dialog" aria-modal="true" aria-label="Changelog" onClick={() => { setShowChangelog(false); setShowFull(false) }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg backdrop-blur-sm animate-rise" role="dialog" aria-modal="true" aria-label="Changelog" onClick={() => { setShowChangelog(false); setShowFull(false) }}>
           <div className={`bg-card border border-border rounded-xl p-6 w-full mx-4 shadow-xl transition duration-300 ${showFull ? 'max-w-2xl' : 'max-w-md'}`} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <div className="text-sm font-bold text-text-strong">📦 v{version}</div>
@@ -277,7 +278,7 @@ export default function App() {
 
       {/* Updating overlay */}
       {updating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/80 backdrop-blur-sm animate-rise">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg backdrop-blur-sm animate-rise">
           <div className="bg-card border border-border rounded-xl p-8 max-w-md w-full mx-4 shadow-xl text-center">
             <div className="text-4xl mb-4 animate-pulse">🔄</div>
             <div className="text-lg font-bold text-text-strong mb-2">Updating Pi Dashboard…</div>
@@ -324,9 +325,9 @@ export default function App() {
         ))}
 
         {/* Watermark */}
-        <div className={`mt-auto pt-4 pb-2 border-t border-border/50 transition duration-[350ms] ${navCollapsed ? 'opacity-0 h-0 overflow-hidden p-0 m-0' : ''}`}>
+        <div className={`mt-auto pt-4 pb-2 border-t border-border transition duration-[350ms] ${navCollapsed ? 'opacity-0 h-0 overflow-hidden p-0 m-0' : ''}`}>
           <div className="px-1">
-            <div className="text-body-s font-medium text-accent/70 tracking-wide italic">🥧 Pi Dashboard</div>
+            <div className="text-body-s font-medium text-accent opacity-70 tracking-wide italic">🥧 Pi Dashboard</div>
           </div>
         </div>
       </aside>
@@ -370,6 +371,9 @@ export default function App() {
           </button>
         ))}
       </nav>
+      {/* Mounted app-wide: an unanswered extension dialog (e.g. from /goal) must
+          be answerable from any page, and must survive leaving Live Pi. */}
+      <LiveSessionExtensionUiModal />
     </div>
     </WsContext.Provider>
     </PluginContextProvider>

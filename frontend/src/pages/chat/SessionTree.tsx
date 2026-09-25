@@ -109,7 +109,7 @@ function TreeRow({ node, selected, onSelect, hasBranch }: {
     <button
       onClick={onSelect}
       className={`w-full text-left flex items-start gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors border-none ${
-        selected ? 'bg-accent-subtle border-accent/30' : 'bg-transparent hover:bg-bg-hover'
+        selected ? 'bg-accent-subtle border-accent' : 'bg-transparent hover:bg-bg-hover'
       }`}
       style={{ paddingLeft: indent + 8 }}
     >
@@ -122,7 +122,7 @@ function TreeRow({ node, selected, onSelect, hasBranch }: {
           {node.text || node.type}
         </span>
         {node.tools && node.tools.length > 0 && (
-          <span className="text-2xs text-muted/60 truncate block">
+          <span className="text-2xs text-muted opacity-60 truncate block">
             {node.tools.join(', ')}
           </span>
         )}
@@ -193,7 +193,7 @@ export default function SessionTree({ slotKey, onFork, onClose }: {
           <button
             onClick={() => setFilter(f => f === 'all' ? 'user' : 'all')}
             className={`px-2 py-0.5 rounded text-2xs cursor-pointer transition-colors border ${
-              filter === 'user' ? 'border-accent/30 text-accent bg-accent-subtle' : 'border-border text-muted bg-transparent hover:text-text'
+              filter === 'user' ? 'border-accent text-accent bg-accent-subtle' : 'border-border text-muted bg-transparent hover:text-text'
             }`}
           >
             {filter === 'user' ? '👤 User only' : '📋 All'}

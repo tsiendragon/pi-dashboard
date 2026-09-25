@@ -140,7 +140,7 @@ export default function SystemPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-meta font-mono text-accent truncate flex-1">{connectionInfo.serverURL}</span>
                         <button
-                          className="text-2xs px-2 py-0.5 rounded bg-card border border-border hover:bg-accent/10 shrink-0"
+                          className="text-2xs px-2 py-0.5 rounded bg-card border border-border hover:bg-accent-subtle shrink-0"
                           onClick={() => navigator.clipboard.writeText(connectionInfo.serverURL)}
                         >Copy</button>
                       </div>
@@ -152,11 +152,11 @@ export default function SystemPage() {
                           {tokenVisible ? connectionInfo.token : '•'.repeat(16)}
                         </span>
                         <button
-                          className="text-2xs px-2 py-0.5 rounded bg-card border border-border hover:bg-accent/10 shrink-0"
+                          className="text-2xs px-2 py-0.5 rounded bg-card border border-border hover:bg-accent-subtle shrink-0"
                           onClick={() => setTokenVisible(v => !v)}
                         >{tokenVisible ? 'Hide' : 'Show'}</button>
                         <button
-                          className="text-2xs px-2 py-0.5 rounded bg-card border border-border hover:bg-accent/10 shrink-0"
+                          className="text-2xs px-2 py-0.5 rounded bg-card border border-border hover:bg-accent-subtle shrink-0"
                           onClick={() => {
                             navigator.clipboard.writeText(connectionInfo.token)
                             setTokenCopied(true)
@@ -260,8 +260,8 @@ export default function SystemPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-body-s font-semibold text-text-strong">{s.windowName || s.tmuxSession}</span>
-                          <span className="px-1.5 py-[1px] rounded-full text-2xs font-mono bg-ok-subtle text-ok border border-ok/30">{s.tmuxSession}</span>
-                          {s.model && <span className="px-1.5 py-[1px] rounded-full text-2xs font-mono bg-aim-subtle text-aim border border-aim/30">🧠 {s.model}</span>}
+                          <span className="px-1.5 py-[1px] rounded-full text-2xs font-mono bg-ok-subtle text-ok border border-ok">{s.tmuxSession}</span>
+                          {s.model && <span className="px-1.5 py-[1px] rounded-full text-2xs font-mono bg-aim-subtle text-aim border border-aim">🧠 {s.model}</span>}
                         </div>
                         <div className="text-meta text-muted font-mono truncate" title={s.cwd}>📂 {s.cwd}</div>
                         {s.lastOutput && <div className="text-meta text-muted mt-1.5 line-clamp-2 font-mono bg-bg-elevated rounded px-2 py-1 border border-border">{s.lastOutput}</div>}

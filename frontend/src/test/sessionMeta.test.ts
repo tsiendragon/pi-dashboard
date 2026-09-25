@@ -28,9 +28,9 @@ describe('visibleTags', () => {
 describe('tagColorClass', () => {
   it('is deterministic and palette-bound', () => {
     expect(tagColorClass('ocr')).toBe(tagColorClass('ocr'))
-    const palette = new Set(['bg-accent/15 text-accent border-accent/25',
-      'bg-ok/15 text-ok border-ok/25', 'bg-warn/15 text-warn border-warn/25',
-      'bg-danger/15 text-danger border-danger/25', 'bg-bg-hover text-text border-border-strong'])
+    const palette = new Set(['bg-accent-subtle text-accent border-accent',
+      'bg-ok-subtle text-ok border-ok', 'bg-warn-subtle text-warn border-warn',
+      'bg-danger-subtle text-danger border-danger', 'bg-bg-hover text-text border-border-strong'])
     for (const t of ['ocr', 'router', 'forgery', 'infra', 'wip', 'a', 'bb']) expect(palette.has(tagColorClass(t))).toBe(true)
   })
   it('spreads at least 3 distinct colors over 8 tags', () => {
