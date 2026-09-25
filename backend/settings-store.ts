@@ -56,6 +56,11 @@ export class SettingsStore {
     }
   }
 
+  /** Copy the current file into `backups/` without modifying it. Returns the backup path. */
+  snapshot(): string {
+    return this.writeBackup()
+  }
+
   /**
    * Run `mutator` against the current settings under a serialization lock.
    *

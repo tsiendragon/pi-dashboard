@@ -177,6 +177,49 @@ describe('buildExtensionInventory', () => {
     expect(inventory.warnings.some((warning) => warning.includes('declared-vs-applied not checked'))).toBe(true)
   })
 
+  it('handles the string package form (load-all) and lists the entries it provides', () => {
+    const { agentDir } = seed()
+    const settings = JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf-8'))
+    // pi install writes plain strings, relative to the agent dir — reproduce that form.
+    settings.packages.push('../repo/packages/pi-tsien-goal')
+    writeFileSync(join(agentDir, 'settings.json'), JSON.stringify(settings), 'utf-8')
+
+    const inventory = buildExtensionInventory({ agentDir, env: { MISSING_ROOT: undefined }, io })
+    const stringPkg = inventory.packages.find((item) => item.form === 'string')
+    expect(stringPkg?.autoload).toBe(true)
+    expect(stringPkg?.resolved?.endsWith('repo/packages/pi-tsien-goal')).toBe(true)
+    expect(stringPkg?.resolvedBase).toBeTruthy()
+    // its entry is already applied, so it must not show up as package-provided-again
+    expect(inventory.provided.some((item) => item.path.endsWith('pi-tsien-goal/src/index.ts'))).toBe(false)
+    expect(inventory.counts.provided).toBe(0)
+  })
+
+  it('lists entries a package provides by autoload when they are not in settings.extensions', () => {
+    const { agentDir, pkgDir } = seed()
+    const settings = JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf-8'))
+    // string form = load-all (autoload), then drop the explicit entry so the
+    // manifest-provided one becomes the only reason the extension loads
+    settings.packages = settings.packages.map((item: unknown) =>
+      typeof item === 'object' && item !== null && String((item as { source?: string }).source).includes('pi-tsien-goal')
+        ? '../repo/packages/pi-tsien-goal'
+        : item,
+    )
+    settings.extensions = settings.extensions.filter((entry: string) => !entry.includes('pi-tsien-goal'))
+    writeFileSync(join(agentDir, 'settings.json'), JSON.stringify(settings), 'utf-8')
+
+    const inventory = buildExtensionInventory({ agentDir, env: { MISSING_ROOT: undefined }, io })
+    expect(inventory.provided).toEqual([
+      {
+        packageId: 'pi-tsien-goal',
+        packageName: 'pi-tsien-goal',
+        path: `${pkgDir}/src/index.ts`,
+        manifestPath: 'src/index.ts',
+        exists: true,
+      },
+    ])
+    expect(inventory.counts.provided).toBe(1)
+  })
+
   it('survives a missing settings.json instead of throwing', () => {
     const agentDir = join(dir, 'empty-agent')
     mkdirSync(agentDir, { recursive: true })

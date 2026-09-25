@@ -7,20 +7,43 @@ export type ExtState = 'enabled' | 'disabled' | 'forced'
 export type ExtGroup = 'package' | 'path' | 'auto'
 export type PackageKind = 'local' | 'npm' | 'git' | 'unresolved'
 
+/**
+ * `settings.json` `packages[]` entries are a union (pi's `PackageSource`):
+ *   - string form  → load all resources from the package
+ *   - object form  → `autoload:false` starts empty and only the explicit patterns apply
+ */
 export interface ExtensionPackage {
   /** id from `extensions.config.json`, when the package is also declared there. */
   id: string | null
   rawSource: string
+  /** `string` = load-all form, `object` = filtered form. */
+  form: 'string' | 'object'
   resolved: string | null
   exists: boolean
   kind: PackageKind
   unresolvedVars: string[]
+  /** Which base a relative source was resolved against (relative sources are written that way). */
+  resolvedBase: 'agent-dir' | 'pi-dir' | 'cwd' | null
   name: string | null
   version: string | null
   description: string | null
   /** Entry points declared in the package manifest (`pi.extensions`). */
   declaredEntries: string[]
+  /** Explicit resource filters from the object form. */
+  filters: { extensions?: string[]; skills?: string[]; prompts?: string[]; themes?: string[] }
+  /** Object form with `autoload:false`: nothing is loaded unless a pattern matches. */
   autoload: boolean
+}
+
+/** An extension file a package provides by itself (manifest/autoload), without a settings entry. */
+export interface PackageProvidedEntry {
+  packageId: string | null
+  packageName: string | null
+  /** Absolute path. */
+  path: string
+  /** Path relative to the package directory. */
+  manifestPath: string
+  exists: boolean
 }
 
 export interface ExtensionEntry {
@@ -61,6 +84,8 @@ export interface ExtInventory {
   configExists: boolean
   packages: ExtensionPackage[]
   extensions: ExtensionEntry[]
+  /** Provided by packages themselves (autoload), not listed in `settings.extensions`. */
+  provided: PackageProvidedEntry[]
   auto: AutoDiscovered[]
   /** Declared in the syncer config but absent from settings, or the other way round. */
   drift: string[]
@@ -72,6 +97,7 @@ export interface ExtInventory {
     disabled: number
     packageEntries: number
     pathEntries: number
+    provided: number
     auto: number
     broken: number
     /** Entries whose source uses patched APIs — they need the tsien patched pi. */
