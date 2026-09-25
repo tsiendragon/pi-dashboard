@@ -11,11 +11,13 @@
  *   - `derived`   — resolved from paths on disk
  *   - `heuristic` — patched-API usage detected by scanning source text (NOT a real dependency)
  */
-import { basename, isAbsolute, join, relative, resolve, sep } from 'path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path'
 
 import type {
   AutoDiscovered,
+  CrossPackageImport,
   PackageProvidedEntry,
+  SharedPackageUsage,
   ExtGroup,
   ExtInventory,
   ExtensionEntry,
@@ -31,6 +33,10 @@ export interface InventoryIo {
   readText(path: string): string | null
   fileExists(path: string): boolean
   listFiles(dir: string): string[]
+  /** Relative file paths under `dir`, recursively. Optional: the cross-import scan degrades gracefully. */
+  listFilesRecursive?(dir: string): string[]
+  /** Symlink resolution (node resolves package symlinks); optional. */
+  realPath?(path: string): string
   isDirectory(path: string): boolean
 }
 
@@ -110,6 +116,10 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
     if (source && id) {
       const { resolved } = expandVars(source, env)
       configPackageIds.set(resolved, id)
+      // `${VAR}` sources cannot be expanded here when the dashboard did not inject the variable, so
+      // also key by the trailing directory name (`.../packages/pi-tsien-web-tools` -> `pi-tsien-web-tools`).
+      const tail = resolved.replace(/\/+$/, '').split('/').pop()
+      if (tail && !configPackageIds.has(tail)) configPackageIds.set(tail, id)
     }
   }
 
@@ -159,8 +169,12 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
       if (Array.isArray(value)) filters[resource] = value.filter((entry): entry is string => typeof entry === 'string')
     }
     packages.push({
-      // Match the config's declared package by resolved path first (string form may be relative).
-      id: configPackageIds.get(resolvedPath ?? resolved) ?? configPackageIds.get(resolved) ?? null,
+      // Match the config's declared package by resolved path first, then by directory name.
+      id:
+        configPackageIds.get(resolvedPath ?? resolved) ??
+        configPackageIds.get(resolved) ??
+        (resolvedPath ? configPackageIds.get(basename(resolvedPath)) : undefined) ??
+        null,
       rawSource,
       form: typeof item === 'string' ? 'string' : 'object',
       resolved: resolvedPath,
@@ -205,8 +219,12 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
       }
     }
     if (!absolute && isAbsolute(bare)) absolute = bare
+    // Longest matching prefix: the repo-root package also matches everything underneath it, so a
+    // naive first-match would attribute every sub-package file to the root package.
     const owner = absolute
-      ? packages.find((pkg) => pkg.resolved && (absolute === pkg.resolved || absolute.startsWith(pkg.resolved + sep))) ?? null
+      ? packages
+          .filter((pkg) => pkg.resolved && (absolute === pkg.resolved || absolute.startsWith(pkg.resolved + sep)))
+          .sort((a, b) => (b.resolved?.length ?? 0) - (a.resolved?.length ?? 0))[0] ?? null
       : null
     const manifestPath = owner && owner.resolved && absolute ? relative(owner.resolved, absolute) : null
     const exists = absolute !== null && io.fileExists(absolute)
@@ -309,4 +327,175 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
   }
 
   return { agentDir, settingsPath, configPath, configExists: config !== null, packages, extensions: entries, provided, auto, drift, warnings, counts }
+}
+
+export interface DependencyScanInput extends BuildInput {
+  /** Cap on files scanned per package (keeps the endpoint bounded). */
+  maxFilesPerPackage?: number
+  /** Cap on bytes read per file. */
+  maxFileBytes?: number
+}
+
+export interface DependencyScanResult {
+  crossImports: CrossPackageImport[]
+  sharedPackages: SharedPackageUsage[]
+  externalPackages: string[]
+  scannedFiles: number
+  truncated: boolean
+}
+
+/**
+ * Cross-package static import scan — the design's class ③ dependency signal.
+ *
+ * Kept OUT of `buildExtensionInventory`: it reads many files, so the list endpoint stays cheap and
+ * this runs on its own endpoint (`GET /api/pi/ext/deps`) with a bounded budget.
+ */
+export function deriveExtensionDependencies(input: DependencyScanInput): DependencyScanResult {
+  const inventory = buildExtensionInventory(input)
+  const io18 = input.io
+  const { packages, extensions: entries, agentDir } = inventory
+  const maxFilesPerPackage = input.maxFilesPerPackage ?? 120
+  const maxFileBytes = input.maxFileBytes ?? 256 * 1024
+  let scannedFiles = 0
+  let truncated = false
+
+  // Resolution mirrors Node: package-name specifiers are looked up in `node_modules` (npm workspaces
+  // symlink our packages there) and, as a shortcut, in the declared settings packages.
+  const packageByName = new Map<string, ExtensionPackage>()
+  for (const pkg of packages) if (pkg.name) packageByName.set(pkg.name, pkg)
+
+  const manifestCache = new Map<string, { dir: string; name: string | null } | null>()
+  const nearestPackage = (fromPath: string): { dir: string; name: string | null } | null => {
+    let dir = dirname(fromPath)
+    for (let depth = 0; depth < 12; depth += 1) {
+      const cached = manifestCache.get(dir)
+      if (cached !== undefined) return cached
+      const manifestPath = join(dir, 'package.json')
+      if (io18.fileExists(manifestPath)) {
+        const parsed = io18.readJson(manifestPath)
+        const result = { dir, name: typeof parsed?.['name'] === 'string' ? (parsed['name'] as string) : null }
+        manifestCache.set(dir, result)
+        return result
+      }
+      const parent = dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+    manifestCache.set(dirname(fromPath), null)
+    return null
+  }
+
+  const resolveInDirectory = (base: string): string | null => {
+    for (const attempt of [base, `${base}.ts`, `${base}.js`, join(base, 'index.ts'), join(base, 'index.js')]) {
+      if (io18.fileExists(attempt)) return io18.realPath?.(attempt) ?? attempt
+    }
+    return null
+  }
+
+  const resolveSpecifier = (fromFile: string, specifier: string): string | null => {
+    if (specifier.startsWith('.')) return resolveInDirectory(resolve(dirname(fromFile), specifier))
+    const declared = packageByName.get(specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/'))
+    if (declared?.resolved) {
+      const rest = specifier.slice(specifier.indexOf('/') + 1)
+      const hit = resolveInDirectory(specifier.includes('/') ? resolve(declared.resolved, rest) : declared.resolved)
+      if (hit) return hit
+    }
+    // node_modules walk (handles packages that are not declared in settings.json, e.g. libraries)
+    const segments = specifier.split('/')
+    const packageName = specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]!
+    const rest = specifier.slice(packageName.length + 1)
+    let dir = dirname(fromFile)
+    for (let depth = 0; depth < 12; depth += 1) {
+      const candidate = join(dir, 'node_modules', packageName)
+      if (io18.isDirectory(candidate)) {
+        const real = io18.realPath?.(candidate) ?? candidate
+        return resolveInDirectory(rest ? join(real, rest) : real)
+      }
+      const parent = dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+    return null
+  }
+
+  const settingsOwnerOf = (target: string): ExtensionPackage | null =>
+    packages
+      .filter((pkg) => pkg.resolved && (target === pkg.resolved || target.startsWith(pkg.resolved + sep)))
+      .sort((a, b) => (b.resolved?.length ?? 0) - (a.resolved?.length ?? 0))[0] ?? null
+  /** Package a file belongs to: the nearest ancestor with package.json (settings package or library). */
+  const packageRootOf = (target: string): { dir: string; name: string | null; settings: ExtensionPackage | null } | null => {
+    const nearest = nearestPackage(target)
+    if (!nearest) return null
+    return { dir: nearest.dir, name: nearest.name, settings: settingsOwnerOf(target) }
+  }
+  const entryByPath = new Map<string, ExtensionEntry>()
+  for (const entry of entries) if (entry.path) entryByPath.set(entry.path, entry)
+  const importSpecifiers = (source: string): string[] => {
+    const found: string[] = []
+    for (const match of source.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)) found.push(match[1]!)
+    return found
+  }
+
+  const crossImports: CrossPackageImport[] = []
+  const externalPackages = new Set<string>()
+  const importedByPackage = new Map<string, { pkg: { dir: string; name: string | null; settings: ExtensionPackage | null }; from: Set<string>; files: Set<string> }>()
+  for (const entry of entries) {
+    if (!entry.path || !entry.exists) continue
+    const own = packageRootOf(entry.path)
+    const ownDir = own?.dir ?? null
+    const sources: string[] = [entry.path]
+    if (ownDir) {
+      const listed = (io18.listFilesRecursive?.(ownDir) ?? []).filter((file) => /\.(ts|js|mjs)$/.test(file))
+      if (listed.length > maxFilesPerPackage) truncated = true
+      for (const file of listed.slice(0, maxFilesPerPackage)) sources.push(join(ownDir, file))
+    }
+    for (const file of sources) {
+      const source = io18.readText(file)
+      if (source === null) continue
+      if (source.length > maxFileBytes) {
+        truncated = true
+        continue
+      }
+      scannedFiles += 1
+      for (const specifier of importSpecifiers(source)) {
+        const target = resolveSpecifier(file, specifier)
+        if (!target) continue
+        const targetRoot = packageRootOf(target)
+        if (!targetRoot || (ownDir && (target === ownDir || target.startsWith(ownDir + sep)))) continue
+        // Third-party deps are not "shared code between entries": list them separately only.
+        const isOurs = Boolean(targetRoot.settings) || /^pi-(tsien|rtk|zero|knowledge|web)/.test(targetRoot.name ?? '')
+        if (!isOurs) {
+          externalPackages.add(targetRoot.name ?? targetRoot.dir.split(sep).pop() ?? 'unknown')
+          continue
+        }
+        crossImports.push({
+          from: entry.name ?? entry.raw,
+          fromPath: file,
+          toPackageId: targetRoot.settings?.id ?? null,
+          toPath: target,
+          toManifestPath: relative(targetRoot.dir, target),
+          toEntry: entryByPath.get(target)?.name ?? null,
+        })
+        // Group by the nearest package.json (the real package boundary): a library such as
+        // `pi-tsien-shared` is not declared in settings.json but is still the thing being imported.
+        const grouped = targetRoot
+        const key = grouped.dir
+        const bucket = importedByPackage.get(key) ?? { pkg: grouped, from: new Set<string>(), files: new Set<string>() }
+        bucket.from.add(entry.name ?? entry.raw)
+        bucket.files.add(target)
+        importedByPackage.set(key, bucket)
+      }
+    }
+  }
+  const sharedPackages: SharedPackageUsage[] = [...importedByPackage.values()]
+    .map((bucket) => ({
+      packageId: bucket.pkg.settings?.id ?? null,
+      packageName: bucket.pkg.name ?? bucket.pkg.dir.split('/').pop() ?? null,
+      importedBy: [...bucket.from].sort(),
+      files: bucket.files.size,
+    }))
+    .sort((a, b) => b.importedBy.length - a.importedBy.length)
+
+  void agentDir
+  return { crossImports, sharedPackages, externalPackages: [...externalPackages].sort(), scannedFiles, truncated }
 }

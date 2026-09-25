@@ -35,6 +35,33 @@ export interface ExtensionPackage {
   autoload: boolean
 }
 
+/**
+ * Static import edge between two settings packages (design §6 class ③: file-level imports).
+ * Confidence: `derived` — only explicit relative / package-name imports are seen, not dynamic ones.
+ */
+export interface CrossPackageImport {
+  /** Entry (by the name shown in the list) that contains the importing file. */
+  from: string
+  /** Importing file path. */
+  fromPath: string
+  /** Package the import points into. */
+  toPackageId: string | null
+  /** Absolute path inside the target package. */
+  toPath: string
+  /** Relative path inside the target package. */
+  toManifestPath: string | null
+  /** Set when the target file is itself an applied entry. */
+  toEntry: string | null
+}
+
+/** A package whose code other entries import — disabling an entry here does not unload it. */
+export interface SharedPackageUsage {
+  packageId: string | null
+  packageName: string | null
+  importedBy: string[]
+  files: number
+}
+
 /** An extension file a package provides by itself (manifest/autoload), without a settings entry. */
 export interface PackageProvidedEntry {
   packageId: string | null
@@ -103,4 +130,15 @@ export interface ExtInventory {
     /** Entries whose source uses patched APIs — they need the tsien patched pi. */
     patched: number
   }
+}
+
+/** Payload of `GET /api/pi/ext/deps` — the heavier static scan, deliberately separate from the list. */
+export interface ExtDependencies {
+  crossImports: CrossPackageImport[]
+  sharedPackages: SharedPackageUsage[]
+  /** Third-party packages imported by entries (kept apart from "shared code" between entries). */
+  externalPackages: string[]
+  scannedFiles: number
+  truncated: boolean
+  cached: boolean
 }
