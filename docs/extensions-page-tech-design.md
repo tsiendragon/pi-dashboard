@@ -47,8 +47,27 @@
 - **同步器 `pi-extension-sync.mjs`（strict 模式）**：按**精确路径集合**增删（`:228-243`），
   并把 `-path` 这种条目当成陌生条目处理 → **页面里禁用的扩展，下次 `--apply` 会被悄悄恢复**。
 
+### 3.1 具体会发生什么（一个例子）
+
+1. 你在页面上把 `sidebar` 关掉。pi 的原生做法是往 `settings.json.extensions` 里写一条 **`-/…/extensions/sidebar.ts`**
+   （前面一个减号 = 禁用），而不是删掉那一行——关了就只是“被排除”，随时可恢复。
+2. 下次跑同步器（`install-standalone.sh` 或手动 `--apply`）时，它拿 `extensions.config.json` 里的
+   `loadOrder` 去对齐 `settings.json`：它只认“路径完全相等”的条目，`-/…/sidebar.ts` 与
+   `/…/sidebar.ts` 不相等 ⇒ 它认为“这个禁用品是陌生的”并删掉，同时把无前缀的 `/…/sidebar.ts` 补回去。
+3. 结果：**你刚关掉的扩展被悄悄打开了**，而且没有任何提示。
+
+### 3.2 两种修法（甲/乙）
+
+- **甲（推荐）**：改同步器——看到以 `+`/`-`/`!` 开头的条目就**原样保留**，只对无前缀条目做增删。
+  改动约 10 行 + 1 个回归测试。效果：两边各管各的，页面禁用永久有效，不需要额外流程。
+- **乙**：页面不直接改 `settings.json`，而是在 `extensions.config.json` 里新增一段 `disabled: []`，
+  由同步器统一写入 `-` 前缀。效果：单一真源、语义最干净；代价是**页面上的禁用必须先跑一次同步器才生效**，
+  且“装/卸”路径变长（多一层间接）。
+
 另有一处语义重叠：仓库文档写「从 `loadOrder` 删除一项会停用该 extension」（`pi-extension-management.md:43`），
-即同一件事有两条实现路径。**设计上统一到前缀**（可回滚、有审计、与 pi 原生一致），同步器负责「保留而非清理」前缀。
+即同一件事有两条实现路径。**设计上统一到前缀**（可回滚、有审计、与 pi 原生一致）。
+
+若完全不用同步器（非 strict 管理），则不存在此冲突。
 
 **决策（待你选）**
 - **甲（推荐）**：同步器只对**无前缀**条目做增删，保留 `+/-/!` 条目（约 10 行改动，加 1 个回归测试）。
@@ -188,6 +207,8 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 
 ### 12.3 细粒度切法（一功能一包，采纳）
 
+> 包名以 §12.8 为准（本节表内的是早期草案名）。
+
 原则：**一个具体功能 = 一个包**，一个包只声明一个扩展；共享代码下沉到 `core`
 （依赖图是一棵树、无环，feature 包保持纯粹）。共 **26 个包**。
 
@@ -266,3 +287,50 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 - 版本策略：各包独立版本（简单），或统一版本号（好记）→ 待定。
 - 估时：目录迁移 + 26 个 `package.json` + import 改写 + 测试路径修正 + workspace 配置 ≈ **1.5~2 天**；
   发布流程（脚本 + README + 首次 dry-run）≈ 0.5 天。
+
+### 12.8 最终包名（简单直白优先）
+
+**规则**
+
+- **必须带 scope**（`@<npm 账号或组织>/…`），不是可选项。已核实 npm 上 `pi-memory`、`pi-sidebar`、
+  `pi-web-tools` 均已被**别人的 pi 扩展**占用（registry 返回 200，keywords 含 `pi-package`）。
+- scope 内**不再重复 `pi-tsien-`**；名字只描述功能。
+- npm 命名限制：全小写、只允许 `a-z0-9-._`、不能以 `.`/`_` 开头、≤ 214 字符。
+- **前置待办**：scope 必须等于你的 npm 账号名或你拥有的组织。`@tsiendragon/*` 目前 0 个包，
+  但账号名是否就是 `tsiendragon` 我无法从外部确认（npmjs 用户页/registry 用户端点都需登录）⇒ 请跑 `npm whoami`。
+
+**需要改名的（8 个）**
+
+| 早期草案名 | 建议最终名（scope 内） | 为什么改 |
+|---|---|---|
+| `pi-tsien-core` | `pi-shared` | 它不是扩展而是共享库，「core」会和 pi 本体混淆 |
+| `pi-tsien-zero` | `pi-session-ui` | 它实际是 `/ccstyle` `/context` `/powerline` `/transcript` `/vibe` 五个命令的合集，「zero」无法自解释（后续可再细分） |
+| `pi-tsien-btw` | `pi-side-chat` | 命令 `/btw` 保留，但包名要对外可读（侧聊=side chat） |
+| `pi-tsien-effort` | `pi-thinking-level` | 它调的是 thinking level（`off\|minimal\|…\|max`） |
+| `pi-tsien-ptc` | `pi-code-mode` | PTC 是内部缩写；工具名就是 `run_code` |
+| `pi-tsien-tool-result-pipeline` | `pi-rtk` | 它注册的命令就是 `rtk-on/off/stats/toggle-*`（嫌 RTK 内部化可改 `pi-token-reduction`） |
+| `pi-tsien-auto-compact-target` | `pi-auto-compact` | 去掉多余的 `-target` |
+| `pi-tsien-web-tools` | —— **不发**（见下） | 第三方 vendored 代码 + `pi-web-tools` 名字已被占 |
+
+**保留的（去 `tsien-` 前缀即可，18 个）**
+
+`pi-sidebar`、`pi-memory`、`pi-goal`、`pi-schedule`、`pi-git-graph`、`pi-metrics-sidebar`、`pi-prompt-inspector`、
+`pi-observation-pack`、`pi-capability`、`pi-live-session`、`pi-running-commands`、`pi-session-aliases`、
+`pi-subagent-workbench`、`pi-usage-analytics`、`pi-trajectory-recorder`、`pi-compact-continue`、
+`pi-default-system-prompt`、`pi-context-powerline`
+
+**合规前提（web-tools）**：`vendor/pi-web-tools` 是 Brett Atoms 的第三方代码副本
+（`VENDORED.md` 已注明来源），但其 `package.json` **无 `license` 也无 `author`**。
+公开分发第三方代码必须带许可证与出处 ⇒ **本轮不发布它**，继续用本地路径；
+若日后要发，必须是自己的 fork 名（如 `@scope/pi-web-tools-fork`）+ 补 license/NOTICE。
+
+### 12.9 已确认的决策
+
+| 项 | 决定 |
+|---|---|
+| 拆分粒度 | **一功能一包**，含 19 行的 `session-aliases`（共 26 个包：1 共享库 + 25 功能包） |
+| 版本策略 | **各包独立版本**（依赖写 `^x.y.z`） |
+| 发布渠道 | **公开 npm（npmjs.org）**，scoped + `publishConfig.access=public` |
+| web-tools | **不发布**（第三方 vendored + 名字被占），保留本地路径 |
+| 命名 | §12.8（必须带 scope，scope 内不带 `tsien-`） |
+| 真源冲突 | 待定：甲（同步器保留 `+/-/!` 前缀，推荐）或 乙（回写 config） |
