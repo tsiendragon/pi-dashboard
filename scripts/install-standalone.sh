@@ -11,6 +11,7 @@
 #   bash scripts/install-standalone.sh --start         # 装完顺手后台启动
 #   bash scripts/install-standalone.sh --service       # 装成 systemd 服务（需 sudo）
 #   bash scripts/install-standalone.sh --dry-run       # 只打印将要执行的步骤
+#   bash scripts/install-standalone.sh --official-pi   # 改装官方 npm 版 pi（默认装 fork Release 构建）
 #
 # 详细说明见 docs/standalone-install.md。
 
@@ -27,6 +28,10 @@ AGENT_DIR="${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}"
 PORT="${PI_DASH_PORT:-7777}"
 INSTALL_PI=""
 INSTALL_PI_VERSION=""
+PI_SOURCE="release"
+PI_RELEASE_REPO="${PI_RELEASE_REPO:-tsiendragon/pi}"
+PI_RELEASE_TAG="${PI_RELEASE_TAG:-v0.85.1-tsien.1}"
+PI_PREFIX=""
 ASSUME_YES=0
 DRY_RUN=0
 DO_START=0
@@ -46,7 +51,7 @@ run() {
 }
 
 usage() {
-  sed -n '3,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '3,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   cat <<'EOF'
 
 选项:
@@ -56,7 +61,12 @@ usage() {
   --ext-repo <url>        扩展仓库地址（默认 GitHub tsiendragon/pi-tsien-extension）
   --agent-dir <path>      Pi agent 配置目录（默认 $PI_CODING_AGENT_DIR 或 ~/.pi/agent）
   --port <n>              dashboard 端口（默认 7777）
-  --install-pi [version]  额外全局安装 pi CLI（默认跳过；不带版本用 latest）
+  --install-pi [version]  等同 --official-pi：全局安装官方 npm 版 pi
+  --official-pi [version] 安装官方 npm 版 pi（默认不装；不带版本用 latest）
+  --pi-release <repo@tag> 从 GitHub Release 装 fork 构建的 pi
+                          （默认 tsiendragon/pi@v0.85.1-tsien.1，含 dashboard 需要的扩展 API）
+  --pi-prefix <path>      fork 版 pi 的安装前缀（默认 <安装根>/pi）
+  --skip-pi               完全不安装 pi（自己已有可用的 pi 时）
   --skip-extension-sync   只装 dashboard，不动 Pi 的扩展配置
   --service               安装 systemd 服务（需要 sudo）
   --start                 装完后后台启动 dashboard
@@ -74,7 +84,18 @@ while [[ $# -gt 0 ]]; do
     --ext-repo) EXT_REPO="$2"; shift 2 ;;
     --agent-dir) AGENT_DIR="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
-    --install-pi) INSTALL_PI=1; if [[ $# -ge 2 && "$2" != -* ]]; then INSTALL_PI_VERSION="$2"; shift; fi; shift ;;
+    --install-pi|--official-pi) PI_SOURCE="official"; INSTALL_PI=1; if [[ $# -ge 2 && "$2" != -* ]]; then INSTALL_PI_VERSION="$2"; shift; fi; shift ;;
+    --pi-release)
+      PI_SOURCE="release"
+      [[ $# -ge 2 ]] || die "--pi-release 需要 <repo@tag>"
+      if [[ "$2" == *@* ]]; then
+        PI_RELEASE_REPO="${2%%@*}"; PI_RELEASE_TAG="${2##*@}"
+      else
+        PI_RELEASE_REPO="$2"
+      fi
+      shift 2 ;;
+    --pi-prefix) PI_PREFIX="$2"; shift 2 ;;
+    --skip-pi) PI_SOURCE="skip"; shift ;;
     --skip-extension-sync) SKIP_SYNC=1; shift ;;
     --service) DO_SERVICE=1; shift ;;
     --start) DO_START=1; shift ;;
@@ -170,12 +191,78 @@ run bash -lc "cd '${DASHBOARD_DIR}' && npm install --no-audit --no-fund"
 log "构建前端 (npm run build-frontend)"
 run bash -lc "cd '${DASHBOARD_DIR}' && npm run build-frontend"
 
-# ── 7. 可选：安装 pi CLI ──────────────────────────────────────────────────────
-if [[ -n "${INSTALL_PI}" ]]; then
+# ── 7. 安装 pi（默认：本 fork 的 Release 构建）────────────────────────────────
+PI_BIN=""
+if [[ "${PI_SOURCE}" == "release" ]]; then
+  PI_PREFIX="${PI_PREFIX:-${ROOT_DIR}/pi}"
+  log "安装 pi（fork 构建 ${PI_RELEASE_REPO}@${PI_RELEASE_TAG} → ${PI_PREFIX}）"
+
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    printf '[dry-run] 下载 %s@%s 的 tgz 资产，然后 npm install -g --prefix %s <tgz...>\n' \
+      "${PI_RELEASE_REPO}" "${PI_RELEASE_TAG}" "${PI_PREFIX}"
+  else
+    TMP_TGZ="$(mktemp -d)"
+    trap 'rm -rf "${TMP_TGZ}"' EXIT
+
+    # 资产清单来自 Release API；API 不可用时回退到已知的 10 个包名
+    ASSET_URLS="$(PI_RELEASE_REPO="${PI_RELEASE_REPO}" PI_RELEASE_TAG="${PI_RELEASE_TAG}" node -e '
+      const repo = process.env.PI_RELEASE_REPO
+      const tag = process.env.PI_RELEASE_TAG
+      const version = tag.replace(/^v/, "")
+      const names = ["chord","pi-ai","pi-agent-core","pi-client","pi-coding-agent","pi-protocol","pi-server","pi-session-backend-sqlite-node","pi-telemetry","pi-tui"]
+      const fallback = names.map((n) => `https://github.com/${repo}/releases/download/${tag}/earendil-works-${n}-${version}.tgz`)
+      fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers: { "user-agent": "pi-standalone-installer" } })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((j) => console.log(j.assets.map((a) => a.browser_download_url).join("\n")))
+        .catch(() => console.log(fallback.join("\n")))
+    ')"
+    [[ -n "${ASSET_URLS}" ]] || die "无法获取 ${PI_RELEASE_REPO}@${PI_RELEASE_TAG} 的资产列表"
+
+    while IFS= read -r url; do
+      [[ -n "${url}" ]] || continue
+      log "  下载 $(basename "${url}")"
+      curl -fsSL -o "${TMP_TGZ}/$(basename "${url}")" "${url}" || die "下载失败: ${url}"
+    done <<< "${ASSET_URLS}"
+
+    log "npm install -g --prefix ${PI_PREFIX}（10 个 tgz 一起装）"
+    mkdir -p "${PI_PREFIX}"
+    npm install -g --prefix "${PI_PREFIX}" "${TMP_TGZ}"/*.tgz --no-audit --no-fund \
+      || die "安装 fork 版 pi 失败（检查 node/npm 版本与网络）"
+  fi
+
+  PI_BIN="${PI_PREFIX}/bin/pi"
+  if [[ "${DRY_RUN}" != "1" ]]; then
+    if [[ -x "${PI_BIN}" ]]; then
+      log "pi 版本：$("${PI_BIN}" --version 2>/dev/null || echo unknown) （${PI_BIN}）"
+    else
+      warn "未找到 ${PI_BIN}，dashboard 会退回仓库内自带的 pi"
+      PI_BIN=""
+    fi
+  fi
+elif [[ "${PI_SOURCE}" == "official" ]]; then
   PI_SPEC="@earendil-works/pi-coding-agent${INSTALL_PI_VERSION:+@${INSTALL_PI_VERSION}}"
-  log "全局安装 pi CLI: ${PI_SPEC}"
+  log "全局安装官方 pi CLI: ${PI_SPEC}"
   run npm install -g "${PI_SPEC}" --no-audit --no-fund || \
     warn "全局安装失败（可能需要 sudo 或配置 npm prefix）；dashboard 会用仓库内的 node_modules/.bin/pi"
+  warn "官方版缺少 executeTool / extension_ui 等扩展 API：run_code、live session、子 Agent 全屏会降级或不可用"
+else
+  log "按 --skip-pi 跳过 pi 安装（请自备 0.85.1-tsien.1 或更新版本）"
+fi
+
+# 让 dashboard 启动的每个 pi 进程都用这个 pi：写进 dashboard 的环境文件（backend 启动时自动加载）
+if [[ -n "${PI_BIN}" ]]; then
+  ENV_FILE="${AGENT_DIR}/dashboard.env"
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    printf '[dry-run] 写 %s（PI_SCRIPT=%s）\n' "${ENV_FILE}" "${PI_BIN}"
+  else
+    run mkdir -p "${AGENT_DIR}"
+    if [[ -f "${ENV_FILE}" ]] && grep -q '^PI_SCRIPT=' "${ENV_FILE}"; then
+      warn "${ENV_FILE} 已设置 PI_SCRIPT，保持不变（如需切换请手动编辑）"
+    else
+      printf 'PI_SCRIPT=%s\n' "${PI_BIN}" >> "${ENV_FILE}"
+      log "已写入 ${ENV_FILE} → PI_SCRIPT=${PI_BIN}"
+    fi
+  fi
 fi
 
 # ── 8. 可选：systemd 服务 ─────────────────────────────────────────────────────
@@ -202,6 +289,7 @@ WorkingDirectory=${DASHBOARD_DIR}
 Environment=HOME=${HOME}
 Environment=PATH=$(dirname "${NODE_BIN}"):/usr/local/bin:/usr/bin:/bin
 Environment=PI_DASH_PORT=${PORT}
+Environment=PI_CODING_AGENT_DIR=${AGENT_DIR}
 ExecStart=${NODE_BIN} --no-wasm-tier-up --liftoff-only --wasm-lazy-compilation --import tsx backend/server.ts
 Restart=always
 RestartSec=2
@@ -232,10 +320,13 @@ cat <<EOF
 
 ── 完成 ─────────────────────────────────────────────────────────────
 下一步：
-  1) 配置模型凭证（二选一）：
+  1) 配置模型凭证（三选一）：
      - 交互式登录： pi  然后执行 /login
-     - 或导出环境变量，例如 ANTHROPIC_API_KEY / OPENAI_API_KEY / DASHSCOPE_API_KEY
-       （dashboard 子进程会继承运行 run.sh 的那个 shell 的环境）
+     - 或写进环境文件 ${AGENT_DIR}/dashboard.env（dashboard 启动时自动加载，
+       并会传给每个 pi 子进程），例如：
+         ANTHROPIC_API_KEY=sk-...
+         DASHSCOPE_API_KEY=sk-...
+     - 或导出到启动 dashboard 的那个 shell 环境
   2) 启动服务：
      cd ${DASHBOARD_DIR} && PI_DASH_PORT=${PORT} ./run.sh
      浏览器打开 http://localhost:${PORT}
