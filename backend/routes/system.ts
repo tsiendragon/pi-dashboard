@@ -2,6 +2,7 @@
  * System routes — status, pi environment, skills, memory, config, workspaces, packages
  */
 import { Request, Response } from 'express'
+import { settingsStore } from '../settings-store.js'
 import { readdirSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { execSync } from 'child_process'
@@ -295,18 +296,17 @@ export function registerSystemRoutes(deps: RouteDeps): void {
 
   // Pi settings
   app.get('/api/pi/settings', (_req: Request, res: Response) => {
-    try {
-      const settingsPath = join(os.homedir(), '.pi', 'agent', 'settings.json')
-      const content = readFileSync(settingsPath, 'utf-8')
-      res.json(JSON.parse(content))
-    } catch (e: any) { res.json({}) }
+    res.json(settingsStore.read())
   })
 
-  app.put('/api/pi/settings', (req: Request, res: Response) => {
+  app.put('/api/pi/settings', async (req: Request, res: Response) => {
     try {
-      const settingsPath = join(os.homedir(), '.pi', 'agent', 'settings.json')
-      writeFileSync(settingsPath, JSON.stringify(req.body, null, 2) + '\n')
-      res.json({ ok: true })
+      // Whole-file PUT goes through the shared store: serialized against the Extensions page's
+      // enable/disable and reorder writes, backed up before writing, atomic rename.
+      const outcome = await settingsStore.mutate((_current, save) => {
+        save({ ...(req.body as Record<string, unknown>) })
+      })
+      res.json({ ok: true, changed: outcome.changed, backupPath: outcome.backupPath })
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
