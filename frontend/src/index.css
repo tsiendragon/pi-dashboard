@@ -46,6 +46,35 @@
 @media (prefers-reduced-motion: reduce){
   .typing-dots span,.typing-dots-sm span{animation:none}
 }
+
+/* ── Working session glyph (animated hammer striking a nail) ── */
+.working-hammer{display:inline-block;width:1em;height:1em;vertical-align:-.15em;overflow:visible}
+/* The drawing sits low/right inside the 16×16 viewBox: nudge it down so it reads
+   centred against the text, and re-centre it horizontally in the row variant.
+   Lengths here are SVG user units (1 unit = 1/16 of the box). */
+.working-hammer>g{transform:translate(0,1px)}
+/* Sidebar-row slot: two text lines tall (18px title + 16px meta) so the swing is
+   never cramped, 26px wide so the title column stays usable. */
+.working-hammer-row{width:26px;height:34px}
+.working-hammer-row>g{transform:translate(-2.5px,1px)}
+.working-hammer-hit{transform-box:view-box;transform-origin:13px 13.1px;animation:working-hammer-swing 1.15s infinite}
+.working-hammer-nail{transform-box:view-box;animation:working-hammer-nail-jolt 1.15s infinite}
+@keyframes working-hammer-swing{
+  0%{transform:rotate(34deg);animation-timing-function:cubic-bezier(.5,.05,.85,.4)}
+  26%{transform:rotate(-3deg);animation-timing-function:ease-out}
+  36%{transform:rotate(7deg)}
+  50%{transform:rotate(2deg);animation-timing-function:cubic-bezier(.55,.05,.9,.45)}
+  100%{transform:rotate(34deg)}
+}
+@keyframes working-hammer-nail-jolt{
+  0%,25%{transform:translateY(0)}
+  30%{transform:translateY(.7px)}
+  44%{transform:translateY(.15px)}
+  58%,100%{transform:translateY(0)}
+}
+@media (prefers-reduced-motion: reduce){
+  .working-hammer-hit,.working-hammer-nail{animation:none}
+}
 @keyframes pulse-dot{
   0%,100%{opacity:.3;transform:scale(.85)}
   50%{opacity:1;transform:scale(1.1)}

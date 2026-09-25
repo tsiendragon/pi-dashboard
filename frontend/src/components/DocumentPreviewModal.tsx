@@ -164,7 +164,7 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
           {loading ? (
             <div className="flex min-h-32 items-center justify-center text-sm text-muted">Loading…</div>
           ) : error ? (
-            <div className="rounded-md border border-danger/30 bg-danger-subtle px-3 py-2 text-sm text-danger">{error}</div>
+            <div className="rounded-md border border-danger bg-danger-subtle px-3 py-2 text-sm text-danger">{error}</div>
           ) : markdown ? (
             <div className="msg-content text-sm leading-relaxed text-text">
               <MarkdownRenderer content={content} />
@@ -176,7 +176,11 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
           )}
         </div>
         {commenting && (activeInputRange || comments.length > 0) && (
-          <div ref={commentsRef} className="max-h-[45%] overflow-auto border-t border-border px-2 py-1">
+          // shrink-0 keeps the comment input at its content height — as a shrinkable
+          // flex item inside the auto-height modal it was collapsing to ~25px and
+          // scrolling the input out of view. The cap is viewport-relative because a
+          // percentage max-height does not resolve against an auto-height parent.
+          <div ref={commentsRef} className="shrink-0 max-h-[40vh] overflow-auto border-t border-border px-2 py-1">
             <InlineComments
               comments={comments}
               currentVersion={currentVersion}

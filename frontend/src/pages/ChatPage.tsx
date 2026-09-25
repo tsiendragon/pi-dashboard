@@ -12,6 +12,7 @@ import { sseSlotTitle } from '../store/dashboardSlice'
 import { api } from '../api/client'
 import { recordDirUsage, migratePinnedDirs } from '../store/dirFrequency'
 import TypewriterText from '../components/TypewriterText'
+import MaterialIcon from '../components/MaterialIcon'
 const DocumentPanel = lazy(() => import('../components/DocumentPanel'))
 import FileBrowser from '../components/FileBrowser'
 import TerminalPanel from '../features/terminal/TerminalPanel'
@@ -33,6 +34,8 @@ import { loadFileComments, saveFileComments } from '../api/fileComments'
 import { resolvePath } from '../utils/resolvePath'
 import { clipboardFiles, splitFilesByKind, pastedFileRef } from '../utils/clipboardFiles'
 import { resolveFileRef, uploadAttachedFiles, withAttachedFile } from '../utils/attachmentIntake'
+import { base64ToFile, formatBytes, imageBudgetForCount, prepareImageForAttach, type PreparedImage } from '../utils/imageResize'
+import { LIVE_SESSION_MAX_IMAGES } from '@shared/live-sessions'
 import { WsContext } from '../App'
 import { registerAction } from '../shortcuts'
 import { ChatFooter, AssistantMessage, ToolGroup, groupToolMessages, ThinkingBlock, ToolCallBlock, PermissionMessage, SystemMessage, SubagentDock } from './chat'
@@ -54,22 +57,9 @@ import BtwDrawer from '../features/btw/BtwDrawer'
 import BackgroundCommandsDock from '../features/background-commands/BackgroundCommandsDock'
 import { StatusBarSlot } from '../plugins'
 import type { ChatMessage } from '../types'
-
-
-function stripMarkdownForSpeech(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, 'code block omitted')
-    .replace(/`[^`\n]+`/g, '')
-    .replace(/!\[.*?\]\(.*?\)/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/\*{1,2}([^*\n]+)\*{1,2}/g, '$1')
-    .replace(/_{1,2}([^_\n]+)_{1,2}/g, '$1')
-    .replace(/^\s*[-*+]\s/gm, '')
-    .replace(/^\s*\d+\.\s/gm, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
+import { toSpeechText } from '../features/voice/speechText'
+import { loadTtsSettings, subscribeTtsSettings } from '../features/voice/ttsSettings'
+import { useVoiceInput } from '../features/voice/useVoiceInput'
 
 /** One review round: what the comments point at and how to clear them after sending. */
 interface ReviewRequest {
@@ -114,7 +104,7 @@ export default function ChatPage() {
       return next
     })
   }, [activeSlot])
-  const [pendingImages, setPendingImages] = useState<{data: string; mimeType: string; preview: string}[]>([])
+  const [pendingImages, setPendingImages] = useState<PreparedImage[]>([])
   const [pendingFiles, setPendingFiles] = useState<{name: string; path: string}[]>([])
   const pendingInput = useAppSelector(s => s.chat.pendingInput)
 
@@ -136,6 +126,14 @@ export default function ChatPage() {
   const isNativeApp = isNativeIOS || isNativeAndroid
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [isListeningVoice, setIsListeningVoice] = useState(false)
+  const [voiceSettings, setVoiceSettings] = useState(loadTtsSettings)
+  useEffect(() => subscribeTtsSettings(() => setVoiceSettings(loadTtsSettings())), [])
+  const voiceInput = useVoiceInput({
+    language: voiceSettings.sttLanguage,
+    onTranscript: text => setInput(text),
+  })
+  // Native iOS drives the mic through the WebKit bridge; the web path records a clip locally.
+  const listeningVoice = isNativeIOS ? isListeningVoice : voiceInput.listening
   // Spike: conversational voice mode (STT → send → TTS → STT loop)
   const [voiceMode, setVoiceMode] = useState(false)
   const voiceModeRef = useRef(false)
@@ -151,22 +149,8 @@ export default function ChatPage() {
       ;(window as any).webkit?.messageHandlers?.piSpeech?.postMessage({})
       return
     }
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SR) return
-    if (isListeningVoice) { setIsListeningVoice(false); return }
-    const recognition = new SR()
-    recognition.continuous = false
-    recognition.interimResults = true
-    recognition.lang = 'en-US'
-    setIsListeningVoice(true)
-    recognition.onresult = (e: any) => {
-      const transcript = Array.from(e.results).map((r: any) => r[0].transcript).join('')
-      setInput(transcript)
-    }
-    recognition.onend = () => setIsListeningVoice(false)
-    recognition.onerror = () => setIsListeningVoice(false)
-    recognition.start()
-  }, [isNativeIOS, isListeningVoice, setInput])
+    voiceInput.toggle()
+  }, [isNativeIOS, voiceInput.toggle])
 
   const handleVoicePressStart = useCallback((_e: React.TouchEvent | React.PointerEvent) => {
     // No preventDefault — we need the click event to still fire for short taps
@@ -485,16 +469,34 @@ export default function ChatPage() {
 
   // Images go inline as pendingImages; everything else is uploaded to the backend
   // and sent as a file path. Shared by drag-drop, paste and the attach picker.
+  const [imageError, setImageError] = useState<string>()
+  const [resizingImages, setResizingImages] = useState(false)
+
+  /** Images ride inline as base64, so oversized pastes are downscaled before attach. */
   const addImageFiles = useCallback((files: File[]) => {
-    for (const file of files) {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const dataUrl = reader.result as string
-        const base64 = dataUrl.split(',')[1]
-        setPendingImages(prev => [...prev, { data: base64, mimeType: file.type, preview: dataUrl }])
-      }
-      reader.readAsDataURL(file)
-    }
+    if (!files.length) return
+    const budget = imageBudgetForCount(files.length)
+    setResizingImages(true)
+    void Promise.all(files.map(file => prepareImageForAttach(file, budget)))
+      .then(prepared => {
+        setImageError(undefined)
+        setPendingImages(prev => [...prev, ...prepared].slice(0, LIVE_SESSION_MAX_IMAGES))
+      })
+      .catch(error => setImageError(error instanceof Error ? error.message : '图片读取失败'))
+      .finally(() => setResizingImages(false))
+  }, [])
+
+  /** Native pickers hand us base64 straight from the shell — same downscale path as a paste. */
+  const attachPickedImage = useCallback((data: string, mimeType: string) => {
+    const budget = imageBudgetForCount(1)
+    setResizingImages(true)
+    void prepareImageForAttach(base64ToFile(data, mimeType), budget)
+      .then(prepared => {
+        setImageError(undefined)
+        setPendingImages(prev => [...prev, prepared].slice(0, LIVE_SESSION_MAX_IMAGES))
+      })
+      .catch(error => setImageError(error instanceof Error ? error.message : '图片读取失败'))
+      .finally(() => setResizingImages(false))
   }, [])
 
   /** Put back the text the browser would have pasted when no file resolved. */
@@ -716,7 +718,7 @@ export default function ChatPage() {
     if (!wasRunning || slotRunning || !voiceMode || !isNativeIOS) return
     const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
     if (!lastAssistant?.content) return
-    const spoken = stripMarkdownForSpeech(lastAssistant.content)
+    const spoken = toSpeechText(lastAssistant.content)
     if (spoken.trim()) {
       ;(window as any).webkit?.messageHandlers?.piSpeak?.postMessage({ text: spoken })
     }
@@ -779,22 +781,13 @@ export default function ChatPage() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
       if (detail?.type === 'media-picked') {
-        setPendingImages(prev => [...prev, {
-          data: detail.data as string,
-          mimeType: detail.mimeType as string,
-          preview: detail.preview as string
-        }])
+        attachPickedImage(detail.data as string, detail.mimeType as string)
       } else if (detail?.type === 'file-picked') {
         // File picked via native document picker — add as pending file via server upload
         const mimeType = detail.mimeType as string
         const isImage = mimeType.startsWith('image/')
         if (isImage) {
-          const dataUrl = `data:${mimeType};base64,${detail.data}`
-          setPendingImages(prev => [...prev, {
-            data: detail.data as string,
-            mimeType,
-            preview: dataUrl
-          }])
+          attachPickedImage(detail.data as string, mimeType)
         } else {
           // For non-image files, add as pending file path placeholder
           setPendingFiles(prev => [...prev, { name: detail.name as string, path: detail.name as string }])
@@ -1099,7 +1092,7 @@ export default function ChatPage() {
     if (m.role === 'thinking') return <ThinkingBlock key={key} content={m.content} />
     if (m.role === 'tool') return <ToolCallBlock key={key} content={m.content} meta={m.meta} onFileOpen={handleFileOpen} slotKey={activeSlot ?? undefined} />
     if (m.role === 'queued') return null // rendered as pills above the input, not inline
-    if (m.role === 'error') return <div key={key} className="bg-danger-subtle text-danger text-body-s px-3 py-2 rounded-md border border-danger/15 self-center animate-scale-in">{m.content}</div>
+    if (m.role === 'error') return <div key={key} className="bg-danger-subtle text-danger text-body-s px-3 py-2 rounded-md border border-danger self-center animate-scale-in">{m.content}</div>
     if (m.role === 'system') return <SystemMessage key={key} content={m.content} meta={m.meta} />
     if (m.role === 'permission') {
       const isLast = i === messages.map(x => x.role).lastIndexOf('permission')
@@ -1486,7 +1479,7 @@ export default function ChatPage() {
                 const isUserTurn = item.type === 'single' && item.message.role === 'user' && _i > 0
                 return (
                   <div className="px-5 py-2">
-                    {isUserTurn && <div className="border-t border-border/40 mb-4 mt-2" />}
+                    {isUserTurn && <div className="border-t border-border mb-4 mt-2" />}
                     {item.type === 'group' ? (
                       <ToolGroup tools={item.tools} renderTool={renderMessage} />
                     ) : (
@@ -1521,8 +1514,24 @@ export default function ChatPage() {
             {activeSlot && <BackgroundCommandsDock slot={activeSlot} />}
             {activeSlot && showBtw && <BtwDrawer slot={activeSlot} onClose={() => setShowBtw(false)} onCopy={(text) => { setInput(text); setShowBtw(false); requestAnimationFrame(() => inputRef.current?.focus()) }} />}
             {activeSlot && showWorkbench && <WorkbenchPanel slot={activeSlot} onClose={() => setShowWorkbench(false)} />}
+            {resizingImages && (
+              <div className="flex items-center gap-1.5 px-5 py-2 text-muted text-body-s" role="status"><MaterialIcon name="sync" spin className="h-3.5 w-3.5" />图片过大，正在自动压缩…</div>
+            )}
+            {imageError && (
+              <div className="flex items-center gap-2 px-5 py-2 bg-danger-subtle" role="alert">
+                <span className="flex items-center gap-1 text-danger text-body-s"><MaterialIcon name="error" className="h-3.5 w-3.5" />{imageError}</span>
+                <button className="text-muted text-meta hover:text-text ml-auto" onClick={() => setImageError(undefined)}>✕</button>
+              </div>
+            )}
+            {voiceInput.error && (
+              <div className="flex items-center gap-2 px-5 py-2 bg-danger-subtle" role="alert">
+                <span className="flex items-center gap-1 text-danger text-body-s"><MaterialIcon name="mic" className="h-3.5 w-3.5" />{voiceInput.error}</span>
+                {voiceInput.transcribing && <span className="text-accent text-body-s">正在识别…</span>}
+                <button className="text-muted text-meta hover:text-text ml-auto" onClick={voiceInput.clearError}>✕</button>
+              </div>
+            )}
             {prefillHint && (
-              <div className="flex items-center gap-2 px-5 py-2 bg-accent/10 border-t border-accent/30">
+              <div className="flex items-center gap-2 px-5 py-2 bg-accent-subtle border-t border-accent">
                 <span className="text-accent text-body-s">📋 Plan pre-filled below — add your context then press Send</span>
                 <button className="text-muted text-meta hover:text-text ml-auto" onClick={() => setPrefillHint(false)}>✕</button>
               </div>
@@ -1532,7 +1541,7 @@ export default function ChatPage() {
               onDragLeave={e => { if (e.currentTarget === e.target) setDragOver(false) }}
               onDrop={handleDrop}>
               {dragOver && (
-                <div className="absolute inset-0 flex items-center justify-center bg-accent/10 border-2 border-dashed border-accent rounded-lg z-10 pointer-events-none">
+                <div className="absolute inset-0 flex items-center justify-center bg-accent-subtle border-2 border-dashed border-accent rounded-lg z-10 pointer-events-none">
                   <span className="text-accent font-semibold text-sm">Drop files here — images, PDFs, documents</span>
                 </div>
               )}
@@ -1576,7 +1585,7 @@ export default function ChatPage() {
                 className={`flex w-[40px] h-[40px] rounded-full items-center justify-center shrink-0 cursor-pointer transition border select-none ${
                   voiceMode
                     ? 'bg-accent text-accent-fg border-accent'
-                    : isListeningVoice
+                    : listeningVoice
                       ? 'bg-danger text-danger-fg border-danger animate-pulse'
                       : 'bg-bg-elevated border-border text-muted hover:text-text hover:border-border-strong'
                 }`}
@@ -1590,19 +1599,10 @@ export default function ChatPage() {
                 onContextMenu={e => e.preventDefault()}
                 title={voiceMode ? 'Voice mode on — tap to exit' : 'Tap: dictate  Hold: voice mode'}
               >
-                {voiceMode && !isListeningVoice ? (
-                  <svg viewBox="0 0 24 24" className="w-5 h-5 stroke-current fill-none" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
-                    <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z" />
-                    <path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3Z" />
-                  </svg>
+                {voiceMode && !listeningVoice ? (
+                  <MaterialIcon name="graphic_eq" className="h-5 w-5" />
                 ) : (
-                  <svg viewBox="0 0 24 24" className="w-5 h-5 stroke-current fill-none" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="9" y="2" width="6" height="12" rx="3" />
-                    <path d="M5 10a7 7 0 0 0 14 0" />
-                    <line x1="12" y1="19" x2="12" y2="22" />
-                    <line x1="8" y1="22" x2="16" y2="22" />
-                  </svg>
+                  <MaterialIcon name={listeningVoice ? 'stop' : 'mic'} className="h-5 w-5" />
                 )}
               </button>
               <SlashCommandMenu input={input} anchorRef={inputRef as React.RefObject<HTMLElement>} open={slashMenuOpen} onSelect={cmd => { setInput(cmd); setSlashMenuOpen(false) }} onClose={() => setSlashMenuOpen(false)} />
@@ -1635,6 +1635,7 @@ export default function ChatPage() {
                     {pendingImages.map((img, i) => (
                       <div key={i} className="relative group">
                         <img src={img.preview} alt="Pasted" className="h-16 rounded-md border border-border object-cover" />
+                        {img.resized && <span className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 text-2xs text-white" title={`原图 ${formatBytes(img.originalBytes)} 过大，已自动压缩到 ${img.width}×${img.height}（约 ${formatBytes(Math.round(img.bytes * 0.75))}）`}>已压缩</span>}
                         <button className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-danger text-danger-fg text-2xs border-none cursor-pointer opacity-40 group-hover:opacity-100 transition-opacity flex items-center justify-center" onClick={() => removeImage(i)}>✕</button>
                       </div>
                     ))}
@@ -1654,7 +1655,7 @@ export default function ChatPage() {
                 {queuedMessages.length > 0 && (
                   <div className="flex gap-1.5 flex-wrap">
                     {queuedMessages.map(({ msg, idx }) => (
-                      <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warn-subtle border border-warn/30 text-warn text-meta font-medium max-w-[280px] animate-scale-in" title="Queued in pi as a follow-up">
+                      <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warn-subtle border border-warn text-warn text-meta font-medium max-w-[280px] animate-scale-in" title="Queued in pi as a follow-up">
                         <span className="text-2xs opacity-70 shrink-0">{'\u23f3'}</span>
                         <span className="truncate">{msg.content.length > 40 ? msg.content.slice(0, 40) + '…' : msg.content}</span>
                       </div>
@@ -1674,7 +1675,7 @@ export default function ChatPage() {
                 onInput={e => { const t = e.target as HTMLTextAreaElement; const cap = prefillHint ? 320 : 140; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, cap) + 'px' }} />
               </div>
               <button type="button" onClick={() => { void runQuickCommand('compact', '/compact') }} disabled={!activeSlot || slotRunning || !!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-border bg-bg-elevated px-2.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="压缩当前 session context">{quickAction === 'compact' ? '压缩中…' : 'Compact'}</button>
-              <button type="button" onClick={() => { void runQuickCommand('clear', '/clear') }} disabled={!!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-danger/40 bg-danger-subtle px-2.5 text-2xs text-danger hover:border-danger disabled:opacity-40" title="开始新的 session">{quickAction === 'clear' ? '清理中…' : 'Clear'}</button>
+              <button type="button" onClick={() => { void runQuickCommand('clear', '/clear') }} disabled={!!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-danger bg-danger-subtle px-2.5 text-2xs text-danger hover:border-danger disabled:opacity-40" title="开始新的 session">{quickAction === 'clear' ? '清理中…' : 'Clear'}</button>
               <div className="relative hidden md:block">
                 <button type="button" onClick={() => setShowQuickModelMenu(value => !value)} disabled={!!quickAction || slotStopping} className="h-[44px] max-w-[180px] truncate rounded-lg border border-border bg-bg-elevated px-2.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="切换当前模型">{currentSlot?.model ? `模型 · ${modelDisplay}` : '模型'}</button>
                 {showQuickModelMenu && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-72 w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-lg border border-border bg-card p-2 shadow-xl">
@@ -1692,7 +1693,7 @@ export default function ChatPage() {
               </div>
               {slotRunning
                 ? <button
-                    className="bg-danger/10 border border-danger/40 text-danger rounded-lg shrink-0 w-[40px] h-[40px] md:w-auto md:px-5 md:h-[44px] text-sm font-semibold cursor-pointer hover:bg-danger/20 disabled:opacity-40 disabled:cursor-not-allowed transition font-body flex items-center justify-center"
+                    className="bg-danger-subtle border border-danger text-danger rounded-lg shrink-0 w-[40px] h-[40px] md:w-auto md:px-5 md:h-[44px] text-sm font-semibold cursor-pointer hover:bg-danger-subtle disabled:opacity-40 disabled:cursor-not-allowed transition font-body flex items-center justify-center"
                     onClick={() => { if (activeSlot) { ;(window as any).webkit?.messageHandlers?.piHaptic?.postMessage({ style: 'warning' }); api.stopChatSlot(activeSlot) } }}
                     disabled={slotStopping}
                   >

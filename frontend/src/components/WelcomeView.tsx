@@ -116,11 +116,11 @@ export default function WelcomeView({
         {SUGGESTED_PROMPTS.map(s => (
           <button
             key={s.label}
-            className="text-left px-3.5 py-3 rounded-xl border border-border bg-card hover:border-accent/50 hover:bg-accent-subtle transition cursor-pointer text-body-s text-text font-body group"
+            className="text-left px-3.5 py-3 rounded-xl border border-border bg-card hover:border-accent hover:bg-accent-subtle transition cursor-pointer text-body-s text-text font-body group"
             onClick={() => { setInput(s.prompt); setTimeout(() => inputRef.current?.focus(), 50) }}
           >
             <span className="text-muted group-hover:text-accent transition-colors text-meta font-medium block mb-0.5">{s.label}</span>
-            <span className="text-muted/60 text-meta line-clamp-1">{s.prompt.length > 40 ? s.prompt.slice(0, 40) + '…' : s.prompt}</span>
+            <span className="text-muted opacity-60 text-meta line-clamp-1">{s.prompt.length > 40 ? s.prompt.slice(0, 40) + '…' : s.prompt}</span>
           </button>
         ))}
       </div>
@@ -128,12 +128,12 @@ export default function WelcomeView({
       {/* Input area */}
       <div className="w-full max-w-[600px]">
         {prefillHint && (
-          <div className="flex items-center gap-2 px-4 py-2 mb-2 bg-accent/10 border border-accent/30 rounded-lg">
+          <div className="flex items-center gap-2 px-4 py-2 mb-2 bg-accent-subtle border border-accent rounded-lg">
             <span className="text-accent text-body-s">📋 Plan pre-filled below</span>
             <button className="text-muted text-meta hover:text-text ml-auto" onClick={onDismissHint}>✕</button>
           </div>
         )}
-        <div className={`relative bg-card border rounded-2xl shadow-[0_2px_20px_rgba(0,0,0,0.15)] overflow-visible transition-colors ${dragOver ? 'border-accent bg-accent/5' : 'border-border'}`}>
+        <div className={`relative bg-card border rounded-2xl shadow-[0_2px_20px_rgba(0,0,0,0.15)] overflow-visible transition-colors ${dragOver ? 'border-accent bg-accent-subtle' : 'border-border'}`}>
           <SlashCommandMenu input={input} anchorRef={inputRef as React.RefObject<HTMLElement>} open={slashMenuOpen} onSelect={cmd => { setInput(cmd); setSlashMenuOpen(true) }} onClose={() => setSlashMenuOpen(false)} />
           {!isNativeApp && (
             <input ref={mobileFileInputRef} type="file" accept="image/*,application/pdf,text/*" multiple className="hidden" onChange={e => {
@@ -175,7 +175,7 @@ export default function WelcomeView({
           <textarea
             ref={inputRef}
             aria-label="Message input"
-            className="w-full bg-transparent px-4 pt-4 pb-3 text-text text-sm font-body outline-none resize-none max-h-[200px] leading-relaxed placeholder:text-muted/50 block"
+            className="w-full bg-transparent px-4 pt-4 pb-3 text-text text-sm font-body outline-none resize-none max-h-[200px] leading-relaxed placeholder:text-muted block"
             placeholder="Message Pi…"
             rows={2}
             value={input}

@@ -97,10 +97,10 @@ export default function FileMentionMenu({ input, cursorPos, cwd, anchorRef, onPi
         >
           <span className="shrink-0 w-4 text-center">📄</span>
           <span className="truncate flex-1">{entry.name}</span>
-          <span className="text-2xs text-muted/50 shrink-0 ml-auto">{entry.path.replace(/^\/home\/[^/]+/, '~').replace(/^\/Users\/[^/]+/, '~')}</span>
+          <span className="text-2xs text-muted opacity-50 shrink-0 ml-auto">{entry.path.replace(/^\/home\/[^/]+/, '~').replace(/^\/Users\/[^/]+/, '~')}</span>
         </button>
       ))}
-      <div className="px-3 py-1 border-t border-border text-2xs text-muted/40 flex gap-3">
+      <div className="px-3 py-1 border-t border-border text-2xs text-muted opacity-40 flex gap-3">
         <span>⏎ pick</span>
         <span>↑↓ navigate</span>
         <span>Esc dismiss</span>

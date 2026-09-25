@@ -129,11 +129,6 @@ html[data-theme="manuscript"] .pidash-msg-content[class*="bg-card"] {
   padding-right: 2px;
 }
 
-/* Thinking / notes blocks: warm the hardcoded lavender accent rule to plum. */
-html[data-theme="manuscript"] [class*="border-l-[#a78bfa]"] {
-  border-left-color: var(--aim) !important;
-}
-
 /* Focus ring: ink underline glow, subtle. */
 html[data-theme="manuscript"] *:focus-visible {
   box-shadow: 0 0 0 3px rgba(63,92,133,.16) !important;

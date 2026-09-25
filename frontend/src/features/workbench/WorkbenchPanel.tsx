@@ -38,7 +38,7 @@ function Timeline({ conversation }: { conversation: Conversation }) {
   if (!conversation.timeline?.length) return <div className="text-muted text-sm p-4">No transcript yet.</div>
   return <div className="space-y-3 p-4">
     {conversation.timeline.map(entry => {
-      if (entry.type === 'user') return <div key={entry.id} className="ml-auto max-w-[85%] rounded-lg bg-accent/15 border border-accent/20 px-3 py-2 whitespace-pre-wrap text-sm">{entry.text}</div>
+      if (entry.type === 'user') return <div key={entry.id} className="ml-auto max-w-[85%] rounded-lg bg-accent-subtle border border-accent px-3 py-2 whitespace-pre-wrap text-sm">{entry.text}</div>
       if (entry.type === 'tool') {
         return <ToolCallBlock
           key={entry.id}
@@ -115,13 +115,13 @@ export default function WorkbenchPanel({ slot, onClose }: { slot: string; onClos
     <div className="flex flex-1 min-h-0">
       <aside className="w-72 border-r border-border bg-chrome flex flex-col min-h-0">
         <div className="grid grid-cols-2 border-b border-border">
-          <button className={`py-2 text-sm ${view === 'agents' ? 'text-accent bg-accent/10' : 'text-muted'}`} onClick={() => setView('agents')}>Agents ({conversations.length})</button>
-          <button className={`py-2 text-sm ${view === 'workflows' ? 'text-accent bg-accent/10' : 'text-muted'}`} onClick={() => setView('workflows')}>Workflows ({workflows.length})</button>
+          <button className={`py-2 text-sm ${view === 'agents' ? 'text-accent bg-accent-subtle' : 'text-muted'}`} onClick={() => setView('agents')}>Agents ({conversations.length})</button>
+          <button className={`py-2 text-sm ${view === 'workflows' ? 'text-accent bg-accent-subtle' : 'text-muted'}`} onClick={() => setView('workflows')}>Workflows ({workflows.length})</button>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {view === 'agents' ? conversations.map(item => <button key={item.id} onClick={() => setSelectedAgent(item.id)} className={`w-full text-left p-2 rounded border ${conversation?.id === item.id ? 'border-accent bg-accent/10' : 'border-transparent hover:bg-bg-hover'}`}>
+          {view === 'agents' ? conversations.map(item => <button key={item.id} onClick={() => setSelectedAgent(item.id)} className={`w-full text-left p-2 rounded border ${conversation?.id === item.id ? 'border-accent bg-accent-subtle' : 'border-transparent hover:bg-bg-hover'}`}>
             <div className="text-sm text-text truncate">{item.label}</div><div className="text-xs text-muted">{item.status} · {item.model || 'default'}</div>
-          </button>) : workflows.map(item => <button key={item.id} onClick={() => setSelectedWorkflow(item.id)} className={`w-full text-left p-2 rounded border ${workflow?.id === item.id ? 'border-accent bg-accent/10' : 'border-transparent hover:bg-bg-hover'}`}>
+          </button>) : workflows.map(item => <button key={item.id} onClick={() => setSelectedWorkflow(item.id)} className={`w-full text-left p-2 rounded border ${workflow?.id === item.id ? 'border-accent bg-accent-subtle' : 'border-transparent hover:bg-bg-hover'}`}>
             <div className="text-sm text-text truncate">{item.label}</div><div className="text-xs text-muted">{item.status}</div>
           </button>)}
         </div>
@@ -141,16 +141,16 @@ export default function WorkbenchPanel({ slot, onClose }: { slot: string; onClos
         {view === 'agents' && conversation ? <>
           <div className="px-4 py-2 border-b border-border flex items-center gap-3">
             <div><div className="font-semibold text-text">{conversation.label}</div><div className="text-xs text-muted">{conversation.id} · {conversation.status} · {conversation.provider || ''}/{conversation.model || ''}</div></div>
-            {(conversation.status === 'running' || conversation.status === 'queued') && <button className="ml-auto text-xs text-danger border border-danger/40 rounded px-2 py-1" onClick={() => void send({ type: 'interrupt-agent', sessionId: conversation.id })}>Interrupt</button>}
+            {(conversation.status === 'running' || conversation.status === 'queued') && <button className="ml-auto text-xs text-danger border border-danger rounded px-2 py-1" onClick={() => void send({ type: 'interrupt-agent', sessionId: conversation.id })}>Interrupt</button>}
           </div>
           <div className="flex-1 overflow-y-auto"><Timeline conversation={conversation} /></div>
           {!conversation.workflowId && <div className="border-t border-border p-3 flex gap-2"><input className="flex-1 bg-bg border border-border rounded px-3 py-2 text-sm" placeholder="Follow up with this agent" value={followUp} onChange={e => setFollowUp(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && followUp.trim()) { void send({ type: 'send-agent', sessionId: conversation.id, message: followUp.trim() }); setFollowUp('') } }} /><button className="bg-accent text-accent-fg rounded px-4" onClick={() => { if (followUp.trim()) { void send({ type: 'send-agent', sessionId: conversation.id, message: followUp.trim() }); setFollowUp('') } }}>Send</button></div>}
         </> : view === 'workflows' && workflow ? <div className="p-5 overflow-y-auto space-y-4">
-          <div className="flex items-center"><div><h2 className="text-lg font-semibold">{workflow.label}</h2><div className="text-sm text-muted">{workflow.id} · {workflow.status}</div></div>{workflow.status === 'running' && <button className="ml-auto text-danger border border-danger/40 rounded px-3 py-1" onClick={() => void send({ type: 'interrupt-workflow', workflowId: workflow.id })}>Interrupt workflow</button>}</div>
+          <div className="flex items-center"><div><h2 className="text-lg font-semibold">{workflow.label}</h2><div className="text-sm text-muted">{workflow.id} · {workflow.status}</div></div>{workflow.status === 'running' && <button className="ml-auto text-danger border border-danger rounded px-3 py-1" onClick={() => void send({ type: 'interrupt-workflow', workflowId: workflow.id })}>Interrupt workflow</button>}</div>
           {workflow.stages?.map((stage, index) => <section key={stage.id} className="border border-border rounded-lg overflow-hidden"><div className="bg-chrome px-3 py-2 font-medium">{index + 1}. {stage.label} <span className="text-xs text-muted">· {stage.status}</span></div><div className="p-2 space-y-1">{stage.tasks.map(item => <button key={item.id} disabled={!item.sessionId} onClick={() => { if (item.sessionId) { setSelectedAgent(item.sessionId); setView('agents') } }} className="w-full text-left rounded p-2 hover:bg-bg-hover disabled:cursor-default"><span className="text-sm">{item.label}</span><span className="text-xs text-muted ml-2">{item.status}</span>{item.error && <div className="text-xs text-danger">{item.error}</div>}</button>)}</div></section>)}
         </div> : <div className="m-auto text-muted">No {view} yet.</div>}
       </main>
     </div>}
-    {(error || snapshot?.lastCommandError) && <div className="px-4 py-2 text-sm text-danger border-t border-danger/30 bg-danger/5">{error || snapshot?.lastCommandError}</div>}
+    {(error || snapshot?.lastCommandError) && <div className="px-4 py-2 text-sm text-danger border-t border-danger bg-danger-subtle">{error || snapshot?.lastCommandError}</div>}
   </div>
 }

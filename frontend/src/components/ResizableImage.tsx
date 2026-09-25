@@ -38,7 +38,7 @@ export default function ResizableImage({ src, alt }: { src: string; alt?: string
         draggable={false}
       />
       <div
-        className="absolute top-0 right-0 w-2 h-full cursor-ew-resize opacity-0 group-hover:opacity-100 bg-accent/30 rounded-r-md transition-opacity"
+        className="absolute top-0 right-0 w-2 h-full cursor-ew-resize opacity-0 group-hover:opacity-100 bg-accent-subtle rounded-r-md transition-opacity"
         onPointerDown={onPointerDown}
       />
     </div>

@@ -34,7 +34,7 @@ export default function InfoTip({ text }: { text: string }) {
       <button
         ref={btnRef}
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
-        className="w-4 h-4 rounded-full border border-border text-muted text-2xs hover:text-text hover:border-text/30 transition leading-none cursor-help flex items-center justify-center shrink-0"
+        className="w-4 h-4 rounded-full border border-border text-muted text-2xs hover:text-text hover:border-text transition leading-none cursor-help flex items-center justify-center shrink-0"
         title={text}
       >?</button>
       {open && createPortal(

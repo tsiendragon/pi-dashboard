@@ -142,8 +142,8 @@ export default memo(function DiffBlock({ code, complete, initialSideBySide = fal
 
   const renderUnifiedLine = (line: DiffLine, key: number) => (
     <div key={key} className={`flex text-body-s font-mono leading-relaxed min-w-fit ${BG[line.type]}`}>
-      {hasLineNums && <span className="select-none text-muted/50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border/30">{line.type === 'add' ? '' : (line.oldNum ?? '')}</span>}
-      {hasLineNums && <span className="select-none text-muted/50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border/30">{line.type === 'del' ? '' : (line.newNum ?? '')}</span>}
+      {hasLineNums && <span className="select-none text-muted opacity-50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border">{line.type === 'add' ? '' : (line.oldNum ?? '')}</span>}
+      {hasLineNums && <span className="select-none text-muted opacity-50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border">{line.type === 'del' ? '' : (line.newNum ?? '')}</span>}
       <span className={`select-none w-[2ch] text-center shrink-0 ${FG[line.type]}`}>{SIGN[line.type]}</span>
       <span className={`px-2 flex-1 ${FG[line.type]}`}>{line.type === 'hunk' || line.type === 'meta' ? line.content : (line.content || ' ')}</span>
     </div>
@@ -174,8 +174,8 @@ export default memo(function DiffBlock({ code, complete, initialSideBySide = fal
             }
             return (
               <div key={i} className="flex text-body-s font-mono leading-relaxed">
-                <div className={`w-1/2 flex overflow-hidden border-r border-border/30 ${left ? BG[lType] : ''}`}>
-                  {hasLineNums && <span className="select-none text-muted/50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border/30">{left?.oldNum ?? ''}</span>}
+                <div className={`w-1/2 flex overflow-hidden border-r border-border ${left ? BG[lType] : ''}`}>
+                  {hasLineNums && <span className="select-none text-muted opacity-50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border">{left?.oldNum ?? ''}</span>}
                   <span className={`select-none w-[2ch] text-center shrink-0 ${left ? FG[lType] : 'text-muted'}`}>{left ? (SIGN[lType] || ' ') : ' '}</span>
                   <span className={`px-2 flex-1 whitespace-pre ${left ? FG[lType] : 'text-muted'}`}>
                     {left && left.oldContent != null && left.newContent != null
@@ -184,7 +184,7 @@ export default memo(function DiffBlock({ code, complete, initialSideBySide = fal
                   </span>
                 </div>
                 <div className={`w-1/2 flex overflow-hidden ${right ? BG[rType] : ''}`}>
-                  {hasLineNums && <span className="select-none text-muted/50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border/30">{right?.newNum ?? ''}</span>}
+                  {hasLineNums && <span className="select-none text-muted opacity-50 text-right w-[3.5ch] shrink-0 pr-1 border-r border-border">{right?.newNum ?? ''}</span>}
                   <span className={`select-none w-[2ch] text-center shrink-0 ${right ? FG[rType] : 'text-muted'}`}>{right ? (SIGN[rType] || ' ') : ' '}</span>
                   <span className={`px-2 flex-1 whitespace-pre ${right ? FG[rType] : 'text-muted'}`}>
                     {right && right.oldContent != null && right.newContent != null
@@ -205,14 +205,14 @@ export default memo(function DiffBlock({ code, complete, initialSideBySide = fal
             if (expandedCtx.has(si)) {
               return <div key={si}>
                 {ctxLines.map((l, li) => renderUnifiedLine(l, si * 10000 + li))}
-                <div className="px-3 py-0.5 text-meta text-muted cursor-pointer hover:text-text bg-bg-hover/50" onClick={() => toggleCtx(si)}>▲ collapse {ctxLines.length} context lines</div>
+                <div className="px-3 py-0.5 text-meta text-muted cursor-pointer hover:text-text bg-bg-hover" onClick={() => toggleCtx(si)}>▲ collapse {ctxLines.length} context lines</div>
               </div>
             }
             // Show first 2 + last 2, collapse middle
             const hidden = ctxLines.length - 4
             return <div key={si}>
               {ctxLines.slice(0, 2).map((l, li) => renderUnifiedLine(l, si * 10000 + li))}
-              <div className="px-3 py-0.5 text-meta text-muted cursor-pointer hover:text-text bg-bg-hover/50 select-none" onClick={() => toggleCtx(si)}>▼ {hidden} lines hidden</div>
+              <div className="px-3 py-0.5 text-meta text-muted cursor-pointer hover:text-text bg-bg-hover select-none" onClick={() => toggleCtx(si)}>▼ {hidden} lines hidden</div>
               {ctxLines.slice(-2).map((l, li) => renderUnifiedLine(l, si * 10000 + 9000 + li))}
             </div>
           })
