@@ -16,19 +16,26 @@ import { readPiModelSettings, filterEnabledModels } from './model-match.js'
 import { extensionBridgeRegistry } from './extension-bridge/registry.js'
 import { rpcExtensionBridgeServer } from './extension-bridge/rpc-server.js'
 
-// Resolve pi binary path at startup (avoids ENOENT in launchd)
-// Resolve pi script path at startup (avoids ENOENT in launchd)
-const PI_SCRIPT = (() => {
-  if (process.env.PI_SCRIPT?.trim()) return process.env.PI_SCRIPT.trim()
-  const bundledPi = join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', '.bin', 'pi')
-  if (existsSync(bundledPi)) return realpathSync(bundledPi)
-  try { return execSync('which pi', { encoding: 'utf-8' }).trim() } catch {}
-  const candidates = ['/opt/homebrew/bin/pi', '/usr/local/bin/pi']
-  for (const c of candidates) {
-    try { execSync(`test -x ${c}`); return c } catch {}
-  }
-  return 'pi'
-})()
+// Resolve pi script path so a launchd/shell-less start still finds it. Resolved lazily (per first
+// spawn) rather than at import time, so values loaded by backend/env-bootstrap.ts take effect
+// regardless of import order.
+let piScriptCache: string | null = null
+function resolvePiScript(): string {
+  if (piScriptCache) return piScriptCache
+  const resolved = (() => {
+    if (process.env.PI_SCRIPT?.trim()) return process.env.PI_SCRIPT.trim()
+    const bundledPi = join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', '.bin', 'pi')
+    if (existsSync(bundledPi)) return realpathSync(bundledPi)
+    try { return execSync('which pi', { encoding: 'utf-8' }).trim() } catch {}
+    const candidates = ['/opt/homebrew/bin/pi', '/usr/local/bin/pi']
+    for (const c of candidates) {
+      try { execSync(`test -x ${c}`); return c } catch {}
+    }
+    return 'pi'
+  })()
+  piScriptCache = resolved
+  return resolved
+}
 
 // Resolve node binary path
 const NODE_BIN = (() => {
@@ -292,7 +299,7 @@ export class PiRpcSession extends EventEmitter implements PiSession {
 
     // Spawn via node directly so we can pass V8 flags (--no-wasm-tier-up)
     // that are disallowed in NODE_OPTIONS but prevent WASM compiler OOM crashes
-    this.proc = spawn(NODE_BIN, [...V8_FLAGS, PI_SCRIPT, ...args], spawnOpts)
+    this.proc = spawn(NODE_BIN, [...V8_FLAGS, resolvePiScript(), ...args], spawnOpts)
     console.log(`[pi-manager] Spawned slot ${this.slotKey} pid=${this.proc.pid}`)
 
     // Ready promise — resolves when pi responds to get_state (templates loaded)
