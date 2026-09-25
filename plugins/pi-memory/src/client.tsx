@@ -29,7 +29,7 @@ function Truncated({ text, limit = 100, className = '' }: { text: string; limit?
 
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${ok ? 'bg-ok/15 text-ok' : 'bg-danger/15 text-danger'}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${ok ? 'bg-ok-subtle text-ok' : 'bg-danger-subtle text-danger'}`}>
       {ok ? '✓' : '✗'} {label}
     </span>
   )
@@ -37,8 +37,8 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
 
 function CardShell({ icon, title, children, isError }: { icon: string; title: string; children: React.ReactNode; isError?: boolean }) {
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">{icon}</span>
         <span className="text-[13px] font-semibold text-text">{title}</span>
       </div>
@@ -81,7 +81,7 @@ export function MemorySearchRenderer({ toolInput, toolResult, isError }: ToolPro
             {expanded ? '▼' : '▶'} {results.length} result{results.length !== 1 ? 's' : ''}
           </button>
           {expanded && results.map((r, i) => (
-            <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover/50 text-[13px]">
+            <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover text-[13px]">
               <span className="font-mono text-accent font-medium shrink-0">{r.key}</span>
               <Truncated text={r.value} limit={120} className="text-text flex-1" />
               {r.confidence && <span className={`text-[11px] shrink-0 font-mono ${confidenceColor(r.confidence)}`}>{r.confidence}</span>}
@@ -110,13 +110,13 @@ export function MemoryRememberRenderer({ toolInput, toolResult, isError }: ToolP
         <div className="space-y-2">
           <StatusBadge ok={!isError} label="Saved" />
           {type === 'fact' && key && (
-            <div className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover/50 text-[13px]">
+            <div className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover text-[13px]">
               <span className="font-mono text-accent font-medium">{key}</span>
               <Truncated text={value || ''} limit={120} className="text-text" />
             </div>
           )}
           {type === 'lesson' && rule && (
-            <div className={`px-2 py-1.5 rounded text-[13px] ${negative ? 'bg-danger/10 border border-danger/20' : 'bg-ok/10 border border-ok/20'}`}>
+            <div className={`px-2 py-1.5 rounded text-[13px] ${negative ? 'bg-danger-subtle border border-danger' : 'bg-ok-subtle border border-ok'}`}>
               {negative && <span className="text-danger font-medium mr-1">DON'T:</span>}
               <Truncated text={rule} limit={120} className="text-text" />
             </div>
@@ -174,7 +174,7 @@ export function MemoryLessonsRenderer({ toolInput, toolResult, isError }: ToolPr
             {expanded ? '▼' : '▶'} {lessons.length} lesson{lessons.length !== 1 ? 's' : ''}
           </button>
           {expanded && lessons.map((l, i) => (
-            <div key={i} className={`px-2 py-1.5 rounded text-[13px] ${l.negative ? 'bg-danger/10 border border-danger/20' : 'bg-bg-hover/50'}`}>
+            <div key={i} className={`px-2 py-1.5 rounded text-[13px] ${l.negative ? 'bg-danger-subtle border border-danger' : 'bg-bg-hover'}`}>
               <span className="text-muted text-[11px] font-medium mr-1.5">[{l.category}]</span>
               {l.negative && <span className="text-danger font-medium mr-1">DON'T:</span>}
               <Truncated text={l.rule} limit={120} className="text-text" />
@@ -209,7 +209,7 @@ export function MemoryStatsRenderer({ toolResult, isError }: ToolProps) {
             { label: 'Lessons', value: stats.lessons, icon: '📝' },
             { label: 'Events', value: stats.events, icon: '📅' },
           ].map(s => (
-            <div key={s.label} className="flex flex-col items-center gap-1 p-3 rounded-lg bg-bg-hover/50">
+            <div key={s.label} className="flex flex-col items-center gap-1 p-3 rounded-lg bg-bg-hover">
               <span className="text-[18px]">{s.icon}</span>
               <span className="text-[20px] font-bold text-text">{s.value}</span>
               <span className="text-[11px] text-muted font-medium">{s.label}</span>

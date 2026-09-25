@@ -16,8 +16,8 @@ function CardShell({ icon, title, subtitle, badge, children, isError }: {
   icon: string; title: string; subtitle?: string; badge?: React.ReactNode; children: React.ReactNode; isError?: boolean
 }) {
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">{icon}</span>
         <span className="text-[13px] font-semibold text-text">{title}</span>
         {subtitle && <span className="text-[11px] text-muted truncate">{subtitle}</span>}
@@ -47,10 +47,10 @@ function SlackMessage({ msg }: { msg: any }) {
   const ts = msg.ts || msg.timestamp || ''
 
   return (
-    <div className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover/50 text-[13px]">
+    <div className="flex items-start gap-2 px-2 py-1.5 rounded bg-bg-hover text-[13px]">
       <span className="text-accent font-medium shrink-0 text-[12px]">@{user}</span>
-      <span className="text-text/80 flex-1 whitespace-pre-wrap break-words">{text.length > 200 ? text.slice(0, 200) + '…' : text}</span>
-      {ts && <span className="text-muted/50 text-[10px] shrink-0">{formatTs(ts)}</span>}
+      <span className="text-text opacity-80 flex-1 whitespace-pre-wrap break-words">{text.length > 200 ? text.slice(0, 200) + '…' : text}</span>
+      {ts && <span className="text-muted opacity-50 text-[10px] shrink-0">{formatTs(ts)}</span>}
     </div>
   )
 }
@@ -90,11 +90,11 @@ export function SlackPostRenderer({ toolInput, toolResult, isError }: ToolProps)
 
   return (
     <CardShell icon="💬" title="Post Message" subtitle={channel}
-      badge={!isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok/15 text-ok">✓ Sent</span> : null}
+      badge={!isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok-subtle text-ok">✓ Sent</span> : null}
       isError={isError}>
       {isError && <pre className="text-danger text-[12px] font-mono whitespace-pre-wrap">{toolResult}</pre>}
       {!isError && (
-        <div className="px-2 py-1.5 rounded bg-bg-hover/50 text-[13px] text-text/80 whitespace-pre-wrap">
+        <div className="px-2 py-1.5 rounded bg-bg-hover text-[13px] text-text opacity-80 whitespace-pre-wrap">
           {text}
         </div>
       )}

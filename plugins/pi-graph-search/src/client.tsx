@@ -21,8 +21,8 @@ function CardShell({ icon, title, subtitle, badge, children, isError }: {
   icon: string; title: string; subtitle?: string; badge?: React.ReactNode; children: React.ReactNode; isError?: boolean
 }) {
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger/30' : 'border-border'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover/50">
+    <div className={`bg-card border rounded-lg overflow-hidden animate-scale-in ${isError ? 'border-danger' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-hover">
         <span className="text-[14px]">{icon}</span>
         <span className="text-[13px] font-semibold text-text">{title}</span>
         {subtitle && <span className="text-[11px] text-muted font-mono truncate">{subtitle}</span>}
@@ -108,7 +108,7 @@ export function GraphQueryRenderer({ toolInput, toolResult, isError }: ToolProps
           {entities.map((e, i) => (
             <div key={i} className="rounded border border-border overflow-hidden">
               <button
-                className="w-full flex items-center gap-2 px-2.5 py-2 text-left bg-transparent border-none cursor-pointer hover:bg-bg-hover/50 transition-colors"
+                className="w-full flex items-center gap-2 px-2.5 py-2 text-left bg-transparent border-none cursor-pointer hover:bg-bg-hover transition-colors"
                 onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
               >
                 <span className={`text-[10px] transition-transform ${expandedIdx === i ? 'rotate-90' : ''}`}>▶</span>
@@ -117,7 +117,7 @@ export function GraphQueryRenderer({ toolInput, toolResult, isError }: ToolProps
                 <span className="text-[11px] text-muted shrink-0">{e.type}</span>
               </button>
               {expandedIdx === i && (
-                <div className="px-3 pb-2.5 space-y-1.5 border-t border-border/50 bg-bg-hover/30">
+                <div className="px-3 pb-2.5 space-y-1.5 border-t border-border bg-bg-hover">
                   {e.confidence && (
                     <div className="flex gap-3 text-[11px] text-muted">
                       <span>Confidence: {e.confidence}</span>
@@ -133,7 +133,7 @@ export function GraphQueryRenderer({ toolInput, toolResult, isError }: ToolProps
                         <div key={j} className="flex items-center gap-1.5 text-[12px] pl-2">
                           <span className="text-accent shrink-0">{r.direction}</span>
                           <span className="text-muted font-mono">{r.type}</span>
-                          <span className="text-text/80 truncate">{r.targets}</span>
+                          <span className="text-text opacity-80 truncate">{r.targets}</span>
                         </div>
                       ))}
                     </div>
@@ -143,9 +143,9 @@ export function GraphQueryRenderer({ toolInput, toolResult, isError }: ToolProps
                       <div className="text-[10px] text-muted uppercase tracking-wider">Neighbors</div>
                       {e.neighbors.slice(0, 8).map((n, j) => (
                         <div key={j} className="flex items-center gap-1.5 text-[12px] pl-2">
-                          <span className="text-muted/50 text-[10px]">d{n.depth}</span>
+                          <span className="text-muted opacity-50 text-[10px]">d{n.depth}</span>
                           <span className="text-[11px]">{typeIcons[n.type] || '•'}</span>
-                          <span className="text-text/80">{n.name}</span>
+                          <span className="text-text opacity-80">{n.name}</span>
                           <span className="text-muted text-[10px]">{n.type}</span>
                         </div>
                       ))}
@@ -172,7 +172,7 @@ export function GraphPathRenderer({ toolInput, toolResult, isError }: ToolProps)
     <CardShell icon="🔗" title="Graph Path" subtitle={`${from} → ${to}`} isError={isError}>
       {isError && <pre className="text-danger text-[12px] font-mono whitespace-pre-wrap">{toolResult}</pre>}
       {!isError && (
-        <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto text-text/80">
+        <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto text-text opacity-80">
           {toolResult || 'No path found.'}
         </pre>
       )}
@@ -192,12 +192,12 @@ export function GraphIngestRenderer({ toolInput, toolResult, isError }: ToolProp
 
   return (
     <CardShell icon="📥" title="Graph Ingest" subtitle={label} badge={
-      ok ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok/15 text-ok">✓ Done</span>
-         : isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger/15 text-danger">✗ Failed</span>
+      ok ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-ok-subtle text-ok">✓ Done</span>
+         : isError ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger-subtle text-danger">✗ Failed</span>
          : null
     } isError={isError}>
       {isError && <pre className="text-danger text-[12px] font-mono whitespace-pre-wrap">{toolResult}</pre>}
-      {!isError && <p className="text-[13px] text-text/80">{toolResult}</p>}
+      {!isError && <p className="text-[13px] text-text opacity-80">{toolResult}</p>}
     </CardShell>
   )
 }
@@ -220,7 +220,7 @@ export function GraphVisualizeRenderer({ toolInput, toolResult, isError }: ToolP
         <img src={imgSrc} alt={`Graph: ${query}`} className="max-w-full rounded-md border border-border" />
       )}
       {!isError && !imgSrc && (
-        <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto text-text/80">
+        <pre className="bg-bg-hover rounded-md px-3 py-2 text-[12px] font-mono overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto text-text opacity-80">
           {toolResult || 'No visualization generated.'}
         </pre>
       )}
