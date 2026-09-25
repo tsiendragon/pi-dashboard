@@ -389,6 +389,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 | 配置与文档切换到新包 | `pi-tsien-extension@e2e20d9` | `config/extensions.standalone.json`、`config/examples/*`、README/CHANGELOG、`VENDORED.md` 状态标注 |
 | 本机 live 切换（外科手术式，未触发无关 quarantine） | 本机配置 | 备份 `settings.json.pre-webtools-switch-20260925-232326` 与同名 config；切换后 dry-run 只剩既有的 `security-guard` 项 |
 | 扩展包目录迁移（P0 拆包，一功能一包） | `pi-tsien-extension@ed471a8` | 22 个包：`packages/pi-tsien-*`（npm workspaces，内部依赖普通 semver）；新增共享库 `pi-tsien-shared`；19 个扩展 + 共享库已迁，3 个（auto-compact/context-powerline/live-session）因并行会话未提交改动延后。验证：`parity:check` 25/25 一致、`tsc --noEmit` 干净、`test:node` 246 pass、隔离 agent 目录真实 `pi -p` 会话内 25 个扩展全部加载且 `WebSearch`/`capability_ls` 正常 |
+| **P1 只读页**：`GET /api/pi/ext/list` + Extensions 页面 | 本仓库（`backend/ext-inventory.ts`、`backend/routes/pi-ext-list.ts`、`frontend/src/pages/ExtensionsPage.tsx`） | 列表来自 `settings.json` + `extensions.config.json` + 各包 manifest，分三组（package 提供 / 直接路径 / 自动发现未纳管），标注 declared / undeclared / duplicate / missing 与「需要补丁版 pi（推断）」；隔离实例复核：29/29 条目与 `settings.json` **逐项一致**，`auto` 抓到探针文件，drift 为空；单测 5 个（含「来源不可解析时不误报 drift」） |
 | 等价性验收工具（parity harness） | `pi-tsien-extension@a9c16e6` | 迁移前抓指纹（工具/命令/事件/调用签名）；实测能抓「少工具/少命令/少事件/调用数变化」；本轮又抓出 3 个真问题（依赖漏边、改写顺序、memory 入口选错） |
 
 **回滚**：把 `~/.pi/agent/{settings.json,extensions.config.json}` 恢复为上述备份，或把 `extensions.config.json` 的 web-tools 来源改回

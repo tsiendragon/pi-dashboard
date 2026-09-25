@@ -22,6 +22,7 @@ import LiveSessionExtensionUiModal from './features/live-sessions/LiveSessionExt
 import LiveSessionGalleryPage from './features/live-sessions/LiveSessionGalleryPage'
 import SessionGraphPage from './features/live-sessions/graph/SessionGraphPage'
 import UsagePage from './pages/UsagePage'
+import ExtensionsPage from './pages/ExtensionsPage'
 import TimePage from './pages/TimePage'
 import CommandPalette from './components/CommandPalette'
 import SessionPicker from './components/SessionPicker'
@@ -47,6 +48,7 @@ const NAV_ITEMS = [
   { path: '/usage', id: 'usage', label: 'Token Cost', group: 'Main', icon: <><path d="M4 19V5" /><path d="M4 19h17" /><path d="m7 15 3-4 3 2 5-7" /></> },
   { path: '/time', id: 'time', label: 'Time Analysis', group: 'Main', icon: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /><path d="M3.5 5.5 6 3" /></> },
   { path: '/system', id: 'system', label: 'System', group: 'Main', icon: <><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></> },
+  { path: '/extensions', id: 'extensions', label: 'Extensions', group: 'Tools', icon: <><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h10" /><circle cx="18" cy="17" r="2" /></> },
   { path: '/logs', id: 'logs', label: 'Logs', group: 'Tools', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></> },
   { path: '/jobs', id: 'jobs', label: 'Jobs', group: 'Tools', icon: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></> },
 
@@ -343,6 +345,7 @@ export default function App() {
             <Route path="/live-sessions/:processInstanceId" element={<LiveSessionPage />} />
             <Route path="/usage" element={<UsagePage />} />
             <Route path="/time" element={<TimePage />} />
+            <Route path="/extensions" element={<ExtensionsPage />} />
             <Route path="/system" element={<SystemPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
