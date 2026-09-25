@@ -172,7 +172,8 @@ if [[ "${SKIP_SYNC}" == "0" ]]; then
   run mkdir -p "${AGENT_DIR}"
   run cp "${EXT_DIR}/config/extensions.standalone.json" "${EXISTING_CONFIG}"
 
-  SYNC=(node "${EXT_DIR}/scripts/pi-extension-sync.mjs")
+  # 显式带上 agent 目录：同步器默认读 ~/.pi/agent，--agent-dir 不同（或隔离安装）时会读错配置
+  SYNC=(node "${EXT_DIR}/scripts/pi-extension-sync.mjs" --agent-dir "${AGENT_DIR}")
   log "预览同步结果"
   run env PI_TSIEN_EXTENSION_ROOT="${EXT_DIR}" "${SYNC[@]}"
   if confirm "应用上面的扩展配置？"; then
