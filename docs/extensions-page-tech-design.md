@@ -164,26 +164,6 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 - gallery 目前只搜 npm 公开包（keyword `pi-package`）；内部 marketplace 的扩展是否需要一并展示，待定。
 - 并发写同一 `settings.json` 的具体冲突场景未实测（预案见 §5）。
 
-### 12.6 npm workspaces 机制（已实测）
-
-- **一个 repo 管多个包**：根 `package.json` 加 `"workspaces": ["packages/*"]`；每个子包有自己的
-  `package.json`（含 `name`/`version`/`files`/`pi` manifest）。共用一份 `node_modules` 与 lockfile，
-  可 `npm test --workspaces` 一次跑全部。
-- **实测（npm 11.17.0）**：内部依赖写 `"@tsiendragon/pi-tsien-core": "workspace:*"` 时，
-  `npm pack`/publish 出来的 tarball **原样保留 `workspace:*`**（npm 不会像 pnpm/yarn 那样改写）
-  ⇒ 发布后依赖无法解析。**结论：内部依赖写普通 semver**（如 `"^0.1.0"`），workspaces 会在本地链接到位。
-- 发布：`npm publish --workspaces`（或按包 `npm publish -w @tsiendragon/pi-tsien-x`）。
-  scoped 包默认是 restricted → 每个包需 `"publishConfig": {"access": "public"}`。
-- 每个包 `files: ["index.ts", "<自有目录>"]`，避免把测试/数据发上公网。
-- CI/发布凭证：GitHub Actions + `NPM_TOKEN` secret（属你的凭证动作，我不代跑）。
-
-### 12.7 风险与估时
-
-- 包名在 npm 上是**永久占用**的（72 小时内可 unpublish，之后名字烧掉）→ 首次发布先 `--dry-run` 并把名字定死。
-- 版本策略：各包独立版本（简单），或统一版本号（好记）→ 待定。
-- 估时：目录迁移 + 26 个 `package.json` + import 改写 + 测试路径修正 + workspace 配置 ≈ **1.5~2 天**；
-  发布流程（脚本 + README + 首次 dry-run）≈ 0.5 天。
-
 ## 12. 按功能拆成多个 package（monorepo，repo 仍统一管理）
 
 **结论：可行，而且是现有机制的自然延伸** —— `vendor/pi-web-tools` 本来就是第二个包，
@@ -266,3 +246,23 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 
 - 同步器：只需支持多个本地/私有来源（已支持），`loadOrder` 变为「按包分组、保持全局序」；§3 的前缀保留仍需先做。
 - 页面（§4/§6）：列表按包分组展示，依赖图直接画包级边 + 包内扩展；`pi install` 粒度=包，与页面一致。
+
+### 12.6 npm workspaces 机制（已实测）
+
+- **一个 repo 管多个包**：根 `package.json` 加 `"workspaces": ["packages/*"]`；每个子包有自己的
+  `package.json`（含 `name`/`version`/`files`/`pi` manifest）。共用一份 `node_modules` 与 lockfile，
+  可 `npm test --workspaces` 一次跑全部。
+- **实测（npm 11.17.0）**：内部依赖写 `"@tsiendragon/pi-tsien-core": "workspace:*"` 时，
+  `npm pack`/publish 出来的 tarball **原样保留 `workspace:*`**（npm 不会像 pnpm/yarn 那样改写）
+  ⇒ 发布后依赖无法解析。**结论：内部依赖写普通 semver**（如 `"^0.1.0"`），workspaces 会在本地链接到位。
+- 发布：`npm publish --workspaces`（或按包 `npm publish -w @tsiendragon/pi-tsien-x`）。
+  scoped 包默认是 restricted → 每个包需 `"publishConfig": {"access": "public"}`。
+- 每个包 `files: ["index.ts", "<自有目录>"]`，避免把测试/数据发上公网。
+- CI/发布凭证：GitHub Actions + `NPM_TOKEN` secret（属你的凭证动作，我不代跑）。
+
+### 12.7 风险与估时
+
+- 包名在 npm 上是**永久占用**的（72 小时内可 unpublish，之后名字烧掉）→ 首次发布先 `--dry-run` 并把名字定死。
+- 版本策略：各包独立版本（简单），或统一版本号（好记）→ 待定。
+- 估时：目录迁移 + 26 个 `package.json` + import 改写 + 测试路径修正 + workspace 配置 ≈ **1.5~2 天**；
+  发布流程（脚本 + README + 首次 dry-run）≈ 0.5 天。
