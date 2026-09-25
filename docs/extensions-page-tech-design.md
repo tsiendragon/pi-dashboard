@@ -210,7 +210,8 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 > 包名以 §12.8 为准（本节表内的是早期草案名）。
 
 原则：**一个具体功能 = 一个包**，一个包只声明一个扩展；共享代码下沉到 `core`
-（依赖图是一棵树、无环，feature 包保持纯粹）。共 **26 个包**。
+（依赖图是一棵树、无环，feature 包保持纯粹）。共 **25 个包发布**（1 共享库 + 24 功能扩展），
+另有 `web-tools` 保持 vendored 本地路径、**不发布**（见 §12.8）。
 
 **共享基础（不是扩展，不声明 `pi.extensions`）**
 
@@ -277,7 +278,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
   `npm pack`/publish 出来的 tarball **原样保留 `workspace:*`**（npm 不会像 pnpm/yarn 那样改写）
   ⇒ 发布后依赖无法解析。**结论：内部依赖写普通 semver**（如 `"^0.1.0"`），workspaces 会在本地链接到位。
 - 发布：`npm publish --workspaces`（或按包 `npm publish -w @tsiendragon/pi-tsien-x`）。
-  scoped 包默认是 restricted → 每个包需 `"publishConfig": {"access": "public"}`。
+  `publishConfig.access` 只在带 scope 时才需要；定稿用不带 scope 的 `pi-tsien-*`（§12.8），可忽略。
 - 每个包 `files: ["index.ts", "<自有目录>"]`，避免把测试/数据发上公网。
 - CI/发布凭证：GitHub Actions + `NPM_TOKEN` secret（属你的凭证动作，我不代跑）。
 
@@ -285,7 +286,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 
 - 包名在 npm 上是**永久占用**的（72 小时内可 unpublish，之后名字烧掉）→ 首次发布先 `--dry-run` 并把名字定死。
 - 版本策略：各包独立版本（简单），或统一版本号（好记）→ 待定。
-- 估时：目录迁移 + 26 个 `package.json` + import 改写 + 测试路径修正 + workspace 配置 ≈ **1.5~2 天**；
+- 估时：目录迁移 + 25 个 `package.json` + import 改写 + 测试路径修正 + workspace 配置 ≈ **1.5~2 天**；
   发布流程（脚本 + README + 首次 dry-run）≈ 0.5 天。
 
 ### 12.8 最终包名（定稿：`pi-tsien-<name>`）
@@ -347,9 +348,9 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 
 | 项 | 决定 |
 |---|---|
-| 拆分粒度 | **一功能一包**，含 19 行的 `session-aliases`（共 26 个包：1 共享库 + 25 功能包） |
+| 拆分粒度 | **一功能一包**，含 19 行的 `session-aliases`（**25 个发布包**：1 共享库 + 24 功能） |
 | 版本策略 | **各包独立版本**（依赖写 `^x.y.z`） |
-| 发布渠道 | **公开 npm（npmjs.org）**，scoped + `publishConfig.access=public` |
+| 发布渠道 | **公开 npm（npmjs.org）**，不带 scope 的 `pi-tsien-*` 名 |
 | web-tools | **不发布**（第三方 vendored + 名字被占），保留本地路径 |
 | 命名 | §12.8：统一 `pi-tsien-<name>`，直接发公开 npm（**不要 scope**；25 个名字已逐个验证可用） |
 | npm 账号 | 不再需要 scope/账号名一致性；发布时用你的 npm 账号即可 |
