@@ -8,7 +8,7 @@
     "dev": "./run.sh",
     "restart": "./restart.sh",
     "restart:build": "./restart.sh --build",
-    "build-frontend": "cd frontend && npm install --no-audit --no-fund && npm run build",
+    "build-frontend": "cd frontend && npm install --no-audit --no-fund --legacy-peer-deps && npm run build",
     "build:backend": "tsc -p backend/tsconfig.json",
     "typecheck": "tsc -p backend/tsconfig.json --noEmit",
     "setup": "npm install --no-audit --no-fund && npm run build-frontend",
