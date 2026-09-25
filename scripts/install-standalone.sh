@@ -24,6 +24,7 @@ DASHBOARD_DIR=""
 ROOT_DIR="${HOME}/pi-stack"
 EXT_DIR=""
 EXT_REPO="https://github.com/tsiendragon/pi-tsien-extension.git"
+EXT_CONFIG=""
 AGENT_DIR="${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}"
 PORT="${PI_DASH_PORT:-7777}"
 INSTALL_PI=""
@@ -59,6 +60,8 @@ usage() {
   --dashboard-dir <path>  复用已有的 pi-dashboard checkout（默认脚本所在仓库）
   --ext-dir <path>        复用已有的 pi-tsien-extension checkout
   --ext-repo <url>        扩展仓库地址（默认 GitHub tsiendragon/pi-tsien-extension）
+  --ext-config <path>     用自己的 Pi 扩展装载清单（默认仓库内 config/extensions.standalone.json；
+                          模板见 config/examples/extensions.config.example.json）
   --agent-dir <path>      Pi agent 配置目录（默认 $PI_CODING_AGENT_DIR 或 ~/.pi/agent）
   --port <n>              dashboard 端口（默认 7777）
   --install-pi [version]  等同 --official-pi：全局安装官方 npm 版 pi
@@ -82,6 +85,7 @@ while [[ $# -gt 0 ]]; do
     --dashboard-dir) DASHBOARD_DIR="$2"; shift 2 ;;
     --ext-dir) EXT_DIR="$2"; shift 2 ;;
     --ext-repo) EXT_REPO="$2"; shift 2 ;;
+    --ext-config) EXT_CONFIG="$2"; shift 2 ;;
     --agent-dir) AGENT_DIR="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --install-pi|--official-pi) PI_SOURCE="official"; INSTALL_PI=1; if [[ $# -ge 2 && "$2" != -* ]]; then INSTALL_PI_VERSION="$2"; shift; fi; shift ;;
@@ -168,9 +172,11 @@ if [[ "${SKIP_SYNC}" == "0" ]]; then
     run cp "${EXISTING_CONFIG}" "${BACKUP}"
   fi
 
-  log "写扩展配置"
+  CONFIG_SRC="${EXT_CONFIG:-${EXT_DIR}/config/extensions.standalone.json}"
+  [[ -f "${CONFIG_SRC}" ]] || die "找不到 Pi 扩展装载清单：${CONFIG_SRC}（模板见 ${EXT_DIR}/config/examples/extensions.config.example.json）"
+  log "写扩展配置（来源 ${CONFIG_SRC}）"
   run mkdir -p "${AGENT_DIR}"
-  run cp "${EXT_DIR}/config/extensions.standalone.json" "${EXISTING_CONFIG}"
+  run cp "${CONFIG_SRC}" "${EXISTING_CONFIG}"
 
   # 显式带上 agent 目录：同步器默认读 ~/.pi/agent，--agent-dir 不同（或隔离安装）时会读错配置
   SYNC=(node "${EXT_DIR}/scripts/pi-extension-sync.mjs" --agent-dir "${AGENT_DIR}")
@@ -332,5 +338,7 @@ cat <<EOF
      cd ${DASHBOARD_DIR} && PI_DASH_PORT=${PORT} ./run.sh
      浏览器打开 http://localhost:${PORT}
   3) 如果 Pi 正在运行，执行 /reload 或重启，使扩展配置生效。
-  4) 远程访问（Tailscale / SSH 隧道 / nginx 反代）见 docs/remote-access-deployment.md。
+  4) 自定义扩展装载清单：复制 ${EXT_DIR}/config/examples/extensions.config.example.json
+     改好后用 --ext-config <文件> 重跑，或直接编辑 ${AGENT_DIR}/extensions.config.json。
+  5) 远程访问（Tailscale / SSH 隧道 / nginx 反代）见 docs/remote-access-deployment.md。
 EOF
