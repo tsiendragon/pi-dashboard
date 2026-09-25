@@ -116,10 +116,10 @@ export default function PathCompleteMenu({ input, cursorPos, anchorRef, onComple
         >
           <span className="shrink-0 w-4 text-center">{entry.isDir ? '📁' : '📄'}</span>
           <span className="truncate flex-1">{entry.name}{entry.isDir ? '/' : ''}</span>
-          <span className="text-2xs text-muted/50 shrink-0 ml-auto">{entry.isDir ? 'dir' : 'file'}</span>
+          <span className="text-2xs text-muted opacity-50 shrink-0 ml-auto">{entry.isDir ? 'dir' : 'file'}</span>
         </button>
       ))}
-      <div className="px-3 py-1 border-t border-border text-2xs text-muted/40 flex gap-3">
+      <div className="px-3 py-1 border-t border-border text-2xs text-muted opacity-40 flex gap-3">
         <span>⇥ Tab complete</span>
         <span>↑↓ navigate</span>
         <span>Esc dismiss</span>

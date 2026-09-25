@@ -47,9 +47,9 @@ export default function TaskDrawer({ task, entry, sessions, lanes, planning, aut
   }, [onClose])
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-bg/60 backdrop-blur-[1px]" onClick={onClose} />
+      <div className="fixed inset-0 z-40 bg-bg backdrop-blur-[1px]" onClick={onClose} />
       <aside className="fixed right-0 top-0 z-50 h-full w-full max-w-[440px] overflow-y-auto bg-card border-l border-border shadow-xl animate-slide-in-right">
-        <div className="sticky top-0 bg-card/95 backdrop-blur border-b border-border px-4 py-3 flex items-start gap-3">
+        <div className="sticky top-0 bg-card backdrop-blur border-b border-border px-4 py-3 flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="font-mono text-meta text-accent">{task.id}</span>
@@ -101,14 +101,14 @@ export default function TaskDrawer({ task, entry, sessions, lanes, planning, aut
                   <button
                     key={s}
                     onClick={() => task.completion !== s && onEdit(task.uid, { status: s })}
-                    className={`px-2 py-1 rounded-md text-2xs border ${task.completion === s ? 'border-accent/40 bg-accent-subtle text-accent' : 'border-border text-muted hover:bg-bg-hover'}`}
+                    className={`px-2 py-1 rounded-md text-2xs border ${task.completion === s ? 'border-accent bg-accent-subtle text-accent' : 'border-border text-muted hover:bg-bg-hover'}`}
                   >
                     {COMPLETION_LABEL[s]}
                   </button>
                 ))}
                 <button
                   onClick={() => onDelete(task.uid)}
-                  className="ml-auto px-2 py-1 rounded-md text-2xs border border-danger/30 text-danger hover:bg-danger-subtle"
+                  className="ml-auto px-2 py-1 rounded-md text-2xs border border-danger text-danger hover:bg-danger-subtle"
                 >
                   删除
                 </button>
@@ -138,7 +138,7 @@ export default function TaskDrawer({ task, entry, sessions, lanes, planning, aut
                 onClick={() => onStart(task)}
                 disabled={!authReady}
                 title={authReady ? '以任务目录为 cwd 启动 Live Pi 会话' : '请先在 Live Pi 页面完成认证'}
-                className="text-2xs px-2 py-1 rounded border border-accent/30 text-accent hover:bg-accent-subtle disabled:opacity-40 disabled:cursor-not-allowed"
+                className="text-2xs px-2 py-1 rounded border border-accent text-accent hover:bg-accent-subtle disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 ▶ 起会话
               </button>
@@ -209,14 +209,14 @@ export default function TaskDrawer({ task, entry, sessions, lanes, planning, aut
                 <button
                   key={p.value}
                   onClick={() => onUpdate(task.uid, { priority: entry?.priority === p.value ? undefined : p.value })}
-                  className={`px-2 py-1 rounded-md text-body-s border ${entry?.priority === p.value ? `border-accent/40 bg-accent-subtle ${p.cls}` : 'border-border text-muted hover:bg-bg-hover'}`}
+                  className={`px-2 py-1 rounded-md text-body-s border ${entry?.priority === p.value ? `border-accent bg-accent-subtle ${p.cls}` : 'border-border text-muted hover:bg-bg-hover'}`}
                 >
                   {p.label}
                 </button>
               ))}
               <button
                 onClick={() => onUpdate(task.uid, { pinned: !entry?.pinned })}
-                className={`ml-auto px-2 py-1 rounded-md text-body-s border ${entry?.pinned ? 'border-accent/40 bg-accent-subtle text-accent' : 'border-border text-muted hover:bg-bg-hover'}`}
+                className={`ml-auto px-2 py-1 rounded-md text-body-s border ${entry?.pinned ? 'border-accent bg-accent-subtle text-accent' : 'border-border text-muted hover:bg-bg-hover'}`}
               >
                 {entry?.pinned ? '★ 已聚焦' : '☆ 聚焦'}
               </button>

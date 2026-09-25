@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import {
-  anchorIndexOf, buildOrderIndex, materializeOrder, moveInOrder, resolveDropTarget, sortSessions,
+  anchorIndexOf, buildOrderIndex, buildSessionSections, materializeOrder, moveInOrder, resolveDropTarget, sortSessions,
 } from '../features/live-sessions/sessionOrder'
 
 function session(sessionId: string, startedAt: number, over: Partial<LiveSessionSummary> = {}): LiveSessionSummary {
@@ -23,6 +23,27 @@ function session(sessionId: string, startedAt: number, over: Partial<LiveSession
 }
 
 const ids = (items: LiveSessionSummary[]) => items.map(item => item.sessionId)
+
+describe('buildSessionSections', () => {
+  it('lays pinned first, then task groups, then ungrouped, honouring the manual order', () => {
+    const groups = [{ id: 'g1', name: '任务A', sessionIds: ['b'], createdAt: '', updatedAt: '' }]
+    const meta = { c: { tags: [], pinned: true, updatedAt: '' } }
+    const sections = buildSessionSections([session('a', 1), session('b', 2), session('c', 3)], meta, groups, ['b', 'a'])
+    expect(sections.map(section => section.name)).toEqual(['置顶', '任务A', '未分组'])
+    expect(ids(sections[0].sessions)).toEqual(['c'])
+    expect(ids(sections[1].sessions)).toEqual(['b'])
+    expect(ids(sections[2].sessions)).toEqual(['a'])
+  })
+
+  it('drops empty blocks and never lists sub-agents as top-level rows', () => {
+    const sections = buildSessionSections(
+      [session('a', 1), session('child', 2, { parentSessionId: 'a' })],
+      {}, [], [],
+    )
+    expect(sections.map(section => section.name)).toEqual(['未分组'])
+    expect(ids(sections[0].sessions)).toEqual(['a'])
+  })
+})
 
 describe('sortSessions', () => {
   it('follows the manual order before any automatic rule', () => {

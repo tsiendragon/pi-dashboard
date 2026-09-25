@@ -66,11 +66,11 @@ export default function SplitPane({ slotKey, onClose, onFileOpen }: SplitPanePro
     const key = m.ts ? `${m.role}-${m.ts}` : `${m.role}-${i}`
     if (m.role === 'thinking') return <ThinkingBlock key={key} content={m.content} />
     if (m.role === 'tool') return <ToolCallBlock key={key} content={m.content} meta={m.meta} onFileOpen={handleFileOpen} slotKey={slotKey} />
-    if (m.role === 'queued') return <div key={key} className="bg-warn-subtle border border-warn/15 rounded-md px-3 py-2 text-body-s text-warn italic">⏳ <em>Queued:</em> {m.content}</div>
-    if (m.role === 'error') return <div key={key} className="bg-danger-subtle text-danger text-body-s px-3 py-2 rounded-md border border-danger/15 self-center">{m.content}</div>
+    if (m.role === 'queued') return <div key={key} className="bg-warn-subtle border border-warn rounded-md px-3 py-2 text-body-s text-warn italic">⏳ <em>Queued:</em> {m.content}</div>
+    if (m.role === 'error') return <div key={key} className="bg-danger-subtle text-danger text-body-s px-3 py-2 rounded-md border border-danger self-center">{m.content}</div>
     if (m.role === 'system') return <SystemMessage key={key} content={m.content} meta={m.meta} />
     if (m.role === 'permission') return (
-      <div key={key} className="bg-warn-subtle border border-warn/20 rounded-md px-3 py-2 text-body-s text-warn">🔒 {m.content}</div>
+      <div key={key} className="bg-warn-subtle border border-warn rounded-md px-3 py-2 text-body-s text-warn">🔒 {m.content}</div>
     )
 
     const isUser = m.role === 'user'
@@ -134,7 +134,7 @@ export default function SplitPane({ slotKey, onClose, onFileOpen }: SplitPanePro
             const isUserTurn = item.type === 'single' && item.message.role === 'user' && _i > 0
             return (
               <div className="px-4 py-2">
-                {isUserTurn && <div className="border-t border-border/40 mb-4 mt-2" />}
+                {isUserTurn && <div className="border-t border-border mb-4 mt-2" />}
                 {item.type === 'group' ? (
                   <ToolGroup tools={item.tools} renderTool={renderMessage} />
                 ) : (

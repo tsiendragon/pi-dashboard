@@ -82,7 +82,7 @@ export default function DirTree({ value, onChange, workspaces }: DirTreeProps) {
         ))}
         {freqDirs.filter(d => !workspaces.some(w => w.path === d.path)).slice(0, 6).map(d => (
           <button key={d.path} type="button"
-            className="group relative px-2 py-0.5 rounded text-2xs font-mono bg-accent/10 border border-accent/30 text-accent hover:bg-accent/20 hover:border-accent transition-colors whitespace-nowrap shrink-0"
+            className="group relative px-2 py-0.5 rounded text-2xs font-mono bg-accent-subtle border border-accent text-accent hover:bg-accent-subtle hover:border-accent transition-colors whitespace-nowrap shrink-0"
             onClick={() => select(d.path)}
             title={`${d.path} (${d.count}×)`}
           >

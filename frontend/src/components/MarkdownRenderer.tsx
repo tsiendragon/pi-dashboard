@@ -54,12 +54,28 @@ const VIEWABLE_FILE_RE = /\.(?:md|markdown|json|ya?ml|txt|toml|ini|conf|log|tsx?
 function normalizeLocalPath(value: string): string {
   let path = value.trim()
   try { path = decodeURIComponent(path) } catch { /* keep the original path */ }
-  return path.split(/[?#]/, 1)[0]
+  // Trim again *after* cutting the fragment: a code line such as
+  // `bash deploy/x.sh        # run it` keeps its trailing padding once the
+  // comment is gone, and padding must not survive into the file read.
+  return path.split(/[?#]/, 1)[0].trim()
 }
 
 function isOpenablePath(value: string): boolean {
   const path = normalizeLocalPath(value)
   return PATH_RE.test(path) || VIEWABLE_FILE_RE.test(path)
+}
+
+/**
+ * A bare code span only opens as a file when it is a single whitespace-free
+ * token. Shell command lines look path-like to `PATH_RE` (`bash deploy/x.sh`,
+ * or a column-aligned command followed by a `#` comment), and opening one asked
+ * the backend to read a file literally named `bash deploy/…` — a guaranteed 404
+ * that also hijacked the click that was meant to select the line.
+ */
+function isOpenableCodeSpan(value: string): boolean {
+  const path = normalizeLocalPath(value)
+  if (!path || /\s/.test(path)) return false
+  return isOpenablePath(path)
 }
 
 function setSanitizedHTML(el: Element, html: string): void {
@@ -103,7 +119,7 @@ const CodeBlock = memo(function CodeBlock({ code, lang, complete }: { code: stri
   return (
     <div className="relative group my-1">
       <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-2 py-1">
-        <span className="text-muted text-2xs font-mono uppercase">{lang || 'code'}{lineCount > 1 && <span className="text-muted/50 ml-1">{lineCount} lines</span>}</span>
+        <span className="text-muted text-2xs font-mono uppercase">{lang || 'code'}{lineCount > 1 && <span className="ml-1 text-muted opacity-50">{lineCount} lines</span>}</span>
         <button className="text-muted text-2xs opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(code)}>Copy</button>
       </div>
       <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-2 overflow-x-auto">
@@ -131,7 +147,7 @@ const MD_COMPONENTS: Record<string, React.ComponentType<any>> = {
     if (lang === 'mermaid') return <ResizableMermaid code={codeStr} />
 
     if (!className) {
-      if (isOpenablePath(codeStr)) {
+      if (isOpenableCodeSpan(codeStr)) {
         return <code className="bg-bg-elevated px-1.5 py-0.5 rounded text-accent text-sm font-mono cursor-pointer hover:underline" title="Click to open / Shift+click to reveal in Finder" {...props}>{children}</code>
       }
       return <code className="bg-bg-elevated px-1.5 py-0.5 rounded text-accent text-sm font-mono" {...props}>{children}</code>
@@ -210,7 +226,7 @@ export default memo(function MarkdownRenderer({ content, streaming = false, onFi
   const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const el = e.target as HTMLElement
     const codePath = normalizeLocalPath(el.textContent || '')
-    if (el.tagName === 'CODE' && isOpenablePath(codePath)) {
+    if (el.tagName === 'CODE' && isOpenableCodeSpan(codePath)) {
       e.preventDefault()
       if (onFileOpen && !e.shiftKey) onFileOpen(codePath)
       else api.revealPath(codePath)

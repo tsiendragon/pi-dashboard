@@ -45,8 +45,8 @@ export default function MemoryFlash({ slotKey }: MemoryFlashProps) {
   const visibleItems = expanded ? items : items.slice(0, 3)
 
   return (
-    <div className="mx-3 md:mx-6 mb-3 rounded-xl border border-accent/25 bg-accent-subtle/35 shadow-[0_8px_32px_rgba(0,0,0,.12)] animate-scale-in overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-accent/15">
+    <div className="mx-3 md:mx-6 mb-3 rounded-xl border border-accent bg-accent-subtle shadow-[0_8px_32px_rgba(0,0,0,.12)] animate-scale-in overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-accent">
         <span className="text-sm">🧠</span>
         <div className="min-w-0 flex-1">
           <div className="text-body-s font-semibold text-text-strong">Memory Flash</div>
@@ -70,7 +70,7 @@ export default function MemoryFlash({ slotKey }: MemoryFlashProps) {
       </div>
       <div className="p-2.5 space-y-1.5">
         {visibleItems.map((item, idx) => (
-          <div key={idx} className="rounded-lg bg-bg/60 border border-border/70 px-2.5 py-1.5 text-meta text-text leading-relaxed whitespace-pre-wrap">
+          <div key={idx} className="rounded-lg bg-bg border border-border px-2.5 py-1.5 text-meta text-text leading-relaxed whitespace-pre-wrap">
             {item}
           </div>
         ))}

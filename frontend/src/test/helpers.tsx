@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { configureStore } from '@reduxjs/toolkit'
 import dashboardReducer from '../store/dashboardSlice'
 import chatReducer from '../store/chatSlice'
+import liveSessionsReducer from '../store/liveSessionsSlice'
 import notificationsReducer from '../store/notificationsSlice'
 import type { RootState } from '../store'
 
@@ -14,6 +15,7 @@ export function createTestStore(preloadedState?: Partial<RootState>) {
     reducer: {
       dashboard: dashboardReducer,
       chat: chatReducer,
+      liveSessions: liveSessionsReducer,
       notifications: notificationsReducer,
     },
     preloadedState: preloadedState as any,

@@ -63,4 +63,12 @@ describe('pastedFileRef', () => {
     expect(pastedFileRef({ uriList: 'https://example.com', text: '' })).toBeNull()
     expect(pastedFileRef({})).toBeNull()
   })
+
+  it('keeps pasted slash commands and command lines as plain text', () => {
+    expect(pastedFileRef({ text: '/taskspace start camfp-user-104925893-analysis' })).toBeNull()
+    expect(pastedFileRef({ text: '/compact' })).toBeNull()
+    expect(pastedFileRef({ text: '/goal ship the fix' })).toBeNull()
+    expect(pastedFileRef({ text: './taskspace start x' })).toBeNull()
+    expect(pastedFileRef({ text: '/mnt/workspace/lilong' })).toBe('/mnt/workspace/lilong')
+  })
 })

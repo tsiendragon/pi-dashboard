@@ -46,7 +46,7 @@ export default function SubagentCard({ meta }: Props) {
   const canExpand = !!(liveOutput)
 
   return (
-    <div className="msg-content bg-card border border-border/60 rounded-md animate-scale-in">
+    <div className="msg-content bg-card border border-border rounded-md animate-scale-in">
       <button
         className="w-full flex items-center gap-2 px-3 py-2.5 text-body-s font-mono bg-transparent border-none text-left hover:text-text transition-colors cursor-pointer"
         onClick={() => canExpand && setExpanded(!expanded)}
@@ -69,12 +69,12 @@ export default function SubagentCard({ meta }: Props) {
 
         {/* Live preview line while running, otherwise task description */}
         {running && livePreview ? (
-          <span className="text-muted/70 text-meta font-normal truncate flex-1 italic">{truncate(livePreview, 70)}</span>
+          <span className="text-muted opacity-70 text-meta font-normal truncate flex-1 italic">{truncate(livePreview, 70)}</span>
         ) : task ? (
           <span className="text-muted text-meta font-normal truncate flex-1">{truncate(task, 60)}</span>
         ) : null}
 
-        <span className="text-muted/50 text-2xs shrink-0 ml-auto">
+        <span className="text-muted opacity-50 text-2xs shrink-0 ml-auto">
           {running ? fmtElapsed(elapsed) : model ? truncate(model.split('/').pop() ?? model, 20) : ''}
         </span>
 
@@ -93,7 +93,7 @@ export default function SubagentCard({ meta }: Props) {
           <pre
             ref={scrollRef}
             className={`bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${
-              isError ? 'text-danger' : running ? 'text-text/80' : 'text-muted'
+              isError ? 'text-danger' : running ? 'text-text opacity-80' : 'text-muted'
             }`}
           >
             {liveOutput}

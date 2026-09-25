@@ -48,7 +48,7 @@ function AgentLog({ id }: { id: string }) {
         const el = e.currentTarget
         setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 40)
       }}
-      className="flex-1 min-h-0 bg-bg px-3 py-2 text-meta font-mono text-text/80 whitespace-pre-wrap break-all overflow-y-auto"
+      className="flex-1 min-h-0 bg-bg px-3 py-2 text-meta font-mono text-text opacity-80 whitespace-pre-wrap break-all overflow-y-auto"
     >
       {log || '(waiting for output…)'}
     </pre>
@@ -156,8 +156,8 @@ export default function SubagentDock() {
           {selectedAgent && (
             <div className="px-3 py-1.5 border-b border-border shrink-0 flex items-center gap-3">
               <span className="text-2xs text-muted truncate flex-1">{selectedAgent.task}</span>
-              <span className="text-2xs text-muted/60 shrink-0"><ElapsedTimer startTime={selectedAgent.startTime} /></span>
-              {selectedAgent.lastToolCall && <span className="text-2xs text-muted/50 shrink-0 truncate max-w-[120px]">→ {selectedAgent.lastToolCall}</span>}
+              <span className="text-2xs text-muted opacity-60 shrink-0"><ElapsedTimer startTime={selectedAgent.startTime} /></span>
+              {selectedAgent.lastToolCall && <span className="text-2xs text-muted opacity-50 shrink-0 truncate max-w-[120px]">→ {selectedAgent.lastToolCall}</span>}
             </div>
           )}
 

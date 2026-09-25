@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { PageHeader, Card, CardTitle, SearchInput, Badge } from '../components/ui'
+import MaterialIcon from '../components/MaterialIcon'
 import InfoTip from '../components/InfoTip'
 import { api, j } from '../api/client'
 import { useAppSelector } from '../store'
@@ -7,11 +8,15 @@ import { useTheme, THEMES, type ThemeId } from '../hooks/useTheme'
 import { useCustomStyle, parseVars } from '../hooks/useCustomStyle'
 import { BUILTIN_THEMES } from '../themes'
 import { loadChatConfig, saveChatConfig, type ChatConfig } from './chat/ChatSettings'
+import { loadTtsSettings, saveTtsSettings, type TtsSettings } from '../features/voice/ttsSettings'
+import { useVoiceOutput } from '../features/voice/useVoiceOutput'
+import { asrLanguageLabel, ASR_DEFAULT_MODEL, ASR_LANGUAGES, type AsrConfigResponse } from '@shared/asr.js'
+import { TTS_LANGUAGES, TTS_MODELS, TTS_VOICES, type TtsConfigResponse } from '@shared/tts.js'
 import { SettingsSectionSlot } from '../plugins/slot-consumers'
 import { ACTIONS, formatKey, setShortcut, resetShortcut, resetAllShortcuts, hasCustomShortcuts, subscribeShortcuts, eventToKeyString, type ActionCategory } from '../shortcuts'
 import { modelFullId, splitModelFullId, splitThinkingSuffix } from '../utils/modelUtils'
 
-type Tab = 'general' | 'model' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'display' | 'vault' | 'tasks' | 'lark' | 'developer' | 'shortcuts'
+type Tab = 'general' | 'model' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'voice' | 'display' | 'vault' | 'tasks' | 'lark' | 'developer' | 'shortcuts'
 
 /* ── Shared form components ── */
 
@@ -20,7 +25,7 @@ function Toggle({ label, hint, checked, onChange }: { label: string; hint?: stri
     <label className="flex items-center justify-between cursor-pointer group py-2">
       <div>
         <span className="text-body-s text-text group-hover:text-text-strong transition-colors">{label}</span>
-        {hint && <div className="text-meta text-muted/60 mt-0.5">{hint}</div>}
+        {hint && <div className="text-meta text-muted opacity-60 mt-0.5">{hint}</div>}
       </div>
       <div className={`w-9 h-5 rounded-full relative transition-colors shrink-0 ml-4 ${checked ? 'bg-accent' : 'bg-border'}`} onClick={() => onChange(!checked)}>
         <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
@@ -34,7 +39,7 @@ function SelectRow({ label, hint, value, options, onChange }: { label: string; h
     <div className="flex items-center justify-between py-2">
       <div>
         <span className="text-body-s text-text">{label}</span>
-        {hint && <div className="text-meta text-muted/60 mt-0.5">{hint}</div>}
+        {hint && <div className="text-meta text-muted opacity-60 mt-0.5">{hint}</div>}
       </div>
       <select
         className="bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-body-s text-text font-body outline-none cursor-pointer transition-colors focus-ring ml-4"
@@ -52,7 +57,7 @@ function NumberRow({ label, hint, value, onChange, min, max, step, placeholder }
     <div className="flex items-center justify-between py-2">
       <div>
         <span className="text-body-s text-text">{label}</span>
-        {hint && <div className="text-meta text-muted/60 mt-0.5">{hint}</div>}
+        {hint && <div className="text-meta text-muted opacity-60 mt-0.5">{hint}</div>}
       </div>
       <input
         type="number"
@@ -73,7 +78,7 @@ function TextRow({ label, hint, value, onChange, placeholder, mono }: { label: s
     <div className="flex items-center justify-between py-2">
       <div className="min-w-0 mr-4">
         <span className="text-body-s text-text">{label}</span>
-        {hint && <div className="text-meta text-muted/60 mt-0.5">{hint}</div>}
+        {hint && <div className="text-meta text-muted opacity-60 mt-0.5">{hint}</div>}
       </div>
       <input
         className={`w-64 bg-bg-elevated border border-border rounded-md px-2.5 py-1.5 text-body-s text-text outline-none focus-ring transition-colors text-right ml-4 ${mono ? 'font-mono' : 'font-body'}`}
@@ -161,7 +166,7 @@ interface GalleryPkg {
 function Feedback({ feedback }: { feedback: { type: 'ok' | 'err'; msg: string } | null }) {
   if (!feedback) return null
   return (
-    <div className={`px-3 py-2 rounded-md text-body-s font-medium animate-scale-in ${feedback.type === 'ok' ? 'bg-ok-subtle text-ok border border-ok/20' : 'bg-danger-subtle text-danger border border-danger/20'}`}>
+    <div className={`px-3 py-2 rounded-md text-body-s font-medium animate-scale-in ${feedback.type === 'ok' ? 'bg-ok-subtle text-ok border border-ok' : 'bg-danger-subtle text-danger border border-danger'}`}>
       {feedback.msg}
     </div>
   )
@@ -304,7 +309,7 @@ function ModelTab() {
 
       <Card>
         <CardTitle>Enabled Models <InfoTip text="Glob patterns to filter which models appear in the model picker. Empty = all models." /></CardTitle>
-        <div className="text-meta text-muted/60 mb-2">One pattern per line. Supports wildcards and optional thinking suffixes (e.g. <code className="font-mono text-text">bedrock-mantle/openai.gpt-5.5:xhigh</code>, <code className="font-mono text-text">*/gpt-4o</code>)</div>
+        <div className="text-meta text-muted opacity-60 mb-2">One pattern per line. Supports wildcards and optional thinking suffixes (e.g. <code className="font-mono text-text">bedrock-mantle/openai.gpt-5.5:xhigh</code>, <code className="font-mono text-text">*/gpt-4o</code>)</div>
         <textarea
           className="w-full bg-bg-elevated border border-border rounded-md p-3 text-body-s font-mono text-text resize-none outline-none focus-ring leading-relaxed min-h-[80px]"
           value={(settings.enabledModels || []).join('\n')}
@@ -562,7 +567,7 @@ function GeneralTab() {
               <div key={p} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-bg-hover transition-colors group">
                 <span className="text-body-s font-mono text-text truncate flex-1" title={p}>{p}</span>
                 <button
-                  className="opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-meta text-danger border border-danger/30 bg-transparent cursor-pointer hover:bg-danger-subtle transition"
+                  className="opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-meta text-danger border border-danger bg-transparent cursor-pointer hover:bg-danger-subtle transition"
                   onClick={() => removePkg(p)}
                   disabled={installing === p}
                 >
@@ -617,10 +622,10 @@ function GeneralTab() {
                       {installed && <Badge variant="ok">installed</Badge>}
                     </div>
                     <div className="text-meta text-muted mt-0.5 line-clamp-2">{p.description}</div>
-                    {p.author && <div className="text-2xs text-muted/60 mt-0.5">by {p.author}</div>}
+                    {p.author && <div className="text-2xs text-muted opacity-60 mt-0.5">by {p.author}</div>}
                   </div>
                   <button
-                    className={`px-2.5 py-1 rounded-md text-meta font-medium border cursor-pointer transition shrink-0 ${installed ? 'border-danger/30 text-danger bg-transparent hover:bg-danger-subtle' : 'border-accent text-accent bg-transparent hover:bg-accent hover:text-accent-fg'}`}
+                    className={`px-2.5 py-1 rounded-md text-meta font-medium border cursor-pointer transition shrink-0 ${installed ? 'border-danger text-danger bg-transparent hover:bg-danger-subtle' : 'border-accent text-accent bg-transparent hover:bg-accent hover:text-accent-fg'}`}
                     disabled={installing === npmSource}
                     onClick={() => installed ? removePkg(npmSource) : installPkg(npmSource)}
                   >
@@ -668,6 +673,173 @@ function ChatTab() {
 }
 
 /* ── DISPLAY TAB ── */
+/* ── Voice output (TTS) ── */
+
+/** Voice-input recognition languages offered in Settings (transcribed on the backend). */
+const STT_LANGUAGES = ASR_LANGUAGES.map(language => ({
+  value: language.id,
+  label: language.id === 'zh' ? `${language.label}（默认）` : language.label,
+}))
+
+function VoiceTab() {
+  const [config, setConfig] = useState<TtsSettings>(loadTtsSettings)
+  const [catalog, setCatalog] = useState<TtsConfigResponse | null>(null)
+  const [asrCatalog, setAsrCatalog] = useState<AsrConfigResponse | null>(null)
+  const [testText, setTestText] = useState('你好，这是语音输出试听。')
+  const voice = useVoiceOutput()
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/tts/config')
+      .then(r => (r.ok ? r.json() : undefined))
+      .then((data: TtsConfigResponse | undefined) => { if (!cancelled && data) setCatalog(data) })
+      .catch(() => {})
+    fetch('/api/asr/config')
+      .then(r => (r.ok ? r.json() : undefined))
+      .then((data: AsrConfigResponse | undefined) => { if (!cancelled && data) setAsrCatalog(data) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  const models = catalog?.models ?? TTS_MODELS
+  const voices = catalog?.voices ?? TTS_VOICES
+  const languages = catalog?.languages ?? TTS_LANGUAGES
+
+  const set = <K extends keyof TtsSettings>(k: K, v: TtsSettings[K]) => {
+    const next = { ...config, [k]: v }
+    saveTtsSettings(next)
+    setConfig(next)
+  }
+
+  const knownModel = models.some(m => m.id === config.model)
+  const knownVoice = voices.some(v => v.id === config.voice)
+  const supportsInstructions = models.find(m => m.id === config.model)?.supportsInstructions === true
+
+  return (
+    <div className="space-y-4">
+      {catalog && !catalog.available && (
+        <div className="rounded-md border border-warn bg-warn-subtle px-3 py-2 text-body-s text-warn">
+          {catalog.reason || '语音输出当前不可用。'} 需要环境变量 <code className="font-mono">DASHSCOPE_API_KEY</code>（区域：{catalog.endpoint}）。
+        </div>
+      )}
+
+      <Card>
+        <CardTitle>语音输出（Live Session）</CardTitle>
+        <div className="divide-y divide-border">
+          <Toggle
+            label="回复结束自动朗读"
+            hint="Pi 一轮回复结束时朗读最后一条回复；可在 Live Session 顶栏临时切换"
+            checked={config.enabled}
+            onChange={v => set('enabled', v)}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>语音模型</CardTitle>
+        <div className="divide-y divide-border">
+          <SelectRow
+            label="模型"
+            hint="默认使用 DashScope 的 Qwen-TTS"
+            value={knownModel ? config.model : '__custom__'}
+            options={[...models.map(m => ({ value: m.id, label: m.label })), { value: '__custom__', label: '自定义模型 ID…' }]}
+            onChange={v => set('model', v === '__custom__' ? '' : v)}
+          />
+          {!knownModel && (
+            <TextRow
+              label="自定义模型 ID"
+              hint="留空则回退到默认模型"
+              value={config.model}
+              onChange={v => set('model', v)}
+              placeholder={catalog?.defaultModel || TTS_MODELS[0].id}
+              mono
+            />
+          )}
+          <SelectRow
+            label="音色"
+            value={knownVoice ? config.voice : '__custom__'}
+            options={[...voices.map(v => ({ value: v.id, label: v.hint ? `${v.label} · ${v.hint}` : v.label })), { value: '__custom__', label: '自定义音色 ID…' }]}
+            onChange={v => set('voice', v === '__custom__' ? '' : v)}
+          />
+          {!knownVoice && (
+            <TextRow
+              label="自定义音色 ID"
+              hint="留空则回退到默认音色"
+              value={config.voice}
+              onChange={v => set('voice', v)}
+              placeholder={catalog?.defaultVoice || TTS_VOICES[0].id}
+              mono
+            />
+          )}
+          <SelectRow
+            label="语种"
+            hint="自动时由模型按文本判断"
+            value={config.languageType}
+            options={languages.map(l => ({ value: l.id, label: l.label }))}
+            onChange={v => set('languageType', v)}
+          />
+          {supportsInstructions && (
+            <TextRow
+              label="风格指令"
+              hint="仅 Instruct 模型支持，如“语速稍快、语气亲切”"
+              value={config.instructions}
+              onChange={v => set('instructions', v)}
+              placeholder="可选"
+            />
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>语音输入（听写）</CardTitle>
+        <div className="divide-y divide-border">
+          {asrCatalog && !asrCatalog.available && (
+            <div className="py-2 text-body-s text-warn">{asrCatalog.reason || '语音输入当前不可用。'}</div>
+          )}
+          <SelectRow
+            label="识别语言"
+            hint={`由后端 DashScope 识别（${asrCatalog?.defaultModel ?? ASR_DEFAULT_MODEL}，当前：${asrLanguageLabel(config.sttLanguage)}），任意现代浏览器可用`}
+            value={config.sttLanguage}
+            options={STT_LANGUAGES}
+            onChange={v => set('sttLanguage', v)}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>试听</CardTitle>
+        <div className="space-y-3">
+          <textarea
+            className="w-full resize-y rounded-md border border-border bg-bg-elevated px-3 py-2 text-body-s text-text outline-none transition-colors focus-ring"
+            rows={2}
+            value={testText}
+            onChange={e => setTestText(e.target.value)}
+            placeholder="输入要朗读的文本"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={!testText.trim() || voice.speaking}
+              onClick={() => { void voice.speak(testText, config) }}
+              className="rounded-md border border-accent bg-accent px-3 py-1.5 text-xs text-accent-fg transition-opacity disabled:opacity-50"
+            ><MaterialIcon name="volume_up" className="inline h-3.5 w-3.5 align-[-2px]" /> 试听</button>
+            {voice.speaking && (
+              <button type="button" onClick={voice.stop} className="inline-flex items-center gap-1 rounded-md border border-border bg-bg px-3 py-1.5 text-xs text-muted"><MaterialIcon name="stop" className="h-3 w-3" />停止</button>
+            )}
+            <span className="text-meta text-muted opacity-60">长回复会自动分段朗读（每段约 400 字）</span>
+          </div>
+          {voice.error && (
+            <div className="flex items-center gap-2">
+              <Feedback feedback={{ type: 'err', msg: voice.error }} />
+              <button type="button" onClick={voice.clearError} className="shrink-0 rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted">关闭</button>
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
+  )
+}
+
 function DisplayTab() {
   const { theme, preference, setTheme } = useTheme()
   const customStyle = useCustomStyle()
@@ -705,7 +877,7 @@ function DisplayTab() {
             return (
               <button
                 key={card.id}
-                className={`group relative px-3 py-2.5 rounded-lg text-body-s font-medium border cursor-pointer transition text-left ${isActive ? 'bg-accent/10 text-accent border-accent/40 shadow-sm' : 'border-border text-muted bg-transparent hover:text-text hover:border-border-strong'}`}
+                className={`group relative px-3 py-2.5 rounded-lg text-body-s font-medium border cursor-pointer transition text-left ${isActive ? 'bg-accent-subtle text-accent border-accent shadow-sm' : 'border-border text-muted bg-transparent hover:text-text hover:border-border-strong'}`}
                 onClick={() => {
                   if (card.builtin) {
                     setTheme(card.id as ThemeId | 'system')
@@ -753,7 +925,7 @@ function DisplayTab() {
             <input className="flex-1 bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-body-s text-text font-body outline-none focus-ring" placeholder="New style name…" value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) { customStyle.save(newName.trim(), `/* ${newName.trim()} */\n:root {\n  /* Override CSS variables here */\n}\n`); customStyle.activate(newName.trim()); setNewName('') } }} />
             <button className="px-3 py-1.5 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30" disabled={!newName.trim()} onClick={() => { if (newName.trim()) { customStyle.save(newName.trim(), `/* ${newName.trim()} */\n:root {\n  /* Override CSS variables here */\n}\n`); customStyle.activate(newName.trim()); setNewName('') } }}>Create</button>
           </div>
-          <div className="py-2 text-2xs text-muted/50">Tip: add <code className="font-mono">?reset-css=true</code> to the URL to disable custom styles if they break the UI.</div>
+          <div className="py-2 text-2xs text-muted opacity-50">Tip: add <code className="font-mono">?reset-css=true</code> to the URL to disable custom styles if they break the UI.</div>
         </div>
       </Card>
     </div>
@@ -1123,7 +1295,7 @@ function VaultTab() {
             <div key={key} className="flex items-center justify-between gap-4 py-2.5">
               <div>
                 <span className="text-body-s text-text">{label}</span>
-                <div className="text-meta text-muted/60 mt-0.5">{hint}</div>
+                <div className="text-meta text-muted opacity-60 mt-0.5">{hint}</div>
               </div>
               <input
                 className="w-48 bg-bg-elevated border border-border rounded-md px-2.5 py-1.5 text-body-s font-mono text-text outline-none focus-ring transition-colors text-right"
@@ -1380,7 +1552,7 @@ function ShortcutsTab() {
       {hasCustomShortcuts() && (
         <div className="flex justify-end">
           <button
-            className="px-3 py-1.5 rounded-md text-meta font-medium border border-danger/30 text-danger bg-transparent cursor-pointer hover:bg-danger-subtle transition"
+            className="px-3 py-1.5 rounded-md text-meta font-medium border border-danger text-danger bg-transparent cursor-pointer hover:bg-danger-subtle transition"
             onClick={() => { if (confirm('Reset all shortcuts to defaults?')) resetAllShortcuts() }}
           >
             Reset All to Defaults
@@ -1403,7 +1575,7 @@ function ShortcutsTab() {
                     <div className="min-w-0">
                       <span className="text-body-s text-text">{a.description}</span>
                       {isCustom && a.defaultKeys && (
-                        <div className="text-2xs text-muted/50 mt-0.5">default: <span className="font-mono">{formatKey(a.defaultKeys)}</span></div>
+                        <div className="text-2xs text-muted opacity-50 mt-0.5">default: <span className="font-mono">{formatKey(a.defaultKeys)}</span></div>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -1434,7 +1606,7 @@ function ShortcutsTab() {
         )
       })}
 
-      <div className="text-meta text-muted/50 text-center pt-2">
+      <div className="text-meta text-muted opacity-50 text-center pt-2">
         Click a binding to record a new key combo · Press Esc to cancel · Customizations are stored in your browser
       </div>
     </div>
@@ -1456,6 +1628,7 @@ const SETTINGS_GROUPS: { group: string; tabs: { id: Tab; label: string; icon: st
     tabs: [
       { id: 'display', label: 'Display', icon: '🎨', hint: 'Theme & appearance' },
       { id: 'chat', label: 'Chat', icon: '💬', hint: 'Composer & transcript' },
+      { id: 'voice', label: 'Voice', icon: '🔊', hint: '语音输出模型与音色' },
       { id: 'terminal', label: 'Terminal', icon: '🖥', hint: 'Integrated terminal' },
       { id: 'shortcuts', label: 'Shortcuts', icon: '⌨', hint: 'Keybindings' },
     ],
@@ -1491,7 +1664,7 @@ export default function SettingsPage() {
               {tabs.map(t => (
                 <button
                   key={t.id}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-body-s font-medium cursor-pointer transition border text-left ${tab === t.id ? 'bg-accent-subtle text-accent border-accent/30' : 'border-transparent text-muted bg-transparent hover:text-text hover:bg-bg-hover'}`}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-body-s font-medium cursor-pointer transition border text-left ${tab === t.id ? 'bg-accent-subtle text-accent border-accent' : 'border-transparent text-muted bg-transparent hover:text-text hover:bg-bg-hover'}`}
                   onClick={() => selectTab(t.id)}
                   title={t.hint}
                 >
@@ -1508,7 +1681,7 @@ export default function SettingsPage() {
           {SETTINGS_GROUPS.flatMap(g => g.tabs).map(t => (
             <button
               key={t.id}
-              className={`px-3 py-1.5 rounded-md text-body-s font-medium cursor-pointer transition border ${tab === t.id ? 'bg-accent-subtle text-accent border-accent/30' : 'border-transparent text-muted bg-transparent hover:text-text hover:bg-bg-hover'}`}
+              className={`px-3 py-1.5 rounded-md text-body-s font-medium cursor-pointer transition border ${tab === t.id ? 'bg-accent-subtle text-accent border-accent' : 'border-transparent text-muted bg-transparent hover:text-text hover:bg-bg-hover'}`}
               onClick={() => selectTab(t.id)}
             >
               {t.icon} {t.label}
@@ -1531,6 +1704,7 @@ export default function SettingsPage() {
             {tab === 'general' && <GeneralTab />}
             {tab === 'skills' && <SkillsTab />}
             {tab === 'chat' && <ChatTab />}
+            {tab === 'voice' && <VoiceTab />}
             {tab === 'display' && <DisplayTab />}
             {tab === 'shortcuts' && <ShortcutsTab />}
             {tab === 'vault' && <VaultTab />}

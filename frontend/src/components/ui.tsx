@@ -1,4 +1,5 @@
 import type React from 'react'
+import MaterialIcon from './MaterialIcon'
 
 /* ── Shared UI primitives ── */
 
@@ -51,9 +52,9 @@ export function Input({ className = '', ...props }: React.InputHTMLAttributes<HT
 export function SearchInput({ className = '', ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className={`relative ${className}`}>
-      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-meta pointer-events-none">🔍</span>
+      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex text-muted" aria-hidden="true"><MaterialIcon name="search" className="h-4 w-4" /></span>
       <input
-        className="w-full bg-bg-elevated border border-border rounded-md pl-7 pr-3 py-1.5 text-text text-base md:text-body-s font-body outline-none transition focus-ring placeholder:text-muted/50"
+        className="w-full bg-bg-elevated border border-border rounded-md pl-7 pr-3 py-1.5 text-text text-base md:text-body-s font-body outline-none transition focus-ring placeholder:text-muted"
         {...props}
       />
     </div>
@@ -75,8 +76,8 @@ export function Badge({ variant, children }: { variant: 'ok' | 'err' | 'warn' | 
 
 export function AimBadge({ source }: { source: string }) {
   const cls =
-    source === 'aim' ? 'bg-aim-subtle text-aim border-aim/30'
-    : source === 'pi' ? 'bg-accent-subtle text-accent border-accent/30'
+    source === 'aim' ? 'bg-aim-subtle text-aim border-aim'
+    : source === 'pi' ? 'bg-accent-subtle text-accent border-accent'
     : 'bg-bg-elevated text-muted border-border'
   return <span className={`px-1.5 py-[2px] rounded-full text-2xs font-bold border shrink-0 ${cls}`}>{source}</span>
 }
@@ -106,7 +107,7 @@ export function EmptyState({ icon, title, subtitle }: { icon: string; title: str
     <div className="flex flex-col items-center justify-center py-12 gap-2 animate-rise">
       <div className="text-[40px] opacity-[.12] select-none">{icon}</div>
       <div className="text-muted text-sm font-medium">{title}</div>
-      {subtitle && <div className="text-muted/60 text-body-s">{subtitle}</div>}
+      {subtitle && <div className="text-muted opacity-60 text-body-s">{subtitle}</div>}
     </div>
   )
 }

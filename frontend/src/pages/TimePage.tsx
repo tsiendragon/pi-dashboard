@@ -120,10 +120,10 @@ function CompositionChart({ points, segments }: { points: TimingDailyPoint[]; se
           })}
         </svg>
         {hovered && (
-          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[230px] rounded-md border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur-sm">
+          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[230px] rounded-md border border-border bg-card px-3 py-2 shadow-lg backdrop-blur-sm">
             <div className="text-xs font-medium text-text-strong">{hovered.point.date}</div>
             <div className="mt-1 text-2xs text-muted">合计 {formatDuration(hovered.total)}</div>
-            <div className="mt-2 space-y-1 border-t border-border/60 pt-1.5 text-2xs">
+            <div className="mt-2 space-y-1 border-t border-border pt-1.5 text-2xs">
               {segments.map(spec => (
                 <div key={spec.label} className="flex justify-between gap-4">
                   <span className="text-muted">{spec.label}</span>
@@ -192,10 +192,10 @@ function TtftChart({ points }: { points: TimingDailyPoint[] }) {
         ))}
       </svg>
       {hovered && (
-        <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[230px] rounded-md border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur-sm">
+        <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[230px] rounded-md border border-border bg-card px-3 py-2 shadow-lg backdrop-blur-sm">
           <div className="text-xs font-medium text-text-strong">{hovered.point.date}</div>
           <div className="mt-1 text-2xs text-info">平均首 token：{formatMs(hovered.average as number)}</div>
-          <div className="mt-2 space-y-1 border-t border-border/60 pt-1.5 text-2xs text-muted">
+          <div className="mt-2 space-y-1 border-t border-border pt-1.5 text-2xs text-muted">
             <div className="flex justify-between gap-4"><span>覆盖调用</span><span className="text-text">{hovered.point.ttftCalls} / {hovered.point.modelCalls}</span></div>
             <div className="flex justify-between gap-4"><span>平均 decode</span><span className="text-text">{formatRate(hovered.point.decodeMs > 0 ? hovered.point.outputTokens / (hovered.point.decodeMs / 1000) : 0)}</span></div>
           </div>
@@ -219,7 +219,7 @@ function ModelTable({ items }: { items: TimingModelSummary[] }) {
           <th className="py-2">输出 token</th>
         </tr></thead>
         <tbody>{items.length === 0 ? <tr><td colSpan={7} className="py-5 text-center text-muted">该时段暂无计时记录</td></tr> : items.map(item => (
-          <tr key={item.key} className="border-t border-border/60">
+          <tr key={item.key} className="border-t border-border">
             <td className="py-2 pr-3 font-mono whitespace-normal break-all text-text" title={item.key}>{item.key}{item.errors > 0 && <span className="ml-2 text-danger">{item.errors} 错误</span>}</td>
             <td className="py-2 pr-3 text-text">{formatCount(item.calls)}</td>
             <td className="py-2 pr-3 text-text">{item.ttftCalls > 0 ? `${formatMs(item.ttftAvgMs)} / ${formatMs(item.ttftP50Ms)} / ${formatMs(item.ttftP90Ms)}` : <span className="text-muted">未记录</span>}</td>
@@ -248,7 +248,7 @@ function ToolTable({ items }: { items: TimingToolSummary[] }) {
           <th className="py-2">最长</th>
         </tr></thead>
         <tbody>{items.length === 0 ? <tr><td colSpan={7} className="py-5 text-center text-muted">该时段暂无工具记录</td></tr> : items.map(item => (
-          <tr key={item.name} className="border-t border-border/60">
+          <tr key={item.name} className="border-t border-border">
             <td className="py-2 pr-3 font-mono text-text" title={item.name}>{item.name}{item.errors > 0 && <span className="ml-2 text-danger">{item.errors} 错误</span>}</td>
             <td className="py-2 pr-3 text-text">{formatCount(item.calls)}</td>
             <td className="py-2 pr-3 text-text-strong">{formatDuration(item.totalMs)}</td>
@@ -275,7 +275,7 @@ function SessionTable({ items }: { items: TimingSessionSummary[] }) {
           <th className="py-2">工具时间</th>
         </tr></thead>
         <tbody>{items.length === 0 ? <tr><td colSpan={5} className="py-5 text-center text-muted">该时段暂无 run 记录</td></tr> : items.slice(0, 20).map(item => (
-          <tr key={item.key} className="border-t border-border/60">
+          <tr key={item.key} className="border-t border-border">
             <td className="py-2 pr-3"><div className="whitespace-normal break-words text-text" title={item.label}>{displayWorktreePath(item.label)}</div><div className="text-2xs text-muted font-mono whitespace-normal break-all" title={item.key}>{item.key}</div></td>
             <td className="py-2 pr-3 text-text">{item.runs}</td>
             <td className="py-2 pr-3 text-text-strong">{formatDuration(item.activeMs)}</td>
@@ -355,7 +355,7 @@ export default function TimePage() {
           </div>
         </header>
 
-        {error && <div className="rounded-md border border-danger/30 bg-danger-subtle px-3 py-2 text-xs text-danger">计时统计读取失败：{error}</div>}
+        {error && <div className="rounded-md border border-danger bg-danger-subtle px-3 py-2 text-xs text-danger">计时统计读取失败：{error}</div>}
         {loading && !report && <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted">读取计时统计中…</div>}
 
         {report && total && <>

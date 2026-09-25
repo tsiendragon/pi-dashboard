@@ -133,7 +133,7 @@ const QuickLaunch = memo(function QuickLaunch({ onNewSession }: QuickLaunchProps
                 >
                   <span className="text-2xs">📁</span>
                   <span className="truncate flex-1">{entry.name}</span>
-                  <span className="text-2xs text-muted/40 shrink-0">Tab↹</span>
+                  <span className="text-2xs text-muted opacity-40 shrink-0">Tab↹</span>
                 </div>
               ))}
             </div>
@@ -157,7 +157,7 @@ const QuickLaunch = memo(function QuickLaunch({ onNewSession }: QuickLaunchProps
           >
             <span className="text-meta">📂</span>
             <span className="font-mono truncate flex-1">{dirName(d.path)}</span>
-            <span className="text-2xs text-muted/40 font-mono shrink-0 tabular-nums">{d.count}×</span>
+            <span className="text-2xs text-muted opacity-40 font-mono shrink-0 tabular-nums">{d.count}×</span>
             <span className="text-accent text-2xs opacity-0 group-hover:opacity-60 hover:!opacity-100 shrink-0 transition-opacity">▶</span>
             <span
               className="text-2xs text-muted opacity-0 group-hover:opacity-40 hover:!opacity-100 hover:text-danger shrink-0 cursor-pointer transition-opacity px-0.5"

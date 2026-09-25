@@ -67,9 +67,42 @@ describe('groupLiveToolEntries', () => {
       { type: 'message', message: { role: 'user', content: 'next' } },
     ])
 
-    expect(timeline).toHaveLength(1)
+    // The batch folds into one group; the later user turn stays visible.
+    expect(timeline).toHaveLength(2)
     expect(timeline[0]?.type).toBe('toolGroup')
     if (timeline[0]?.type === 'toolGroup') expect(timeline[0].items).toHaveLength(2)
+    expect(timeline[1]?.type).toBe('entry')
+  })
+
+  it('keeps the reply body of a message that issues several tool calls', () => {
+    const { items } = groupLiveToolEntries([
+      {
+        type: 'message',
+        id: 'assistant-batch',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: '先看两处' },
+            { type: 'text', text: '两处一起查' },
+            { type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: 'a' } },
+            { type: 'toolCall', id: 'call-2', name: 'bash', arguments: { command: 'b' } },
+          ],
+        },
+      },
+      result('call-1', 'read'),
+      result('call-2', 'bash'),
+    ])
+
+    // The calls still fold into one group, but the prose rides along as its own
+    // entry instead of disappearing behind the group.
+    expect(items.some(item => item.type === 'toolGroup')).toBe(true)
+    const body = items.find(item => item.type === 'entry')
+    expect(body).toBeTruthy()
+    if (body?.type === 'entry') {
+      const content = (body.entry as { message?: { content?: Array<{ type: string; text?: string }> } }).message?.content ?? []
+      expect(content.some(part => part.type === 'text' && part.text === '两处一起查')).toBe(true)
+      expect(content.some(part => part.type === 'toolCall')).toBe(false)
+    }
   })
 })
 

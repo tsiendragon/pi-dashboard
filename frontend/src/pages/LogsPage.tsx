@@ -115,7 +115,7 @@ export default function LogsPage() {
                 <tbody>
                   {filtered.map((l, i) => (
                     <tr key={i} className="hover:bg-bg-hover transition-colors group">
-                      <td className="px-2 py-0.5 text-muted/50 text-2xs whitespace-nowrap align-top select-none w-[140px]">
+                      <td className="px-2 py-0.5 text-muted opacity-50 text-2xs whitespace-nowrap align-top select-none w-[140px]">
                         {l.displayTime}
                       </td>
                       <td className="px-2 py-0.5 whitespace-nowrap align-top w-[60px]">

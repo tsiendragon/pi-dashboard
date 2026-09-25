@@ -39,13 +39,13 @@ const AssistantMessage = memo(function AssistantMessage({ content, isStreaming, 
     : undefined
 
   return <>
-    <div className={`pidash-msg-content msg-content px-3.5 py-2.5 text-sm leading-relaxed rounded-lg bg-card border border-border/60 text-text rounded-bl-[4px] shadow-[inset_0_1px_0_var(--card-hl)] select-text ${isStreaming ? 'streaming-cursor' : ''}`}>
+    <div className={`pidash-msg-content msg-content px-3.5 py-2.5 text-sm leading-relaxed rounded-lg bg-card border border-border text-text rounded-bl-[4px] shadow-[inset_0_1px_0_var(--card-hl)] select-text ${isStreaming ? 'streaming-cursor' : ''}`}>
       <MarkdownRenderer content={text} streaming={isStreaming} onFileOpen={onFileOpen} />
     </div>
     {costLabel && (
       <div className="flex items-center gap-1 px-1">
         <span
-          className="text-2xs font-mono text-muted/50 tabular-nums select-none"
+          className="text-2xs font-mono text-muted opacity-50 tabular-nums select-none"
           title={costTitle}
         >{costLabel}</span>
       </div>

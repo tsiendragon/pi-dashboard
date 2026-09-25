@@ -222,7 +222,7 @@ export const ResizableMermaid = memo(function ResizableMermaid({ code }: Props) 
     >
       <div
         ref={containerRef}
-        className="flex justify-center overflow-x-auto min-h-[60px] rounded-md border border-transparent group-hover:border-border/60 transition-colors"
+        className="flex justify-center overflow-x-auto min-h-[60px] rounded-md border border-transparent group-hover:border-border transition-colors"
       />
 
       {/* Right-edge drag handle — rendered before toolbar so toolbar stacks on top */}
@@ -230,7 +230,7 @@ export const ResizableMermaid = memo(function ResizableMermaid({ code }: Props) 
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize diagram"
-        className="absolute top-0 right-0 w-2 h-full cursor-ew-resize opacity-0 group-hover:opacity-100 bg-accent/30 rounded-r-md transition-opacity"
+        className="absolute top-0 right-0 w-2 h-full cursor-ew-resize opacity-0 group-hover:opacity-100 bg-accent-subtle rounded-r-md transition-opacity"
         onPointerDown={onResizePointerDown}
       />
 
@@ -291,7 +291,7 @@ function ToolbarButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="px-2 py-0.5 text-2xs font-medium rounded bg-bg-elevated/95 border border-border text-muted hover:text-text hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer backdrop-blur-sm"
+      className="px-2 py-0.5 text-2xs font-medium rounded bg-bg-elevated border border-border text-muted hover:text-text hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer backdrop-blur-sm"
     >
       {children}
     </button>

@@ -16,9 +16,9 @@ export const COMPLETION_DOT: Record<Completion, string> = {
 
 export const COMPLETION_CHIP: Record<Completion, string> = {
   todo: 'bg-bg-elevated text-muted border-border',
-  doing: 'bg-info/15 text-info border-info/25',
-  done: 'bg-ok/15 text-ok border-ok/25',
-  paused: 'bg-warn/15 text-warn border-warn/25',
+  doing: 'bg-bg-hover text-info border-info',
+  done: 'bg-ok-subtle text-ok border-ok',
+  paused: 'bg-warn-subtle text-warn border-warn',
 }
 
 export const KIND_LABEL: Record<string, string> = { epic: 'Epic', task: 'Task', todo: 'Todo', item: 'Item' }
@@ -34,7 +34,7 @@ export function statusLabel(task: TaskFact): string {
 
 export function statusChipClass(task: TaskFact): string {
   if (task.kind === 'epic') {
-    return task.archived ? 'bg-bg-elevated text-muted border-border' : 'bg-accent-subtle text-accent border-accent/25'
+    return task.archived ? 'bg-bg-elevated text-muted border-border' : 'bg-accent-subtle text-accent border-accent'
   }
   return COMPLETION_CHIP[task.completion]
 }
