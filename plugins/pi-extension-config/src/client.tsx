@@ -185,7 +185,7 @@ export function ExtensionConfigSettings() {
       setState(data)
       setDrafts(
         Object.fromEntries(
-          data.configs.map((c) => [c.name, (c.content ?? c.seed ?? {}) as Record<string, unknown>]),
+          (data.configs ?? []).map((c) => [c.name, (c.content ?? c.seed ?? {}) as Record<string, unknown>]),
         ),
       )
       setError(null)
@@ -247,8 +247,10 @@ export function ExtensionConfigSettings() {
 
   const summary = useMemo(() => {
     if (!state) return null
-    const existing = state.configs.filter((c) => c.exists).length
-    return `${existing}/${state.configs.length} 个配置文件已存在 · ${state.agentDir}`
+    // Defensive: a malformed/partial payload must not take the whole page down.
+    const configs = state.configs ?? []
+    const existing = configs.filter((c) => c.exists).length
+    return `${existing}/${configs.length} 个配置文件已存在 · ${state.agentDir ?? ''}`
   }, [state])
 
   if (error) {
@@ -271,7 +273,7 @@ export function ExtensionConfigSettings() {
         </p>
       </div>
 
-      {state.configs.map((entry) => (
+      {(state.configs ?? []).map((entry) => (
         <div key={entry.name} className="rounded-lg border border-border bg-card p-3 space-y-2">
           <div className="flex flex-wrap items-baseline gap-2">
             <span className="text-[13px] font-semibold text-text-strong">{entry.name}</span>

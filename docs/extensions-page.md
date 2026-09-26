@@ -149,6 +149,20 @@ npx vitest run backend/__tests__/ext-inventory.test.ts   # 5 passed
 给别人的完整使用步骤（装扩展、装 dashboard、踩坑）在扩展仓库：
 <https://github.com/tsiendragon/pi-tsien-extension/blob/main/docs/quickstart.md>
 
+## Tab 结构（本轮）
+
+页面按「回答不同问题」拆成 4 个 tab，而不是一长页：
+
+| Tab | 内容 | 计数徽章 |
+|---|---|---|
+| **已安装** | 概览 6 卡（可点按筛选）+ 过滤条 + ① 由 package 提供 / ② 直接路径 / ③ 包自带（autoload）/ ④ 未纳管 | 条目数 |
+| **安装新扩展** | 安装/更新/卸载表单（含将执行命令预览、快速填入、npm 搜索）+ **已安装的 packages 表**（来源类型/形态/入口数/解析路径 + 更新/卸载） | package 数 |
+| **配置** | 各扩展自己的 JSON 配置；**复用 Settings → General 的同一套面板**（`plugins/pi-extension-config` 的 `ExtensionConfigSettings`，通过生成的插件注册表取用，不重写编辑器） | — |
+| **审计与诊断** | 操作审计表（含回滚）+ 跨包引用静态扫描 + 读取提示 / drift | 审计条数 |
+
+- tab 会写进 URL hash（`#installed` / `#install` / `#config` / `#diagnostics`），刷新或分享链接能落在同一视图。
+- 顺带修掉一个真 bug：配置面板在接口返回体缺 `configs` 时 `state.configs.filter` 抛异常 → **整页白屏**；已加防御（`?? []`）并加了渲染测试覆盖。
+
 ## 页面改版（交互 / 视觉）
 
 第一版是「一长页只读清单」，信息能看但不趁手。改版要点：
