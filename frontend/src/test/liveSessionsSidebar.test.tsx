@@ -10,8 +10,8 @@ function session(processInstanceId: string, pid: number, over: Partial<LiveSessi
     processInstanceId,
     sessionId: `session-${processInstanceId}`,
     pid,
-    cwd: `/home/you/repos/app-${pid}`,
-    canonicalCwd: `/home/you/repos/app-${pid}`,
+    cwd: `~/repos/app-${pid}`,
+    canonicalCwd: `~/repos/app-${pid}`,
     mode: 'tui',
     status: 'idle',
     claim: { state: 'unclaimed' },
@@ -71,7 +71,7 @@ function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string,
     }
     if (url.startsWith('/api/pty/sessions/') && method === 'DELETE') return ok({ ok: true })
     if (url.startsWith('/api/path-complete')) {
-      return ok({ dir: '/home/you/repos', prefix: '', entries: [{ name: 'pi-dashboard', path: '/home/you/repos/pi-dashboard', isDir: true }] })
+      return ok({ dir: '~/workspace/repos', prefix: '', entries: [{ name: 'pi-dashboard', path: '~/repos/pi-dashboard', isDir: true }] })
     }
     if (url.includes('/commands') && method === 'POST') return ok({ ok: true, result: {} })
     if (url === '/api/live-sessions/reload' && method === 'POST') return ok({ ok: true, result: { reloaded: ['pid-a', 'pid-b'], skipped: ['pid-child'], failed: [] } })
@@ -308,7 +308,7 @@ describe('LiveSessionsList sidebar', () => {
     const input = screen.getByPlaceholderText(/工作目录/)
     expect(screen.getByText(/必须是/)).toBeInTheDocument()
 
-    fireEvent.change(input, { target: { value: '/home/you/' } })
+    fireEvent.change(input, { target: { value: '~/workspace/' } })
     fireEvent.keyDown(input, { key: 'Tab' })
     // the completion is portaled; the directory entry is what the user picks
     await waitFor(() => expect(screen.getByText(/pi-dashboard\//)).toBeInTheDocument())
