@@ -16,8 +16,8 @@ function summary(processInstanceId: string, revision = 1, sequence = 0): LiveSes
     processInstanceId,
     sessionId: `session-${processInstanceId}`,
     pid: processInstanceId === 'a' ? 1 : 2,
-    cwd: '/mnt/workspace/lilong/repos/worktree/task',
-    canonicalCwd: '/mnt/workspace/lilong/repos/worktree/task',
+    cwd: '~/repos/worktree/task',
+    canonicalCwd: '~/repos/worktree/task',
     mode: 'tui', status: 'idle', claim: { state: 'unclaimed' },
     startedAt: processInstanceId === 'a' ? 1 : 2, lastActivityAt: revision, revision, eventSequence: sequence,
   }
