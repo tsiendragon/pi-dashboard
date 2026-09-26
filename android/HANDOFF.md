@@ -1,7 +1,7 @@
 # PiDash Android · 交接文档
 
 > 最后更新：2026-09（4 轮代码审查完成后）
-> 设计文档：[`../docs/android-app-design.md`](../docs/android-app-design.md) · 网络接入：[`../docs/remote-access-deployment.md`](../docs/remote-access-deployment.md)
+> 设计文档：[`../docs/android-app-design.md`](../docs/android-app-design.md) · 网络接入：[`../guide/remote-access-deployment.md`](../guide/remote-access-deployment.md)
 > 本文件是**唯一**的进度/交接来源，避免多份文档漂移。
 
 ---
