@@ -65,6 +65,21 @@ function expandVars(
   return { resolved, missing }
 }
 
+/** Name of an `npm:<spec>` source, without the `npm:` prefix and without a version pin. */
+function npmSourceName(source: string): string | null {
+  if (!source.startsWith('npm:')) return null
+  const spec = source.slice('npm:'.length).trim()
+  if (!spec) return null
+  if (spec.startsWith('@')) {
+    const slash = spec.indexOf('/')
+    if (slash === -1) return spec
+    const versionAt = spec.indexOf('@', slash)
+    return versionAt === -1 ? spec : spec.slice(0, versionAt)
+  }
+  const versionAt = spec.indexOf('@')
+  return versionAt === -1 ? spec : spec.slice(0, versionAt)
+}
+
 function classifySource(source: string): PackageKind {
   if (source.startsWith('http://') || source.startsWith('https://') || source.startsWith('git@') || source.endsWith('.git')) return 'git'
   if (source.startsWith('file:') || isAbsolute(source) || source.startsWith('.')) return 'local'
@@ -131,19 +146,41 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
     const rawSource = typeof item === 'string' ? item : asString(objectForm?.['source'])
     if (!rawSource) continue
     const { resolved, missing } = expandVars(rawSource, env)
-    const bases: Array<{ label: 'agent-dir' | 'pi-dir' | 'cwd'; dir: string }> = isAbsolute(resolved) || classifySource(resolved) !== 'local'
-      ? []
-      : [
-          { label: 'agent-dir', dir: agentDir },
-          { label: 'pi-dir', dir: resolve(agentDir, '..') },
-          { label: 'cwd', dir: process.cwd?.() ?? agentDir },
+    // `pi install npm:<name>` materialises the package under <agentDir>/npm/node_modules/<name>
+    // (project scope: <cwd>/.pi/npm/node_modules/<name>) — mirror pi's getManagedNpmInstallPath.
+    const npmName = npmSourceName(resolved)
+    const cwd = process.cwd?.() ?? agentDir
+    const bases: Array<{ label: 'agent-dir' | 'pi-dir' | 'cwd'; dir: string }> = npmName
+      ? [
+          { label: 'agent-dir', dir: join(agentDir, 'npm', 'node_modules', npmName) },
+          { label: 'cwd', dir: join(cwd, '.pi', 'npm', 'node_modules', npmName) },
         ]
+      : isAbsolute(resolved) || classifySource(resolved) !== 'local'
+        ? []
+        : [
+            { label: 'agent-dir', dir: agentDir },
+            { label: 'pi-dir', dir: resolve(agentDir, '..') },
+            { label: 'cwd', dir: cwd },
+          ]
     let resolvedPath: string | null = null
     let resolvedBase: ExtensionPackage['resolvedBase'] = null
     if (missing.length === 0) {
       if (bases.length === 0) {
         resolvedPath = resolved
         resolvedBase = 'agent-dir'
+      } else if (npmName) {
+        // For npm sources the candidate dirs are already absolute package paths.
+        for (const candidate of bases) {
+          if (io.isDirectory(candidate.dir)) {
+            resolvedPath = candidate.dir
+            resolvedBase = candidate.label
+            break
+          }
+        }
+        if (resolvedPath === null) {
+          resolvedPath = bases[0]!.dir
+          resolvedBase = bases[0]!.label
+        }
       } else {
         for (const candidate of bases) {
           const attempt = resolve(candidate.dir, resolved)
@@ -177,6 +214,7 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
         null,
       rawSource,
       form: typeof item === 'string' ? 'string' : 'object',
+      sourceKind: npmName ? 'npm' : classifySource(resolved) === 'git' ? 'git' : 'local',
       resolved: resolvedPath,
       exists,
       kind: missing.length > 0 ? 'unresolved' : classifySource(rawSource),
@@ -190,6 +228,9 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
       autoload: typeof item === 'string' ? true : objectForm?.['autoload'] !== false,
     })
     if (missing.length > 0) warnings.push(`package source ${rawSource} references unset variable(s): ${missing.join(', ')}`)
+    else if (!exists && npmName) warnings.push(`npm 包尚未安装：${npmName}（先执行 pi install npm:${npmName}）`)
+    else if (!exists && classifySource(resolved) === 'git')
+      warnings.push(`remote package (${resolved})：本地无缓存，静态分析跳过`)
     else if (!exists) warnings.push(`package source not found on disk: ${resolvedPath}`)
   }
 
