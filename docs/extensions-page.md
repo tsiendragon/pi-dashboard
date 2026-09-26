@@ -142,3 +142,8 @@ npx vitest run backend/__tests__/ext-inventory.test.ts   # 5 passed
 
 `sourceKind` 字段（`local` / `npm` / `git`）随清单一起返回，页面上用来区分来源。`pi install npm:<name>` 装完后，
 `pi-tsien-shared` 这类内部依赖会由 npm 自动装到同一 `node_modules` 下，页面能把它们算进「共享代码」统计。
+
+## 外部用户上手
+
+给别人的完整使用步骤（装扩展、装 dashboard、踩坑）在扩展仓库：
+<https://github.com/tsiendragon/pi-tsien-extension/blob/main/docs/quickstart.md>
