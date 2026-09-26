@@ -143,6 +143,40 @@ PI_DASH_PORT=7777 ./run.sh     # 构建前端并前台启动
   一键安装脚本会把 `PI_SCRIPT` 写进 `<agent dir>/dashboard.env`，所以推荐路径无需手工配置。
 - 扩展配置改动后需要让 Pi 生效：在 pi 里执行 `/reload`，或重启 dashboard 的会话进程。
 
+### 扩展管理页面（Extensions）
+
+启动后浏览器打开 **`http://<host>:<端口>/extensions`**（默认 `http://localhost:7777/extensions`）。
+它把「Pi 到底会加载什么」变成可核对的事实，并允许直接管理：
+
+| 分区 | 内容 |
+|---|---|
+| 汇总 | packages / 已加载 / 启用·禁用 / 来自 package / 直接路径 / 未纳管 / 需补丁 / 跨包引用 |
+| ① 由 package 提供 | 包名、版本、是否在包 manifest 里声明（declared/undeclared/duplicate/missing） |
+| ② 直接路径 | 单文件条目（不伪造版本号） |
+| ③ 由 package 自带（autoload） | `pi install` 写入的 string 形态包自带的条目 |
+| ④ 自动发现但未纳管 | `<agent>/extensions/*.ts` 里会被同步器移入 quarantine 的散文件 |
+| ⑤ 安装 / 卸载 | npm registry 搜索、包名、本地路径、git URL |
+| ⑥ 操作审计 | 装/卸/启停/排序/回滚记录（带备份路径，可一键回滚） |
+| ⑦ 共享代码（静态扫描） | 哪些包的代码被别的条目 import（说明「禁用 ≠ 卸载代码」） |
+
+**两个必须知道的点：**
+
+1. **写操作需要先认证一次**（只读浏览不需要）。dashboard 默认监听 `0.0.0.0` 且 API 默认无认证，
+   所以启停/排序/安装/回滚都要求 live-session 浏览器认证：在终端或 dashboard 的 live-session 页
+   粘贴启动日志里的令牌，浏览器随后自动带 cookie。
+   想减少暴露面就让 dashboard 只听本机：`PI_DASH_HOST=127.0.0.1`（见 §8）。
+2. 每次写 `settings.json` 前会自动备份到 `<agent dir>/backups/settings-<时间>.json`，
+   审计写在 `<agent dir>/extension-audit.jsonl`；回滚即用某个备份覆盖回去（回滚本身也会先备份）。
+
+装扩展的两条路（页面里都支持）：
+
+```bash
+pi install npm:pi-tsien-web-tools                            # 从公共 npm（前缀 npm: 不能省）
+pi install git:github.com/tsiendragon/pi-tsien-extension     # 从 GitHub 一条命令装齐 25 个扩展
+```
+
+细节见 `docs/extensions-page.md`；外部用户视角的完整步骤见扩展仓库的 `docs/quickstart.md`。
+
 ### 模型凭证
 
 三种写法，效果一样（都会传给它派生的每个 pi 子进程），选你顺手的：
@@ -291,6 +325,8 @@ PI_DASH_HOST=your-server PI_DASH_USER=you ./pi-dash-connect.sh
 4. `curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:7777/` 返回 `200`
 5. 在 dashboard 里发一条消息，能正常流式返回（说明模型凭证正确）
 6. 终端里 `pi` 能启动，且 `/sidebar`、`/effort`、`/schedule` 等命令存在（说明扩展已加载）
+7. 打开 `http://localhost:7777/extensions`，清单里的条目数与 `settings.json` 一致（本机实测 29 条、
+   `drift` 为空）；页面顶部「跨包引用」能看到 `pi-tsien-shared` 被哪些条目 import
 
 ---
 
