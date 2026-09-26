@@ -1449,7 +1449,7 @@ Planning overlay: `~/.pi/tasks/planning.json`. Local tasks: `~/.pi/tasks/tasks.j
 | `PI_DASH_PORT` | `7777` | Server listen port |
 | `WORKSPACE_DIR` | — | Additional workspace directory to scan |
 | `PI_RUNTIME` | `dashboard` | Set in pi subprocess environment |
-| `PI_TASK_JOURNAL_ROOT` | — | Back-compat override for the task journal root (auto-detected otherwise) |
+| `PI_TASK_JOURNAL_ROOT` | — | Overrides `tasks.journal.roots` (nothing is auto-detected by default) |
 
 ---
 
