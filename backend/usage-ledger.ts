@@ -3,6 +3,8 @@ import { appendFile, mkdir, readFile, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
 import path from 'node:path'
+import { join } from 'node:path'
+import { agentDir } from './env-file.js'
 import type { LiveSessionEventMessage, LiveSessionSummary } from '../shared/src/live-sessions.js'
 import type {
   UsageDailyPoint,
@@ -12,7 +14,8 @@ import type {
   UsageTotals,
 } from '../shared/src/usage.js'
 
-export const DEFAULT_USAGE_DIRECTORY = '/mnt/workspace/lilong/agent/pi/token-usage'
+/** Default ledger location (portable); override with `PI_DASH_USAGE_DIR`. */
+export const DEFAULT_USAGE_DIRECTORY = join(agentDir(), 'token-usage')
 
 export interface UsageLedgerMessageMeta {
   sessionId?: string

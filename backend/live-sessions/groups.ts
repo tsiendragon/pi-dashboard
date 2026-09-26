@@ -1,9 +1,12 @@
+import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { LiveSessionGroup } from '../../shared/src/live-sessions.js'
+import { agentDir } from '../env-file.js'
 
-export const DEFAULT_LIVE_SESSION_GROUPS_PATH = '/mnt/workspace/lilong/agent/pi/live-session-groups.json'
+/** Default state file (portable); override with an env var. */
+export const DEFAULT_LIVE_SESSION_GROUPS_PATH = join(agentDir(), 'pi', 'live-session-groups.json')
 
 type StoredGroups = {
   version: 1

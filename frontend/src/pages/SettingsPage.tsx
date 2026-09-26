@@ -1255,7 +1255,7 @@ function TasksTab() {
 
   if (!config) return <div className="text-muted text-body-s py-4">Loading…</div>
 
-  const tasks = config.tasks ?? { enabled: true, journal: { autoDetect: true, roots: ['~/repos/lilong-task'], enabled: true }, defaultView: 'execute' as const }
+  const tasks = config.tasks ?? { enabled: true, journal: { autoDetect: true, roots: [], enabled: true }, defaultView: 'execute' as const }
   const journal = tasks.journal ?? { autoDetect: true, roots: [], enabled: true }
   const setTasks = (patch: Partial<NonNullable<DashConfig['tasks']>>) => save({ ...config, tasks: { ...tasks, ...patch } })
   const setJournal = (patch: Partial<NonNullable<DashConfig['tasks']>['journal']>) => setTasks({ journal: { ...journal, ...patch } })
@@ -1281,7 +1281,7 @@ function TasksTab() {
         <div className="divide-y divide-border">
           <Toggle label="Enable task panel" hint="Show the Tasks page in navigation" checked={tasks.enabled !== false} onChange={v => setTasks({ enabled: v })} />
           <Toggle label="Include task journal" hint="Read an external task-journal repo (read-only)" checked={journal.enabled !== false} onChange={v => setJournal({ enabled: v })} />
-          <Toggle label="Auto-detect journal path" hint="Probe conventional locations (e.g. ~/repos/lilong-task)" checked={journal.autoDetect !== false} onChange={v => setJournal({ autoDetect: v })} />
+          <Toggle label="Auto-detect journal path" hint="Use the first configured root that exists" checked={journal.autoDetect !== false} onChange={v => setJournal({ autoDetect: v })} />
         </div>
       </Card>
 
@@ -1292,7 +1292,7 @@ function TasksTab() {
           value={rootsText}
           onChange={e => setRootsText(e.target.value)}
           onBlur={saveRoots}
-          placeholder="~/repos/lilong-task"
+          placeholder="~/repos/my-task-journal"
         />
         <div className="text-meta text-muted mt-2">
           Stored in <span className="font-mono">~/.pi/dashboard.json</span> · local ad-hoc tasks: <span className="font-mono">~/.pi/tasks/tasks.json</span>

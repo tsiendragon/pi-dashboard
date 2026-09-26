@@ -12,6 +12,8 @@
 import { readdir, mkdir, open, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { dateInTimezone } from './usage-ledger.js'
+import { join } from 'node:path'
+import { agentDir } from './env-file.js'
 import type {
   TimingCoverage,
   TimingDailyPoint,
@@ -23,7 +25,8 @@ import type {
   TimingTotals,
 } from '../shared/src/timing.js'
 
-export const DEFAULT_TIMING_DIRECTORY = '/mnt/workspace/lilong/agent/pi/timing'
+/** Default ledger location (portable); override with `PI_DASH_TIMING_DIR`. */
+export const DEFAULT_TIMING_DIRECTORY = join(agentDir(), 'pi-timing')
 
 /** Percentile samples are kept this long; per-day sums are kept indefinitely. */
 const SAMPLE_RETENTION_MS = 45 * 24 * 60 * 60 * 1000
