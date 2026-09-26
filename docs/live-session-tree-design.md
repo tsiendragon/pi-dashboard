@@ -235,7 +235,7 @@ pi.on("session_tree", (_event, ctx) => {
   publish("session_tree", { newLeafId, oldLeafId }, ctx)   // 通知 web 立即重取
 })
 ```
-- `session_tree` 是 pi 已有的扩展事件（`docs/extensions.md:493-513`，携带 `newLeafId`/`oldLeafId`）。
+- `session_tree` 是 pi 已有的扩展事件（`guide/extensions.md`，携带 `newLeafId`/`oldLeafId`）。
 - 现有 `bindings` 表（`routes/live-sessions.ts`）需加一条 `['session_tree', 'live_session_tree_changed']` 或复用 `live_session_event`。
 - **不改协议版本号**，因为只新增一个上行事件、不新增下行命令。
 

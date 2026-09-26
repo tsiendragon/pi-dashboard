@@ -13,7 +13,7 @@
 |---|---|
 | UI 技术 | **Kotlin + Jetpack Compose**（纯原生，非 WebView 壳） |
 | 机器数 | **多台**，一个界面汇总 |
-| 网络位置 | 手机不常开 tailscale → 经**公网服务器**（见 `docs/remote-access-deployment.md`） |
+| 网络位置 | 手机不常开 tailscale → 经**公网服务器**（见 `guide/remote-access-deployment.md`） |
 | 现有 `android/` | 原为 **WebView 壳**（sam 所做），本方案**取代**它（git 历史保留，可回退） |
 
 ### 0.1 ⚠️ 现有工程的两个坑（均已在实现中解决）
@@ -153,7 +153,7 @@ App 只需**一个**凭据：**边缘（nginx）凭据**。
 
 - OkHttp `Interceptor` 给**所有请求**（含 WS 升级）加 `Authorization`
 - 好处：dashboard 本身缺认证**不影响**——nginx 已把关；App 无需第二套 token
-- 见 `docs/remote-access-deployment.md` §4/§10
+- 见 `guide/remote-access-deployment.md` §4/§10
 
 ---
 

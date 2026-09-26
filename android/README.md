@@ -3,7 +3,7 @@
 一个 **Kotlin + Jetpack Compose** 的原生 Android 客户端，用一个界面**汇总多台机器**上的 pi agent 会话。
 
 > 设计见 [`../docs/android-app-design.md`](../docs/android-app-design.md)。
-> 网络接入见 [`../docs/remote-access-deployment.md`](../docs/remote-access-deployment.md)。
+> 网络接入见 [`../guide/remote-access-deployment.md`](../guide/remote-access-deployment.md)。
 > **进度 / 交接 / 验证证据 / 已修问题清单见 [`HANDOFF.md`](./HANDOFF.md)**（唯一权威来源）。
 
 ## 与旧版的关系

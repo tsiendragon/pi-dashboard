@@ -50,6 +50,11 @@ Open http://localhost:7777.
 
 ### Standalone install (dashboard + companion extensions)
 
+**Deployment guide (canonical):** [`guide/README.md`](guide/README.md) — the three layers
+(pi fork build / `pi-tsien-extension` / this dashboard), install paths, env vars, and verification.
+Module docs: [`guide/pi-runtime.md`](guide/pi-runtime.md), [`guide/extensions.md`](guide/extensions.md),
+[`guide/dashboard.md`](guide/dashboard.md).
+
 To stand up this dashboard together with the generic `pi-tsien-extension` set on a clean machine
 (no org-specific marketplace packages, no `task-pilot`/`taskspace`):
 
@@ -58,7 +63,7 @@ bash scripts/install-standalone.sh            # -y to skip prompts, --help for o
 ```
 
 Step-by-step manual equivalent, prerequisites, service setup, and troubleshooting:
-[docs/standalone-install.md](docs/standalone-install.md).
+[guide/standalone-install.md](guide/standalone-install.md).
 
 ### Requirements
 
@@ -91,10 +96,9 @@ or a systemd unit. Files are loaded at startup in this order, and variables alre
 win: `$PI_DASH_ENV_FILE` → `<repo>/.env` → `<PI_CODING_AGENT_DIR | ~/.pi/agent>/dashboard.env`.
 
 Template: [`.env.example`](.env.example). Rules, full variable list and troubleshooting:
-[docs/env-configuration.md](docs/env-configuration.md). Per-extension JSON configs (bash-digest,
-observation-pack, auto-compact-target, …) are editable in **Settings → general → Extension config**:
-[docs/extension-config-ui.md](docs/extension-config-ui.md). Where every config file lives:
-[docs/config-inventory.md](docs/config-inventory.md).
+[guide/config.md](guide/config.md) §2. Per-extension JSON configs (bash-digest, observation-pack,
+auto-compact-target, …) are editable in **Settings → general → Extension config**; where every config
+file lives: [guide/config.md](guide/config.md) (the canonical config map).
 
 ## Architecture
 

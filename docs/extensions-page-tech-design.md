@@ -1,7 +1,7 @@
 # Extensions 管理页面 — 技术设计
 
 状态：**设计稿（未开工）**。作者：agent，2026-09-25。目标仓库：`tsiendragon/pi-dashboard`。
-关联：`docs/config-inventory.md`（配置盘点）、`docs/extension-config-ui.md`（已实现的配置卡片）、
+关联：`guide/config.md`（配置总览/盘点）、`backend/routes/ext-config.ts`（已实现的配置卡片）、
 `pi-tsien-extension/docs/pi-extension-management.md`（同步器语义）。
 
 ## 0. 结论摘要
@@ -138,7 +138,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 
 - **安装 = 任意代码执行**：npm/git package 在会话启动时被 import。必须二次确认 + 展示来源
   （包名、版本、维护者、发布时间、下载量），并记录审计日志；默认不允许「一次装多个」的批量静默安装。
-- **鉴权**：dashboard 现有部署可能是内网/隧道（`docs/remote-access-deployment.md`）。暴露公网时该页必须鉴权。
+- **鉴权**：dashboard 现有部署可能是内网/隧道（`guide/remote-access-deployment.md`）。暴露公网时该页必须鉴权。
 - **生效时机**：扩展只在会话启动时加载 → 改动后需要**新开会话**。实测 `/reload` **不会**重载扩展代码
   （老会话仍跑旧代码）；页面要给准确提示，不要照抄 CLI 的「/reload 生效」。
 - **回滚**：每次写操作都可一键还原（备份 + diff）。

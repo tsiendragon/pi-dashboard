@@ -2,18 +2,23 @@
 Description=pi-dashboard server
 After=network.target
 
+# NOTE: 这是模板示例，路径为占位符。推荐用安装脚本自动生成真实 unit：
+#   bash scripts/install-standalone.sh --service
+# （它会按当前安装位置填入 User / WorkingDirectory / PATH / HOME / PI_CODING_AGENT_DIR）
+
 [Service]
 Type=simple
-User=samfp
-WorkingDirectory=/local/home/samfp/pi-dashboard
-Environment=PATH=/home/samfp/.local/share/mise/installs/node/24.7.0/bin:/usr/local/bin:/usr/bin:/bin
-Environment=HOME=/home/samfp
+User=%I
+WorkingDirectory=/path/to/pi-dashboard
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/your-user
 Environment=PI_DASH_PORT=7777
+Environment=PI_CODING_AGENT_DIR=/home/your-user/.pi/agent
 # WASM blast-radius flags (SDK-migration slice 8): launch-time V8 isolate flags
 # on the server node process. --import tsx runs the TS entry directly (no build
 # step); the flags reduce the chance of an uncatchable WASM abort killing the
 # in-process agent + server. Server logs the effective V8 flags on boot.
-ExecStart=/home/samfp/.local/share/mise/installs/node/24.7.0/bin/node --no-wasm-tier-up --liftoff-only --wasm-lazy-compilation --import tsx backend/server.ts
+ExecStart=/usr/bin/node --no-wasm-tier-up --liftoff-only --wasm-lazy-compilation --import tsx backend/server.ts
 Restart=always
 RestartSec=2
 
