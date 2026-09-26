@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { PageHeader, Card, CardTitle, SearchInput, Badge } from '../components/ui'
+import { useNavigate } from 'react-router-dom'
+import { PageHeader, Card, CardTitle } from '../components/ui'
 import MaterialIcon from '../components/MaterialIcon'
 import InfoTip from '../components/InfoTip'
 import { api, j } from '../api/client'
@@ -175,15 +176,6 @@ interface PiSettings {
   [key: string]: unknown
 }
 
-interface GalleryPkg {
-  name: string
-  description: string
-  version: string
-  author: string
-  date: string
-  links: { npm?: string; homepage?: string; repository?: string }
-}
-
 /* ── Feedback banner ── */
 function Feedback({ feedback }: { feedback: { type: 'ok' | 'err'; msg: string } | null }) {
   if (!feedback) return null
@@ -198,7 +190,6 @@ function Feedback({ feedback }: { feedback: { type: 'ok' | 'err'; msg: string } 
 function usePiSettings() {
   const [settings, setSettings] = useState<PiSettings | null>(null)
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
-
   useEffect(() => {
     fetch('/api/pi/settings').then(j).then(setSettings).catch(() => {})
   }, [])
@@ -493,61 +484,12 @@ function TerminalTab() {
 
 /* ── GENERAL TAB (packages) ── */
 function GeneralTab() {
+  const navigate = useNavigate()
   const [settings, setSettings] = useState<PiSettings | null>(null)
-  const [gallery, setGallery] = useState<GalleryPkg[]>([])
-  const [galleryFilter, setGalleryFilter] = useState('')
-  const [galleryLoading, setGalleryLoading] = useState(false)
-  const [installing, setInstalling] = useState<string | null>(null)
-  const [installInput, setInstallInput] = useState('')
-  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
 
   useEffect(() => {
     fetch('/api/pi/settings').then(j).then(setSettings).catch(() => {})
   }, [])
-
-  const loadGallery = useCallback(async () => {
-    setGalleryLoading(true)
-    try {
-      const d = await fetch('/api/pi/gallery').then(j)
-      setGallery(d.packages || [])
-    } catch {}
-    setGalleryLoading(false)
-  }, [])
-
-  useEffect(() => { loadGallery() }, [loadGallery])
-
-  const installedPkgs = (settings?.packages || []).map(p => typeof p === 'string' ? p : (p as any).source || JSON.stringify(p))
-
-  const installPkg = useCallback(async (source: string) => {
-    setInstalling(source)
-    setFeedback(null)
-    try {
-      await fetch('/api/pi/packages/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source }) }).then(j)
-      setFeedback({ type: 'ok', msg: `Installed ${source}` })
-      const s = await fetch('/api/pi/settings').then(j)
-      setSettings(s)
-    } catch (e: any) { setFeedback({ type: 'err', msg: e.message || 'Install failed' }) }
-    setInstalling(null)
-    setInstallInput('')
-  }, [])
-
-  const removePkg = useCallback(async (source: string) => {
-    setInstalling(source)
-    setFeedback(null)
-    try {
-      await fetch('/api/pi/packages/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source }) }).then(j)
-      setFeedback({ type: 'ok', msg: `Removed ${source}` })
-      const s = await fetch('/api/pi/settings').then(j)
-      setSettings(s)
-    } catch (e: any) { setFeedback({ type: 'err', msg: e.message || 'Remove failed' }) }
-    setInstalling(null)
-  }, [])
-
-  const isInstalled = (name: string) => installedPkgs.some(p => p.includes(name))
-
-  const filteredGallery = gallery.filter(p =>
-    !galleryFilter || (p.name + p.description + p.author).toLowerCase().includes(galleryFilter.toLowerCase())
-  )
 
   if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
 
@@ -561,44 +503,21 @@ function GeneralTab() {
 
   return (
     <div className="space-y-4">
-      <Feedback feedback={feedback} />
-
       <Card>
-        <CardTitle>Installed Packages <InfoTip text="Extensions, skills, and themes installed via pi install" /></CardTitle>
-        <div className="flex gap-2 mb-3">
-          <input
-            className="bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-text text-body-s font-body outline-none flex-1 transition-colors focus-ring font-mono"
-            placeholder="npm:package-name or git:github.com/user/repo"
-            value={installInput}
-            onChange={e => setInstallInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && installInput.trim()) installPkg(installInput.trim()) }}
-          />
+        <CardTitle>Extensions &amp; Packages <InfoTip text="安装/卸载/更新、启停、排序、配置、审计与回滚集中在 Extensions 页" /></CardTitle>
+        <div className="flex flex-wrap items-center gap-3 py-1">
+          <span className="text-body-s text-muted">
+            包与扩展的管理（安装 npm/git/本地路径、启停、排序、配置面板、操作审计与回滚）已集中到 Extensions 页。
+            这里只保留 <span className="text-text">Pi 的设置字段</span>（下方路径类配置）。
+          </span>
           <button
-            className="px-3 py-1.5 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30"
-            disabled={!installInput.trim() || !!installing}
-            onClick={() => installPkg(installInput.trim())}
+            type="button"
+            onClick={() => navigate('/extensions#install')}
+            className="shrink-0 rounded-md border border-accent px-3 py-1.5 text-meta font-medium text-accent transition hover:bg-accent hover:text-accent-fg"
           >
-            {installing === installInput.trim() ? '⏳' : '📦'} Install
+            打开 Extensions → 安装新扩展
           </button>
         </div>
-        {installedPkgs.length === 0 ? (
-          <div className="text-body-s text-muted py-2">No packages installed</div>
-        ) : (
-          <div className="space-y-1">
-            {installedPkgs.map(p => (
-              <div key={p} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-bg-hover transition-colors group">
-                <span className="text-body-s font-mono text-text truncate flex-1" title={p}>{p}</span>
-                <button
-                  className="opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-meta text-danger border border-danger bg-transparent cursor-pointer hover:bg-danger-subtle transition"
-                  onClick={() => removePkg(p)}
-                  disabled={installing === p}
-                >
-                  {installing === p ? '⏳' : '✕'}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
       </Card>
 
       {/* Resource paths */}
@@ -621,44 +540,6 @@ function GeneralTab() {
           />
         </Card>
       ))}
-
-      <Card>
-        <CardTitle>
-          Package Gallery <InfoTip text="Community packages from npmjs.com tagged with pi-package" />
-          <a href="https://shittycodingagent.ai/packages" target="_blank" rel="noopener" className="text-meta text-accent ml-2 hover:underline">↗ Browse</a>
-        </CardTitle>
-        <SearchInput placeholder="Search packages…" value={galleryFilter} onChange={e => setGalleryFilter(e.target.value)} className="mb-3" />
-        {galleryLoading ? (
-          <div className="text-body-s text-muted py-4 text-center">Loading gallery…</div>
-        ) : (
-          <div className="max-h-[400px] overflow-y-auto space-y-1">
-            {filteredGallery.map(p => {
-              const installed = isInstalled(p.name)
-              const npmSource = `npm:${p.name}`
-              return (
-                <div key={p.name} className="flex items-start justify-between gap-3 py-2.5 px-2 rounded hover:bg-bg-hover transition-colors border-b border-border last:border-0">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <a href={(() => { const r = p.links.repository?.replace(/^git\+/, '').replace(/\.git$/, '') || ''; return p.links.homepage || (r.startsWith('http') ? r : '') || p.links.npm || `https://www.npmjs.com/package/${p.name}` })()} target="_blank" rel="noopener" className="text-body-s font-mono font-semibold text-text hover:text-accent transition-colors cursor-pointer">{p.name}</a>
-                      <span className="text-2xs text-muted font-mono">v{p.version}</span>
-                      {installed && <Badge variant="ok">installed</Badge>}
-                    </div>
-                    <div className="text-meta text-muted mt-0.5 line-clamp-2">{p.description}</div>
-                    {p.author && <div className="text-2xs text-muted opacity-60 mt-0.5">by {p.author}</div>}
-                  </div>
-                  <button
-                    className={`px-2.5 py-1 rounded-md text-meta font-medium border cursor-pointer transition shrink-0 ${installed ? 'border-danger text-danger bg-transparent hover:bg-danger-subtle' : 'border-accent text-accent bg-transparent hover:bg-accent hover:text-accent-fg'}`}
-                    disabled={installing === npmSource}
-                    onClick={() => installed ? removePkg(npmSource) : installPkg(npmSource)}
-                  >
-                    {installing === npmSource ? '⏳' : installed ? 'Remove' : 'Install'}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Card>
 
       {/* Plugin-contributed settings sections */}
       <SettingsSectionSlot tab="general" />
