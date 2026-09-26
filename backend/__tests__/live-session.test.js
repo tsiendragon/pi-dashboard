@@ -76,10 +76,10 @@ describe('LiveSession path/config policy', () => {
     await policy.stop()
   })
 
-  it('defaults to the requested worktree root and fails closed for invalid config', () => {
+  it('defaults to no roots and fails closed for invalid config', () => {
     expect(parseLiveSessionConfig(undefined)).toMatchObject({
       enabled: true,
-      roots: ['/mnt/workspace/lilong/repos/worktree'],
+      roots: [],
       claimMode: 'on-first-input',
     })
     expect(parseLiveSessionConfig({ roots: ['relative/path'] })).toMatchObject({ enabled: false, roots: [] })

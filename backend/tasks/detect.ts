@@ -20,8 +20,9 @@ export function isJournalRoot(dir: string): boolean {
 }
 
 /**
- * Candidates in priority order: configured roots → env override (back-compat) →
- * conventional default. `autoDetect` callers pick the first one that exists.
+ * Candidates in priority order: configured roots → env override. Nothing is
+ * hard-coded to a personal checkout; `autoDetect` callers pick the first root
+ * that actually exists, so an unconfigured dashboard simply finds no journal.
  */
 export function detectJournalRoots(journal: TasksConfig['journal']): { root: string; ok: boolean }[] {
   const candidates: string[] = []
@@ -31,7 +32,6 @@ export function detectJournalRoots(journal: TasksConfig['journal']): { root: str
     if (!candidates.includes(abs)) candidates.push(abs)
   }
   for (const root of journal.roots) push(root)
-  push(process.env.LILONG_TASK_ROOT)
-  push(join(homedir(), 'repos', 'lilong-task'))
+  push(process.env.PI_TASK_JOURNAL_ROOT)
   return candidates.map(root => ({ root, ok: isJournalRoot(root) }))
 }

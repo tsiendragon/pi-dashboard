@@ -1,5 +1,7 @@
+import { join } from 'node:path'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { agentDir } from '../env-file.js'
 
 /**
  * Per-session UI metadata (tags + pin) for the Live Pi Sessions sidebar.
@@ -26,7 +28,8 @@ export interface LiveSessionMeta {
 
 export type LiveSessionMetaMap = Record<string, LiveSessionMeta>
 
-export const DEFAULT_LIVE_SESSION_META_PATH = '/mnt/workspace/lilong/agent/pi/live-session-meta.json'
+/** Default state file (portable); override with an env var. */
+export const DEFAULT_LIVE_SESSION_META_PATH = join(agentDir(), 'pi', 'live-session-meta.json')
 
 const MAX_TAGS_PER_SESSION = 12
 const MAX_TAG_LENGTH = 32

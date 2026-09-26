@@ -33,7 +33,8 @@ export interface LiveSessionConfig {
 
 export const DEFAULT_LIVE_SESSION_CONFIG: LiveSessionConfig = {
   enabled: true,
-  roots: ['/mnt/workspace/lilong/repos/worktree'],
+  /** No hard-coded roots: configure `liveSessions.roots` to the directories worth scanning. */
+  roots: [],
   includeOutsideRoots: false,
   claimMode: 'on-first-input',
   leaseMs: 30_000,

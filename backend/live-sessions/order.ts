@@ -1,5 +1,7 @@
+import { join } from 'node:path'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { agentDir } from '../env-file.js'
 
 /**
  * Manual row order for the Live Pi Sessions sidebar.
@@ -20,7 +22,8 @@ import { dirname } from 'node:path'
  * `rekey` moves one entry when the same live Pi switches session in-process
  * (`/clear`, `/ls-fork`) and therefore reports a new `sessionId`.
  */
-export const DEFAULT_LIVE_SESSION_ORDER_PATH = '/mnt/workspace/lilong/agent/pi/live-session-order.json'
+/** Default state file (portable); override with an env var. */
+export const DEFAULT_LIVE_SESSION_ORDER_PATH = join(agentDir(), 'pi', 'live-session-order.json')
 
 /**
  * Hard cap. Subagent sessions never reach this list (the sidebar hides them),

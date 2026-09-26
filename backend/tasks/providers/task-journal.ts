@@ -18,7 +18,8 @@ async function readYaml(file: string): Promise<any | null> {
 }
 
 /**
- * Reads a "task journal" repo (lilong-task style). NOT hard-coded to lilong-task:
+ * Reads a "task journal" repo (a plain git checkout of dated markdown task files).
+ * Nothing is hard-coded to a specific checkout:
  * any directory with `tasks/DOMAINS.yaml` + `tasks/<domain>/epic.yaml` +
  * `.../task.yaml` + `todos/*.md` works.
  *

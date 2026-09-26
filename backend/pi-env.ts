@@ -97,7 +97,8 @@ const DEFAULT_DASH_CONFIG: DashConfig = {
 
 const DEFAULT_TASKS_CONFIG: TasksConfig = {
   enabled: true,
-  journal: { autoDetect: true, roots: ['~/repos/lilong-task'], enabled: true },
+  /** Roots are user-configured (`tasks.journal.roots`); nothing is hard-coded. */
+  journal: { autoDetect: true, roots: [], enabled: true },
   lanes: [
     { id: 'long', label: '长期', match: { kind: ['epic'] } },
     { id: 'short', label: '短期', match: { kind: ['task'] } },

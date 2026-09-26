@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, createContext } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { setWorktreeRoot } from './utils/displayPath'
 import { useAppSelector, useAppDispatch } from './store'
 import { fetchSlots, sseStatus } from './store/dashboardSlice'
 import { fetchNotifications } from './store/notificationsSlice'
@@ -92,6 +93,7 @@ export default function App() {
   useEffect(() => {
     fetch('/api/dash/config').then(r => r.json()).then(c => {
       if (c && c.tasks && c.tasks.enabled === false) setTasksEnabled(false)
+      setWorktreeRoot(c?.liveSessions?.worktreeRoot)
     }).catch(() => {})
   }, [])
   const isNativeIOS = typeof navigator !== 'undefined' && navigator.userAgent.includes('PiDash-iOS')
