@@ -80,6 +80,35 @@ function npmSourceName(source: string): string | null {
   return versionAt === -1 ? spec : spec.slice(0, versionAt)
 }
 
+/**
+ * Host + owner/repo of a git source, mirroring pi's `getGitInstallPath` layout
+ * (`<agentDir>/git/<host>/<path>`). Handles `git:host/owner/repo`, git@host:owner/repo,
+ * https://host/owner/repo(.git) and ssh://git@host/owner/repo.
+ */
+function gitSourceParts(source: string): { host: string; path: string } | null {
+  const stripGit = (value: string): string => value.replace(/\.git$/, '').replace(/\/+$/, '')
+  if (source.startsWith('git:')) {
+    const rest = stripGit(source.slice('git:'.length))
+    const slash = rest.indexOf('/')
+    if (slash === -1) return null
+    return { host: rest.slice(0, slash), path: rest.slice(slash + 1) }
+  }
+  const scp = /^(?:[^@/]+@)?([^:/]+):(.+)$/.exec(source)
+  if (scp && !source.includes('://')) return { host: scp[1]!, path: stripGit(scp[2]!) }
+  if (source.startsWith('ssh://') || source.startsWith('https://') || source.startsWith('http://')) {
+    try {
+      const url = new URL(source.startsWith('ssh://') ? source : source)
+      const host = url.hostname
+      const path = stripGit(url.pathname.replace(/^\//, ''))
+      if (!host || !path) return null
+      return { host, path }
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
 function classifySource(source: string): PackageKind {
   if (source.startsWith('http://') || source.startsWith('https://') || source.startsWith('git@') || source.endsWith('.git')) return 'git'
   if (source.startsWith('file:') || isAbsolute(source) || source.startsWith('.')) return 'local'
@@ -149,8 +178,14 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
     // `pi install npm:<name>` materialises the package under <agentDir>/npm/node_modules/<name>
     // (project scope: <cwd>/.pi/npm/node_modules/<name>) — mirror pi's getManagedNpmInstallPath.
     const npmName = npmSourceName(resolved)
+    const gitParts = npmName ? null : gitSourceParts(resolved)
     const cwd = process.cwd?.() ?? agentDir
-    const bases: Array<{ label: 'agent-dir' | 'pi-dir' | 'cwd'; dir: string }> = npmName
+    const bases: Array<{ label: 'agent-dir' | 'pi-dir' | 'cwd'; dir: string }> = gitParts
+      ? [
+          { label: 'agent-dir', dir: join(agentDir, 'git', gitParts.host, gitParts.path) },
+          { label: 'cwd', dir: join(cwd, '.pi', 'git', gitParts.host, gitParts.path) },
+        ]
+      : npmName
       ? [
           { label: 'agent-dir', dir: join(agentDir, 'npm', 'node_modules', npmName) },
           { label: 'cwd', dir: join(cwd, '.pi', 'npm', 'node_modules', npmName) },
@@ -168,7 +203,7 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
       if (bases.length === 0) {
         resolvedPath = resolved
         resolvedBase = 'agent-dir'
-      } else if (npmName) {
+      } else if (npmName || gitParts) {
         // For npm sources the candidate dirs are already absolute package paths.
         for (const candidate of bases) {
           if (io.isDirectory(candidate.dir)) {
@@ -214,7 +249,7 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
         null,
       rawSource,
       form: typeof item === 'string' ? 'string' : 'object',
-      sourceKind: npmName ? 'npm' : classifySource(resolved) === 'git' ? 'git' : 'local',
+      sourceKind: npmName ? 'npm' : gitParts ? 'git' : 'local',
       resolved: resolvedPath,
       exists,
       kind: missing.length > 0 ? 'unresolved' : classifySource(rawSource),
@@ -229,8 +264,8 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
     })
     if (missing.length > 0) warnings.push(`package source ${rawSource} references unset variable(s): ${missing.join(', ')}`)
     else if (!exists && npmName) warnings.push(`npm 包尚未安装：${npmName}（先执行 pi install npm:${npmName}）`)
-    else if (!exists && classifySource(resolved) === 'git')
-      warnings.push(`remote package (${resolved})：本地无缓存，静态分析跳过`)
+    else if (!exists && gitParts)
+      warnings.push(`git 包尚未克隆：${gitParts.host}/${gitParts.path}（先执行 pi install git:${gitParts.host}/${gitParts.path}）`)
     else if (!exists) warnings.push(`package source not found on disk: ${resolvedPath}`)
   }
 
@@ -322,6 +357,28 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
     const matcher = new RegExp(`^${cleaned.split('**').map((part) => part.split('*').map((chunk) => chunk.replace(/[.+^${}()|[\]\\]/g, '\\$&')).join('[^/]*')).join('.*')}$`)
     return (io.listFilesRecursive?.(root) ?? []).filter((file) => matcher.test(file)).sort()
   }
+  // Attribute a provided entry to the package that actually owns the file (nearest package.json
+  // inside the settings package), so an umbrella git package does not swallow its sub-packages.
+  const ownerNameCache = new Map<string, string | null>()
+  const ownerPackageName = (target: string, packageRoot: string): string | null => {
+    const cached = ownerNameCache.get(target)
+    if (cached !== undefined) return cached
+    let dir = dirname(target)
+    let found: string | null = null
+    while (dir.length > packageRoot.length) {
+      const manifest = io.readJson(join(dir, 'package.json'))
+      if (manifest) {
+        found = asString(manifest['name'])
+        break
+      }
+      const parent = dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+    ownerNameCache.set(target, found)
+    return found
+  }
+
   const provided: PackageProvidedEntry[] = []
   for (const pkg of packages) {
     if (!pkg.resolved || !pkg.exists) continue
@@ -335,7 +392,7 @@ export function buildExtensionInventory({ agentDir, env, io }: BuildInput): ExtI
         if (provided.some((item) => item.path === target)) continue
         provided.push({
           packageId: pkg.id,
-          packageName: pkg.name,
+          packageName: ownerPackageName(target, pkg.resolved) ?? pkg.name,
           path: target,
           manifestPath,
           exists: io.fileExists(target),

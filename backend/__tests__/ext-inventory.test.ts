@@ -330,6 +330,39 @@ describe('buildExtensionInventory', () => {
     expect(result.warnings.some((w) => w.includes('npm 包尚未安装：pi-tsien-not-installed'))).toBe(true)
   })
 
+  it('resolves git: sources under <agentDir>/git/<host>/<path>', () => {
+    const { agentDir } = seed()
+    const installed = join(agentDir, 'git/github.com/tsiendragon/pi-tsien-extension')
+    write(join(installed, 'package.json'), JSON.stringify({
+      name: 'pi-tsien-extension',
+      version: '0.3.0',
+      pi: { extensions: ['./packages/pi-tsien-goal/src/index.ts'] },
+    }))
+    write(join(installed, 'packages/pi-tsien-goal/src/index.ts'), 'export default function umbrella() {}\n')
+
+    const settings = JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf-8'))
+    settings.packages.push('git:github.com/tsiendragon/pi-tsien-extension', 'git:github.com/tsiendragon/pi-tsien-not-cloned')
+    writeFileSync(join(agentDir, 'settings.json'), JSON.stringify(settings), 'utf-8')
+
+    const result = buildExtensionInventory({ agentDir, env: { MISSING_ROOT: undefined }, io })
+    expect(result.packages.find((item) => item.rawSource === 'git:github.com/tsiendragon/pi-tsien-extension')).toMatchObject({
+      sourceKind: 'git',
+      exists: true,
+      name: 'pi-tsien-extension',
+      version: '0.3.0',
+      resolved: installed,
+    })
+    expect(result.warnings.some((w) => w.includes('git 包尚未克隆：github.com/tsiendragon/pi-tsien-not-cloned'))).toBe(true)
+    // git URLs in their other spellings resolve to the same place
+    for (const source of ['https://github.com/tsiendragon/pi-tsien-extension.git', 'git@github.com:tsiendragon/pi-tsien-extension.git']) {
+      const settings2 = JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf-8'))
+      settings2.packages = [source]
+      writeFileSync(join(agentDir, 'settings.json'), JSON.stringify(settings2), 'utf-8')
+      const one = buildExtensionInventory({ agentDir, env: { MISSING_ROOT: undefined }, io })
+      expect(one.packages[0]).toMatchObject({ sourceKind: 'git', exists: true, resolved: installed })
+    }
+  })
+
   it('survives a missing settings.json instead of throwing', () => {
     const agentDir = join(dir, 'empty-agent')
     mkdirSync(agentDir, { recursive: true })
