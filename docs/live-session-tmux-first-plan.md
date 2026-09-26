@@ -1,7 +1,7 @@
 # Plan: Live session 改为 tmux-first（web 与终端同一个 Pi）
 
 - **状态**：Implemented（待人工验收拖动/attach）
-- **主仓库**：`/mnt/workspace/lilong/repos/pi-dashboard`
+- **主仓库**：`<pi-dashboard repo>`
 
 用户拍板（2026-09）：
 1. 新建 live session **默认 tmux-first**。
@@ -80,7 +80,7 @@ tmux new-session -d -s pi-dash-live-<8hex> -c <canonicalCwd> \
 
 ```
 tmux new-session -d -s pi-dash-smoke1 -c <repo> -e PI_RUNTIME=live -e TERM=xterm-256color \
-  -e PI_SLOT_KEY= -e PI_DASH_BRIDGE_SOCKET= -e PI_DASH_BRIDGE_TOKEN= -- /home/tsien/.local/bin/pi --name "smoke tmux-first"
+  -e PI_SLOT_KEY= -e PI_DASH_BRIDGE_SOCKET= -e PI_DASH_BRIDGE_TOKEN= -- ~/.local/bin/pi --name "smoke tmux-first"
 ```
 
 - 15s 后 `/api/live-sessions` 从 11 条变 12 条，新增项：`pid 479897 | mode tui | sessionName "smoke tmux-first"`。
@@ -163,7 +163,7 @@ tmux 默认项保留，密钥未出现在任何进程 argv。
 ```json
 "liveSessions": {
   "launch": {
-    "command": "/home/tsien/.local/bin/pi-clean",
+    "command": "~/.local/bin/pi-clean",
     "args": [],
     "unsetEnv": ["HF_TOKEN", "AZURE_OPENAI_API_KEY", "..."]
   }

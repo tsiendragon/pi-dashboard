@@ -1421,7 +1421,7 @@ When enabled:
 ## Tasks
 
 Task planning panel (`/tasks`). Facts come from pluggable providers — a read-only
-"task journal" repo (auto-detected, e.g. lilong-task) plus a built-in local source —
+"task journal" repo (auto-detected, e.g. my-task-journal) plus a built-in local source —
 while the planning overlay (pin / priority / note / lane) is stored separately and
 never writes back to the source.
 
@@ -1449,7 +1449,7 @@ Planning overlay: `~/.pi/tasks/planning.json`. Local tasks: `~/.pi/tasks/tasks.j
 | `PI_DASH_PORT` | `7777` | Server listen port |
 | `WORKSPACE_DIR` | — | Additional workspace directory to scan |
 | `PI_RUNTIME` | `dashboard` | Set in pi subprocess environment |
-| `LILONG_TASK_ROOT` | — | Back-compat override for the task journal root (auto-detected otherwise) |
+| `PI_TASK_JOURNAL_ROOT` | — | Back-compat override for the task journal root (auto-detected otherwise) |
 
 ---
 

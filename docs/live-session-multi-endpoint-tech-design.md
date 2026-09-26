@@ -1,7 +1,7 @@
 # Live Session 多端对齐（统一输入模型）— Tech Design
 
 - **状态**：Proposed（已按 review 重写）
-- **涉及仓库**：`/mnt/workspace/lilong/repos/pi-dashboard`、`/mnt/workspace/lilong/repos/pi-tsien-extension`、移动端（新增）
+- **涉及仓库**：`<pi-dashboard repo>`、`<pi-tsien-extension repo>`、移动端（新增）
 - **信任模型**：内网；**不对多端做端口级权限分级**，能力对齐优先。
 - **核心结论**：多端同步的骨架（事件广播 + FIFO）已存在，唯一要做的本质改动是把「输入」收敛成**一种**，和 TUI 完全等价。
 

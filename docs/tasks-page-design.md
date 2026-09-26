@@ -15,7 +15,7 @@
 | 规划「长/短/临时」 | 决策 | 分配注意力 |
 | 联系 session | 执行 | 把「要做什么」和「正在做」连起来 |
 
-- **目标**：一个页面同时支持「每日执行」和「全局鸟瞰」两种视角；数据源可插拔；零配置可用；lilong-task 为可选源；任务可关联 session。
+- **目标**：一个页面同时支持「每日执行」和「全局鸟瞰」两种视角；数据源可插拔；零配置可用；my-task-journal 为可选源；任务可关联 session。
 - **非目标（P1）**：不改写 journal 事实层；不做 Jira/GitHub provider；不做写回 journal / markdown 勾选；不做时间线/燃尽。
 
 ## 2. 第一性结构：三个正交层（按「变化频率」分层）
@@ -93,7 +93,7 @@ export interface TaskProvider {
 - P1 只实现 `list()`（+ 可选 `get()`）。写能力后置（P2），不污染只读抽象。
 - 单源失败 → 返回空 + `warnings[]`，不影响其他源。
 
-### 4.1 `task-journal` provider（只读，通用适配器，不写死 lilong-task）
+### 4.1 `task-journal` provider（只读，通用适配器，不写死 my-task-journal）
 
 目录规范：`tasks/DOMAINS.yaml`、`tasks/<domain>/epic.yaml`、`tasks/<domain>/<epic>/task.yaml`、`tasks/active-status.yaml`、`todos/*.md`。
 
@@ -180,7 +180,7 @@ interface LaneDef { id: string; label: string; match: { kind?: TaskKind[]; tag?:
 ```json
 { "tasks": {
   "enabled": true,
-  "journal": { "autoDetect": true, "roots": ["~/repos/lilong-task"], "enabled": true },
+  "journal": { "autoDetect": true, "roots": ["~/repos/my-task-journal"], "enabled": true },
   "lanes": [
     { "id": "long",  "label": "长期", "match": { "kind": ["epic"] } },
     { "id": "short", "label": "短期", "match": { "kind": ["task"] } },
@@ -191,7 +191,7 @@ interface LaneDef { id: string; label: string; match: { kind?: TaskKind[]; tag?:
 ```
 
 - 探测标志：候选 root 下存在 `tasks/DOMAINS.yaml`。
-- 候选 root：`tasks.journal.roots` ∪ 环境变量 `LILONG_TASK_ROOT`（向后兼容）∪ `~/repos/lilong-task`。
+- 候选 root：`tasks.journal.roots` ∪ 环境变量 `PI_TASK_JOURNAL_ROOT`（向后兼容）∪ `~/repos/my-task-journal`。
 - 探测到 → 启用 task-journal provider；否则仅 `local`。配置仅作覆盖。
 - `~` 展开；root 不存在则该源 `unavailable` + warning。
 - `lanes` 缺省用上面三项；可增删改，纯视图层。
@@ -257,7 +257,7 @@ TasksPage
 **P3**：时间线/燃尽/周报、插件化 provider。
 
 **P1 验收**
-1. 不写配置时，能自动探测到 `~/repos/lilong-task` 并显示真实任务；探测不到也不崩。
+1. 不写配置时，能自动探测到 `~/repos/my-task-journal` 并显示真实任务；探测不到也不崩。
 2. `epic.active` 显示为"活跃"而非"进行中"；`paused`/`Feasibility` 等原值不丢失、不错映射。
 3. `active-status.yaml` 不产生重复条目。
 4. todo 只读、不可规划；planning 中无 todo uid。

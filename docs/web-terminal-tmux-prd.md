@@ -1,7 +1,7 @@
 # Web 共享终端（tmux 中继）— PRD
 
 - **状态**：Proposed（待评审）
-- **主仓库**：`/mnt/workspace/lilong/repos/pi-dashboard`
+- **主仓库**：`<pi-dashboard repo>`
 - **依赖**：`tmux >= 3.2`、`node-pty`（已安装）、`@xterm/*`（已安装但未接线）
 - **技术设计**：`docs/web-terminal-tmux-tech-design.md`
 

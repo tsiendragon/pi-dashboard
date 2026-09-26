@@ -13,7 +13,7 @@
 - 通道：`hello`（注册）→ `snapshot` / `event`（上行）→ `command`（下行）→ `command_result`。
 - 控制权：**claim + lease**（`leaseMs` 30s）。只有持有 lease 的浏览器能发命令（`slash`、`input`、`abort`、`compact`、`set_model`…）。
 - 身份两层：`processInstanceId`（运行时，重启即换）与 `sessionId`（pi 会话，可跨重启）；UI 元数据按 `sessionId` 持久化。
-- 文件位置：`/mnt/workspace/lilong/repos/pi-tsien-extension/extensions/live-session/`（`client.ts` / `projector.ts` / `protocol.ts` / `lease.ts`），主文件 `extensions/live-session.ts`（561 行）。
+- 文件位置：`<pi-tsien-extension repo>/extensions/live-session/`（`client.ts` / `projector.ts` / `protocol.ts` / `lease.ts`），主文件 `extensions/live-session.ts`（561 行）。
 
 ### 1.2 已经"免费"拿到的树能力（这是本方案成立的关键）
 

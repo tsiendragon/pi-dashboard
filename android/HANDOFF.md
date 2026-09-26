@@ -47,11 +47,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ### 复现 Kotlin 编译（仅在 DSW 开发机上）
 
 ```bash
-bash /home/tsien/kbuild/compile3.sh
+bash ~/kbuild/compile3.sh
 # 输出：== files: 15 == / 0 error / warning 3 / out/ 下 216 个 .class
 ```
 
-harness 位置：`/home/tsien/kbuild/`（`setup.sh` 拉依赖、`compile3.sh` 编译、`libs/` 依赖 jar、`dl/kotlinc`）。
+harness 位置：`~/kbuild/`（`setup.sh` 拉依赖、`compile3.sh` 编译、`libs/` 依赖 jar、`dl/kotlinc`）。
 它用 kotlinc 2.0.21 + Compose 编译器插件 + kotlinx-serialization 插件，**不是** Android 构建。
 
 > Mac 上**不需要**它：`./gradlew assembleDebug` 是比它更强的验证。
@@ -177,7 +177,7 @@ harness 位置：`/home/tsien/kbuild/`（`setup.sh` 拉依赖、`compile3.sh` �
 换机器前**必须**提交，否则会丢：
 
 ```bash
-cd /mnt/workspace/lilong/repos/pi-dashboard
+cd <pi-dashboard repo>
 git add android/
 git commit -m "feat(android): 重写为原生 Compose 多后端客户端"
 ```

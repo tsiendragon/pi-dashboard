@@ -57,7 +57,7 @@
 
 **后端**
 - `backend/live-sessions/order.ts`（新）— `LiveSessionOrderStore`（`{version:1, order:string[]}`，key = `sessionId`，
-  `/mnt/workspace/lilong/agent/pi/live-session-order.json`，可用 `PI_DASH_LIVE_SESSION_ORDER` 覆盖，
+  `<agent dir>/pi/live-session-order.json`，可用 `PI_DASH_LIVE_SESSION_ORDER` 覆盖，
   0700/0600 + tmp+rename + 串行写队列）；`normalizeOrder` 去重、去空、上限 1000 条。
 - `backend/routes/live-sessions.ts` — `GET /api/live-session-order`、`PUT /api/live-session-order`（整表替换，
   照 `requireMutationOrigin` + `requireAuth` 惯例），store 接入 `start()` 生命周期。

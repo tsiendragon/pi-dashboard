@@ -1,7 +1,7 @@
 # Extension UI 请求多通道（Multi-Channel UI Request）— Tech Design
 
 - **状态**：已实现并完成端到端验证（commit 映射见 §8，实测 follow-on 问题见 §11，部署交接见 §12）
-- **涉及仓库**：`/mnt/workspace/lilong/repos/pi-upstream`（L0）、`/mnt/workspace/lilong/repos/pi-tsien-extension`（L1）、`/mnt/workspace/lilong/repos/pi-dashboard`（L2）
+- **涉及仓库**：`<pi upstream checkout>`（L0）、`<pi-tsien-extension repo>`（L1）、`<pi-dashboard repo>`（L2）
 - **依赖版本**：`@earendil-works/pi-coding-agent >= 0.84.2`（L0 需新版本）
 - **关联设计**：`live-session-multi-endpoint-tech-design.md`（统一输入模型）；本文是其「UI 输出/应答侧」的补充，同时修正输入侧的 activeInput 缺陷。
 
@@ -210,7 +210,7 @@ L0-L2 首版上线后实测依次暴露以下问题，均已修复：
 
 ## 12. 部署与交接
 
-- **TUI 加载方式**：`~/.pi/agent/settings.json` 直接引用仓库路径 `/mnt/workspace/lilong/repos/pi-tsien-extension/extensions/live-session.ts`，改完**重启 TUI（或 `/reload`）即生效**，无需拷贝。
+- **TUI 加载方式**：`~/.pi/agent/settings.json` 直接引用仓库路径 `<pi-tsien-extension repo>/extensions/live-session.ts`，改完**重启 TUI（或 `/reload`）即生效**，无需拷贝。
 - **pi 本体**：L0 改动在 pi-upstream `feat/tsien` 分支（**不推远端**），本地发布 tarball 在 `~/pi-lical-dist/`；pi-dashboard 通过 `package.json` 的 `file:` + `overrides` 引用这些 tarball（**package.json/lock 是本地链接，不提交**）。上游同步流程：`git fetch` → `feat/tsien` rebase `origin/main` → `release:local --skip-check --skip-test` 重打 tarball → 消费方重装。
 - **dashboard 生效方式**：`./run.sh`（构建前端 + 重启后端；由用户执行）。
 - **测试入口**：L1 `node --import tsx --test test/live-session.test.ts`；L2 后端 `npx vitest run --config vitest.backend.config.js`。

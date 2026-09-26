@@ -543,9 +543,9 @@ hover 动作在触屏不可用。**统一以"选中 → 详情面板操作"为�
 
 按 §10 L0 的 10 条验收逐条跑；额外必跑：
 ```bash
-cd /mnt/workspace/lilong/repos/pi-dashboard && npm run typecheck && npm test
+cd <pi-dashboard repo> && npm run typecheck && npm test
 cd frontend && npm run typecheck && npm test && npm run check:theme-cvd
-cd /mnt/workspace/lilong/repos/pi-tsien-extension && npm run check
+cd <pi-tsien-extension repo> && npm run check
 ```
 
 ### Phase 4 — 交付
