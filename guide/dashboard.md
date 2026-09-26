@@ -61,11 +61,9 @@ sudo rm /etc/systemd/system/pi-dashboard.service && sudo systemctl daemon-reload
 
 ## 3. 环境变量
 
-> **可移植性（新机器必看）**：`backend/` 里这几项带有 `/mnt/workspace/lilong/...` 兜底默认值，
-> 在 macOS 等没有该路径的机器上会落到不存在的目录。`install-standalone.sh` 会向
-> `<agent dir>/dashboard.env` 自动补上可移植取值（`PI_DASH_TIMING_DIR` / `PI_DASH_USAGE_DIR` /
-> `PI_DASH_LIVE_SESSION_*`）；手动安装时请自己设。另外 `~/.pi/dashboard.json` 的
-> `liveSessions.roots` 默认也是开发机 worktree 路径，新机器改成自己的目录。
+> **可移植性**：这些变量**默认值已改为 `<agent dir>/...`**（不再含开发机路径），新机器无需设置即可用；
+> 仅当你要沿用旧的数据位置时才显式指定。`liveSessions.roots` 默认是**空**（配置驱动），
+> 想扫哪些目录就在 `~/.pi/dashboard.json` 里写自己的。完整变量表见 [config.md](config.md) §2。
 
 ### 3.1 本服务相关变量
 
