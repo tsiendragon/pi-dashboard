@@ -1,10 +1,10 @@
 # 本机 Pi Live Session 自动发现与实时接管 — Tech Design
 
 - **状态**：Implemented and verified（本地未提交）
-- **主仓库**：`/mnt/workspace/lilong/repos/pi-dashboard`
-- **Extension 仓库**：`/mnt/workspace/lilong/repos/pi-tsien-extension`
+- **主仓库**：`~/repos/pi-dashboard`
+- **Extension 仓库**：`~/repos/pi-tsien-extension`
 - **目标运行环境**：同一 Linux 用户、同一台 DSW 机器上的多个 Pi 进程
-- **默认发现范围**：`/mnt/workspace/lilong/repos/worktree` 及其子目录
+- **默认发现范围**：`~/repos/worktree` 及其子目录
 - **依赖版本**：`@earendil-works/pi-coding-agent >= 0.84.2`
 
 ## 1. 背景
@@ -21,7 +21,7 @@ Pi Dashboard 当前只能直接控制由自身创建的 SDK/RPC slot。用户从
 ## 2. 目标
 
 1. Dashboard 自动发现以下根目录中的运行中 Pi session：
-   - `/mnt/workspace/lilong/repos/worktree`
+   - `~/repos/worktree`
    - 配置中追加的其他根目录。
 2. Dashboard 晚于 Pi 启动时，已有 Pi 仍能自动注册。
 3. 展示 session 的工作目录、Git 分支、PID、名称、模型、思考等级和运行状态。
@@ -153,11 +153,11 @@ Live Pi Sessions
 新增文件：
 
 ```text
-/mnt/workspace/lilong/repos/pi-tsien-extension/extensions/live-session.ts
-/mnt/workspace/lilong/repos/pi-tsien-extension/extensions/live-session/client.ts
-/mnt/workspace/lilong/repos/pi-tsien-extension/extensions/live-session/protocol.ts
-/mnt/workspace/lilong/repos/pi-tsien-extension/extensions/live-session/projector.ts
-/mnt/workspace/lilong/repos/pi-tsien-extension/extensions/live-session/lease.ts
+~/repos/pi-tsien-extension/extensions/live-session.ts
+~/repos/pi-tsien-extension/extensions/live-session/client.ts
+~/repos/pi-tsien-extension/extensions/live-session/protocol.ts
+~/repos/pi-tsien-extension/extensions/live-session/projector.ts
+~/repos/pi-tsien-extension/extensions/live-session/lease.ts
 ```
 
 职责：
@@ -197,13 +197,13 @@ if (ctx.mode === "print" || ctx.mode === "json") return
 新增文件：
 
 ```text
-/mnt/workspace/lilong/repos/pi-dashboard/backend/live-sessions/broker.ts
-/mnt/workspace/lilong/repos/pi-dashboard/backend/live-sessions/registry.ts
-/mnt/workspace/lilong/repos/pi-dashboard/backend/live-sessions/protocol.ts
-/mnt/workspace/lilong/repos/pi-dashboard/backend/live-sessions/path-policy.ts
-/mnt/workspace/lilong/repos/pi-dashboard/backend/live-sessions/auth.ts
-/mnt/workspace/lilong/repos/pi-dashboard/backend/routes/live-sessions.ts
-/mnt/workspace/lilong/repos/pi-dashboard/shared/src/live-sessions.ts
+~/repos/pi-dashboard/backend/live-sessions/broker.ts
+~/repos/pi-dashboard/backend/live-sessions/registry.ts
+~/repos/pi-dashboard/backend/live-sessions/protocol.ts
+~/repos/pi-dashboard/backend/live-sessions/path-policy.ts
+~/repos/pi-dashboard/backend/live-sessions/auth.ts
+~/repos/pi-dashboard/backend/routes/live-sessions.ts
+~/repos/pi-dashboard/shared/src/live-sessions.ts
 ```
 
 固定运行目录：
@@ -232,12 +232,12 @@ if (ctx.mode === "print" || ctx.mode === "json") return
 新增文件：
 
 ```text
-/mnt/workspace/lilong/repos/pi-dashboard/frontend/src/features/live-sessions/LiveSessionsList.tsx
-/mnt/workspace/lilong/repos/pi-dashboard/frontend/src/features/live-sessions/LiveSessionPage.tsx
-/mnt/workspace/lilong/repos/pi-dashboard/frontend/src/features/live-sessions/LiveSessionHeader.tsx
-/mnt/workspace/lilong/repos/pi-dashboard/frontend/src/features/live-sessions/LiveSessionComposer.tsx
-/mnt/workspace/lilong/repos/pi-dashboard/frontend/src/features/live-sessions/useLiveSession.ts
-/mnt/workspace/lilong/repos/pi-dashboard/frontend/src/store/liveSessionsSlice.ts
+~/repos/pi-dashboard/frontend/src/features/live-sessions/LiveSessionsList.tsx
+~/repos/pi-dashboard/frontend/src/features/live-sessions/LiveSessionPage.tsx
+~/repos/pi-dashboard/frontend/src/features/live-sessions/LiveSessionHeader.tsx
+~/repos/pi-dashboard/frontend/src/features/live-sessions/LiveSessionComposer.tsx
+~/repos/pi-dashboard/frontend/src/features/live-sessions/useLiveSession.ts
+~/repos/pi-dashboard/frontend/src/store/liveSessionsSlice.ts
 ```
 
 Live Session 使用独立 Redux slice，不写入现有 `chat.slots`，避免 Dashboard 误认为自己拥有该进程生命周期。
@@ -251,7 +251,7 @@ Live Session 使用独立 Redux slice，不写入现有 `chat.slots`，避免 Da
   "liveSessions": {
     "enabled": true,
     "roots": [
-      "/mnt/workspace/lilong/repos/worktree"
+      "~/repos/worktree"
     ],
     "includeOutsideRoots": false,
     "claimMode": "on-first-input",
@@ -367,7 +367,7 @@ Registry 主键：`processInstanceId`。
   "brokerToken": "<local-file-token>",
   "processInstanceId": "uuid",
   "pid": 12345,
-  "cwd": "/mnt/workspace/lilong/repos/worktree/task-a",
+  "cwd": "~/repos/worktree/task-a",
   "mode": "tui",
   "sessionId": "session-id"
 }
@@ -802,7 +802,7 @@ live_session_truncated_total{kind}
 - Live Session list/page只读 UI；
 - 多 cwd 和断线测试。
 
-**退出条件**：Dashboard 可自动发现 `/mnt/workspace/lilong/repos/worktree/**` 下所有已加载 Extension 的运行中 Pi，并实时镜像事件，无控制能力。
+**退出条件**：Dashboard 可自动发现 `~/repos/worktree/**` 下所有已加载 Extension 的运行中 Pi，并实时镜像事件，无控制能力。
 
 ### Stage 2：认证与控制租约
 
@@ -891,7 +891,7 @@ test/live-session-lease.test.ts                                 新增
 
 ## 22. 验收标准
 
-1. 在两个不同 `/mnt/workspace/lilong/repos/worktree/**` 目录运行 Pi，Dashboard 在 30 秒内自动显示两者。
+1. 在两个不同 `~/repos/worktree/**` 目录运行 Pi，Dashboard 在 30 秒内自动显示两者。
 2. Dashboard 晚于 Pi 启动时仍能发现已有进程。
 3. 每个 session 的 cwd、PID、sessionId、模型和状态正确，不跨进程串线。
 4. 助手流式消息和工具 update 在 Dashboard 中实时更新。
@@ -915,7 +915,7 @@ test/live-session-lease.test.ts                                 新增
 5. **自动发现、首次输入接管。** 仅查看页面不会锁定 TUI。
 6. **租约 fail-open。** 任何控制通道故障最终恢复本地 TUI。
 7. **本地 release 永远优先。** 不提供第一版远程 force-claim。
-8. **默认只允许 `/mnt/workspace/lilong/repos/worktree`。** 其他目录必须显式配置。
+8. **默认只允许 `~/repos/worktree`。** 其他目录必须显式配置。
 9. **控制接口单独认证。** 不把敏感 transcript 发到当前未认证的全局 WebSocket。
 10. **第一版仅文本控制。** 不开放 template expansion、任意工具调用、shell 或 session/model 管理。
 
@@ -945,4 +945,4 @@ test/live-session-lease.test.ts                                 新增
 
 1. 重启 Dashboard，使固定 Broker 开始监听；
 2. 对本功能实施前已经运行的 Pi 执行一次 `/reload` 或重启；
-3. 打开 Dashboard 的 **Live Pi**，输入 `/home/tsien/.pi/agent/run/pi-dashboard/live-control-token` 文件内容完成认证。
+3. 打开 Dashboard 的 **Live Pi**，输入 `~/.pi/agent/run/pi-dashboard/live-control-token` 文件内容完成认证。

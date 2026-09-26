@@ -389,7 +389,7 @@ pi **没有**声明式依赖机制，所以页面不能假装有。可给出四�
 |---|---|---|
 | 同步器保留 `+/-/!` 覆盖条目（方案甲） | `pi-tsien-extension@80408c7` | 新增回归测试；`node --test test/pi-extension-sync.test.mjs` 5 pass；本机真实配置 dry-run 正常 |
 | WebSearch/WebFetch 自研重写 `packages/pi-tsien-web-tools` | `pi-tsien-extension@60079fe` | 包内 26 单测；A/B：3 查询 × 10 条结果 URL/标题/摘要归一化后逐条一致；`example.com` 提取一致；`nodejs.org/en/about` 去空白后逐字符相同；真实 `pi -p` 内 WebSearch 返回 `Pi Coding Agent / https://pi.dev/` |
-| devDependencies 可移植性修复 | `pi-tsien-extension@e993ccf` | 原指向已删除的 `/home/tsien/pi-lical-dist/*.tgz`（任何新 clone 都无法 `npm install`）；改为补丁版 Release URL + 放宽 peer 范围；`npm install` exit=0、`tsc --noEmit` 干净、`test:node` 245 pass |
+| devDependencies 可移植性修复 | `pi-tsien-extension@e993ccf` | 原指向已删除的 `~/pi-lical-dist/*.tgz`（任何新 clone 都无法 `npm install`）；改为补丁版 Release URL + 放宽 peer 范围；`npm install` exit=0、`tsc --noEmit` 干净、`test:node` 245 pass |
 | 配置与文档切换到新包 | `pi-tsien-extension@e2e20d9` | `config/extensions.standalone.json`、`config/examples/*`、README/CHANGELOG、`VENDORED.md` 状态标注 |
 | 本机 live 切换（外科手术式，未触发无关 quarantine） | 本机配置 | 备份 `settings.json.pre-webtools-switch-20260925-232326` 与同名 config；切换后 dry-run 只剩既有的 `security-guard` 项 |
 | 扩展包目录迁移（P0 拆包，一功能一包） | `pi-tsien-extension@ed471a8` | 22 个包：`packages/pi-tsien-*`（npm workspaces，内部依赖普通 semver）；新增共享库 `pi-tsien-shared`；19 个扩展 + 共享库已迁，3 个（auto-compact/context-powerline/live-session）因并行会话未提交改动延后。验证：`parity:check` 25/25 一致、`tsc --noEmit` 干净、`test:node` 246 pass、隔离 agent 目录真实 `pi -p` 会话内 25 个扩展全部加载且 `WebSearch`/`capability_ls` 正常 |

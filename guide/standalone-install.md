@@ -277,8 +277,8 @@ standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsi
 
 > - 默认关闭或需要配置才能生效的：`observation-pack`（`~/.pi/agent/observation-pack.json`）、
 >   bash-digest stage（`~/.pi/agent/bash-digest.json`）。
-> - 两个扩展的默认落盘目录是开发机路径（`trajectory-recorder` → `/mnt/workspace/lilong/agent/pi-traces`，
->   `observation-pack` → `/mnt/workspace/lilong/agent/archiv`）。在新机器上建议用 `PI_TRACE_DIR` /
+> - 两个扩展的默认落盘目录是开发机路径（`trajectory-recorder` → `~/.pi/agent/pi-traces`，
+>   `observation-pack` → `~/.pi/agent/archiv`）。在新机器上建议用 `PI_TRACE_DIR` /
 >   `PI_TIMING_DIR` / `PI_OBSERVATION_DIR` 指向本机目录；不设也不会拖垮 Pi（写失败只告警），但会丢对应数据。
 > - 它们都与业务无关，保留在清单里；只想减少加载量时，从 `config/extensions.standalone.json` 的
 >   `loadOrder` 删除对应行即可（同步器会把它从 Pi 设置里移除）。

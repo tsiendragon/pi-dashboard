@@ -18,7 +18,7 @@
 | **进程环境变量** | `~/.pi/agent/dashboard.env`（dashboard 启动时加载，并传给每个 pi 子进程） | dashboard + 它派生的所有 pi | 部分（`PI_SCRIPT`、凭证、数据目录） | ❌（但已收敛成**唯一**入口） |
 | **dashboard 自己** | `~/.pi/dashboard.json`（`liveSessions.roots/launch/unsetEnv/disconnectGraceMs`） | dashboard 后端 | 是（live session 靠它） | ✅ `/api/dash/config` |
 | | `~/.pi/agent/pi-web-sessions.json`（slot 元数据） | `backend/session-store.ts` | 自动 | 自动维护 |
-| **启动器** | `~/.local/bin/pi-clean` → `~/.local/bin/pi` → `/home/tsien/local-pi/bin/pi` | live session 进程 | 否 | ❌ 脚本 |
+| **启动器** | `~/.local/bin/pi-clean` → `~/.local/bin/pi` → `~/local-pi/bin/pi` | live session 进程 | 否 | ❌ 脚本 |
 
 ## 2. 环境文件（唯一入口）
 
@@ -31,7 +31,7 @@
 | 文件 | 状态 | 说明 |
 |---|---|---|
 | `bash-digest.json` | 已建 | 启用，摘要模型 `dashscope/qwen3.8-flash` |
-| `observation-pack.json` | 已建 | 启用，`archiveDir=/mnt/workspace/lilong/agent/archiv`（显式钉住旧位置） |
+| `observation-pack.json` | 已建 | 启用，`archiveDir=~/.pi/agent/archiv`（显式钉住旧位置） |
 | `compact-thinking.json` | 已建 | 显示细节 |
 | `capability.json` | 已建 | 指向 marketplace 的 capabilities 目录 |
 | `auto-compact-target.json` | 2026-09-25 生成 | 内容 = 内置默认值，仅为了可见/可调 |
@@ -42,9 +42,9 @@
 
 先归档再删，可回滚：
 
-- `/home/tsien/pi-config-cleanup-20260925.tar.gz`（95 项，2.0 MB）：`extension-sync-backups/`(18)、
+- `~/pi-config-cleanup-20260925.tar.gz`（95 项，2.0 MB）：`extension-sync-backups/`(18)、
   `extension-quarantine/`(11)、`~/.pi/agent/backups/`(2)、`memory-backups/`(1)
-- `/home/tsien/pi-backups-cleanup-20260925.tar.gz`（3 项，890 KB）：`~/.pi/backups/`
+- `~/pi-backups-cleanup-20260925.tar.gz`（3 项，890 KB）：`~/.pi/backups/`
 - 直接删除：`eagleye-install.yaml`（拼写错误的重复文件，市场工具只认 `eagleeye-install.yaml`）、
   `large-read-pack.json`（已否决）、`pi-crash.log`
 

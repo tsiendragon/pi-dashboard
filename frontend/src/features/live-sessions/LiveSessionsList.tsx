@@ -791,7 +791,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
                   setStartCwdMenuOpen(true)
                 } else if (event.key === 'Escape') setStartCwdMenuOpen(false)
               }}
-              placeholder="工作目录，例如 /mnt/workspace/lilong/repos/...（Tab 补全）"
+              placeholder="工作目录，例如 ~/repos/...（Tab 补全）"
               className="w-full rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none focus:border-accent"
             />
             <div className="text-2xs leading-[15px] text-muted-strong">
