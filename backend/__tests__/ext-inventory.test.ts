@@ -300,6 +300,36 @@ describe('buildExtensionInventory', () => {
       .toEqual(['ext/a-first.ts', 'ext/b-second.ts'])
   })
 
+  it('resolves npm: sources under <agentDir>/npm/node_modules like pi does', () => {
+    const { agentDir } = seed()
+    // `pi install npm:<name>` materialises this layout; the dashboard must read it, not warn.
+    const installed = join(agentDir, 'npm/node_modules/pi-tsien-from-npm')
+    write(join(installed, 'package.json'), JSON.stringify({
+      name: 'pi-tsien-from-npm',
+      version: '1.2.3',
+      pi: { extensions: ['./src/index.ts'] },
+    }))
+    write(join(installed, 'src/index.ts'), 'export default function npmPkg() {}\n')
+
+    const settings = JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf-8'))
+    settings.packages.push('npm:pi-tsien-from-npm', 'npm:pi-tsien-not-installed')
+    writeFileSync(join(agentDir, 'settings.json'), JSON.stringify(settings), 'utf-8')
+
+    const result = buildExtensionInventory({ agentDir, env: { MISSING_ROOT: undefined }, io })
+    const pkg = result.packages.find((item) => item.rawSource === 'npm:pi-tsien-from-npm')
+    expect(pkg).toMatchObject({
+      sourceKind: 'npm',
+      exists: true,
+      name: 'pi-tsien-from-npm',
+      version: '1.2.3',
+      declaredEntries: ['./src/index.ts'],
+      resolved: installed,
+    })
+    expect(result.provided.map((item) => item.manifestPath)).toContain('src/index.ts')
+    // A not-yet-installed npm package gets an actionable warning instead of a generic "not found".
+    expect(result.warnings.some((w) => w.includes('npm 包尚未安装：pi-tsien-not-installed'))).toBe(true)
+  })
+
   it('survives a missing settings.json instead of throwing', () => {
     const agentDir = join(dir, 'empty-agent')
     mkdirSync(agentDir, { recursive: true })

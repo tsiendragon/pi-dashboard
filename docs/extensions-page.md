@@ -131,3 +131,14 @@ npx vitest run backend/__tests__/ext-inventory.test.ts   # 5 passed
 | 只让本机访问 | `PI_DASH_HOST=127.0.0.1`（默认 `0.0.0.0` 网络可达） |
 | 依赖扫描 | `GET /api/pi/ext/deps`（首次约 1s，之后按 settings 修改时间缓存） |
 | 相关代码 | `backend/ext-inventory.ts`（清单/扫描）、`backend/ext-writes.ts`（纯写逻辑）、`backend/settings-store.ts`（串行+备份+原子写）、`backend/ext-audit.ts`、`backend/ext-packages.ts`、`backend/routes/{pi-ext-list,pi-ext-write,pi-ext-packages,require-browser-auth}.ts` |
+
+## 包源形式（新增：`npm:` 已支持）
+
+| settings.json 里的写法 | 页面如何解析 |
+|---|---|
+| 绝对/相对路径 | 按 agent 目录解析（相对路径依次尝试 agent 目录 → `~/.pi` → 当前工作目录） |
+| `npm:<name>` / `npm:<name>@<ver>` | 解析到 `<agentDir>/npm/node_modules/<name>`（项目级为 `<cwd>/.pi/npm/node_modules/<name>`）——与 pi 的 `getManagedNpmInstallPath` 一致。未安装时给出可操作提示「先执行 pi install npm:<name>」 |
+| `git:` / `https://…` / `ssh://…` | 标注为远程包，不做本地静态分析（不产生「找不到」的误导告警） |
+
+`sourceKind` 字段（`local` / `npm` / `git`）随清单一起返回，页面上用来区分来源。`pi install npm:<name>` 装完后，
+`pi-tsien-shared` 这类内部依赖会由 npm 自动装到同一 `node_modules` 下，页面能把它们算进「共享代码」统计。

@@ -18,6 +18,8 @@ export interface ExtensionPackage {
   rawSource: string
   /** `string` = load-all form, `object` = filtered form. */
   form: 'string' | 'object'
+  /** Local path, `npm:` package, or remote git/url package. */
+  sourceKind: 'local' | 'npm' | 'git'
   resolved: string | null
   exists: boolean
   kind: PackageKind
