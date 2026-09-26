@@ -138,9 +138,10 @@ npx vitest run backend/__tests__/ext-inventory.test.ts   # 5 passed
 |---|---|
 | 绝对/相对路径 | 按 agent 目录解析（相对路径依次尝试 agent 目录 → `~/.pi` → 当前工作目录） |
 | `npm:<name>` / `npm:<name>@<ver>` | 解析到 `<agentDir>/npm/node_modules/<name>`（项目级为 `<cwd>/.pi/npm/node_modules/<name>`）——与 pi 的 `getManagedNpmInstallPath` 一致。未安装时给出可操作提示「先执行 pi install npm:<name>」 |
-| `git:` / `https://…` / `ssh://…` | 标注为远程包，不做本地静态分析（不产生「找不到」的误导告警） |
+| `git:` / `https://…` / `ssh://…` / `git@host:owner/repo` | 解析到 `<agentDir>/git/<host>/<owner>/<repo>`（项目级 `<cwd>/.pi/git/...`）——与 pi 的 `getGitInstallPath` 一致。未克隆时提示「先执行 pi install git:<host>/<owner>/<repo>」 |
 
-`sourceKind` 字段（`local` / `npm` / `git`）随清单一起返回，页面上用来区分来源。`pi install npm:<name>` 装完后，
+`sourceKind` 字段（`local` / `npm` / `git`）随清单一起返回，页面上用来区分来源。
+`provided` 条目按**最近的 `package.json`** 归属，所以「伞形 git 包」（整个 monorepo 根）不会被当成 25 个子包的所有者。`pi install npm:<name>` 装完后，
 `pi-tsien-shared` 这类内部依赖会由 npm 自动装到同一 `node_modules` 下，页面能把它们算进「共享代码」统计。
 
 ## 外部用户上手
