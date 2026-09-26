@@ -9,7 +9,7 @@
 默认账本目录：
 
 ```text
-/mnt/workspace/lilong/agent/pi/token-usage/
+<agent dir>/token-usage/
 ├── 2026-09.jsonl
 └── 2026-10.jsonl
 ```

@@ -69,6 +69,6 @@ describe('pastedFileRef', () => {
     expect(pastedFileRef({ text: '/compact' })).toBeNull()
     expect(pastedFileRef({ text: '/goal ship the fix' })).toBeNull()
     expect(pastedFileRef({ text: './taskspace start x' })).toBeNull()
-    expect(pastedFileRef({ text: '/mnt/workspace/lilong' })).toBe('/mnt/workspace/lilong')
+    expect(pastedFileRef({ text: '~/workspace' })).toBe('~/workspace')
   })
 })

@@ -407,7 +407,7 @@ export default function TimePage() {
           </div>
 
           <p className="text-2xs text-muted leading-5">
-            数据来自 Pi <code>trajectory-recorder</code> 扩展写入的紧凑计时账本（<code>/mnt/workspace/lilong/agent/pi/timing</code>），不包含提示词与工具输出。
+            数据来自 Pi <code>trajectory-recorder</code> 扩展写入的紧凑计时账本（<code>~/.pi/agent/pi-timing</code>），不包含提示词与工具输出。
             墙钟与「模型 / 工具」占比只统计根进程 run；模型与工具明细表包含子代理进程，因此明细总和可能大于根进程墙钟。
             嵌套子代理会让父进程的工具耗时与子进程记录重叠，占比用于横向比较而非精确守恒。
             区间内 {formatCount(report.recordCount)} 条计时记录，其中首 token 覆盖 {formatCount(report.coverage.withTtft)} 次、thinking 覆盖 {formatCount(report.coverage.withThinking)} 次模型调用。

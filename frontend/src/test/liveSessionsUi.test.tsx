@@ -7,7 +7,7 @@ import { api } from '../api/client'
 
 afterEach(() => vi.restoreAllMocks())
 
-function session(processInstanceId: string, pid: number, cwd = '/mnt/workspace/lilong/repos/worktree/task-a'): LiveSessionSummary {
+function session(processInstanceId: string, pid: number, cwd = '~/repos/worktree/task-a'): LiveSessionSummary {
   return {
     processInstanceId, sessionId: `session-${processInstanceId}`, pid,
     cwd, canonicalCwd: cwd,
@@ -20,8 +20,8 @@ describe('Live Session UI', () => {
   it('renders and selects sessions from different worktrees', () => {
     const onSelect = vi.fn()
     render(<LiveSessionsList sessions={[
-      session('a', 101, '/mnt/workspace/lilong/repos/worktree/task-a'),
-      session('b', 202, '/mnt/workspace/lilong/repos/worktree/task-b'),
+      session('a', 101, '~/repos/worktree/task-a'),
+      session('b', 202, '~/repos/worktree/task-b'),
     ]} onSelect={onSelect} />)
     expect(screen.getByText('pi 101')).toBeInTheDocument()
     expect(screen.getByText('pi 202')).toBeInTheDocument()

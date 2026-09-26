@@ -6,7 +6,7 @@
 > `docs/extension-ui-request-multi-channel-tech-design.md`。本文背景/根因仍有效，实施请以该 tech design 为准。
 
 - 状态：已实现并验证（方案升级为多通道，见上；实施与实测记录以该 tech design 的 §8/§11/§12 为准）
-- 所属仓库：`/mnt/workspace/lilong/repos/pi-dashboard`
+- 所属仓库：`<pi-dashboard repo>`
 - 依赖版本：`@earendil-works/pi-coding-agent >= 0.84.2`
 
 ## 1. 背景与问题

@@ -1,7 +1,7 @@
 # Web 共享终端（tmux 中继）— Tech Design
 
 - **状态**：Proposed（待评审）
-- **主仓库**：`/mnt/workspace/lilong/repos/pi-dashboard`
+- **主仓库**：`<pi-dashboard repo>`
 - **PRD**：`docs/web-terminal-tmux-prd.md`
 - **运行环境**：与本机 Pi TUI 同一 Linux 用户、同一台机器
 - **依赖**：`tmux >= 3.2`、`node-pty`（根 `package.json` 已装）、`ws`（已装）、`@xterm/xterm@6` + `addon-fit/unicode11/web-fonts/web-links`（`frontend/package.json` 已装）

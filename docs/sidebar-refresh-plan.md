@@ -115,7 +115,7 @@ tag 后端已存在（`PATCH /api/chat/slots/:key/tags` + `pi-web-sessions.json`
 
 | 文件 | 改动 |
 |---|---|
-| `backend/live-sessions/meta.ts` | 新增 `LiveSessionMetaStore`：`/mnt/workspace/lilong/agent/pi/live-session-meta.json`，按 **pi `sessionId`**（不是 processInstanceId）存 `{tags, pinned, updatedAt}`；0700 目录 / 0600 文件 / temp+rename 原子写 / 串行写队列 —— 与 `groups.ts` 同构；空记录自动裁剪，脏文件不炸 |
+| `backend/live-sessions/meta.ts` | 新增 `LiveSessionMetaStore`：`<agent dir>/pi/live-session-meta.json`，按 **pi `sessionId`**（不是 processInstanceId）存 `{tags, pinned, updatedAt}`；0700 目录 / 0600 文件 / temp+rename 原子写 / 串行写队列 —— 与 `groups.ts` 同构；空记录自动裁剪，脏文件不炸 |
 | `shared/src/live-sessions.ts` | 新增 `LiveSessionMeta` 类型（**没有**改 `LiveSessionSummary`，protocolVersion 2 不动） |
 | `backend/routes/live-sessions.ts` | `GET /api/live-session-meta`、`PATCH /api/live-sessions/:processInstanceId/meta`；复用 `requireAuth` + `requireMutationOrigin`；pid → sessionId 由 registry 解析 |
 

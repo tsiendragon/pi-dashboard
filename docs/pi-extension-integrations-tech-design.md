@@ -50,7 +50,7 @@ RPC deployment prerequisite: the effective Pi extension graph must not contain d
 
 ### 4.1 Workbench
 
-`/mnt/workspace/lilong/repos/pi-subagent-workbench/src/runtime.ts` already provides:
+`<repos>/pi-subagent-workbench/src/runtime.ts` already provides:
 
 - immutable `WorkbenchSnapshot` values;
 - monotonic `revision`;
@@ -62,11 +62,11 @@ The current process-global runtime is unsafe for multiple SDK slots because mult
 
 ### 4.2 BTW
 
-`/mnt/workspace/lilong/repos/pi-tsien-extension/extensions/btw/session.ts` already owns a transport-independent child `AgentSession`, parent-context snapshots, history lookup, streaming events, abort, refresh, and disposal. The TUI command currently owns a module-global active controller and renders through `ctx.ui.custom()`.
+`<pi-tsien-extension repo>/extensions/btw/session.ts` already owns a transport-independent child `AgentSession`, parent-context snapshots, history lookup, streaming events, abort, refresh, and disposal. The TUI command currently owns a module-global active controller and renders through `ctx.ui.custom()`.
 
 ### 4.3 Background Commands
 
-`/mnt/workspace/lilong/repos/pi-tsien-extension/extensions/lib/background-commands/manager.ts` already exposes:
+`<pi-tsien-extension repo>/extensions/lib/background-commands/manager.ts` already exposes:
 
 - `subscribe()`;
 - `list()` and `get()`;
@@ -82,7 +82,7 @@ The current global manager must also become session-scoped for dashboard SDK slo
 
 Dashboard defines a dependency-free JSON contract in:
 
-`/mnt/workspace/lilong/repos/pi-dashboard/shared/src/extension-bridge.ts`
+`<pi-dashboard repo>/shared/src/extension-bridge.ts`
 
 ```ts
 interface ExtensionFeatureSnapshot {
@@ -181,10 +181,10 @@ Security and lifecycle:
 New backend modules:
 
 ```text
-/mnt/workspace/lilong/repos/pi-dashboard/backend/extension-bridge/registry.ts
-/mnt/workspace/lilong/repos/pi-dashboard/backend/extension-bridge/sdk-host.ts
-/mnt/workspace/lilong/repos/pi-dashboard/backend/extension-bridge/rpc-server.ts
-/mnt/workspace/lilong/repos/pi-dashboard/backend/routes/integrations.ts
+<pi-dashboard repo>/backend/extension-bridge/registry.ts
+<pi-dashboard repo>/backend/extension-bridge/sdk-host.ts
+<pi-dashboard repo>/backend/extension-bridge/rpc-server.ts
+<pi-dashboard repo>/backend/routes/integrations.ts
 ```
 
 Registry key: `(slotKey, feature)`.
@@ -263,7 +263,7 @@ Validation reuses Workbench service limits. The browser cannot set internal prov
 First-party components live under:
 
 ```text
-/mnt/workspace/lilong/repos/pi-dashboard/frontend/src/features/workbench/
+<pi-dashboard repo>/frontend/src/features/workbench/
 ```
 
 The panel provides:
@@ -332,7 +332,7 @@ The WebUI cannot change the tool list, model credentials, system prompt, or pare
 Components live under:
 
 ```text
-/mnt/workspace/lilong/repos/pi-dashboard/frontend/src/features/btw/
+<pi-dashboard repo>/frontend/src/features/btw/
 ```
 
 `/btw` opens a right-side drawer. The drawer streams conversation snapshots, shows current read-only tool activity, supports abort/refresh/close, and can copy the final answer into the parent draft.
@@ -359,7 +359,7 @@ There is intentionally no browser `start` command. `background` never starts a p
 Components live under:
 
 ```text
-/mnt/workspace/lilong/repos/pi-dashboard/frontend/src/features/background-commands/
+<pi-dashboard repo>/frontend/src/features/background-commands/
 ```
 
 A compact floating dock appears only when the active slot owns retained tasks. It shows status, title, command, cwd, elapsed time, output size, exit information, a bounded live tail, and cancel control.
@@ -373,7 +373,7 @@ For a Workbench child Agent, ordinary background-command tool calls already appe
 Add one generic Redux slice:
 
 ```text
-/mnt/workspace/lilong/repos/pi-dashboard/frontend/src/store/integrationsSlice.ts
+<pi-dashboard repo>/frontend/src/store/integrationsSlice.ts
 ```
 
 Key: `(slot, feature)`.

@@ -1,7 +1,7 @@
 # Lark Channel Gateway — Tech Design
 
 - **状态**：Accepted（B 模式：多套配置、单账号启用；配置由 dashboard 管理）
-- **涉及仓库**：`/mnt/workspace/lilong/repos/pi-dashboard`（新增 `channels/lark/`）
+- **涉及仓库**：`<pi-dashboard repo>`（新增 `channels/lark/`）
 - **相关工作**：`docs/live-session-multi-endpoint-tech-design.md`（`chatapp` 通道来源）
 - **信任模型**：内网 / tailnet；不暴露 dashboard 到公网
 
