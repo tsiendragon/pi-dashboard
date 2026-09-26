@@ -8,7 +8,7 @@
     "description": "Edit the per-extension JSON configs under the pi agent dir (bash-digest, observation-pack, auto-compact-target, …)",
     "client": "src/client.tsx",
     "claims": [
-      { "slot": "settings-section", "componentName": "ExtensionConfigSettings", "tab": "general", "priority": 60 }
+      { "slot": "settings-section", "componentName": "ExtensionConfigSettings", "tab": "extensions", "priority": 60 }
     ]
   }
 }

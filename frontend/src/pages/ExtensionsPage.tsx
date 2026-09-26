@@ -3,7 +3,7 @@ import type { ExtDependencies, ExtInventory, ExtensionEntry, ExtensionPackage } 
 import { Badge, PageHeader, SearchInput, Skeleton } from '../components/ui'
 import InfoTip from '../components/InfoTip'
 import MaterialIcon from '../components/MaterialIcon'
-import { PLUGIN_REGISTRY } from '../generated/plugin-registry'
+import { SettingsSectionSlot } from '../plugins/slot-consumers'
 
 interface GalleryPackage { name: string; description: string; version: string; author: string; date: string }
 interface AuditRecord { id: string; ts: string; action: string; target: string; ok: boolean; backupPath: string | null; error?: string }
@@ -541,12 +541,6 @@ export default function ExtensionsPage() {
 
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
 
-  /** The config panel is the same component Settings → General renders (dashboard plugin claim). */
-  const ConfigPanel = useMemo(() => {
-    const entry = PLUGIN_REGISTRY.find(item => item.manifest.id === 'pi-extension-config')
-    return entry?.claims.find(claim => claim.slot === 'settings-section')?.Component as React.ComponentType | undefined
-  }, [])
-
   const jumpNav = [
     { id: 'sec-package', label: '由 package 提供', count: groups.package.length },
     { id: 'sec-path', label: '直接路径', count: groups.path.length },
@@ -893,10 +887,10 @@ export default function ExtensionsPage() {
         <div className="mt-3 space-y-3 px-3 md:px-6">
           <section className="rounded-lg border border-border bg-card/40 px-3 py-2 text-[11px] text-muted">
             各扩展读取自己的 JSON 配置文件（如 <span className="font-mono">bash-digest.json</span>）。
-            这里的编辑面板与 <span className="text-text-strong">Settings → General</span> 里的是同一套实现。
+            面板由 <span className="font-mono">pi-extension-config</span> 插件声明并渲染到这里（同一个插件槽位机制）。
             扩展在加载时读取配置，所以改动要 <span className="font-mono">/reload</span> 或重开会话才生效；保存需要浏览器认证。
           </section>
-          {ConfigPanel ? <ConfigPanel /> : <Empty text="配置面板插件（pi-extension-config）未启用" />}
+          <SettingsSectionSlot tab="extensions" />
         </div>
       )}
 

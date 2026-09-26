@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import type { ExtInventory } from '@shared/ext-inventory'
 import ExtensionsPage from '../pages/ExtensionsPage'
+import { PluginContextProvider } from '../plugins/plugin-context'
+import { createSlotRegistry, type SlotRegistry } from '../plugins/slot-registry'
+import { PLUGIN_REGISTRY } from '../generated/plugin-registry'
 
 /**
  * Render-level smoke tests for the Extensions page.
@@ -155,8 +158,21 @@ function rowButtons(name: string): HTMLElement[] {
   return screen.getAllByRole('button', { name }).filter(button => !button.getAttribute('aria-label'))
 }
 
+/** Build a slot registry the way the app does, so plugin claims (config panel) show up. */
+function appRegistry(): SlotRegistry {
+  const registry = createSlotRegistry()
+  for (const entry of PLUGIN_REGISTRY) {
+    for (const claim of entry.claims) registry.addClaim(claim)
+  }
+  return registry
+}
+
 async function renderPage() {
-  render(<ExtensionsPage />)
+  render(
+    <PluginContextProvider registry={appRegistry()}>
+      <ExtensionsPage />
+    </PluginContextProvider>,
+  )
   await screen.findByText('① 由 package 提供')
 }
 

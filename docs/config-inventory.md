@@ -12,7 +12,7 @@
 | | `AGENTS.md` / `DefaultSystemPrompt.md` | pi（系统提示） | 否 | ❌ |
 | | `keybindings.json` / `trust.json` | pi | 否 | ❌ |
 | | `sessions/`、`skills/`、`bin/`、`local/` | pi | 混合 | ❌ |
-| | `extensions.config.json` | 同步器（声明装载清单） | 是（standalone 安装用它） | ⚠️ 间接（`/api/pi/packages/*` 装卸 package 落到 settings.json） |
+| | `extensions.config.json` | 同步器（声明装载清单） | 是（standalone 安装用它） | ⚠️ 间接（Extensions 页装卸 package 落到 settings.json；`/api/pi/packages/*` 仍保留为 API 面） |
 | **扩展（每个一份 JSON）** | `bash-digest.json`、`observation-pack.json`、`large-read-pack.json`、`auto-compact-target.json`、`compact-thinking.json`、`capability.json`、`claude-code-style.json` | 各扩展自己（缺失即用内置默认值） | 只有你在用的 | ✅ Settings → general → **Extension config** |
 | | `theme.json`、`tsien-memory.json`、`rtk-config.json` | 各自的扩展 | 否 | ❌（前一个是可选覆盖文件，后两个按项目 `<cwd>/.pi/` 解析） |
 | **进程环境变量** | `~/.pi/agent/dashboard.env`（dashboard 启动时加载，并传给每个 pi 子进程） | dashboard + 它派生的所有 pi | 部分（`PI_SCRIPT`、凭证、数据目录） | ❌（但已收敛成**唯一**入口） |

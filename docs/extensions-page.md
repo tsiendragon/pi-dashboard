@@ -66,7 +66,7 @@ dashboard 默认 `PI_DASH_HOST=0.0.0.0`（网络可达）且**没有全局鉴权
 | `GET /api/pi/ext/audit?limit=` | 审计记录（JSONL，最新在前） |
 | `POST /api/pi/ext/rollback` `{backupPath}` | 用某份 `backups/settings-*.json` 覆盖 settings.json（回滚前会再备份一次，可回滚回来） |
 
-- 装/卸/更新/回滚都**必须通过浏览器认证**（同 §鉴权）；旧的 `/api/pi/packages/install|remove` 保留给 Settings 页，但已改为同一实现 + 同一门禁。
+- 装/卸/更新/回滚都**必须通过浏览器认证**（同 §鉴权）；旧的 `/api/pi/packages/install|remove` 作为 **API 面**保留（已委托到同一实现 + 同一门禁），但 UI 入口已从 Settings → General 移除。
 - 审计文件：`<agent dir>/extension-audit.jsonl`，每条含 `ts / action / target / actor(浏览器 clientId) / ok / backupPath / before / after / output|error`。
 - 启停与排序也记审计（action `toggle` / `order`）。
 - 回滚路径必须落在 `<agent dir>/backups/` 且形如 `settings-*.json`（越界路径 400）。
@@ -182,3 +182,17 @@ npx vitest run backend/__tests__/ext-inventory.test.ts   # 5 passed
 | 设计一致性 | 自造 Badge、内边距与 PageHeader 不对齐 | 复用 `PageHeader` / `Badge` / `SearchInput` / `Skeleton` / `InfoTip` / `MaterialIcon`，内边距 `px-3 md:px-6` 与其它页面一致 |
 
 未做（保持范围）：没有引入图标库（页面只用内置 SVG 图标 `sync`/`error`/`expand_more`，其余用文字与编号），没有截图回归（本机无浏览器），视觉最终确认由使用者在浏览器里完成。
+
+## 入口收敛（本轮）
+
+改版前「装扩展」这件事在 dashboard 里有两套 UI：Settings → General 的 Installed Packages / Package Gallery，以及
+Extensions 页的安装 tab。功能重复且旧界面更弱（没有更新、回滚、审计、来源类型、表单预览）。
+
+处理：
+
+| 位置 | 改后 |
+|---|---|
+| Settings → General | 安装/搜索卡片被删除，只留一张卡说明「管理已集中到 Extensions 页」+ 按钮直达 `/extensions#install`；该 tab 保留的是 **Pi 的设置字段**（extensions/skills/prompts/themes 路径） |
+| Settings → General 的插件槽位 | 保留 `<SettingsSectionSlot tab="general" />`（其它插件仍可往 Settings 注入分区） |
+| 扩展配置面板 | 插件 `pi-extension-config` 的 claim 由 `tab: "general"` 改为 `tab: "extensions"`，改由 Extensions 页的「配置」tab 通过同一槽位机制承载 —— 不再有第二个入口 |
+| `/api/pi/packages/install\|remove`、`/api/pi/gallery` | 作为 API 面保留（同一实现 + 门禁），仅 UI 入口移除 |

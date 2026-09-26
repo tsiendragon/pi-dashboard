@@ -5,7 +5,8 @@ pi 的每个扩展把自己的设置放在 agent 目录下一个独立 JSON 里�
 
 ## 从哪进
 
-**Settings → general → Extension config**（由插件 `pi-extension-config` 通过 `settings-section` 槽位贡献）。
+**Extensions → 配置**（由插件 `pi-extension-config` 通过 `settings-section` 槽位贡献，claim `tab: "extensions"`；
+Extensions 页用 `<SettingsSectionSlot tab="extensions" />` 承载）。改版前它在 Settings → General，现已收敛到一处。
 
 每个配置卡片显示：名字、文件名、是否已存在、一行说明、可编辑字段、原始 JSON 预览和它的绝对路径。
 
