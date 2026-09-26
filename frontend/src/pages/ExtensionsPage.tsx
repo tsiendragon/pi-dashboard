@@ -1,52 +1,163 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ExtDependencies, ExtInventory, ExtensionEntry } from '@shared/ext-inventory'
+import { Badge, PageHeader, SearchInput, Skeleton } from '../components/ui'
+import InfoTip from '../components/InfoTip'
+import MaterialIcon from '../components/MaterialIcon'
 
 interface GalleryPackage { name: string; description: string; version: string; author: string; date: string }
 interface AuditRecord { id: string; ts: string; action: string; target: string; ok: boolean; backupPath: string | null; error?: string }
 
 /**
- * Extensions — read-only view of the set Pi will actually load.
+ * Extensions — what Pi will actually load, plus the controls to change it.
  *
- * The old endpoint (`/api/pi/extensions`) only listed `<agent dir>/extensions/*.ts`, which is not
- * the loaded set. This page reads `GET /api/pi/ext/list` (settings.json + extensions.config.json +
- * package manifests) and groups entries by who provides them. Writing (enable/disable, reorder)
- * arrives with the P2 phase; config values are edited in Settings → General.
+ * Data: `GET /api/pi/ext/list` (settings.json + extensions.config.json + package manifests),
+ * `GET /api/pi/ext/deps` (static cross-package scan, cached), `GET /api/pi/ext/audit`.
+ * Writes: toggle / order / install / remove / rollback — all of them require the browser-auth cookie
+ * (the server returns 401 + hint otherwise, which this page surfaces instead of pretending success).
  */
 
-const STATE_STYLES: Record<ExtensionEntry['state'], { dot: string; label: string }> = {
-  enabled: { dot: 'bg-emerald-400', label: 'enabled' },
-  forced: { dot: 'bg-sky-400', label: 'forced (!)' },
-  disabled: { dot: 'bg-zinc-500', label: 'disabled (-)' },
+const STATE_STYLE: Record<ExtensionEntry['state'], { dot: string; label: string; tone: 'ok' | 'warn' | 'aim' }> = {
+  enabled: { dot: 'bg-emerald-400', label: '启用', tone: 'ok' },
+  forced: { dot: 'bg-sky-400', label: '强制加载', tone: 'aim' },
+  disabled: { dot: 'bg-zinc-500', label: '已禁用', tone: 'warn' },
 }
 
-function Badge({ children, tone = 'muted', title }: { children: React.ReactNode; tone?: 'muted' | 'ok' | 'warn' | 'bad' | 'info'; title?: string }) {
-  const tones = {
-    muted: 'border-border text-muted',
-    ok: 'border-emerald-500/40 text-emerald-300',
-    warn: 'border-amber-500/40 text-amber-300',
-    bad: 'border-red-500/40 text-red-300',
-    info: 'border-sky-500/40 text-sky-300',
-  } as const
+const AUDIT_LABEL: Record<string, string> = {
+  toggle: '启停',
+  order: '排序',
+  install: '安装',
+  remove: '卸载',
+  update: '更新',
+  rollback: '回滚',
+}
+
+const PATTERNS = {
+  packageEntry: /^\.\/packages\/([^/]+)\//,
+} as const
+
+/** Small neutral label (paths, versions, sources) — quieter than the shared status Badge. */
+function Chip({ children, title, mono = false }: { children: React.ReactNode; title?: string; mono?: boolean }) {
   return (
-    <span title={title} className={`rounded border px-1.5 py-0.5 text-2xs ${tones[tone]}`}>
+    <span
+      title={title}
+      className={`shrink-0 rounded border border-border/80 bg-bg/40 px-1.5 py-0.5 text-[11px] leading-4 text-muted ${mono ? 'font-mono' : ''}`}
+    >
       {children}
     </span>
   )
 }
 
-function SummaryCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
+function TextButton({
+  children,
+  onClick,
+  disabled,
+  tone = 'muted',
+  title,
+}: {
+  children: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+  tone?: 'muted' | 'ok' | 'danger'
+  title?: string
+}) {
+  const toneCls =
+    tone === 'ok'
+      ? 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10'
+      : tone === 'danger'
+        ? 'border-red-500/40 text-red-300 hover:bg-red-500/10'
+        : 'border-border text-muted hover:text-text-strong'
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3">
-      <div className="text-2xs text-muted">{label}</div>
-      <div className="mt-1 text-xl font-semibold text-text-strong">{value}</div>
-      {hint && <div className="mt-1 text-2xs text-muted">{hint}</div>}
-    </div>
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={`rounded border px-2 py-1 text-[11px] transition-colors disabled:opacity-40 ${toneCls}`}
+    >
+      {children}
+    </button>
   )
 }
 
+function StatCard({
+  label,
+  value,
+  hint,
+  active,
+  onClick,
+  tone = 'default',
+}: {
+  label: string
+  value: string | number
+  hint?: string
+  active?: boolean
+  onClick?: () => void
+  tone?: 'default' | 'warn' | 'ok'
+}) {
+  const valueCls = tone === 'warn' ? 'text-amber-300' : tone === 'ok' ? 'text-emerald-300' : 'text-text-strong'
+  const className = `rounded-lg border px-3 py-2.5 text-left transition-colors ${
+    active ? 'border-accent bg-accent/10' : 'border-border bg-card hover:border-accent/50'
+  }`
+  const body = (
+    <>
+      <div className="text-[11px] text-muted">{label}</div>
+      <div className={`mt-0.5 text-lg font-semibold leading-6 ${valueCls}`}>{value}</div>
+      {hint && <div className="mt-0.5 text-[11px] leading-4 text-muted">{hint}</div>}
+    </>
+  )
+  return onClick ? (
+    <button type="button" onClick={onClick} className={className} aria-pressed={active}>
+      {body}
+    </button>
+  ) : (
+    <div className={className}>{body}</div>
+  )
+}
+
+function Section({
+  id,
+  title,
+  count,
+  hint,
+  children,
+  collapsed,
+  onToggleCollapsed,
+}: {
+  id: string
+  title: string
+  count?: number | string
+  hint?: string
+  children: React.ReactNode
+  collapsed: boolean
+  onToggleCollapsed: () => void
+}) {
+  return (
+    <section id={id} className="scroll-mt-24 overflow-hidden rounded-lg border border-border bg-card/40">
+      <header className="flex items-center gap-2 border-b border-border bg-card/60 px-3 py-2">
+        <span className="text-sm font-medium text-text-strong">{title}</span>
+        {count !== undefined && <Chip mono>{count}</Chip>}
+        {hint && <InfoTip text={hint} />}
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          title={collapsed ? '展开' : '收起'}
+          aria-label={collapsed ? '展开' : '收起'}
+          className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted hover:text-text-strong"
+        >
+          <MaterialIcon name="expand_more" className={`h-4 w-4 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+        </button>
+      </header>
+      {!collapsed && children}
+    </section>
+  )
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="px-3 md:px-6 py-6 text-center text-xs text-muted">{text}</div>
+}
+
 interface EntryActions {
-  onEnable: () => void
-  onDisable: () => void
+  onToggleEnabled: () => void
   onMove: (direction: -1 | 1) => void
   canMoveUp: boolean
   canMoveDown: boolean
@@ -55,85 +166,125 @@ interface EntryActions {
 function EntryRow({
   entry,
   expanded,
-  onToggle,
+  onToggleExpanded,
   actions,
   busy,
   importedBy,
 }: {
   entry: ExtensionEntry
   expanded: boolean
-  onToggle: () => void
+  onToggleExpanded: () => void
   actions?: EntryActions
   busy?: boolean
   importedBy?: string[]
 }) {
-  const state = STATE_STYLES[entry.state]
+  const state = STATE_STYLE[entry.state]
+  const pkgMatch = PATTERNS.packageEntry.exec(entry.raw)
+  const label = entry.name ?? pkgMatch?.[1] ?? entry.raw
+
   return (
-    <div className="border-b border-border/60 last:border-b-0">
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-card/60">
+    <div className={`border-b border-border/60 last:border-b-0 ${expanded ? 'bg-card/30' : 'hover:bg-card/50'}`}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
         <span className={`h-2 w-2 shrink-0 rounded-full ${state.dot}`} title={state.label} />
-        <span className="text-2xs text-muted">#{entry.appliedOrder}</span>
-        <span className="text-sm text-text-strong">{entry.name ?? entry.raw}</span>
-        {entry.packageId && <Badge tone="info">{entry.packageId}</Badge>}
-        {!entry.packageId && <Badge>path</Badge>}
-        {entry.version && <Badge>{entry.version}</Badge>}
-        {entry.declared && <Badge tone="ok">declared</Badge>}
-        {!entry.declared && entry.group === 'package' && <Badge tone="warn" title="包内文件但未在该包 manifest 的 pi.extensions 里声明">undeclared</Badge>}
-        {entry.duplicate && <Badge tone="warn" title="同一路径在 settings.json 里出现多次">duplicate</Badge>}
-        {!entry.exists && <Badge tone="bad" title="文件不存在，Pi 会跳过">missing</Badge>}
-        {importedBy && importedBy.length > 0 && (
-          <Badge tone="warn" title={`静态扫描：${importedBy.join('、')} 会 import 这个包的代码（禁用本条目不会卸载代码）`}>
-            被 {importedBy.length} 个条目 import
-          </Badge>
-        )}
-        {entry.patchedApi.length > 0 && (
-          <Badge tone="warn" title={`推断（扫描源码得到，非声明依赖）：${entry.patchedApi.join(', ')}；需要补丁版 pi`}>
-            需要补丁版 pi
-          </Badge>
-        )}
-        <span className="ml-auto text-2xs text-muted">{expanded ? '收起' : '详情'}</span>
-      </button>
-      {actions && (
-        <div className="flex items-center gap-1 px-3 pb-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void (entry.state === 'disabled' ? actions.onEnable() : actions.onDisable())}
-            className="rounded border border-border px-2 py-0.5 text-2xs text-muted hover:text-text-strong disabled:opacity-50"
-          >
-            {entry.state === 'disabled' ? '启用' : '禁用'}
-          </button>
-          {entry.state !== 'disabled' && (
+        <span className="w-6 shrink-0 text-right font-mono text-[11px] text-muted">#{entry.appliedOrder}</span>
+
+        <button
+          type="button"
+          onClick={onToggleExpanded}
+          aria-expanded={expanded}
+          title={expanded ? '收起详情' : '展开详情'}
+          className="flex min-w-0 items-center gap-2 text-left"
+        >
+          <span className="truncate text-sm text-text-strong">{label}</span>
+          {entry.packageId && !entry.packageId.startsWith('@') && entry.packageId !== label && (
+            <Chip mono title="extensions.config.json 里的 id">{entry.packageId}</Chip>
+          )}
+          {entry.version && <Chip mono>{entry.version}</Chip>}
+          {entry.declared && <Chip title="已在所属包的 manifest（pi.extensions）里声明">declared</Chip>}
+          {!entry.declared && entry.group === 'package' && (
+            <Chip title="包内文件，但未在该包 manifest 的 pi.extensions 里声明">undeclared</Chip>
+          )}
+          {entry.duplicate && <Chip title="同一路径在 settings.json 里出现多次">重复</Chip>}
+          {!entry.exists && <Chip title="文件不存在，Pi 会跳过">缺失</Chip>}
+          {importedBy && importedBy.length > 0 && (
+            <Chip title={`静态扫描：${importedBy.join('、')} 会 import 这个包的代码 —— 禁用本条目不会卸载代码`}>
+              被 {importedBy.length} 个条目 import
+            </Chip>
+          )}
+          {entry.patchedApi.length > 0 && (
+            <span title={`用到补丁版 pi 才有的 API（源码文本扫描推断）：${entry.patchedApi.join(', ')}`}>
+              <Badge variant="warn">需补丁版 pi</Badge>
+            </span>
+          )}
+        </button>
+
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <span className="hidden sm:inline">
+            <Badge variant={state.tone}>{state.label}</Badge>
+          </span>
+          {actions && (
             <>
-              <button type="button" disabled={busy || !actions.canMoveUp} onClick={() => void actions.onMove(-1)}
-                className="rounded border border-border px-1.5 py-0.5 text-2xs text-muted hover:text-text-strong disabled:opacity-30">↑</button>
-              <button type="button" disabled={busy || !actions.canMoveDown} onClick={() => void actions.onMove(1)}
-                className="rounded border border-border px-1.5 py-0.5 text-2xs text-muted hover:text-text-strong disabled:opacity-30">↓</button>
+              <TextButton
+                tone={entry.state === 'disabled' ? 'ok' : 'danger'}
+                disabled={busy}
+                title={entry.state === 'disabled' ? '去掉前缀，让 Pi 重新加载' : '加 - 前缀禁用它（不删除文件）'}
+                onClick={actions.onToggleEnabled}
+              >
+                {entry.state === 'disabled' ? '启用' : '禁用'}
+              </TextButton>
+              {entry.state !== 'disabled' && (
+                <>
+                  <TextButton title="在受管条目里上移一位" disabled={busy || !actions.canMoveUp} onClick={() => actions.onMove(-1)}>↑</TextButton>
+                  <TextButton title="在受管条目里下移一位" disabled={busy || !actions.canMoveDown} onClick={() => actions.onMove(1)}>↓</TextButton>
+                </>
+              )}
             </>
           )}
-          {entry.state === 'disabled' && <span className="text-2xs text-muted">禁用只改前缀，代码仍会被别的扩展 import</span>}
+          <TextButton title={expanded ? '收起详情' : '展开详情'} onClick={onToggleExpanded}>{expanded ? '收起' : '详情'}</TextButton>
         </div>
-      )}
+      </div>
+
       {expanded && (
-        <div className="space-y-1 bg-card/40 px-4 py-3 text-2xs text-muted">
-          <div className="font-mono break-all">settings.json: {entry.raw}</div>
-          {entry.path && <div className="font-mono break-all">resolved: {entry.path}</div>}
-          {entry.manifestPath && <div className="font-mono break-all">package entry: {entry.manifestPath}</div>}
-          {entry.packageSource && <div className="font-mono break-all">package source: {entry.packageSource}</div>}
-          <div>
-            受管顺序：{entry.managedOrder === null ? '未在 extensions.config.json 的 loadOrder 中声明' : `#${entry.managedOrder}`}
-            {entry.state === 'disabled' && ' ｜ 禁用只改前缀，不会卸载代码'}
-          </div>
-          {entry.description && <div>{entry.description}</div>}
-          {importedBy && importedBy.length > 0 && (
-          <Badge tone="warn" title={`静态扫描：${importedBy.join('、')} 会 import 这个包的代码（禁用本条目不会卸载代码）`}>
-            被 {importedBy.length} 个条目 import
-          </Badge>
-        )}
-        {entry.patchedApi.length > 0 && (
-            <div>补丁 API（推断）：{entry.patchedApi.join('、')} —— 由源码文本扫描得到，不代表真实依赖关系</div>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 bg-bg/30 px-3 md:px-6 py-3 text-[11px] text-muted">
+          <dt className="text-muted/70">settings.json</dt>
+          <dd className="break-all font-mono">{entry.raw}</dd>
+          {entry.path && (
+            <>
+              <dt className="text-muted/70">解析为</dt>
+              <dd className="break-all font-mono">{entry.path}</dd>
+            </>
           )}
-        </div>
+          {entry.manifestPath && (
+            <>
+              <dt className="text-muted/70">包内入口</dt>
+              <dd className="break-all font-mono">{entry.manifestPath}</dd>
+            </>
+          )}
+          {entry.packageSource && (
+            <>
+              <dt className="text-muted/70">包来源</dt>
+              <dd className="break-all font-mono">{entry.packageSource}</dd>
+            </>
+          )}
+          <dt className="text-muted/70">受管顺序</dt>
+          <dd>
+            {entry.managedOrder === null
+              ? '未在 extensions.config.json 的 loadOrder 中声明（仅存在于 settings.json）'
+              : `loadOrder #${entry.managedOrder}`}
+          </dd>
+          {entry.description && (
+            <>
+              <dt className="text-muted/70">说明</dt>
+              <dd className="break-words">{entry.description}</dd>
+            </>
+          )}
+          {entry.patchedApi.length > 0 && (
+            <>
+              <dt className="text-muted/70">补丁 API</dt>
+              <dd>推断：{entry.patchedApi.join('、')}（源码文本扫描，不代表真实依赖）</dd>
+            </>
+          )}
+        </dl>
       )}
     </div>
   )
@@ -144,14 +295,20 @@ export default function ExtensionsPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState<{ title: string; diff: string[]; note: string; run: () => Promise<void> } | null>(null)
   const [gallery, setGallery] = useState<GalleryPackage[] | null>(null)
-  const [galleryQuery, setGalleryQuery] = useState('')
+  const [galleryLoading, setGalleryLoading] = useState(false)
   const [audit, setAudit] = useState<AuditRecord[]>([])
+  const [auditLoading, setAuditLoading] = useState(false)
   const [source, setSource] = useState('')
   const [deps, setDeps] = useState<ExtDependencies | null>(null)
+  const [query, setQuery] = useState('')
+  const [stateFilter, setStateFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
+  const [issuesOnly, setIssuesOnly] = useState(false)
+  const noticeTimer = useRef<number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -168,32 +325,37 @@ export default function ExtensionsPage() {
   }, [])
 
   const loadAudit = useCallback(async () => {
+    setAuditLoading(true)
     try {
       const response = await fetch('/api/pi/ext/audit?limit=30')
       const payload = (await response.json()) as { records?: AuditRecord[] }
       setAudit(payload.records ?? [])
     } catch {
       setAudit([])
+    } finally {
+      setAuditLoading(false)
     }
   }, [])
 
   const searchGallery = useCallback(async () => {
+    setGalleryLoading(true)
     try {
       const response = await fetch('/api/pi/gallery')
       const payload = (await response.json()) as { packages?: GalleryPackage[] }
       setGallery(payload.packages ?? [])
     } catch {
       setGallery([])
+    } finally {
+      setGalleryLoading(false)
     }
   }, [])
 
   const loadDeps = useCallback(async () => {
     try {
       const response = await fetch('/api/pi/ext/deps')
-      if (!response.ok) return
-      setDeps((await response.json()) as ExtDependencies)
+      if (response.ok) setDeps((await response.json()) as ExtDependencies)
     } catch {
-      /* the section simply stays empty */
+      // the dependency scan is optional information; leave it empty on failure
     }
   }, [])
 
@@ -203,17 +365,32 @@ export default function ExtensionsPage() {
     void loadDeps()
   }, [load, loadAudit, loadDeps])
 
-  const toggle = (key: string) => {
+  const flash = useCallback((message: string) => {
+    setNotice(message)
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 8000)
+  }, [])
+
+  const toggleExpanded = useCallback((key: string) => {
     setExpanded(previous => {
       const next = new Set(previous)
       if (next.has(key)) next.delete(key)
       else next.add(key)
       return next
     })
-  }
+  }, [])
 
-  /** Managed (unprefixed) paths in applied order — the only entries reorder may touch. */
+  const toggleCollapsed = useCallback((id: string) => {
+    setCollapsed(previous => {
+      const next = new Set(previous)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
   const managedPaths = useMemo(
+    // Only prefix-free entries are the managed set (pi's config-selector writes +/- on top of these).
     () => (data?.extensions ?? []).filter(entry => entry.path && !/^[+\-!]/.test(entry.raw)).map(entry => entry.path as string),
     [data],
   )
@@ -228,23 +405,30 @@ export default function ExtensionsPage() {
     return payload
   }, [])
 
+  const sharedByPackage = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const item of deps?.sharedPackages ?? []) {
+      if (item.packageId) map.set(item.packageId, item.importedBy)
+    }
+    return map
+  }, [deps])
+
   const requestToggle = (entry: ExtensionEntry) => {
     const enabling = entry.state === 'disabled'
+    const importers = entry.packageId ? sharedByPackage.get(entry.packageId) : undefined
+    const warn = !enabling && importers && importers.length > 0
     setPending({
       title: `${enabling ? '启用' : '禁用'} ${entry.name ?? entry.raw}`,
-      diff: [`${enabling ? '~ 去掉 - 前缀' : '~ 加 - 前缀'}：${entry.raw}`],
+      diff: [
+        `${entry.raw}  →  ${enabling ? entry.raw.replace(/^-/, '+') : (entry.raw.startsWith('-') ? entry.raw : `-${entry.raw}`)}`,
+      ],
       note: enabling
-        ? '恢复为默认包含（原样回到未加前缀的写法）。'
-        : (() => {
-            const importers = entry.packageId ? sharedByPackage.get(entry.packageId) : undefined
-            return importers && importers.length > 0
-              ? `禁用只让 Pi 不加载这一条，不会卸载代码：${importers.join('、')} 仍会 import 这个包的模块（静态扫描结论）。`
-              : '禁用只让 Pi 不加载这一条，不会卸载代码：别的扩展仍可能 import 它的模块。'
-          })(),
+        ? '启用会写 + 前缀（只影响加载顺序里的这一项）。'
+        : `禁用只写 - 前缀，不会卸载代码。${warn ? `注意：${importers!.join('、')} 仍会 import 这个包的代码。` : ''}`,
       run: async () => {
-        const payload = await post('/api/pi/ext/toggle', 'POST', { path: entry.path, enabled: enabling })
-        setNotice(`${enabling ? '已启用' : '已禁用'} ${entry.name ?? entry.raw}｜备份：${payload.backupPath ?? '（无变化，未写盘）'}`)
-        await load()
+        const payload = await post('/api/pi/ext/toggle', 'POST', { path: entry.path ?? entry.raw, enabled: enabling })
+        flash(`${enabling ? '已启用' : '已禁用'} ${entry.name ?? entry.raw}｜备份：${payload.backupPath ?? '（无变化，未写盘）'}`)
+        await Promise.all([load(), loadAudit()])
       },
     })
   }
@@ -259,37 +443,30 @@ export default function ExtensionsPage() {
     reordered.splice(target, 0, path)
     setPending({
       title: `调整 ${entry.name ?? entry.raw} 的顺序`,
-      diff: [`~ ${index + 1} → ${target + 1}（受管条目内）`],
-      note: '顺序约束：tool-result-pipeline 必须紧跟 web-tools；trajectory-recorder 与 capability 通常在最后。',
+      diff: [`~ 受管顺序 ${index + 1} → ${target + 1}`],
+      note: '顺序约束提醒：tool-result-pipeline 需紧跟 web-tools；trajectory-recorder / capability 通常在最后。',
       run: async () => {
         const payload = await post('/api/pi/ext/order', 'PUT', { paths: reordered })
-        setNotice(`顺序已更新｜备份：${payload.backupPath ?? '（无变化，未写盘）'}`)
+        flash(`顺序已更新｜备份：${payload.backupPath ?? '（无变化，未写盘）'}`)
         await load()
       },
     })
   }
 
-  const requestInstall = (pkgSource: string) => {
+  const requestSource = (action: 'install' | 'remove' | 'update', pkgSource: string) => {
+    const title = action === 'install' ? '安装' : action === 'remove' ? '卸载' : '更新'
     setPending({
-      title: `安装 ${pkgSource}`,
-      diff: [`+ 运行 pi install ${pkgSource}`],
-      note: '第三方代码会在你的机器上被安装并加载；安装前会备份 settings.json，失败也会留审计记录，随时可回滚。',
+      title: `${title} ${pkgSource}`,
+      diff: [`${action === 'install' ? '+' : action === 'remove' ? '-' : '~'} 运行 pi ${action} ${pkgSource}`],
+      note:
+        action === 'install'
+          ? '第三方代码会在你的机器上被安装并加载。安装前会自动备份 settings.json，失败也会留审计记录，可随时回滚。'
+          : action === 'remove'
+            ? '只从 settings.json 移除该 package；已下载的文件不会删除。'
+            : '会重新拉取该 package 的最新内容（git 包等价于 git pull）。',
       run: async () => {
-        const payload = await post('/api/pi/ext/install', 'POST', { source: pkgSource })
-        setNotice(`已安装 ${pkgSource}｜备份：${payload.backupPath ?? '（无）'}`)
-        await Promise.all([load(), loadAudit()])
-      },
-    })
-  }
-
-  const requestRemove = (pkgSource: string) => {
-    setPending({
-      title: `卸载 ${pkgSource}`,
-      diff: [`- 运行 pi remove ${pkgSource}`],
-      note: '只从 settings.json 移除该 package；已下载的文件不会删除。',
-      run: async () => {
-        const payload = await post('/api/pi/ext/remove', 'POST', { source: pkgSource })
-        setNotice(`已卸载 ${pkgSource}｜备份：${payload.backupPath ?? '（无）'}`)
+        const payload = await post(`/api/pi/ext/${action}`, 'POST', { source: pkgSource })
+        flash(`${title}完成：${pkgSource}｜备份：${payload.backupPath ?? '（无）'}`)
         await Promise.all([load(), loadAudit()])
       },
     })
@@ -299,62 +476,475 @@ export default function ExtensionsPage() {
     setPending({
       title: '回滚到该备份',
       diff: [`~ 用 ${backupPath.split('/').pop()} 覆盖 settings.json`],
-      note: '回滚本身也会先备份当前状态，因此可以再回滚回来。',
+      note: '回滚本身也会先备份当前状态，所以可以再回滚回来。',
       run: async () => {
         const payload = await post('/api/pi/ext/rollback', 'POST', { backupPath })
-        setNotice(`已回滚｜本次备份：${payload.backupPath ?? '（无）'}`)
+        flash(`已回滚｜本次备份：${payload.backupPath ?? '（无）'}`)
         await Promise.all([load(), loadAudit()])
       },
     })
   }
 
-  const sharedByPackage = useMemo(() => {
-    const map = new Map<string, string[]>()
-    for (const item of deps?.sharedPackages ?? []) {
-      if (item.packageId) map.set(item.packageId, item.importedBy)
+  useEffect(() => {
+    if (!pending) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPending(null)
     }
-    return map
-  }, [deps])
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pending])
 
-  const groups = useMemo(() => {
+  const failCount = (entry: ExtensionEntry) => !entry.exists || entry.duplicate || (!entry.declared && entry.group === 'package') || entry.patchedApi.length > 0
+
+  const visible = useMemo(() => {
     const entries = data?.extensions ?? []
-    return {
-      package: entries.filter(entry => entry.group === 'package'),
-      path: entries.filter(entry => entry.group === 'path'),
-    }
-  }, [data])
+    const needle = query.trim().toLowerCase()
+    return entries.filter(entry => {
+      if (stateFilter === 'enabled' && entry.state === 'disabled') return false
+      if (stateFilter === 'disabled' && entry.state !== 'disabled') return false
+      if (issuesOnly && !failCount(entry)) return false
+      if (!needle) return true
+      return [entry.name, entry.raw, entry.path, entry.packageId].filter(Boolean).some(value => String(value).toLowerCase().includes(needle))
+    })
+  }, [data, query, stateFilter, issuesOnly])
+
+  const groups = useMemo(() => ({
+    package: visible.filter(entry => entry.group === 'package'),
+    path: visible.filter(entry => entry.group === 'path'),
+  }), [visible])
+
+  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
+  const nav = [
+    { id: 'sec-package', label: '由 package 提供', count: groups.package.length },
+    { id: 'sec-path', label: '直接路径', count: groups.path.length },
+    { id: 'sec-provided', label: '包自带', count: data?.provided.length ?? 0 },
+    { id: 'sec-auto', label: '未纳管', count: data?.auto.length ?? 0 },
+    { id: 'sec-install', label: '安装 / 卸载' },
+    { id: 'sec-audit', label: '操作审计', count: audit.length },
+    { id: 'sec-shared', label: '共享代码', count: deps?.sharedPackages.length ?? 0 },
+  ]
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4">
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-semibold text-text-strong">Extensions</h1>
-        <span className="text-2xs text-muted">Pi 实际会加载的清单（来自 settings.json + extensions.config.json）</span>
+    <div className="mx-auto max-w-6xl pb-10">
+      <PageHeader title="Extensions" subtitle="Pi 实际会加载的清单 —— 来自 settings.json + extensions.config.json + 各包 manifest" />
+
+      <div className="flex flex-wrap items-center gap-2 px-3 md:px-6">
         <button
           type="button"
           onClick={() => void load()}
           disabled={loading}
-          className="ml-auto rounded border border-border px-3 py-1 text-xs text-muted hover:text-text-strong disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded border border-border px-2.5 py-1 text-xs text-muted hover:text-text-strong disabled:opacity-50"
         >
+          <MaterialIcon name="sync" className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           {loading ? '刷新中…' : '刷新'}
         </button>
+        <InfoTip text="只读信息来自 settings.json / extensions.config.json / 各包 package.json；跨包引用是把源码 import 静态解析出来的（不代表运行时真实依赖）。写操作会先备份 settings.json 并记录审计。" />
+        <span className="ml-auto text-[11px] text-muted">
+          agent dir：<span className="font-mono">{data?.agentDir ?? '…'}</span>
+        </span>
       </div>
 
-      {error && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs text-red-300">读取失败：{error}</div>}
-      {notice && <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-200">{notice}</div>}
+      {error && (
+        <div className="mx-3 md:mx-6 flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          <MaterialIcon name="error" className="h-4 w-4" />
+          <span className="min-w-0 flex-1 break-all">{error}</span>
+          <TextButton onClick={() => void load()}>重试</TextButton>
+        </div>
+      )}
+      {notice && (
+        <div className="mx-3 md:mx-6 flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+          <span className="min-w-0 flex-1 break-all">{notice}</span>
+          <TextButton onClick={() => { setNotice(null); jump('sec-audit') }}>看审计</TextButton>
+          <TextButton title="关闭提示" onClick={() => setNotice(null)}>✕</TextButton>
+        </div>
+      )}
+
+      {!data && loading && (
+        <div className="space-y-2 px-3 md:px-6">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-40 w-full" />
+        </div>
+      )}
+
+      {data && (
+        <>
+          <div className="grid grid-cols-2 gap-2 px-3 md:px-6 sm:grid-cols-3 lg:grid-cols-6">
+            <StatCard label="已加载条目" value={data.counts.applied} hint="settings.json 的 extensions" />
+            <StatCard
+              label="启用 / 禁用"
+              value={`${data.counts.enabled} / ${data.counts.disabled}`}
+              hint={data.counts.disabled > 0 ? '点按只看禁用' : '全部启用'}
+              active={stateFilter === 'disabled'}
+              onClick={() => setStateFilter(previous => (previous === 'disabled' ? 'all' : 'disabled'))}
+            />
+            <StatCard label="Packages" value={data.counts.packages} hint="settings.json 的 packages" />
+            <StatCard label="由包自带" value={data.counts.provided} hint="autoload，未列在 extensions" />
+            <StatCard
+              label="异常 / 需补丁"
+              value={`${data.counts.broken} / ${data.counts.patched}`}
+              tone="warn"
+              hint={issuesOnly ? '已筛选，点按取消' : '缺失 / 重复 / 未声明 / 需补丁'}
+              active={issuesOnly}
+              onClick={() => setIssuesOnly(previous => !previous)}
+            />
+            <StatCard
+              label="跨包引用"
+              value={deps ? deps.crossImports.length : '…'}
+              hint={deps ? `静态扫描 ${deps.scannedFiles} 个文件${deps.truncated ? '（已截断）' : ''}` : '扫描中…'}
+            />
+          </div>
+
+          <nav className="sticky top-0 z-20 flex gap-1.5 overflow-x-auto border-y border-border bg-bg/85 px-3 md:px-6 py-2 backdrop-blur">
+            {nav.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => jump(item.id)}
+                className="flex shrink-0 items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] text-muted hover:border-accent/60 hover:text-text-strong"
+              >
+                {item.label}
+                {item.count !== undefined && <span className="font-mono text-muted/70">{item.count}</span>}
+              </button>
+            ))}
+          </nav>
+
+          {data.drift.length > 0 && (
+            <div className="mx-3 md:mx-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              <div className="font-semibold">与声明清单不一致（{data.drift.length}）—— 同步器会修正</div>
+              <ul className="mt-1 space-y-0.5 font-mono break-all">
+                {data.drift.slice(0, 6).map(item => <li key={item}>{item}</li>)}
+              </ul>
+              {data.drift.length > 6 && <div className="mt-1">…另有 {data.drift.length - 6} 条</div>}
+            </div>
+          )}
+
+          {data.warnings.length > 0 && (
+            <div className="mx-3 md:mx-6 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted">
+              <div className="font-semibold text-text-strong">读取提示（{data.warnings.length}）</div>
+              <ul className="mt-1 space-y-0.5 font-mono break-all">
+                {data.warnings.slice(0, 6).map(item => <li key={item}>{item}</li>)}
+              </ul>
+              {data.warnings.length > 6 && <div className="mt-1">…另有 {data.warnings.length - 6} 条</div>}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2 px-3 md:px-6">
+            <div className="min-w-[12rem] flex-1">
+              <SearchInput
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+                placeholder="按名称 / 路径 / id 过滤…"
+                aria-label="过滤扩展条目"
+              />
+            </div>
+            <div className="flex overflow-hidden rounded border border-border">
+              {([['all', '全部'], ['enabled', '启用'], ['disabled', '禁用']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setStateFilter(key)}
+                  aria-pressed={stateFilter === key}
+                  className={`px-2.5 py-1 text-[11px] ${stateFilter === key ? 'bg-accent/15 text-text-strong' : 'text-muted hover:text-text-strong'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label className="flex select-none items-center gap-1.5 text-[11px] text-muted">
+              <input type="checkbox" checked={issuesOnly} onChange={event => setIssuesOnly(event.target.checked)} />
+              只看异常
+            </label>
+            <span className="text-[11px] text-muted">
+              {visible.length} / {data.extensions.length} 条
+            </span>
+            <TextButton onClick={() => setCollapsed(new Set())} disabled={collapsed.size === 0}>全部展开</TextButton>
+            <TextButton onClick={() => setCollapsed(new Set(['sec-package', 'sec-path', 'sec-provided', 'sec-auto', 'sec-shared']))} disabled={collapsed.size > 0}>
+              全部收起
+            </TextButton>
+          </div>
+
+          <div className="space-y-3 px-3 md:px-6">
+            <Section
+              id="sec-package"
+              title="① 由 package 提供"
+              count={groups.package.length}
+              hint="这些条目的路径落在某个 package 目录内；版本与描述来自该包的 package.json。declared = 已在该包 manifest 的 pi.extensions 里声明。"
+              collapsed={collapsed.has('sec-package')}
+              onToggleCollapsed={() => toggleCollapsed('sec-package')}
+            >
+              {groups.package.length === 0
+                ? <Empty text={query || issuesOnly ? '没有匹配的条目' : '无'} />
+                : groups.package.map(entry => (
+                  <EntryRow
+                    key={`${entry.appliedOrder}-${entry.raw}`}
+                    entry={entry}
+                    expanded={expanded.has(entry.raw)}
+                    onToggleExpanded={() => toggleExpanded(entry.raw)}
+                    busy={busy}
+                    importedBy={entry.packageId ? sharedByPackage.get(entry.packageId) : undefined}
+                    actions={{
+                      onToggleEnabled: () => requestToggle(entry),
+                      onMove: direction => requestMove(entry, direction),
+                      canMoveUp: entry.path !== null && managedPaths.indexOf(entry.path) > 0,
+                      canMoveDown: entry.path !== null && managedPaths.indexOf(entry.path) < managedPaths.length - 1,
+                    }}
+                  />
+                ))}
+            </Section>
+
+            <Section
+              id="sec-path"
+              title="② 直接路径（单文件）"
+              count={groups.path.length}
+              hint="settings.json 里直接写的单文件条目，不属于任何 package；不显示版本号（避免伪造）。"
+              collapsed={collapsed.has('sec-path')}
+              onToggleCollapsed={() => toggleCollapsed('sec-path')}
+            >
+              {groups.path.length === 0
+                ? <Empty text="无" />
+                : groups.path.map(entry => (
+                  <EntryRow
+                    key={`path-${entry.appliedOrder}-${entry.raw}`}
+                    entry={entry}
+                    expanded={expanded.has(entry.raw)}
+                    onToggleExpanded={() => toggleExpanded(entry.raw)}
+                    busy={busy}
+                    actions={{
+                      onToggleEnabled: () => requestToggle(entry),
+                      onMove: direction => requestMove(entry, direction),
+                      canMoveUp: entry.path !== null && managedPaths.indexOf(entry.path) > 0,
+                      canMoveDown: entry.path !== null && managedPaths.indexOf(entry.path) < managedPaths.length - 1,
+                    }}
+                  />
+                ))}
+            </Section>
+
+            <Section
+              id="sec-provided"
+              title="③ 由 package 自带（autoload）"
+              count={data.provided.length}
+              hint="来自 packages 清单里 string 形态（= 加载该包全部资源）或 filters 命中的资源，它们没有单独的 settings.extensions 条目。glob 按 pi 的规则展开。"
+              collapsed={collapsed.has('sec-provided')}
+              onToggleCollapsed={() => toggleCollapsed('sec-provided')}
+            >
+              {data.provided.length === 0
+                ? <Empty text="无（所有包都走 settings.extensions 的显式条目）" />
+                : (
+                  <div className="divide-y divide-border/60">
+                    {data.provided.map(item => (
+                      <div key={item.path} className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${item.exists ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                        <span className="text-text-strong">{item.packageName ?? item.packageId ?? '(package)'}</span>
+                        <Chip mono>{item.manifestPath}</Chip>
+                        <Chip title={`来源：${item.kind === 'manifest' ? '包 manifest pi.extensions' : 'settings 里的 filters'}，模式 ${item.pattern}`}>{item.kind}</Chip>
+                        <span className="ml-auto truncate font-mono text-[11px] text-muted">{item.path}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+            </Section>
+
+            <Section
+              id="sec-auto"
+              title="④ 自动发现但未纳管"
+              count={data.auto.length}
+              hint="agent 目录 extensions/ 下的散文件：严格模式同步时会被移入 extension-quarantine/，不会留在加载清单里。"
+              collapsed={collapsed.has('sec-auto')}
+              onToggleCollapsed={() => toggleCollapsed('sec-auto')}
+            >
+              {data.auto.length === 0
+                ? <Empty text="无（没有未纳管的散文件）" />
+                : data.auto.map(item => (
+                  <div key={item.path} className="flex flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2 text-xs last:border-b-0">
+                    <span className="text-text-strong">{item.name}</span>
+                    <Chip title="未在 settings.json / extensions.config.json 中声明">未纳管</Chip>
+                    <span className="ml-auto truncate font-mono text-[11px] text-muted">{item.path}</span>
+                  </div>
+                ))}
+            </Section>
+
+            <Section
+              id="sec-install"
+              title="⑤ 安装 / 卸载"
+              hint="来源支持：npm registry 的包名（自动加 npm: 前缀）、本地目录、git 仓库（git:host/owner/repo）。安装会执行 pi install 并写入 settings.json，装前自动备份。"
+              collapsed={collapsed.has('sec-install')}
+              onToggleCollapsed={() => toggleCollapsed('sec-install')}
+            >
+              <div className="space-y-3 px-3 py-3">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={source}
+                    onChange={event => setSource(event.target.value)}
+                    placeholder="pi-tsien-web-tools  或  /path/to/pkg  或  git:github.com/user/repo"
+                    aria-label="要安装的来源"
+                    className="min-w-0 flex-1 rounded border border-border bg-bg/40 px-2.5 py-1.5 font-mono text-xs text-text-strong placeholder:text-muted/60"
+                  />
+                  <div className="flex gap-2">
+                    <TextButton tone="ok" disabled={!source.trim() || busy} onClick={() => requestSource('install', source.trim())}>
+                      安装
+                    </TextButton>
+                    <TextButton disabled={!source.trim() || busy} onClick={() => requestSource('update', source.trim())}>
+                      更新
+                    </TextButton>
+                    <TextButton tone="danger" disabled={!source.trim() || busy} onClick={() => requestSource('remove', source.trim())}>
+                      卸载
+                    </TextButton>
+                  </div>
+                </div>
+                {source.trim() && (
+                  <div className="font-mono text-[11px] text-muted">将执行：pi install {source.trim().startsWith('npm:') || source.trim().startsWith('git:') || source.trim().startsWith('/') || source.trim().startsWith('.') ? source.trim() : `npm:${source.trim()}`}</div>
+                )}
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+                  快速填入：
+                  <TextButton onClick={() => setSource('npm:pi-tsien-web-tools')}>npm 单个包</TextButton>
+                  <TextButton onClick={() => setSource('git:github.com/tsiendragon/pi-tsien-extension')}>GitHub 装齐 25 个</TextButton>
+                  <TextButton onClick={() => void searchGallery()}>{galleryLoading ? '搜索中…' : '搜索 npm 上的 pi 包'}</TextButton>
+                </div>
+                {gallery && (
+                  gallery.length === 0
+                    ? <Empty text="没有搜到 pi 包" />
+                    : (
+                      <ul className="divide-y divide-border/60 overflow-hidden rounded border border-border">
+                        {gallery.slice(0, 20).map(item => (
+                          <li key={`${item.name}@${item.version}`} className="flex flex-wrap items-center gap-2 px-3 py-2">
+                            <span className="font-mono text-xs text-text-strong">{item.name}</span>
+                            <Chip mono>{item.version}</Chip>
+                            {item.author && <Chip>{item.author}</Chip>}
+                            <span className="min-w-0 flex-1 truncate text-[11px] text-muted" title={item.description}>{item.description}</span>
+                            <TextButton onClick={() => setSource(`npm:${item.name}`)}>填入</TextButton>
+                            <TextButton tone="ok" disabled={busy} onClick={() => requestSource('install', `npm:${item.name}`)}>安装</TextButton>
+                          </li>
+                        ))}
+                      </ul>
+                    )
+                )}
+              </div>
+            </Section>
+
+            <Section
+              id="sec-audit"
+              title="⑥ 操作审计"
+              count={audit.length}
+              hint="记录文件：agent 目录下的 extension-audit.jsonl。启停/排序/安装/卸载/回滚都会写一条，含备份路径，可一键回滚。"
+              collapsed={collapsed.has('sec-audit')}
+              onToggleCollapsed={() => toggleCollapsed('sec-audit')}
+            >
+              <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
+                <TextButton onClick={() => void loadAudit()} disabled={auditLoading}>{auditLoading ? '读取中…' : '刷新'}</TextButton>
+                <span className="text-[11px] text-muted">最近 30 条（按时间倒序）</span>
+              </div>
+              {audit.length === 0
+                ? <Empty text="暂无记录 —— 做一次启停/排序/安装后就会出现" />
+                : (
+                  <div className="max-h-72 overflow-auto">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="sticky top-0 bg-card/95 text-muted">
+                        <tr>
+                          <th className="px-3 py-1.5 font-normal">时间</th>
+                          <th className="px-3 py-1.5 font-normal">操作</th>
+                          <th className="px-3 py-1.5 font-normal">目标</th>
+                          <th className="px-3 py-1.5 font-normal">结果</th>
+                          <th className="px-3 py-1.5 font-normal">备份 / 操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {audit.map(record => (
+                          <tr key={record.id} className="border-t border-border/50">
+                            <td className="whitespace-nowrap px-3 py-1.5 font-mono text-muted">{record.ts.replace('T', ' ').slice(0, 19)}</td>
+                            <td className="px-3 py-1.5">{AUDIT_LABEL[record.action] ?? record.action}</td>
+                            <td className="max-w-[18rem] truncate px-3 py-1.5 font-mono" title={record.target}>{record.target}</td>
+                            <td className="px-3 py-1.5">
+                              {record.ok ? <span className="text-emerald-300">成功</span> : <span className="text-red-300" title={record.error}>失败</span>}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              {record.backupPath
+                                ? (
+                                  <div className="flex items-center gap-2">
+                                    <span className="truncate font-mono text-muted" title={record.backupPath}>{record.backupPath.split('/').pop()}</span>
+                                    <TextButton disabled={busy} onClick={() => requestRollback(record.backupPath as string)}>回滚</TextButton>
+                                  </div>
+                                )
+                                : <span className="text-muted">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+            </Section>
+
+            <Section
+              id="sec-shared"
+              title="⑦ 共享代码（静态扫描）"
+              count={deps?.sharedPackages.length ?? 0}
+              hint="哪些包的代码被别的条目 import —— 说明「禁用 ≠ 卸载代码」。只统计显式 import，扫描有上限（每包 80 文件、单文件 256KB），动态 import 看不到。"
+              collapsed={collapsed.has('sec-shared')}
+              onToggleCollapsed={() => toggleCollapsed('sec-shared')}
+            >
+              {!deps
+                ? <div className="space-y-2 px-3 py-3"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+                : (
+                  <div className="space-y-2 px-3 py-3">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+                      <Chip mono>{deps.crossImports.length} 条引用</Chip>
+                      <Chip mono>{deps.scannedFiles} 个文件</Chip>
+                      <Chip mono>缓存 {deps.cached ? '命中' : '未命中'}</Chip>
+                      {deps.truncated && <Chip title="有包超过文件数上限，未计入">已截断</Chip>}
+                    </div>
+                    {deps.sharedPackages.length === 0
+                      ? <Empty text="没有跨包引用" />
+                      : deps.sharedPackages.map(item => (
+                        <div key={item.packageId ?? item.packageName ?? 'unknown'} className="rounded border border-border bg-bg/30 px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs text-text-strong">{item.packageName ?? item.packageId}</span>
+                            <Chip mono>{item.files} 个文件</Chip>
+                            <span className="text-[11px] text-muted">被 {item.importedBy.length} 个条目 import</span>
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {item.importedBy.slice(0, 6).map(name => <Chip key={name}>{name.replace('pi-tsien-', '')}</Chip>)}
+                            {item.importedBy.length > 6 && <Chip title={item.importedBy.slice(6).join('、')}>+{item.importedBy.length - 6}</Chip>}
+                          </div>
+                        </div>
+                      ))}
+                    {deps.externalPackages.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                        外部依赖（npm 包，不算共享代码）：
+                        {deps.externalPackages.map(name => <Chip key={name} mono>{name}</Chip>)}
+                      </div>
+                    )}
+                  </div>
+                )}
+            </Section>
+          </div>
+
+          <div className="mx-3 md:mx-6 rounded-lg border border-border bg-card/40 px-3 py-2 text-[11px] text-muted">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <span>agent dir：<span className="font-mono">{data.agentDir}</span></span>
+              <span>清单文件：<span className="font-mono">{data.settingsPath}</span> {data.configExists ? '（存在）' : '（不存在）'}</span>
+              <span>配置值在各扩展自己的 JSON 里，编辑入口在 Settings → General 的 Extension config 面板。</span>
+            </div>
+          </div>
+        </>
+      )}
+
       {pending && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-lg border border-border bg-card p-4 shadow-xl">
-            <div className="text-sm font-semibold text-text-strong">{pending.title}</div>
-            <ul className="mt-2 space-y-0.5 font-mono text-2xs text-muted">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-lg border border-border bg-card p-4 shadow-xl">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-text-strong">{pending.title}</span>
+              <TextButton title="取消（Esc）" onClick={() => setPending(null)}>✕</TextButton>
+            </div>
+            <ul className="mt-2 space-y-1 rounded border border-border bg-bg/40 px-3 py-2 font-mono text-[11px] text-muted">
               {pending.diff.map(line => <li key={line} className="break-all">{line}</li>)}
             </ul>
-            <div className="mt-2 text-2xs text-amber-300">{pending.note}</div>
-            <div className="mt-2 text-2xs text-muted">写前会把 settings.json 备份到 agent 目录的 backups/，改动是原子写入；取消不会写盘。</div>
+            <div className="mt-2 text-[11px] text-amber-300">{pending.note}</div>
+            <div className="mt-1 text-[11px] text-muted">写前会把 settings.json 备份到 agent 目录的 backups/，改动是原子写入；取消不会写盘。</div>
             <div className="mt-3 flex justify-end gap-2">
-              <button type="button" disabled={busy} onClick={() => setPending(null)}
-                className="rounded border border-border px-3 py-1 text-xs text-muted hover:text-text-strong disabled:opacity-50">取消</button>
-              <button
-                type="button"
+              <TextButton disabled={busy} onClick={() => setPending(null)}>取消（Esc）</TextButton>
+              <TextButton
+                tone="ok"
                 disabled={busy}
                 onClick={async () => {
                   setBusy(true)
@@ -364,239 +954,17 @@ export default function ExtensionsPage() {
                     setPending(null)
                   } catch (cause) {
                     setError(cause instanceof Error ? cause.message : String(cause))
+                    setPending(null)
                   } finally {
                     setBusy(false)
                   }
                 }}
-                className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
               >
-                {busy ? '写入中…' : '确认'}
-              </button>
+                {busy ? '写入中…' : '确认写入'}
+              </TextButton>
             </div>
           </div>
         </div>
-      )}
-
-      {data && (
-        <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-            <SummaryCard label="Packages" value={data.counts.packages} />
-            <SummaryCard label="已加载条目" value={data.counts.applied} />
-            <SummaryCard label="启用 / 禁用" value={`${data.counts.enabled} / ${data.counts.disabled}`} />
-            <SummaryCard label="来自 package" value={data.counts.packageEntries} hint={`另有 ${data.counts.provided} 条由包自带（autoload）`} />
-            <SummaryCard label="直接路径" value={data.counts.pathEntries} />
-            <SummaryCard label="未纳管文件" value={data.counts.auto} hint="agent dir 的 extensions/ 下自动发现" />
-            <SummaryCard label="异常 / 需补丁" value={`${data.counts.broken} / ${data.counts.patched}`} hint="文件缺失 / 用到补丁 API" />
-            <SummaryCard label="跨包引用" value={deps ? deps.crossImports.length : '…'} hint={deps ? `静态扫描 ${deps.scannedFiles} 个文件${deps.truncated ? '（已截断）' : ''}` : '扫描中…'} />
-          </div>
-
-          {data.drift.length > 0 && (
-            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
-              <div className="font-semibold">与声明清单不一致（{data.drift.length}）</div>
-              <ul className="mt-1 space-y-0.5 font-mono break-all">
-                {data.drift.slice(0, 6).map(item => <li key={item}>{item}</li>)}
-              </ul>
-              {data.drift.length > 6 && <div className="mt-1">…另有 {data.drift.length - 6} 条</div>}
-            </div>
-          )}
-
-          {data.warnings.length > 0 && (
-            <div className="rounded-lg border border-border bg-card px-4 py-3 text-xs text-muted">
-              <div className="font-semibold text-text-strong">读取提示（{data.warnings.length}）</div>
-              <ul className="mt-1 space-y-0.5 font-mono break-all">
-                {data.warnings.slice(0, 6).map(item => <li key={item}>{item}</li>)}
-              </ul>
-            </div>
-          )}
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card/40">
-            <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <span className="text-sm font-medium text-text-strong">① 由 package 提供</span>
-              <span className="text-2xs text-muted">{groups.package.length} 条 · 版本与描述来自各包 package.json</span>
-            </header>
-            {groups.package.length === 0
-              ? <div className="px-4 py-3 text-xs text-muted">无</div>
-              : groups.package.map(entry => (
-                  <EntryRow
-                    key={`${entry.appliedOrder}-${entry.raw}`}
-                    entry={entry}
-                    expanded={expanded.has(entry.raw)}
-                    onToggle={() => toggle(entry.raw)}
-                    busy={busy}
-                    importedBy={entry.packageId ? sharedByPackage.get(entry.packageId) : undefined}
-                    actions={{
-                      onEnable: () => requestToggle(entry),
-                      onDisable: () => requestToggle(entry),
-                      onMove: direction => requestMove(entry, direction),
-                      canMoveUp: entry.path !== null && managedPaths.indexOf(entry.path) > 0,
-                      canMoveDown: entry.path !== null && managedPaths.indexOf(entry.path) < managedPaths.length - 1,
-                    }}
-                  />
-                ))}
-          </section>
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card/40">
-            <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <span className="text-sm font-medium text-text-strong">② 直接路径（单文件）</span>
-              <span className="text-2xs text-muted">{groups.path.length} 条 · 无版本概念，不伪造版本号</span>
-            </header>
-            {groups.path.length === 0
-              ? <div className="px-4 py-3 text-xs text-muted">无</div>
-              : groups.path.map(entry => (
-                  <EntryRow key={`${entry.appliedOrder}-${entry.raw}`} entry={entry} expanded={expanded.has(entry.raw)} onToggle={() => toggle(entry.raw)} />
-                ))}
-          </section>
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card/40">
-            <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <span className="text-sm font-medium text-text-strong">③ 由 package 自带（autoload，未列入 settings.extensions）</span>
-              <span className="text-2xs text-muted">{data.provided.length} 条 · 来自 packages 清单里 string 形态的包（= 加载该包全部资源）</span>
-            </header>
-            {data.provided.length === 0
-              ? <div className="px-4 py-3 text-xs text-muted">无</div>
-              : data.provided.map(item => (
-                  <div key={item.path} className="flex items-center gap-2 border-b border-border/60 px-3 py-2 text-xs last:border-b-0">
-                    <span className={`h-2 w-2 rounded-full ${item.exists ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                    <span className="text-text-strong">{item.packageName ?? item.packageId ?? '(package)'}</span>
-                    <Badge tone="info">{item.manifestPath}</Badge>
-                    <Badge tone={item.exists ? 'ok' : 'bad'}>{item.exists ? '存在' : '缺失'}</Badge>
-                    <span className="ml-auto truncate font-mono text-2xs text-muted">{item.path}</span>
-                  </div>
-                ))}
-          </section>
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card/40">
-            <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <span className="text-sm font-medium text-text-strong">④ 自动发现但未纳管</span>
-              <span className="text-2xs text-muted">{data.auto.length} 条 · 严格模式同步会把这些移到 quarantine</span>
-            </header>
-            {data.auto.length === 0
-              ? <div className="px-4 py-3 text-xs text-muted">无</div>
-              : data.auto.map(item => (
-                  <div key={item.path} className="flex items-center gap-2 border-b border-border/60 px-3 py-2 text-xs text-muted last:border-b-0">
-                    <span className="h-2 w-2 rounded-full bg-zinc-500" />
-                    <span className="text-text-strong">{item.name}</span>
-                    <Badge tone="warn">未纳管</Badge>
-                    <span className="ml-auto font-mono break-all">{item.path}</span>
-                  </div>
-                ))}
-          </section>
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card/40">
-            <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <span className="text-sm font-medium text-text-strong">⑤ 安装 / 卸载</span>
-              <span className="text-2xs text-muted">来源：npm registry 的 pi-package，或本地路径 / git URL</span>
-              <button type="button" onClick={() => void searchGallery()} className="ml-auto rounded border border-border px-2 py-0.5 text-2xs text-muted hover:text-text-strong">
-                搜索 npm
-              </button>
-            </header>
-            <div className="flex items-center gap-2 px-3 py-2">
-              <input
-                value={source}
-                onChange={event => setSource(event.target.value)}
-                placeholder="包名 / 本地路径 / git URL，例如 pi-web-tools"
-                className="flex-1 rounded border border-border bg-bg px-2 py-1 text-xs text-text-strong outline-none"
-              />
-              <button
-                type="button"
-                disabled={!source.trim()}
-                onClick={() => requestInstall(source.trim())}
-                className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-2xs text-emerald-200 disabled:opacity-40"
-              >
-                安装
-              </button>
-              <button
-                type="button"
-                disabled={!source.trim()}
-                onClick={() => requestRemove(source.trim())}
-                className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-2xs text-red-200 disabled:opacity-40"
-              >
-                卸载
-              </button>
-            </div>
-            {gallery && (
-              <div className="border-t border-border/60">
-                <div className="flex items-center gap-2 px-3 py-1">
-                  <input
-                    value={galleryQuery}
-                    onChange={event => setGalleryQuery(event.target.value)}
-                    placeholder="过滤搜索结果"
-                    className="w-56 rounded border border-border bg-bg px-2 py-0.5 text-2xs text-text-strong outline-none"
-                  />
-                  <span className="text-2xs text-muted">npm 上 {gallery.length} 个 pi-package</span>
-                </div>
-                <div className="max-h-64 overflow-auto">
-                  {gallery
-                    .filter(item => !galleryQuery || `${item.name} ${item.description}`.toLowerCase().includes(galleryQuery.toLowerCase()))
-                    .slice(0, 40)
-                    .map(item => (
-                      <div key={item.name} className="flex items-center gap-2 border-t border-border/40 px-3 py-1.5">
-                        <span className="text-xs text-text-strong">{item.name}</span>
-                        <span className="text-2xs text-muted">{item.version}</span>
-                        <span className="truncate text-2xs text-muted">{item.description}</span>
-                        <button type="button" onClick={() => requestInstall(item.name)}
-                          className="ml-auto rounded border border-border px-2 py-0.5 text-2xs text-muted hover:text-text-strong">安装</button>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-          </section>
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card/40">
-            <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <span className="text-sm font-medium text-text-strong">⑥ 操作审计</span>
-              <span className="text-2xs text-muted">最近 30 条（装/卸/启停/排序/回滚），带备份可一键回滚</span>
-              <button type="button" onClick={() => void loadAudit()} className="ml-auto rounded border border-border px-2 py-0.5 text-2xs text-muted hover:text-text-strong">刷新</button>
-            </header>
-            {audit.length === 0
-              ? <div className="px-4 py-3 text-xs text-muted">暂无记录（记录文件在 agent 目录的 extension-audit.jsonl）</div>
-              : audit.map(record => (
-                  <div key={record.id} className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5 last:border-b-0">
-                    <span className={`h-2 w-2 rounded-full ${record.ok ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                    <span className="text-2xs text-muted">{record.ts.replace('T', ' ').slice(0, 19)}</span>
-                    <Badge tone="info">{record.action}</Badge>
-                    <span className="truncate font-mono text-2xs text-muted">{record.target}</span>
-                    {record.error && <span className="truncate text-2xs text-red-300">{record.error}</span>}
-                    {record.backupPath && (
-                      <button type="button" onClick={() => requestRollback(record.backupPath as string)}
-                        className="ml-auto rounded border border-border px-2 py-0.5 text-2xs text-muted hover:text-text-strong">回滚</button>
-                    )}
-                  </div>
-                ))}
-          </section>
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card/40">
-            <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <span className="text-sm font-medium text-text-strong">⑦ 共享代码（静态扫描）</span>
-              <span className="text-2xs text-muted">
-                这些包的代码被别的条目 import —— 禁用/删除条目不会卸载它们；只覆盖显式 import
-                {deps ? `（扫描 ${deps.scannedFiles} 个文件${deps.truncated ? '，已达上限截断' : ''}；外部依赖 ${deps.externalPackages.length} 个不计入）` : ''}
-              </span>
-            </header>
-            {!deps
-              ? <div className="px-4 py-3 text-xs text-muted">扫描中…（独立端点 /api/pi/ext/deps，按 settings.json 修改时间缓存）</div>
-              : deps.sharedPackages.length === 0
-              ? <div className="px-4 py-3 text-xs text-muted">无</div>
-              : deps.sharedPackages.map(item => (
-                  <div key={item.packageName ?? item.packageId ?? 'unknown'} className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5 last:border-b-0">
-                    <span className="text-xs text-text-strong">{item.packageName ?? item.packageId}</span>
-                    <Badge tone="warn">被 {item.importedBy.length} 个条目 import</Badge>
-                    <Badge>{item.files} 个文件</Badge>
-                    <span className="truncate text-2xs text-muted">{item.importedBy.join('、')}</span>
-                  </div>
-                ))}
-          </section>
-
-          <div className="rounded-lg border border-border bg-card px-4 py-3 text-2xs text-muted">
-            <div>agent dir：<span className="font-mono break-all">{data.agentDir}</span></div>
-            <div>清单文件：<span className="font-mono break-all">{data.settingsPath}</span>{data.configExists ? '（存在）' : '（不存在）'}</div>
-            <div className="mt-1">
-              配置值在各扩展自己的 JSON 文件里，编辑入口在 <span className="text-text-strong">Settings → General</span> 的 Extension config 面板。
-              启用 / 禁用与排序（写 `+`/`-` 前缀、重排 loadOrder）属于下一阶段。
-            </div>
-          </div>
-        </>
       )}
     </div>
   )
