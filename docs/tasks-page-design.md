@@ -247,7 +247,7 @@ TasksPage
 | backend 修改 | `backend/pi-env.ts`（DashConfig.tasks + 默认/规范化）、`backend/server.ts`（挂载） |
 | frontend 新增 | `frontend/src/pages/TasksPage.tsx`、`frontend/src/pages/tasks/*` |
 | frontend 修改 | `frontend/src/App.tsx`、`frontend/src/api/client.ts`、`frontend/src/pages/SettingsPage.tsx` |
-| docs | `docs/api-reference.md` |
+| docs | `guide/api-reference.md` |
 | 运行时 | `~/.pi/tasks/{tasks,planning,history}.json` |
 
 ## 14. 分期与验收

@@ -29,7 +29,11 @@
 扩展的安装机制：pi-tsien-extension 提供同步器 `scripts/pi-extension-sync.mjs`，
 读取 `~/.pi/agent/extensions.config.json`，把有序的 `packages` / `extensions` 写进 Pi 的
 `~/.pi/agent/settings.json`。独立安装用的配置是仓库内的
-`config/extensions.standalone.json`（2 个 package、25 个 extension）。
+`config/extensions.standalone.json`（**25 个 package、25 个 extension**；扩展仓库已重构为
+npm workspaces 单仓，根目录是伞形包，部分包已发布到公共 npm）。
+
+> 本文是**手动逐步版**（本目录内）；安装/部署的权威总览与分模块说明见 [`README.md`](README.md)。
+> 扩展的三种装法（npm / git 伞形包 / 本地路径）与发布状态见 [`extensions.md`](extensions.md)。
 
 每个扩展具体做什么，见 [§6 扩展清单](#6-扩展清单)。
 
@@ -82,8 +86,11 @@ bash scripts/install-standalone.sh --skip-pi --pi-prefix ~/pi/bin   # 自备 pi
 5. `npm install` dashboard 依赖，构建前端（`npm run build-frontend`）
 6. 装 pi：默认从 `tsiendragon/pi` 的 Release 下载 10 个 tgz，一起装到 `<安装根>/pi`，
    并把 `PI_SCRIPT=<安装根>/pi/bin/pi` 写进 `<agent dir>/dashboard.env`（dashboard 启动时自动加载，
-   并传给每个 pi 子进程；见 [env-configuration.md](env-configuration.md)）
-7. 可选：安装 systemd 服务（unit 带 `PI_CODING_AGENT_DIR`）/ 后台启动
+   并传给每个 pi 子进程；见 [config.md](config.md) §2）
+7. 补齐 dashboard 可移植数据目录（`PI_DASH_TIMING_DIR` / `PI_DASH_USAGE_DIR` /
+   `PI_DASH_LIVE_SESSION_*`）到 `<agent dir>/dashboard.env`，避免新机器落到开发机路径
+   `<workspace>/...`（已存在的键不覆盖）
+8. 可选：安装 systemd 服务（unit 带 `PI_CODING_AGENT_DIR`）/ 后台启动
 
 > 安全提示：同步器是**严格模式**——不在配置里的 package/extension 会从 Pi 设置移除，
 > `~/.pi/agent/extensions/` 下未托管的单文件扩展会被移入 `extension-quarantine/`。
@@ -175,7 +182,7 @@ pi install npm:pi-tsien-web-tools                            # 从公共 npm（�
 pi install git:github.com/tsiendragon/pi-tsien-extension     # 从 GitHub 一条命令装齐 25 个扩展
 ```
 
-细节见 `docs/extensions-page.md`；外部用户视角的完整步骤见扩展仓库的 `docs/quickstart.md`。
+细节见 `../guide/extensions-page.md`；外部用户视角的完整步骤见扩展仓库的 `pi-tsien-extension/docs/quickstart.md`。
 
 ### 模型凭证
 
@@ -196,7 +203,7 @@ pi            # 首次运行后执行 /login，或按提示写入 auth.json
 ```
 
 dashboard 启动日志里能看到 `[env] loaded env file(s): …`，说明环境文件被读到。
-完整规则（加载顺序、不覆盖已有变量、排查）见 [env-configuration.md](env-configuration.md)。
+完整规则（加载顺序、不覆盖已有变量、排查）见 [config.md](config.md) §2。
 
 ### 开机自启（systemd）
 
@@ -221,7 +228,7 @@ sudo rm /etc/systemd/system/pi-dashboard.service && sudo systemctl daemon-reload
 standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsien-extension）。
 每个扩展现在是一个独立包 `packages/pi-tsien-*`（一功能一包，入口 `src/index.ts`），共享代码在
 `packages/pi-tsien-shared`；下面的表格列的是**包名**，不再是 `extensions/*.ts` 的文件名。
-（`pi-tsien-auto-compact` / `pi-tsien-context-powerline` / `pi-tsien-live-session` 仍在迁移中，行为不变。）加载顺序有语义：
+（重构已全部完成，行为经 parity 校验与原实现一致。）加载顺序有语义：
 `web-tools` 最前，`tool-result-pipeline` 必须紧跟其后（它是 `tool_result` 钩子的唯一入口，
 内部再按 `rtk → bash-digest` 有序执行），`trajectory-recorder` 与 `capability` 放在最后。
 
@@ -277,8 +284,8 @@ standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsi
 
 > - 默认关闭或需要配置才能生效的：`observation-pack`（`~/.pi/agent/observation-pack.json`）、
 >   bash-digest stage（`~/.pi/agent/bash-digest.json`）。
-> - 两个扩展的默认落盘目录是开发机路径（`trajectory-recorder` → `~/.pi/agent/pi-traces`，
->   `observation-pack` → `~/.pi/agent/archiv`）。在新机器上建议用 `PI_TRACE_DIR` /
+> - 两个扩展的默认落盘目录是开发机路径（`trajectory-recorder` → `<agent dir>/pi-traces`，
+>   `observation-pack` → `<agent dir>/archiv`）。在新机器上建议用 `PI_TRACE_DIR` /
 >   `PI_TIMING_DIR` / `PI_OBSERVATION_DIR` 指向本机目录；不设也不会拖垮 Pi（写失败只告警），但会丢对应数据。
 > - 它们都与业务无关，保留在清单里；只想减少加载量时，从 `config/extensions.standalone.json` 的
 >   `loadOrder` 删除对应行即可（同步器会把它从 Pi 设置里移除）。
@@ -299,7 +306,7 @@ standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsi
 
 ## 8. 远程访问
 
-详见 `docs/remote-access-deployment.md`。要点：pi-dashboard 的 API 默认**没有认证**，
+详见 `../guide/remote-access-deployment.md`。要点：pi-dashboard 的 API 默认**没有认证**，
 安全模型是「网络不可达」，所以：
 
 ```bash
@@ -321,7 +328,7 @@ PI_DASH_HOST=your-server PI_DASH_USER=you ./pi-dash-connect.sh
 1. `node -v` ≥ v22
 2. `node ~/pi-stack/pi-tsien-extension/scripts/pi-extension-sync.mjs` 输出
    `Pi extensions already match the ordered user config.`
-3. `~/.pi/agent/settings.json` 的 `packages` 有 2 项、`extensions` 有 25 项，且都不指向 marketplace
+3. `~/.pi/agent/settings.json` 的 `packages` 有 25 项、`extensions` 有 25 项，且都不指向 marketplace
 4. `curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:7777/` 返回 `200`
 5. 在 dashboard 里发一条消息，能正常流式返回（说明模型凭证正确）
 6. 终端里 `pi` 能启动，且 `/sidebar`、`/effort`、`/schedule` 等命令存在（说明扩展已加载）
