@@ -13,7 +13,7 @@
 #   bash scripts/install-standalone.sh --dry-run       # 只打印将要执行的步骤
 #   bash scripts/install-standalone.sh --official-pi   # 改装官方 npm 版 pi（默认装 fork Release 构建）
 #
-# 详细说明见 docs/standalone-install.md。
+# 详细说明见 guide/standalone-install.md。
 
 set -euo pipefail
 
