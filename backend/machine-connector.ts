@@ -66,6 +66,7 @@ export interface MachineControl {
   get(processInstanceId: string): { summary: { sessionId: string } } | undefined
   claim(processInstanceId: string, clientId: string, leaseMs: number): Promise<unknown>
   release(processInstanceId: string, clientId: string, leaseId: string): Promise<unknown>
+  hasRemoteLease(processInstanceId: string, sessionId: string, clientId: string, leaseId: string): boolean
   sendRemoteInput(processInstanceId: string, sessionId: string, clientId: string, leaseId: string, text: string): Promise<unknown>
   releaseByBrowser(clientId: string): Promise<void>
 }
@@ -297,6 +298,9 @@ export function connectWithTransport(config: MachineConnectorConfig, transport: 
           if (existingOwner && existingOwner !== owner) { result(false, { error: 'conflict' }); return }
           if (msg.type !== 'claim_session' && existingOwner !== owner) { result(false, { error: 'lease_invalid' }); return }
           if (input) {
+            // Invalid/expired leases must not consume the finite, durable replay journal.
+            if (!control.hasRemoteLease(msg.processInstanceId as string, msg.sessionId as string,
+              clientId, msg.leaseId as string)) { result(false, { error: 'lease_invalid' }); return }
             pruneTombstones()
             const key = `${clientId}:${msg.requestId}`
             if (inputTombstones.has(key)) { result(false, { error: 'indeterminate' }); return }
