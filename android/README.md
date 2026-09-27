@@ -11,6 +11,10 @@
 本目录原先是一个 **WebView 壳**（把 dashboard 的 web 前端套进 WebView，面向 Boox 墨水屏）。
 现已改为**纯原生 Compose** 实现（旧实现保留在 git 历史 `b00f94b`，可回退）。
 
+## 移动端远程接入（未完成）
+
+实验性远程接入客户端已移出本仓库；现有 Android 客户端仍使用常规 Dashboard 连接。远程接入尚未完成，不能作为远程控制方案部署，仍需重新设计与真机验收。
+
 ## 当前进度
 
 | 里程碑 | 内容 | 状态 |
@@ -29,7 +33,7 @@
 > **验证状态**：已在本机用 kotlinc（Kotlin 2.0.21 + Compose 编译器插件 + 序列化插件 + 完整依赖）
 > 对全部 15 个 `.kt` 文件做过**纯 Kotlin 编译**：**0 error / 216 class**，仅剩 3 条精简 classpath 造成的假警。
 >
-> **尚未验证**：AGP/Gradle 真实构建（R 类、资源合并、manifest 合并、dex）与真机运行。
+> **本轮验证**：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过；**仍未验证**真机运行和远程接入端到端互通。
 
 ## 版本
 

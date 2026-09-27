@@ -63,8 +63,7 @@ enum BackgroundRefreshService {
     /// Poll the server and fire notifications for changes.
     static func poll() async {
         let sharedDefaults = UserDefaults(suiteName: "group.com.sam.pidash") ?? UserDefaults.standard
-        guard let baseURL = sharedDefaults.string(forKey: "serverBaseURL")
-                ?? Optional("http://samuels-macbook-air-1.taile86245.ts.net:7777") else { return }
+        guard let baseURL = sharedDefaults.string(forKey: "serverBaseURL"), !baseURL.isEmpty else { return }
         let authToken = sharedDefaults.string(forKey: "serverAuthToken") ?? ""
         
         guard let url = URL(string: "\(baseURL)/api/poll") else { return }

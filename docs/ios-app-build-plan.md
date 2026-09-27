@@ -17,7 +17,7 @@ Premium polish matching ChatGPT/Claude iOS apps.
 - **No external deps beyond**: MarkdownUI, Highlightr (via SPM)
 
 ## Server Connection
-- Base URL configurable (default: `http://100.103.130.31:7777`)
+- Base URL configurable; no preconfigured personal host or IP (user supplies their own endpoint)
 - WebSocket at `ws://{host}/api/ws`
 - REST at `http://{host}/api/...`
 - Auto-reconnect with exponential backoff

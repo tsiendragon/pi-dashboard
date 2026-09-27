@@ -4,7 +4,7 @@ import Foundation
 
 /// Manages the server base URL and derived endpoint URLs.
 struct ServerConfig {
-    static let defaultBaseURL = "http://samuels-macbook-air-1.taile86245.ts.net:7777"
+    static let defaultBaseURL = "" // Require explicit server configuration; never ship a personal hostname.
     static let userDefaultsKey = "serverBaseURL"
     static let cwdDefaultsKey = "defaultCwd"
     static let tokenDefaultsKey = "serverAuthToken"
@@ -41,13 +41,7 @@ struct ServerConfig {
 
         let stored = shared.string(forKey: Self.userDefaultsKey)
         let resolved = baseURL ?? stored ?? Self.defaultBaseURL
-        // Migrate old IP-based URLs to MagicDNS hostname
-        if resolved.contains("100.103.130.31") {
-            self.baseURL = Self.defaultBaseURL
-            shared.removeObject(forKey: Self.userDefaultsKey)
-        } else {
-            self.baseURL = resolved
-        }
+        self.baseURL = resolved
         self.defaultCwd = shared.string(forKey: Self.cwdDefaultsKey) ?? ""
         self.defaultModel = shared.string(forKey: Self.defaultModelKey) ?? ""
         self.defaultThinkingLevel = shared.string(forKey: Self.defaultThinkingLevelKey) ?? ""
