@@ -20,6 +20,7 @@ function registry() {
     get: vi.fn(() => ({ summary: { sessionId: 'session' } })),
     claim: vi.fn(async () => ({ leaseId: 'lease', expiresAt: Date.now() + 30_000 })),
     release: vi.fn(async () => ({ released: true })),
+    hasRemoteLease: vi.fn(() => true),
     sendRemoteInput: vi.fn(async () => ({ accepted: true })),
     releaseByBrowser: vi.fn(async () => {}),
   }
@@ -103,6 +104,18 @@ describe('outbound CONTROL', () => {
       finally { restarted.close() }
     } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
   })
+  it('rejects invalid remote leases before touching the durable replay journal', async () => {
+    const control = registry()
+    control.hasRemoteLease.mockReturnValue(false)
+    const reserved = vi.fn(() => true)
+    const f = await fixture(control, reserved)
+    await f.claim()
+    const reply = await f.send(f.input())
+    expect(reply).toMatchObject({ ok: false, error: 'lease_invalid' })
+    expect(reserved).not.toHaveBeenCalled()
+    expect(control.sendRemoteInput).not.toHaveBeenCalled()
+  })
+
   it('retains a reservation even when Pi rejects an input', async () => {
     const control = registry()
     const ids = new Set<string>()
