@@ -20,6 +20,11 @@ export class Catalog {
     this.byProcessId.set(summary.processInstanceId, summary)
   }
 
+  replace(summaries: LiveSessionSummary[]): void {
+    this.byProcessId.clear()
+    for (const summary of summaries) this.upsert(summary)
+  }
+
   remove(processInstanceId: string): void {
     this.byProcessId.delete(processInstanceId)
   }

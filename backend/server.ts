@@ -11,7 +11,7 @@ import WebSocket, { WebSocketServer } from 'ws'
 import { createServer, IncomingMessage } from 'http'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { watch as fsWatch, FSWatcher } from 'fs'
+import { watch as fsWatch, lstatSync, FSWatcher } from 'fs'
 import { readFile } from 'fs/promises'
 import os from 'os'
 import { Duplex } from 'stream'
@@ -48,8 +48,12 @@ import { parseLiveSessionConfig } from './live-sessions/config.js'
 import { LiveSessionBrowserAuth } from './live-sessions/auth.js'
 import { LiveSessionBroker } from './live-sessions/broker.js'
 import { liveSessionRegistry } from './live-sessions/registry.js'
+import { machineConfigPath, readMachineConfig, startMachineOutbound } from './machine-session-outbound.js'
+import { projectMachinePreview } from './machine-preview.js'
+import { openMachineInputReplay } from './machine-input-replay.js'
 import { LivePiLauncher } from './live-sessions/launcher.js'
 import { UsageLedger } from './usage-ledger.js'
+import { UsageLimitsService } from './usage-limits.js'
 import { TimingLedger } from './timing-ledger.js'
 import { handlePtyConnection, shutdownPtyClients } from './pty-manager.js'
 
@@ -86,9 +90,28 @@ const livePiLauncher = liveSessionConfig.enabled
   : undefined
 const usageLedger = new UsageLedger()
 void usageLedger.start().catch(error => console.error('[usage] Failed to load ledger:', error))
+const usageLimits = new UsageLimitsService()
 const timingLedger = new TimingLedger()
 void timingLedger.start().catch(error => console.error('[timing] Failed to load ledger:', error))
 let liveSessionRoutes: LiveSessionRoutes | undefined
+let machineOutbound: ReturnType<typeof startMachineOutbound> | undefined
+let machineReplay: ReturnType<typeof openMachineInputReplay> | undefined
+let machineStopping = false
+// Decide machine mode once, before any async config read or listener bind. A file
+// appearing later cannot enable outbound control behind a publicly bound Dashboard.
+const machineModeAtBoot = !process.env.VITEST && !!lstatSync(machineConfigPath(), { throwIfNoEntry: false })
+if (machineModeAtBoot && (process.env.PI_DASH_HOST || '0.0.0.0') !== '127.0.0.1') {
+  throw new Error('Machine connector requires PI_DASH_HOST=127.0.0.1 before Dashboard starts')
+}
+if (machineModeAtBoot) {
+  void readMachineConfig(machineConfigPath()).then(config => {
+    if (config && !machineStopping) {
+      machineReplay = openMachineInputReplay()
+      machineOutbound = startMachineOutbound(config, () => liveSessionRegistry.list(), undefined, undefined, liveSessionRegistry, machineReplay.reserve,
+        (processInstanceId, sessionId) => projectMachinePreview(id => liveSessionRegistry.get(id), processInstanceId, sessionId))
+    }
+  }).catch(() => console.error('[machine] Invalid private connector configuration; outbound disabled'))
+}
 
 // ─── Notifications ───────────────────────────────────────────
 const notifications: Notification[] = []
@@ -901,7 +924,7 @@ registerSystemRoutes(routeDeps, liveSessionAuth)
 registerSessionRoutes(routeDeps)
 registerJobsRoutes(routeDeps)
 registerIntegrationRoutes(routeDeps)
-registerUsageRoutes({ app, ledger: usageLedger })
+registerUsageRoutes({ app, ledger: usageLedger, limits: usageLimits })
 registerTimingRoutes({ app, ledger: timingLedger })
 registerExtConfigRoutes({ app, auth: liveSessionAuth })
 registerPiExtListRoutes({ app })
@@ -941,7 +964,6 @@ app.get('*', (_req: Request, res: Response) => {
 server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
   const wsPath = (req.url || '').split('?')[0]
   console.log('  WS upgrade:', wsPath)
-
   if (liveSessionRoutes?.handleUpgrade(req, socket, head)) return
   if (wsPath === '/api/pty') {
     const ptyIdentity = liveSessionAuth.getIdentity(req)
@@ -1023,6 +1045,9 @@ if (!process.env.VITEST) server.listen(PORT, BIND_HOST, () => {
 })
 
 async function stopLiveSessions(): Promise<void> {
+  machineStopping = true
+  await machineOutbound?.stop()
+  machineReplay?.close()
   await liveSessionRoutes?.stop()
   await liveSessionBroker?.stop()
   await liveSessionRegistry.stop()

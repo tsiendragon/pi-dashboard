@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { UsageDailyPoint, UsageModelSummary, UsageReport, UsageSessionSummary, UsageTotals } from '@shared/usage'
+import type { UsageDailyPoint, UsageLimitProviderReport, UsageLimitWindow, UsageModelSummary, UsageReport, UsageSessionSummary, UsageTotals, UsageLimitsReport } from '@shared/usage'
 import { displayWorktreePath } from '../utils/displayPath'
 
 function currentMonth(): string {
@@ -402,11 +402,55 @@ function SessionTable({ items }: { items: UsageSessionSummary[] }) {
   )
 }
 
+function resetTime(value: number | null): string {
+  if (!value) return '重置时间未提供'
+  return `重置 ${new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))}`
+}
+
+function LimitWindowCard({ period, item }: { period: UsageLimitWindow['period']; item?: UsageLimitWindow }) {
+  const label = period === 'five-hour' ? '5 小时' : '周'
+  const color = item && item.usedPercent >= 90 ? 'bg-danger' : item && item.usedPercent >= 75 ? 'bg-warn' : 'bg-info'
+  return (
+    <div className="rounded-md border border-border bg-bg/50 p-3">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-muted">{label}限额</span>
+        {item ? <span className="font-medium text-text-strong">{Math.round(item.usedPercent)}% 已用</span> : <span className="text-muted">未提供</span>}
+      </div>
+      {item ? <>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border"><div className={`h-full rounded-full ${color}`} style={{ width: `${item.usedPercent}%` }} /></div>
+        <div className="mt-1.5 flex items-center justify-between gap-2 text-2xs text-muted"><span>剩余 {Math.round(100 - item.usedPercent)}%</span><span>{resetTime(item.resetsAt)}</span></div>
+      </> : <p className="mt-2 text-2xs text-muted">当前账户没有返回此窗口</p>}
+    </div>
+  )
+}
+
+function ProviderLimitCard({ provider }: { provider: UsageLimitProviderReport }) {
+  const label = provider.provider === 'codex' ? 'Codex' : 'Claude Code'
+  const shortWindow = provider.windows.find(window => window.period === 'five-hour')
+  const weeklyWindow = provider.windows.find(window => window.period === 'weekly')
+  const statusLabel = provider.status === 'available'
+    ? '额度已读取'
+    : provider.status === 'unavailable' ? '额度未提供' : '读取失败'
+  return (
+    <article className="rounded-md border border-border bg-card p-3">
+      <div className="mb-3 flex items-center justify-between gap-2"><h3 className="text-sm font-medium text-text-strong">{label}</h3><span className="text-2xs text-muted">{statusLabel}</span></div>
+      {provider.message && <p className="mb-3 text-2xs text-muted">{provider.message}</p>}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <LimitWindowCard period="five-hour" item={shortWindow} />
+        <LimitWindowCard period="weekly" item={weeklyWindow} />
+      </div>
+    </article>
+  )
+}
+
 export default function UsagePage() {
   const [month, setMonth] = useState(currentMonth)
   const [report, setReport] = useState<UsageReport>()
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
+  const [limits, setLimits] = useState<UsageLimitsReport>()
+  const [limitsError, setLimitsError] = useState<string>()
+  const [limitsLoading, setLimitsLoading] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -423,6 +467,38 @@ export default function UsagePage() {
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [month])
+
+  useEffect(() => {
+    let cancelled = false
+    let active = false
+    let hasLoaded = false
+    const loadLimits = async () => {
+      if (active) return
+      active = true
+      if (!hasLoaded) setLimitsLoading(true)
+      try {
+        const response = await fetch('/api/usage/limits', { credentials: 'same-origin' })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const value = await response.json() as UsageLimitsReport
+        if (!cancelled) {
+          setLimits(value)
+          setLimitsError(undefined)
+        }
+      } catch (reason) {
+        if (!cancelled) setLimitsError(reason instanceof Error ? reason.message : String(reason))
+      } finally {
+        hasLoaded = true
+        active = false
+        if (!cancelled) setLimitsLoading(false)
+      }
+    }
+    void loadLimits()
+    const interval = window.setInterval(() => { void loadLimits() }, 5 * 60 * 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
 
   const cacheHit = useMemo(() => {
     if (!report) return 0
@@ -452,6 +528,16 @@ export default function UsagePage() {
             <SummaryCard label="缓存命中率" value={`${cacheHit}%`} hint={`${formatTokens(report.total.cacheReadTokens)} cache read`} />
             <SummaryCard label="活跃 Session" value={String(report.sessions.length)} hint={`${report.recordCount} 条 usage 记录`} />
           </div>
+          <section className="rounded-lg border border-border bg-card p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div><h2 className="text-sm font-medium text-text-strong">Codex / Claude Code 限额</h2><p className="mt-1 text-2xs text-muted">本机账户的 5 小时与周窗口用量</p></div>
+              {limits && <span className="text-2xs text-muted">更新于 {new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(limits.checkedAt))}</span>}
+              {!limits && limitsLoading && <span className="text-2xs text-muted">读取账户限额中…</span>}
+            </div>
+            {limitsError && <div className="mb-3 rounded-md border border-danger bg-danger-subtle px-3 py-2 text-xs text-danger">限额读取失败：{limitsError}</div>}
+            {limits && <div className="grid gap-3 md:grid-cols-2">{limits.providers.map(provider => <ProviderLimitCard key={provider.provider} provider={provider} />)}</div>}
+            <p className="mt-3 text-2xs text-muted">百分比与重置时间由服务端提供，不是 Token 数或固定额度。Claude Code 需支持的 OAuth 订阅登录；Codex 仅显示账户实际返回的窗口。</p>
+          </section>
           <section className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center justify-between mb-2"><div><h2 className="text-sm font-medium text-text-strong">每日费用与 Token</h2><p className="text-2xs text-muted mt-1">{report.month} · 左轴费用 USD，右轴输入 / 输出 token · {report.timezone}</p></div><span className="text-2xs text-muted">USD 估算</span></div>
             <CostChart points={visibleDaily} />

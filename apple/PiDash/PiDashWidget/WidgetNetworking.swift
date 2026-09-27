@@ -33,9 +33,9 @@ struct WidgetSlotDTO: Decodable {
 // MARK: - Widget Server Config
 
 /// Reads the server base URL from the shared App Group UserDefaults.
-/// Falls back to the hard-coded Tailscale hostname.
+/// No embedded personal hostname: unconfigured widgets stay offline.
 struct WidgetServerConfig {
-    static let defaultBaseURL = "http://samuels-macbook-air-1.taile86245.ts.net:7777"
+    static let defaultBaseURL = ""
     static let userDefaultsKey = "serverBaseURL"
     static let appGroupSuite = "group.com.sam.pidash"
 
@@ -47,11 +47,13 @@ struct WidgetServerConfig {
     }
 
     func slotsURL() -> URL? {
-        URL(string: "\(baseURL)/api/chat/slots")
+        guard !baseURL.isEmpty else { return nil }
+        return URL(string: "\(baseURL)/api/chat/slots")
     }
 
     func statusURL() -> URL? {
-        URL(string: "\(baseURL)/api/status")
+        guard !baseURL.isEmpty else { return nil }
+        return URL(string: "\(baseURL)/api/status")
     }
 }
 

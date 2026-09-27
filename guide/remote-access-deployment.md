@@ -3,6 +3,8 @@
 目标：**手机 App 不进家里的内网、不常开 tailscale，也能通过 HTTPS 访问各台机器上的 pi-dashboard。**
 本方案只改服务器网络层，**pi-dashboard 零代码改动**。
 
+> **适用范围：**本文是已存在的 nginx + Tailscale + Basic Auth 路线，不是「Cloudflare Tunnel + 设备私钥 + 多机器授权」的正式版实现。多机器移动端方案尚未实现，远程网关服务端不属于本仓库，目标互通尚未完成，**不得通过 Tunnel 公开**；公开状态见 [cloudflare-mobile-gateway.md](cloudflare-mobile-gateway.md)。
+
 ---
 
 ## 0. 背景：为什么必须自己加认证

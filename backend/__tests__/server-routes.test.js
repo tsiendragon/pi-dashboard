@@ -393,6 +393,18 @@ describe('GET /api/models', () => {
   beforeAll(async () => ({ srv, port } = await startServer()))
   afterAll(() => stopServer(srv))
 
+  it('returns the full Pi model catalog for Settings', async () => {
+    const catalog = [
+      { provider: 'anthropic', id: 'claude-opus' },
+      { provider: 'dashscope', id: 'kimi-k3' },
+    ]
+    mockManager.getModels.mockReturnValue(catalog)
+
+    const res = await get(port, '/api/models/catalog')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ models: catalog })
+  })
+
   // QUARANTINED: pre-existing /api/models alias drift, unrelated to SDK migration — see docs/sdk-migration-plan.md slice 0
   it.skip('returns latest Bedrock Opus/Sonnet and latest two Bedrock Mantle GPT aliases', async () => {
     mockManager.getModels.mockReturnValue([
