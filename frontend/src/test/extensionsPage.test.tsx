@@ -131,7 +131,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 let posts: Array<{ url: string; body: unknown }> = []
 
-function stubFetch(overrides: { list?: unknown; post?: (url: string) => Response } = {}) {
+function stubFetch(overrides: {
+  list?: unknown
+  deps?: Response
+  audit?: Response
+  gallery?: Response
+  post?: (url: string) => Response
+} = {}) {
   posts = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
@@ -140,9 +146,9 @@ function stubFetch(overrides: { list?: unknown; post?: (url: string) => Response
       return overrides.post ? overrides.post(url) : jsonResponse({ diff: ['x'], backupPath: '/home/u/.pi/agent/backups/settings-1.json' })
     }
     if (url.startsWith('/api/pi/ext/list')) return jsonResponse(overrides.list ?? INVENTORY)
-    if (url.startsWith('/api/pi/ext/deps')) return jsonResponse(DEPS)
-    if (url.startsWith('/api/pi/ext/audit')) return jsonResponse(AUDIT)
-    if (url.startsWith('/api/pi/gallery')) return jsonResponse({ packages: [] })
+    if (url.startsWith('/api/pi/ext/deps')) return overrides.deps ?? jsonResponse(DEPS)
+    if (url.startsWith('/api/pi/ext/audit')) return overrides.audit ?? jsonResponse(AUDIT)
+    if (url.startsWith('/api/pi/gallery')) return overrides.gallery ?? jsonResponse({ packages: [] })
     if (url.startsWith('/api/ext/config')) {
       return jsonResponse({
         agentDir: '/home/u/.pi/agent',
@@ -217,6 +223,26 @@ describe('Extensions page', () => {
     fireEvent.click(screen.getByRole('tab', { name: /审计与诊断/ }))
     expect(await screen.findByText(/读取提示/)).toBeInTheDocument()
     expect(window.location.hash).toBe('#diagnostics')
+  })
+
+  it('renders the dependency graph in diagnostics', async () => {
+    stubFetch()
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('tab', { name: /审计与诊断/ }))
+    expect(await screen.findByRole('img', { name: '扩展依赖关系图' })).toBeInTheDocument()
+    expect(screen.getByText('1 条关系')).toBeInTheDocument()
+    expect(screen.getAllByText('pi-tsien-shared').length).toBeGreaterThan(0)
+  })
+
+  it('shows dependency loading failures and a retry action', async () => {
+    stubFetch({ deps: jsonResponse({ error: 'scan failed' }, 503) })
+    await renderPage()
+
+    expect(await screen.findByText('依赖扫描加载失败：HTTP 503')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /审计与诊断/ }))
+    expect(screen.getByText('依赖扫描失败，无法绘图。请点击上方“重试”。')).toBeInTheDocument()
+    expect(rowButtons('重试').length).toBeGreaterThan(0)
   })
 
   it('shows the declared package rows in the install tab', async () => {
