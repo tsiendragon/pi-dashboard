@@ -50,6 +50,7 @@ type Entry = {
   /** Unanswered extension UI requests, mirrored for reconnect/page-switch recovery. */
   pendingUi: Map<string, LiveSessionUiRequest>
   dispatchTail: Promise<unknown>
+  generation: number
   reconnectTimer?: ReturnType<typeof setTimeout>
   leaseTimer?: ReturnType<typeof setTimeout>
   leaseOwner?: string
@@ -125,6 +126,7 @@ export class LiveSessionRegistry extends EventEmitter {
       existing.lineage = inferProcessLineage(hello.pid)
       existing.canonicalCwd = canonicalCwd
       existing.awaitingResync = true
+      existing.generation++
       existing.dispatchTail = Promise.resolve()
       return
     }
@@ -141,6 +143,7 @@ export class LiveSessionRegistry extends EventEmitter {
       pending: new Map(),
       pendingUi: new Map(),
       dispatchTail: Promise.resolve(),
+      generation: 0,
     })
   }
 
@@ -157,7 +160,10 @@ export class LiveSessionRegistry extends EventEmitter {
     // cursor would reject every snapshot of the new session until it happened to
     // count past the old position — i.e. the row would sit on “重连中” for ages.
     if (!sessionChanged && snapshot.revision <= entry.revision) return false
-    if (sessionChanged) this.clearLease(entry)
+    if (sessionChanged) {
+      entry.generation++
+      this.clearLease(entry)
+    }
     // A session switch (`/clear`, `/ls-fork`) ends the previous session's dialogs.
     if (sessionChanged) entry.pendingUi.clear()
     entry.canonicalCwd = canonicalCwd
@@ -281,6 +287,37 @@ export class LiveSessionRegistry extends EventEmitter {
     const run = () => this.dispatchNow(entry, validated)
     const result = entry.dispatchTail.then(run, run)
     entry.dispatchTail = result.catch(() => undefined)
+    return result
+  }
+
+  /** Remote input is deliberately narrower than the local browser command path. */
+  async sendRemoteInput(processInstanceId: string, sessionId: string, remoteClientId: string, leaseId: string, text: string): Promise<unknown> {
+    if ([processInstanceId, sessionId, remoteClientId, leaseId].some(value => typeof value !== 'string' || !value.trim()) ||
+      typeof text !== 'string' || !text.trim() || Buffer.byteLength(text, 'utf8') > 4096 || text.trimStart().startsWith('/')) {
+      throw new LiveSessionRegistryError('invalid_remote_input', 'invalid remote input arguments')
+    }
+    const entry = this.entries.get(processInstanceId)
+    const generation = entry?.generation
+    const check = (): void => {
+      if (!entry || this.entries.get(processInstanceId) !== entry || !entry.attached || !entry.summary || entry.awaitingResync ||
+        entry.generation !== generation || entry.summary.sessionId !== sessionId) {
+        throw new LiveSessionRegistryError('live_session_unavailable', 'remote input target is unavailable')
+      }
+      const expiresAt = entry.summary.claim.expiresAt
+      if (entry.leaseOwner !== remoteClientId || entry.summary.claim.state !== 'claimed' ||
+        entry.summary.claim.leaseId !== leaseId || typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) ||
+        expiresAt <= this.now()) {
+        throw new LiveSessionRegistryError('invalid_lease', 'remote input requires a current lease')
+      }
+    }
+    check()
+    const command: LiveSessionCommand = { type: 'input', text, channel: 'mobile' }
+    const run = () => {
+      check()
+      return this.dispatchNow(entry!, command)
+    }
+    const result = entry!.dispatchTail.then(run, run)
+    entry!.dispatchTail = result.catch(() => undefined)
     return result
   }
 

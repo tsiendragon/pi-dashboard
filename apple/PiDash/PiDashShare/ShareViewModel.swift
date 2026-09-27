@@ -88,7 +88,7 @@ final class ShareViewModel {
     private static let appGroupSuite = "group.com.sam.pidash"
     private static let serverKey = "serverBaseURL"
     private static let tokenKey = "serverAuthToken"
-    private static let defaultServer = "http://samuels-macbook-air-1.taile86245.ts.net:7777"
+    private static let defaultServer = "" // User-configured endpoint only.
     private static let cwdDefaultsKey = "defaultCwd"
     private static let dirFreqStoreKey = "dirFrequency.store"
 

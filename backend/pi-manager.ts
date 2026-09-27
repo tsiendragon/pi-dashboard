@@ -20,7 +20,7 @@ import { rpcExtensionBridgeServer } from './extension-bridge/rpc-server.js'
 // spawn) rather than at import time, so values loaded by backend/env-bootstrap.ts take effect
 // regardless of import order.
 let piScriptCache: string | null = null
-function resolvePiScript(): string {
+export function resolvePiScript(): string {
   if (piScriptCache) return piScriptCache
   const resolved = (() => {
     if (process.env.PI_SCRIPT?.trim()) return process.env.PI_SCRIPT.trim()

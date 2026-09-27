@@ -279,7 +279,7 @@ export default function LiveSessionComposer({ status, activity, disabled, models
     if (action || disabled) return
     const next = !modelOpen
     setModelOpen(next)
-    if (next && models.length === 0 && onLoadModels) {
+    if (next && onLoadModels) {
       setAction('model')
       try { await onLoadModels() } catch {
         // The parent operation reports the actionable error in the session banner.
@@ -479,11 +479,23 @@ export default function LiveSessionComposer({ status, activity, disabled, models
             <span className="truncate">{currentModel ? currentModel.id : '模型'}{currentThinkingLevel ? ` · ${currentThinkingLevel}` : ''}</span>
             <MaterialIcon name="keyboard_arrow_up" className="h-3.5 w-3.5 shrink-0" />
           </button>
-          {modelOpen && <div className="absolute bottom-full right-0 z-50 mb-2 flex max-h-[min(28rem,70vh)] w-[min(420px,calc(100vw-2rem))] flex-col overflow-hidden overscroll-contain rounded-xl border border-border bg-card shadow-xl">
-            {effortLevels.length > 0 && <div className="border-b border-border px-3 py-2">
-              <div className="mb-1 flex items-baseline gap-2">
-                <span className="text-2xs font-semibold text-muted">思考强度（effort）</span>
-                <span className="font-mono text-2xs text-muted/70">{currentThinkingLevel ?? '未知'}</span>
+          {modelOpen && <div className="absolute bottom-full right-0 z-50 mb-3 flex max-h-[min(31rem,72vh)] w-[min(440px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_16px_50px_rgba(0,0,0,0.22)] animate-scale-in">
+            <div className="flex items-center justify-between gap-3 border-b border-border bg-bg-elevated/70 px-3 py-2">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-subtle text-accent">
+                  <MaterialIcon name="tune" className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-body-s font-semibold text-text-strong">选择模型</div>
+                  <div className="truncate text-meta text-muted">当前：{currentModel?.id ?? '尚未选择'}</div>
+                </div>
+              </div>
+              <span className="shrink-0 rounded-full border border-border bg-card px-2 py-0.5 text-2xs font-medium text-muted">{models.length} 个模型</span>
+            </div>
+            {effortLevels.length > 0 && <div className="border-b border-border bg-card px-3 py-2">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="text-meta font-semibold text-text-strong">思考强度 <span className="font-normal text-muted">· effort</span></span>
+                <span className="rounded-full bg-accent-subtle px-2 py-0.5 font-mono text-meta font-medium text-accent">{currentThinkingLevel ?? '未知'}</span>
               </div>
               <div className="flex flex-wrap gap-1">
                 {effortLevels.map(level => {
@@ -495,67 +507,84 @@ export default function LiveSessionComposer({ status, activity, disabled, models
                     disabled={!!action || sending || disabled}
                     onClick={() => { if (active || !onSelectThinkingLevel) return; setAction('effort'); void onSelectThinkingLevel(level).finally(() => setAction(undefined)) }}
                     title={active ? `当前思考强度：${level}` : `把思考强度设为 ${level}`}
-                    className={`rounded-md border px-2 py-0.5 font-mono text-2xs transition disabled:opacity-50 ${active ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-bg text-muted hover:border-accent hover:text-accent'}`}
+                    className={`rounded-md border px-2 py-0.5 font-mono text-meta transition disabled:opacity-50 ${active ? 'border-accent bg-accent text-accent-fg shadow-sm' : 'border-border bg-bg text-muted hover:border-accent hover:bg-accent-subtle hover:text-accent'}`}
                   >{level}</button>
                 })}
               </div>
             </div>}
-            <div className="border-b border-border p-2">
-              <input
-                autoFocus
-                value={modelQuery}
-                onChange={event => { setModelQuery(event.target.value); setModelCursor(0) }}
-                onKeyDown={event => {
-                  if (event.key === 'Escape') { event.stopPropagation(); setModelOpen(false); return }
-                  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                    event.preventDefault()
-                    if (pickerModels.length === 0) return
-                    setModelCursor(current => (current + (event.key === 'ArrowDown' ? 1 : pickerModels.length - 1)) % pickerModels.length)
-                    return
-                  }
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    const model = pickerModels[modelCursor]
-                    if (model) chooseModel(model)
-                  }
-                }}
-                placeholder="搜索模型或 provider…"
-                aria-label="搜索模型"
-                className="w-full rounded-md border border-border bg-bg px-2 py-1 text-xs text-text outline-none placeholder:text-muted/70 focus:border-accent"
-              />
+            <div className="border-b border-border bg-bg px-3 py-1.5">
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 transition focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/10">
+                <MaterialIcon name="search" className="h-4 w-4 shrink-0 text-muted" />
+                <input
+                  autoFocus
+                  value={modelQuery}
+                  onChange={event => { setModelQuery(event.target.value); setModelCursor(0) }}
+                  onKeyDown={event => {
+                    if (event.key === 'Escape') { event.stopPropagation(); setModelOpen(false); return }
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                      event.preventDefault()
+                      if (pickerModels.length === 0) return
+                      setModelCursor(current => (current + (event.key === 'ArrowDown' ? 1 : pickerModels.length - 1)) % pickerModels.length)
+                      return
+                    }
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      const model = pickerModels[modelCursor]
+                      if (model) chooseModel(model)
+                    }
+                  }}
+                  placeholder="搜索模型或 Provider…"
+                  aria-label="搜索模型"
+                  className="min-w-0 flex-1 border-none bg-transparent py-1.5 text-body-s text-text outline-none placeholder:text-muted/70"
+                />
+                {modelQuery && <button type="button" onClick={() => { setModelQuery(''); setModelCursor(0) }} aria-label="清除搜索" className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted hover:bg-bg-hover hover:text-text">
+                  <MaterialIcon name="close" className="h-3.5 w-3.5" />
+                </button>}
+              </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-              {modelsLoading && <div className="px-2 py-3 text-xs text-muted">读取模型列表…</div>}
-              {!modelsLoading && models.length === 0 && <div className="px-2 py-3 text-xs text-muted">当前没有可用模型。</div>}
-              {!modelsLoading && models.length > 0 && pickerModels.length === 0 && <div className="px-2 py-3 text-xs text-muted">没有匹配「{modelQuery}」的模型。</div>}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+              {modelsLoading && <div className="flex items-center gap-2 px-3 py-5 text-body-s text-muted"><MaterialIcon name="sync" spin className="h-4 w-4" />读取模型列表…</div>}
+              {!modelsLoading && models.length === 0 && <div className="px-3 py-6 text-center"><div className="text-body-s font-medium text-text-strong">当前没有可用模型</div><div className="mt-1 text-meta text-muted">请检查 Pi 的 Provider 配置</div></div>}
+              {!modelsLoading && models.length > 0 && pickerModels.length === 0 && <div className="px-3 py-6 text-center"><div className="text-body-s font-medium text-text-strong">没有找到匹配模型</div><div className="mt-1 text-meta text-muted">试试其他关键词，或清除搜索条件</div></div>}
               {!modelsLoading && pickerGroups.map(([provider, items]) => (
-                <div key={provider} className="mb-1 last:mb-0">
-                  <div className="px-2 py-1 text-2xs font-semibold uppercase tracking-wide text-muted/60">{provider}</div>
-                  {items.map(({ model, index }) => {
-                    const selected = currentModel?.provider === model.provider && currentModel.id === model.id
-                    return <button
-                      key={`${model.provider}/${model.id}`}
-                      ref={selected ? selectedModelRef : undefined}
-                      type="button"
-                      onMouseEnter={() => setModelCursor(index)}
-                      onClick={() => chooseModel(model)}
-                      title={`${model.provider}/${model.id}`}
-                      className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition ${selected ? 'bg-accent-subtle' : index === modelCursor ? 'bg-bg-hover' : ''}`}
-                    >
-                      <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border text-[9px] leading-none ${selected ? 'border-accent bg-accent text-accent-fg' : 'border-border text-transparent'}`}>✓</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span className={`truncate text-xs font-medium ${selected ? 'text-accent' : 'text-text-strong'}`}>{model.name}</span>
-                          {model.thinkingLevels.length > 0 && <span className="shrink-0 rounded bg-bg px-1 font-mono text-2xs text-muted/80" title={`支持的思考档位：${model.thinkingLevels.join(' / ')}`}>{model.thinkingLevels.join(' · ')}</span>}
+                <section key={provider} className="mb-1.5 last:mb-0">
+                  <div className="flex items-center gap-2 px-2 pb-1 pt-1.5">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent/70" />
+                    <span className="min-w-0 flex-1 truncate text-2xs font-bold tracking-wide text-text-strong">{provider}</span>
+                    <span className="rounded-full bg-bg-elevated px-2 py-0.5 text-2xs tabular-nums text-muted">{items.length}</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {items.map(({ model, index }) => {
+                      const selected = currentModel?.provider === model.provider && currentModel.id === model.id
+                      return <button
+                        key={`${model.provider}/${model.id}`}
+                        ref={selected ? selectedModelRef : undefined}
+                        type="button"
+                        aria-current={selected ? 'true' : undefined}
+                        onMouseEnter={() => setModelCursor(index)}
+                        onClick={() => chooseModel(model)}
+                        title={`${model.provider}/${model.id}`}
+                        className={`group flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-left transition-all duration-150 ${selected ? 'border-accent/40 bg-accent-subtle shadow-sm' : index === modelCursor ? 'border-border bg-bg-hover' : 'border-transparent hover:border-border hover:bg-bg-hover'}`}
+                      >
+                        <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border transition-colors ${selected ? 'border-accent bg-accent text-accent-fg' : 'border-border bg-card text-transparent group-hover:border-muted'}`}>
+                          <MaterialIcon name="check" className="h-2.5 w-2.5" />
                         </span>
-                        <span className="block truncate font-mono text-2xs text-muted">{model.provider}/{model.id}</span>
-                      </span>
-                      <span className="shrink-0 font-mono tabular-nums text-2xs text-muted" title={`context ${model.contextWindow.toLocaleString()} tokens`}>{formatContextWindow(model.contextWindow)}</span>
-                    </button>
-                  })}
-                </div>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className={`truncate text-body-s font-semibold ${selected ? 'text-accent' : 'text-text-strong'}`}>{model.name}</span>
+                            {selected && <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-semibold leading-none text-accent-fg">当前</span>}
+                            {model.thinkingLevels.length > 0 && <span className="shrink-0 rounded border border-border bg-card px-1 py-0.5 text-2xs text-muted" title={`支持的思考档位：${model.thinkingLevels.join(' / ')}`}>思考 {model.thinkingLevels.length} 档</span>}
+                          </span>
+                          <span className="block truncate font-mono text-meta text-muted">{model.provider}/{model.id}</span>
+                        </span>
+                        <span className="shrink-0 rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-2xs tabular-nums text-muted" title={`context ${model.contextWindow.toLocaleString()} tokens`}>{formatContextWindow(model.contextWindow)}</span>
+                      </button>
+                    })}
+                  </div>
+                </section>
               ))}
             </div>
+            <div className="border-t border-border bg-bg-elevated/60 px-3 py-1.5 text-center text-2xs text-muted">↑ ↓ 浏览 <span className="mx-1 text-border">·</span> Enter 选择 <span className="mx-1 text-border">·</span> Esc 关闭</div>
           </div>}
         </div>
         <button type="button" onClick={() => void submit()} disabled={(!text.trim() && pendingImages.length === 0 && pendingFiles.length === 0 && (quotes?.length ?? 0) === 0) || sending || !!action || disabled} aria-label="发送" title="发送（Enter）" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-none bg-accent text-accent-fg transition disabled:opacity-40">
