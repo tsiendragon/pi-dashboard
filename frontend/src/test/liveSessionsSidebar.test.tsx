@@ -352,6 +352,23 @@ describe('LiveSessionsList sidebar', () => {
     expect(screen.queryByText('⏻ 关闭 session（kill tmux）')).not.toBeInTheDocument()
   })
 
+  it('sends the registered /exit command from any session row after confirmation', async () => {
+    const { calls } = mockFetch()
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    const exitButton = screen.getByRole('button', { name: '退出 session pi 101' })
+
+    fireEvent.click(exitButton)
+    expect(calls.some(call => call.url.endsWith('/commands'))).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: '确认退出 session pi 101' }))
+    await waitFor(() => expect(calls.some(call =>
+      call.url === '/api/live-sessions/pid-a/commands'
+      && call.method === 'POST'
+      && JSON.stringify(call.body) === JSON.stringify({ command: { type: 'input', text: '/exit', channel: 'web' } }),
+    )).toBe(true))
+    expect(calls.some(call => call.url.startsWith('/api/pty/sessions/'))).toBe(false)
+  })
+
   it('reloads every main session in one click, after a confirmation', async () => {
     const { calls } = mockFetch()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)

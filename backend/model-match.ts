@@ -13,7 +13,7 @@ export interface ModelLike {
   name?: string | null
 }
 
-const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
+const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 function isThinkingLevel(value: string): boolean {
   return THINKING_LEVELS.includes(value)

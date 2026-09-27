@@ -416,7 +416,17 @@ export function registerChatRoutes(deps: RouteDeps): void {
   })
   app.delete('/api/notifications', (_req: Request, res: Response) => { notifications.length = 0; res.json({ ok: true }) })
 
-  // Models
+  // Full model catalog for Settings; unlike /api/models this is not scoped by enabledModels.
+  app.get('/api/models/catalog', async (_req: Request, res: Response) => {
+    try {
+      const models = await manager.getModels()
+      res.json({ models })
+    } catch (e: any) {
+      res.json({ models: [], error: e.message })
+    }
+  })
+
+  // Models visible in the chat model picker
   app.get('/api/models', async (_req: Request, res: Response) => {
     try {
       const models = await manager.getModels()

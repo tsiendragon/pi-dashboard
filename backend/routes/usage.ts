@@ -1,9 +1,11 @@
 import type { Express, Request, Response } from 'express'
 import { UsageLedger } from '../usage-ledger.js'
+import { UsageLimitsService } from '../usage-limits.js'
 
 export interface UsageRouteOptions {
   app: Express
   ledger: UsageLedger
+  limits: UsageLimitsService
 }
 
 function currentMonth(): string {
@@ -26,6 +28,14 @@ export function registerUsageRoutes(options: UsageRouteOptions): void {
         error: 'invalid_usage_query',
         message: error instanceof Error ? error.message : String(error),
       })
+    }
+  })
+
+  options.app.get('/api/usage/limits', async (_req: Request, res: Response) => {
+    try {
+      res.json(await options.limits.getReport())
+    } catch {
+      res.status(500).json({ error: 'usage_limits_unavailable' })
     }
   })
 }

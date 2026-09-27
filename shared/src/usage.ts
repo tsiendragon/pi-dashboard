@@ -40,3 +40,22 @@ export interface UsageReport {
   sessions: UsageSessionSummary[]
   recordCount: number
 }
+
+export interface UsageLimitWindow {
+  period: 'five-hour' | 'weekly'
+  usedPercent: number
+  resetsAt: number | null
+  durationMinutes: number | null
+}
+
+export interface UsageLimitProviderReport {
+  provider: 'codex' | 'claude-code'
+  status: 'available' | 'unavailable' | 'error'
+  windows: UsageLimitWindow[]
+  message?: string
+}
+
+export interface UsageLimitsReport {
+  checkedAt: number
+  providers: UsageLimitProviderReport[]
+}

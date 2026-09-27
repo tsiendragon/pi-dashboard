@@ -2,7 +2,7 @@
  * Live Session 斜杠命令菜单（仅用于 `/` 自动补全与提示文案）。
  *
  * TUI 内置命令（/compact /reload /model）无法通过 input 文本流触发，由 submit
- * 翻译成结构化命令；扩展命令（/clear /goal /effort）与 skill 命令 / 普通消息
+ * 翻译成结构化命令；扩展命令（/clear /exit /goal /effort）与 skill 命令 / 普通消息
  * 则原样走 `input` 文本流发送给 Pi。
  */
 
@@ -18,6 +18,7 @@ export interface LiveSessionSlashItem {
 export const LIVE_SESSION_SLASH_MENU: LiveSessionSlashItem[] = [
   { command: '/compact', description: '压缩当前会话上下文，释放 token', insert: '/compact', kind: 'lease' },
   { command: '/clear', description: '开启新的空会话（旧对话保留在文件中）', insert: '/clear', kind: 'control' },
+  { command: '/exit', description: '退出当前 Pi session', insert: '/exit', kind: 'control' },
   { command: '/abort', description: '中止当前正在执行的回答', insert: '/abort', kind: 'lease' },
   { command: '/reload', description: '重载扩展 / 技能 / 提示词 / 主题', insert: '/reload', kind: 'control' },
   { command: '/name', description: '设置会话名称', insert: '/name ', kind: 'control' },

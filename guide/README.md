@@ -8,6 +8,7 @@
 | [pi-runtime.md](pi-runtime.md) | ① pi 宿主 CLI（**我们用 tsiendragon/pi 的 fork**） |
 | [extensions.md](extensions.md) | ② pi-tsien-extension 扩展集合（npm / git / 本地三种装法） |
 | [dashboard.md](dashboard.md) | ③ pi-dashboard Web 服务（端口、环境变量、远程访问） |
+| [cloudflare-mobile-gateway.md](cloudflare-mobile-gateway.md) | 多机器移动端接入的公开实施状态（**尚未可公网部署**） |
 | [standalone-install.md](standalone-install.md) | 手动逐步安装版（前置、逐条命令、systemd、排障、卸载） |
 | [config.md](config.md) | 配置总览（四层地图、每个 config 谁读、怎么改） |
 
@@ -27,8 +28,8 @@
 
 | 层 | 是什么 | 本机参考位置 | 默认来源 |
 |---|---|---|---|
-| **① pi 宿主** | 真正跑 agent 的 `pi` 可执行文件 | `/home/tsien/local-pi/bin/pi` | `github.com/tsiendragon/pi` 的 GitHub Release（10 个 tgz） |
-| **② 扩展** | `pi-tsien-extension` 仓库（26 个包 / 25 个扩展入口） | `/mnt/workspace/lilong/repos/pi-tsien-extension` | `github.com/tsiendragon/pi-tsien-extension` |
+| **① pi 宿主** | 真正跑 agent 的 `pi` 可执行文件 | `<pi-fork-prefix>/bin/pi` | `github.com/tsiendragon/pi` 的 GitHub Release（10 个 tgz） |
+| **② 扩展** | `pi-tsien-extension` 仓库（26 个包 / 25 个扩展入口） | `<extension-checkout>` | `github.com/tsiendragon/pi-tsien-extension` |
 | **③ dashboard** | Web + iOS 前端 + 后端 | 当前仓库 | `github.com/tsiendragon/pi-dashboard` |
 
 **最关键的一条认知：pi 用的是 fork，不是上游官方版。** 官方 `@earendil-works/pi-coding-agent`
@@ -113,6 +114,8 @@ npm install --no-audit --no-fund && npm run build-frontend
 | 用哪个 pi | `PI_SCRIPT`（安装脚本自动写入 `dashboard.env`） |
 | 端口 / 监听地址 | `PI_DASH_PORT` / `PI_DASH_HOST` |
 | dashboard 自身（live session） | `~/.pi/dashboard.json` |
+| 可选机器出站会话索引与受限控制 | `<agent dir>/machine-connector.json`（私有 0600 文件，缺失即禁用；见 [config.md](config.md)） |
+| 机器远程输入防重放 | 启用控制时自动维护 `<agent dir>/machine-input-replay.json`（0600，勿删除；见 [config.md](config.md)） |
 
 环境文件加载顺序（先到先得，shell 里已有的同名变量优先）：
 `$PI_DASH_ENV_FILE` → `<仓库>/.env` → `<agent dir>/dashboard.env`。模板见仓库根 `.env.example`。
@@ -139,7 +142,7 @@ npm install --no-audit --no-fund && npm run build-frontend
 - 新增/删除扩展包、改变装载方式或 npm 发布状态 → 更新 [extensions.md](extensions.md)。
 - 更换 pi fork 版本 / 补丁 API 集合 → 更新 [pi-runtime.md](pi-runtime.md)。
 - 改动安装脚本（`scripts/install-standalone.sh`）行为或参数 → 更新 [§3](#3-一键安装推荐) 与 [dashboard.md](dashboard.md)。
-- 影响端口、监听地址、认证、远程访问 → 更新 [dashboard.md](dashboard.md)。
+- 影响端口、监听地址、认证、远程访问 → 更新 [dashboard.md](dashboard.md)；实验性远程接入组件状态同步更新 [cloudflare-mobile-gateway.md](cloudflare-mobile-gateway.md)。
 - 找不到该更新的位置时，先补到本文件，再决定是否需要新拆一份模块文档。
 
 ---

@@ -1,5 +1,6 @@
+import { basename } from 'node:path'
 import type { LiveSessionSummary } from '../../../shared/src/live-sessions.js'
-import { refOf, type Catalog } from './catalog.js'
+import type { Catalog } from './catalog.js'
 import type { DashboardClient } from './dashboardClient.js'
 import type { Mapping } from './mapping.js'
 
@@ -15,7 +16,7 @@ export interface CommandContext {
 
 const HELP = [
   '可用命令：',
-  '/list              列出所有会话',
+  '/list              列出当前 dashboard 的在线会话',
   '/bind <序号或名称>   绑定当前会话',
   '/switch <序号或名称> 同 /bind',
   '/new <cwd>          新建会话（稍后 /list 绑定）',
@@ -47,16 +48,53 @@ export async function handleCommand(text: string, ctx: CommandContext): Promise<
   }
 }
 
-function describe(summary: LiveSessionSummary, ctx: CommandContext): string {
-  const bound = summary.sessionFile ? ctx.mapping.lookupsBySession(summary.sessionFile).length > 0 : false
-  return `${refOf(summary)}  [${summary.status}]${bound ? ' ✓已绑定' : ''}\n   cwd=${summary.cwd}`
+function sessionLabel(summary: LiveSessionSummary): string {
+  const name = summary.sessionName?.trim()
+  if (name) return name
+  const project = basename(summary.cwd.replace(/[\\/]+$/, ''))
+  return project ? `${project} 项目会话` : `Pi 会话 ${summary.processInstanceId.slice(-6)}`
 }
 
-function listSessions(ctx: CommandContext): string {
+function statusLabel(status: LiveSessionSummary['status']): string {
+  switch (status) {
+    case 'running': return '正在运行'
+    case 'reconnecting': return '重连中'
+    default: return '空闲待命'
+  }
+}
+
+function describe(summary: LiveSessionSummary, ctx: CommandContext): string {
+  const project = basename(summary.cwd.replace(/[\\/]+$/, '')) || summary.cwd
+  const currentBinding = ctx.mapping.lookupByChat(ctx.chatId, ctx.threadId)
+  const isBoundHere = currentBinding?.sessionFile === summary.sessionFile
+  const isBoundElsewhere = summary.sessionFile
+    ? ctx.mapping.lookupsBySession(summary.sessionFile).some(binding => binding.chatId !== ctx.chatId || binding.threadId !== ctx.threadId)
+    : false
+  const details = [
+    ...(summary.sessionName?.trim() ? [`项目：${project}`] : []),
+    ...(summary.git?.branch ? [`分支：${summary.git.branch}`] : []),
+    `状态：${statusLabel(summary.status)}`,
+    ...(summary.model ? [`模型：${summary.model.id}`] : []),
+    isBoundHere ? '当前聊天已绑定' : isBoundElsewhere ? '已绑定到其他聊天' : '当前聊天未绑定',
+  ]
+  return `「${sessionLabel(summary)}」\n   ${details.join('；')}\n   工作目录：${summary.cwd}`
+}
+
+async function listSessions(ctx: CommandContext): Promise<string> {
+  let refreshed = true
+  try {
+    ctx.catalog.replace(await ctx.dashboard.listSessions())
+  } catch {
+    refreshed = false
+  }
   const sessions = ctx.catalog.list()
-  if (!sessions.length) return '当前没有 live-session。'
+  if (!sessions.length) {
+    return refreshed
+      ? '当前 dashboard 没有在线的 live-session。'
+      : '暂时无法读取 dashboard 的 live-session，请检查网关到 dashboard 的连接。'
+  }
   return [
-    'Live sessions（用 /bind <序号或名称> 绑定）：',
+    `当前 dashboard 有 ${sessions.length} 个在线会话${refreshed ? '' : '（使用缓存列表）'}（用 /bind <序号> 绑定到当前聊天）：`,
     ...sessions.map((summary, index) => `${index + 1}. ${describe(summary, ctx)}`),
   ].join('\n')
 }
@@ -65,9 +103,9 @@ async function bindSession(arg: string, ctx: CommandContext): Promise<string> {
   if (!arg) return '用法：/bind <序号或名称>；先用 /list 查看。'
   const target = ctx.catalog.resolve(arg)
   if (!target) return `未找到会话「${arg}」。用 /list 查看可用会话。`
-  if (!target.sessionFile) return `会话「${refOf(target)}」缺少稳定的 sessionFile，无法绑定。`
+  if (!target.sessionFile) return `会话「${sessionLabel(target)}」缺少稳定的 sessionFile，无法绑定。`
   await ctx.mapping.bind(ctx.chatId, target.sessionFile, target.sessionName, ctx.threadId, ctx.messageId)
-  return `已绑定到 ${refOf(target)}（${target.status}）。之后直接发消息即可。`
+  return `已绑定到「${sessionLabel(target)}」（${statusLabel(target.status)}）。之后直接发消息即可。`
 }
 
 async function unbindSession(ctx: CommandContext): Promise<string> {
@@ -86,5 +124,5 @@ async function status(ctx: CommandContext): Promise<string> {
   if (!binding) return '当前未绑定会话。用 /list 和 /bind 绑定。'
   const summary = ctx.catalog.resolveBinding(binding.sessionFile)
   const state = summary ? `在线（${summary.status}）` : '离线（会话已结束或未连接）'
-  return `绑定：${binding.sessionName || binding.sessionFile}\n状态：${state}\ncwd：${summary?.cwd ?? '—'}`
+  return `绑定：${summary ? sessionLabel(summary) : binding.sessionName || basename(binding.sessionFile)}\n状态：${state}\n工作目录：${summary?.cwd ?? '—'}`
 }

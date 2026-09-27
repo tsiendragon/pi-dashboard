@@ -392,6 +392,34 @@ Stub — returns `{ "ok": true }`.
 
 ---
 
+### Usage
+
+#### `GET /api/usage`
+
+Returns the Token Cost ledger report. Optional query parameters: `month=YYYY-MM` and `timezone=IANA timezone`.
+
+#### `GET /api/usage/limits`
+
+Returns the latest Codex and Claude Code 5-hour / weekly usage windows. Provider statuses are `available`, `unavailable`, or `error`; absent windows are not inferred. The server caches this provider snapshot for five minutes. Values are utilization percentages and reset timestamps, not token ceilings.
+
+```json
+{
+  "checkedAt": 1780000000000,
+  "providers": [
+    {
+      "provider": "codex",
+      "status": "available",
+      "windows": [
+        { "period": "five-hour", "usedPercent": 24, "resetsAt": 1780001000000, "durationMinutes": 300 },
+        { "period": "weekly", "usedPercent": 63, "resetsAt": 1780600000000, "durationMinutes": 10080 }
+      ]
+    }
+  ]
+}
+```
+
+---
+
 ### Notifications
 
 In-memory notification store (max 200, not persisted across restarts).

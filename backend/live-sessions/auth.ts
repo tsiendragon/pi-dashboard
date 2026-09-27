@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'crypto'
 import { chmod, lstat, mkdir, open, readFile, writeFile } from 'fs/promises'
-import type { IncomingHttpHeaders } from 'http'
+import type { IncomingHttpHeaders, IncomingMessage } from 'http'
 import os from 'os'
 import path from 'path'
 

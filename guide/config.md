@@ -67,6 +67,8 @@ dashboard 启动时加载，并传给它派生的**每个** pi 子进程（`back
 |---|---|---|---|
 | `~/.pi/dashboard.json`（`liveSessions.roots/launch/unsetEnv/disconnectGraceMs`） | dashboard 后端 | 是（live session 靠它） | ✅ `/api/dash/config` |
 | `<agent dir>/pi-web-sessions.json`（slot 元数据） | `backend/session-store.ts` | 自动 | 自动维护 |
+| `<agent dir>/machine-connector.json`（私有 WSS 出站会话索引与受限控制） | dashboard 后端启动时读取 | 否，缺失即禁用 | ❌；仅手动创建 0600 文件 |
+| `$HOME/.pi-dashboard-private/machine-input-replay.json`（远程输入持久防重放）及 `.lock` | dashboard 后端自动创建/读取 | 仅启用机器出站控制时必须安全可用 | ❌；不可通过 HTTP 访问或手动清空 |
 
 ### 其它（按项目 / 仓库）
 
@@ -112,6 +114,8 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `PI_DASH_TIMEZONE` | 时区 | 系统 |
 | `PI_DASH_TIMING_DIR` | dashboard 计时账本目录 | 默认 `<agent dir>/pi-timing`（可移植，无需设置） |
 | `PI_DASH_USAGE_DIR` | dashboard 用量账本目录 | 默认 `<agent dir>/token-usage` |
+| `CODEX_HOME` | Token Cost 读取 Codex 额度时使用的 Codex CLI 配置/登录目录 | Codex CLI 默认目录（通常 `~/.codex`） |
+| `CLAUDE_CONFIG_DIR` | Token Cost 读取 Claude Code 额度时查找 OAuth 登录文件的目录 | `~/.claude` |
 | `PI_DASH_LIVE_SESSION_GROUPS` / `_META` / `_ORDER` | live session 分组/元数据/排序文件 | 默认 `<agent dir>/pi/live-session-*.json` |
 | `PI_TASK_JOURNAL_ROOT` | 任务日志仓库根（可选，覆盖 `tasks.journal.roots`） | 默认空：**纯配置驱动**，不探测固定路径 |
 | `PI_DASH_TIMING_REFRESH_MS` | 计时账本刷新间隔 | 内置默认 |
@@ -126,6 +130,8 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `DASHSCOPE_BASE_URL` / `DASHSCOPE_TTS_BASE_URL` | DashScope 端点覆盖（TTS 等） | 官方端点 |
 | `PI_BEDROCK_PROFILE` / `AWS_PROFILE` | Bedrock profile（未设 `AWS_PROFILE` 时回退） | 无 |
 
+> Token Cost 的额度卡片可选读取本机 Codex / Claude Code 账户：Codex CLI 需可从 dashboard 进程的 `PATH` 启动；Claude Code 使用 `${CLAUDE_CONFIG_DIR:-~/.claude}/.credentials.json` 中的 OAuth 凭证。凭证只在后端读取，不会返回给浏览器。该查询只显示账户接口实际提供的百分比与重置时间；Claude Code 目前只支持 OAuth 订阅用量，API key、Bedrock/Vertex、仅 keychain 存储等情况可能没有数据。没有对应 CLI 登录时页面会显示未提供，不影响 Token Cost 原有统计。
+>
 > 本表只列**部署相关**变量；代码内部还有少量实现用变量（如 `PI_RUNTIME`、`LILONG_TASK_ROOT`、
 > `TAILSCALE_IP` 等），不要依赖它们做配置。以 `backend/` 代码为准；新增对外变量必须同步本表。
 
@@ -196,6 +202,20 @@ export ANTHROPIC_API_KEY=sk-ant-...
 改法：Settings 页（`PUT /api/dash/config`），或直接编辑该文件。
 
 ---
+
+### 私有机器连接（可选，实验性）
+
+不通过环境变量传密钥。手动在 `<agent dir>/machine-connector.json` 创建权限严格为 `0600` 的普通文件（不可为符号链接），内容仅允许：
+
+```json
+{"endpoint":"wss://your-hub.example/machine/v1","machineId":"machine_1","key":"<32-byte-random-key-in-canonical-base64url>"}
+```
+
+`endpoint` 必须通过 WireGuard 私网路由到入口机、使用与域名匹配的有效证书的 `wss://`，路径固定 `/machine/v1`，无用户信息、查询或 fragment；`machineId` 只允许 1–64 位 ASCII 字母、数字、`_`、`-`。密钥须由可信的私有 hub 单独发放；示例并非真实端点或凭证。缺文件默认禁用；权限、字段或地址无效则禁用并仅打印通用错误，不输出密钥。修改后由用户自行重启服务生效；不可在 dashboard Settings/API 中编辑此文件，也不要提交到 git 或放进 `dashboard.env`（环境变量会传给 pi 子进程）。
+
+启用控制前，后端必须在 `$HOME/.pi-dashboard-private/`（当前用户所有、严格 `0700`、家目录不得被组/其他用户写入）初始化 `machine-input-replay.json`；它与独占运行锁 `.lock` 均为当前用户所有的 `0600` 普通文件。文件仅保存 clientId + UUID 的 SHA-256 摘要，不保存输入文本、原始标识或凭证。每次输入在交给 Pi 之前，先写临时文件并 fsync、原子替换且 fsync 父目录；同一 ID（即使修改内容）永远视为不确定，不自动重试或清理。最多 100000 条，不淘汰；满额、文件损坏、权限/所有者不安全、符号链接或磁盘错误均拒绝新输入（启动时无法初始化则关闭出站连接）。崩溃留下的 `.lock` 需要管理员确认进程已退出并检查文件后手动处理；不要删除 replay 文件或把它暴露给 HTTP/日志。备份/迁移必须保留该文件及其权限，否则旧 ID 可能再次执行。
+
+连接接受已认证 hub 的 `list_sessions` 请求，只返回最多 50 条来自 live-session registry 的 `processInstanceId`、`sessionId`、`status`（idle/running/reconnecting），不传 cwd、pid、文件名、模型、claim 或消息。认证完成后还允许固定结构的远程会话声明、释放和短文本输入；机器侧验证目标及租约，输入超时或重复请求不自动重试，断链时尽可能释放该连接的远程租约。仅可读取选中会话最近最多 8 条已完成用户/助手纯文本的受限预览，不提供完整 transcript、工具输出、路径/图片，也不会代理 HTTP 或执行任意 Pi 命令。WSS 证书验证保持启用；连接失败会持续按最多 30 秒的有界退避重连；关闭 dashboard 会停止重连。配置文件存在时，服务启动前强制要求 `PI_DASH_HOST=127.0.0.1`，否则拒绝启动，避免工作机暴露 Dashboard 入站端口。参见 [dashboard.md](dashboard.md)。
 
 ## 5. 为什么配置仍「分散」（统一策略）
 

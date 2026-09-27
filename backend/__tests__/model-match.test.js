@@ -15,6 +15,15 @@ describe('model-match', () => {
     })
   })
 
+  it('strips max thinking suffix and matches the base model', () => {
+    const luna = { provider: 'openai-codex', id: 'gpt-6-luna' }
+    expect(splitThinkingSuffix('openai-codex/gpt-6-luna:max')).toEqual({
+      modelPattern: 'openai-codex/gpt-6-luna',
+      thinkingLevel: 'max',
+    })
+    expect(filterEnabledModels([luna], ['openai-codex/gpt-6-luna:max'])).toEqual([luna])
+  })
+
   it('matches provider/model, bare model, and glob patterns', () => {
     expect(modelPatternMatches('bedrock-mantle/openai.gpt-5.5:xhigh', gpt55)).toBe(true)
     expect(modelPatternMatches('openai.gpt-5.5:xhigh', gpt55)).toBe(true)

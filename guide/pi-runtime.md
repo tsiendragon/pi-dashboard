@@ -16,13 +16,14 @@
 | `extension_ui` / `respondExtensionUi` / `extension_ui_notify` | live session 断桥，dashboard 远程接管不可用 |
 | `aboveStatus` / `fullscreen` | 子 Agent 降级为非全屏布局 |
 
-因此本套**默认装 fork 构建**。本机验证方式：
+因此本套**默认装 fork 构建**。按实际 fork 安装目录验证（示例使用 `$HOME/pi-fork`）：
 
 ```bash
-ls /home/tsien/local-pi/lib/node_modules/@earendil-works/       # 应有 10 个包
-/home/tsien/local-pi/bin/pi --version                          # 0.85.1（对应 Release tag v0.85.1-tsien.1）
-grep -rl "executeTool" /home/tsien/local-pi/lib/node_modules/@earendil-works/pi-coding-agent/dist/ | head -1
-grep -rl "respondExtensionUi" /home/tsien/local-pi/lib/node_modules/@earendil-works/pi-coding-agent/dist/ | head -1
+PI_PREFIX="${PI_PREFIX:-$HOME/pi-fork}"
+ls "$PI_PREFIX/lib/node_modules/@earendil-works/"       # 应有 10 个包
+"$PI_PREFIX/bin/pi" --version                           # 版本以实际安装为准
+grep -rl "executeTool" "$PI_PREFIX/lib/node_modules/@earendil-works/pi-coding-agent/dist/" | head -1
+grep -rl "respondExtensionUi" "$PI_PREFIX/lib/node_modules/@earendil-works/pi-coding-agent/dist/" | head -1
 ```
 
 **注意**：并不是所有扩展都需要 fork。扩展侧只有 3 个包用补丁 API
@@ -91,7 +92,7 @@ npm install -g @earendil-works/pi-coding-agent
 `dashboard.env` 由 backend 启动时加载，并传给每个 pi 子进程（见 `guide/config.md` §2）。
 
 live session 走的是另一条链：`~/.pi/dashboard.json` 的 `liveSessions.launch.command`，本机指向
-`/home/tsien/.local/bin/pi-clean` → `/home/tsien/local-pi/bin/pi`（同一个 fork 构建）。
+`$HOME/.local/bin/pi` → `<pi-fork-prefix>/bin/pi`（同一个 fork 构建；按本机实际安装目录配置）。
 
 ---
 

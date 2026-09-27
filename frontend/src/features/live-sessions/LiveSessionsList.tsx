@@ -150,6 +150,7 @@ interface RowProps {
   tmuxSession?: string
   onCopyTerminalCommand: () => void
   onCloseSession: () => void
+  onExitSession: () => Promise<void>
   /** Section this row renders in; drop targets are resolved per block. */
   blockId: string
   dragging: boolean
@@ -167,6 +168,33 @@ function SessionRow(p: RowProps) {
   const [renaming, setRenaming] = useState(false)
   const [tagEditing, setTagEditing] = useState(false)
   const [renameValue, setRenameValue] = useState(p.title)
+  const [exitArmed, setExitArmed] = useState(false)
+  const [exitPending, setExitPending] = useState(false)
+
+  useEffect(() => {
+    if (!exitArmed) return
+    const timer = window.setTimeout(() => setExitArmed(false), 5_000)
+    return () => window.clearTimeout(timer)
+  }, [exitArmed])
+
+  useEffect(() => {
+    if (!exitPending) return
+    const timer = window.setTimeout(() => setExitPending(false), 8_000)
+    return () => window.clearTimeout(timer)
+  }, [exitPending])
+
+  const requestExit = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (exitPending) return
+    if (!exitArmed) {
+      setExitArmed(true)
+      return
+    }
+    setExitArmed(false)
+    setExitPending(true)
+    void p.onExitSession().catch(() => setExitPending(false))
+  }
 
   const tone = statusTone(p.session)
   const chips = p.tags.slice(0, MAX_TAG_CHIPS)
@@ -267,6 +295,16 @@ function SessionRow(p: RowProps) {
             {p.childCount > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1.5 text-2xs leading-[14px] text-muted" title={`${p.childCount} 个子 Agent`}>{p.childCount} 子</span>}
             {p.session.claim.state === 'claimed' && <span className="flex shrink-0 items-center text-muted-strong" title="已被其他浏览器接管"><MaterialIcon name="lock" className="h-3.5 w-3.5" /></span>}
             <span className={`shrink-0 font-mono text-2xs leading-none text-muted-strong ${menuOpen ? 'invisible' : ''}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}`}>{relTime(p.session.lastActivityAt)}</span>
+            <button
+              type="button"
+              disabled={exitPending}
+              aria-label={exitPending ? `正在退出 session ${p.title}` : exitArmed ? `确认退出 session ${p.title}` : `退出 session ${p.title}`}
+              title={exitPending ? '正在退出 Pi…' : exitArmed ? '再点一次确认退出 Pi（发送 /exit）' : '退出 Pi（发送 /exit）'}
+              onPointerDown={event => event.stopPropagation()}
+              onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
+              onClick={requestExit}
+              className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-wait ${exitArmed ? 'bg-danger-subtle text-danger opacity-100' : exitPending ? 'text-muted opacity-100' : 'text-muted opacity-50 hover:bg-danger-subtle hover:text-danger group-hover:opacity-100 md:opacity-0 focus-visible:opacity-100'}`}
+            >{exitPending ? '…' : exitArmed ? '确认' : '⏻'}</button>
             <button
               type="button"
               aria-label="Session menu"
@@ -681,6 +719,15 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     onCopyTerminalCommand: () => {
       const tmux = meta[session.sessionId]?.tmux
       if (tmux) void navigator.clipboard?.writeText(`tmux attach -t ${tmux}`).catch(() => {})
+    },
+    onExitSession: async () => {
+      try {
+        await liveSessionApi.command(session.processInstanceId, { type: 'input', text: '/exit', channel: 'web' })
+        if (onRefresh) void onRefresh().catch(() => {})
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason))
+        throw reason
+      }
     },
     // tmux-first live sessions are closed by killing their tmux session; the Pi
     // inside it exits with the pane and the sidebar row disappears on its own.

@@ -100,6 +100,23 @@ describe('Live Session UI', () => {
     await waitFor(() => expect(onSelectModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'deepseek-v4.1-flash' })))
   })
 
+  it('refreshes the available model list every time the picker opens', async () => {
+    const onLoadModels = vi.fn().mockResolvedValue(undefined)
+    render(<LiveSessionComposer
+      status="idle"
+      models={[{ provider: 'anthropic', id: 'claude-x', name: 'Claude X', reasoning: true, contextWindow: 200_000, thinkingLevels: [] }]}
+      onLoadModels={onLoadModels}
+      onSubmit={vi.fn().mockResolvedValue(undefined)}
+    />)
+
+    const toggle = screen.getByTitle('切换当前模型')
+    fireEvent.click(toggle)
+    await waitFor(() => expect(onLoadModels).toHaveBeenCalledTimes(1))
+    fireEvent.click(toggle)
+    fireEvent.click(toggle)
+    await waitFor(() => expect(onLoadModels).toHaveBeenCalledTimes(2))
+  })
+
   it('shows a live activity indicator above the composer', () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     render(<LiveSessionComposer

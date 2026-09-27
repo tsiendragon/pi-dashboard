@@ -80,6 +80,10 @@ sudo rm /etc/systemd/system/pi-dashboard.service && sudo systemctl daemon-reload
 加载到的变量会被**每一个** pi 子进程继承（`backend/pi-manager.ts` 用 `...process.env` 启动 slot），
 所以扩展也能读到；启动日志会打印 `[env] loaded env file(s): …`。
 
+### Token Cost 额度查询（可选）
+
+Token Cost 页面会单独读取 Codex / Claude Code 的 5 小时和周用量窗口：Codex 通过 `codex app-server` 读取当前账户限额，Claude Code 使用 `CLAUDE_CONFIG_DIR`（默认 `~/.claude`）下的 OAuth 凭证查询 Anthropic 用量接口。两者都是可选项，没有相应本地登录时，原有 Token Cost 统计仍可用；API key、Bedrock/Vertex 等 Claude Code 账户不提供此订阅限额数据。凭证只由后端读取，不会下发给浏览器。完整说明见 [config.md](config.md) §2。
+
 ---
 
 ## 4. dashboard 自身配置（`~/.pi/dashboard.json`）
@@ -90,9 +94,9 @@ live session 靠它，Settings 页可改（`/api/dash/config`）：
 {
   "liveSessions": {
     "enabled": true,
-    "roots": ["/home/tsien", "/mnt/workspace/lilong/repos"],
+    "roots": ["/home/example/projects"],
     "launch": {
-      "command": "/home/tsien/.local/bin/pi-clean",
+      "command": "/home/example/.local/bin/pi",
       "args": [],
       "unsetEnv": ["HF_TOKEN", "AZURE_OPENAI_API_KEY", "…"]
     },
@@ -111,6 +115,10 @@ live session 靠它，Settings 页可改（`/api/dash/config`）：
 另外：`<agent dir>/pi-web-sessions.json` 是 slot 元数据（运行时状态，自动维护）。
 
 ---
+
+### 可选出站 WSS 会话索引与受限控制（实验性）
+
+仅当 `<agent dir>/machine-connector.json` 存在且为有效的 0600 私有普通文件时启动。格式和权限见 [config.md](config.md)；不使用环境变量传密钥，默认关闭。认证成功后可处理 `list_sessions`（UUID requestId），回传最多 50 个受限 ASCII ID 及 idle/running/reconnecting 状态；还支持固定结构的租约声明/释放和短文本输入，必须通过机器侧会话与租约校验，重复输入或不确定结果不自动重试；输入在派发给 Pi 前先持久化预留 ID。`$HOME/.pi-dashboard-private/machine-input-replay.json`（及独占 `.lock`）为当前用户所有的 0600 私有文件，仅保留散列 ID，不能通过 HTTP/日志读取；文件损坏、权限不安全或满 100000 条时拒绝控制输入，绝不自动淘汰或清除已接受 ID。崩溃留下的锁需核实进程已退出后人工处理，详见 [config.md](config.md)。列表不包含 cwd、pid、路径或模型；另有选中会话最近最多 8 条已完成用户/助手纯文本的受限预览（不含工具输出和完整 transcript），不支持 HTTP 代理、任意 Pi 命令或图片。预认证帧最大 2048 字节、认证后最大 16384 字节；异常协议直接断链。TLS 证书校验始终启用。此连接**不替代**本服务的入站 HTTP/WS 安全边界。
 
 ## 5. 远程访问与安全
 
@@ -134,7 +142,7 @@ PI_DASH_HOST=your-server PI_DASH_USER=you ./pi-dash-connect.sh
 ```
 
 **不要**把 7777 直接映射到公网；确需公网访问，在前面加 nginx + HTTPS + 认证。
-完整方案（caddy/nginx、TLS、basic auth、备选隧道）见 `guide/remote-access-deployment.md`。
+已有的 nginx/Tailscale 反代部署方案见 [remote-access-deployment.md](remote-access-deployment.md)。多机器移动端远程接入尚未实现；远程网关服务端不属于本仓库；目标互通尚未完成，**不能公网发布**。公开实施状态见 [cloudflare-mobile-gateway.md](cloudflare-mobile-gateway.md)。不要把 Tunnel 直接指向 Dashboard 或任何管理服务。
 
 ---
 

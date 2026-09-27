@@ -5,7 +5,7 @@
 > 都靠它提供的钩子和工具。
 
 - 仓库：`github.com/tsiendragon/pi-tsien-extension`
-- 本机参考位置：`/mnt/workspace/lilong/repos/pi-tsien-extension`
+- 本机参考位置：`<extension-checkout>`（由安装者选择，不依赖固定用户名或目录）
 - 上游参考：`github.com/earendil-works/pi-mono`
 
 ---

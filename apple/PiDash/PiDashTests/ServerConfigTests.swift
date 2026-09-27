@@ -100,12 +100,11 @@ final class ServerConfigTests: XCTestCase {
         XCTAssertNil(ServerConfig.sharedDefaults.string(forKey: ServerConfig.cwdDefaultsKey))
     }
 
-    // MARK: - IP Migration
+    // MARK: - No hardcoded host
 
-    func testOldIPMigration() {
-        // The old IP should be migrated to the default MagicDNS URL
-        let config = ServerConfig(baseURL: "http://100.103.130.31:7777")
-        XCTAssertEqual(config.baseURL, ServerConfig.defaultBaseURL)
+    func testExplicitServerIsNotOverridden() {
+        let config = ServerConfig(baseURL: "http://example.com:7777")
+        XCTAssertEqual(config.baseURL, "http://example.com:7777")
     }
 
     // MARK: - Constants

@@ -15,7 +15,8 @@ import { asrLanguageLabel, ASR_DEFAULT_MODEL, ASR_LANGUAGES, type AsrConfigRespo
 import { TTS_LANGUAGES, TTS_MODELS, TTS_VOICES, type TtsConfigResponse } from '@shared/tts.js'
 import { SettingsSectionSlot } from '../plugins/slot-consumers'
 import { ACTIONS, formatKey, setShortcut, resetShortcut, resetAllShortcuts, hasCustomShortcuts, subscribeShortcuts, eventToKeyString, type ActionCategory } from '../shortcuts'
-import { modelFullId, splitModelFullId, splitThinkingSuffix } from '../utils/modelUtils'
+import { modelFullId, modelPatternMatches, splitModelFullId, splitThinkingSuffix } from '../utils/modelUtils'
+import { modelSelectionPatterns, selectedModelIds } from '../utils/modelSelection'
 
 /**
  * PUT helper for the settings dashboards.
@@ -39,7 +40,7 @@ async function putJson(url: string, body: unknown): Promise<{ ok: boolean; error
   }
 }
 
-type Tab = 'general' | 'model' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'voice' | 'display' | 'vault' | 'tasks' | 'lark' | 'developer' | 'shortcuts'
+type Tab = 'general' | 'model' | 'models' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'voice' | 'display' | 'vault' | 'tasks' | 'lark' | 'developer' | 'shortcuts'
 
 /* ── Shared form components ── */
 
@@ -218,9 +219,11 @@ function usePiSettings() {
 }
 
 /* ── MODEL TAB ── */
+type ModelOption = { id: string; name?: string; provider: string }
+
 function ModelTab() {
   const { settings, feedback, set, setNested, save } = usePiSettings()
-  const [availableModels, setAvailableModels] = useState<{ id: string; name?: string; provider: string }[]>([])
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>([])
 
   useEffect(() => {
     fetch('/api/models').then(j).then(r => setAvailableModels(r?.models || [])).catch(() => {})
@@ -233,14 +236,10 @@ function ModelTab() {
     if (!raw) return ''
     return raw.includes('/') ? raw : settings.defaultProvider ? `${settings.defaultProvider}/${raw}` : raw
   })()
-
-  // Unique providers from /api/models, plus whatever's in settings (extension providers not in the live list)
   const providers = Array.from(new Set([
     ...(settings.defaultProvider ? [settings.defaultProvider] : []),
     ...availableModels.map(m => m.provider),
   ])).filter(Boolean).sort()
-
-  // Models for the currently-selected provider (fall back to all models if provider is unset)
   const providerModels = settings.defaultProvider
     ? availableModels.filter(m => m.provider === settings.defaultProvider)
     : availableModels
@@ -320,19 +319,170 @@ function ModelTab() {
         </div>
       </Card>
 
+    </div>
+  )
+}
+
+function ModelListTab() {
+  const { settings, feedback, save } = usePiSettings()
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>([])
+  const [defaultModels, setDefaultModels] = useState<ModelOption[]>([])
+  const [modelsLoading, setModelsLoading] = useState(true)
+  const [modelQuery, setModelQuery] = useState('')
+  const [selectionError, setSelectionError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      fetch('/api/models/catalog').then(j).catch(() => ({ models: [] })),
+      fetch('/api/models').then(j).catch(() => ({ models: [] })),
+    ]).then(([catalog, defaults]) => {
+      if (cancelled) return
+      setAvailableModels(catalog?.models || [])
+      setDefaultModels(defaults?.models || [])
+      setModelsLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
+
+  const enabledPatterns = settings.enabledModels || []
+  const selectedIds = selectedModelIds(availableModels, enabledPatterns, defaultModels)
+  const modelGroups = Array.from(new Set(availableModels.map(model => model.provider))).sort().map(provider => ({
+    provider,
+    models: availableModels.filter(model => model.provider === provider),
+  })).filter(group => {
+    const query = modelQuery.trim().toLowerCase()
+    return !query || group.provider.toLowerCase().includes(query) || group.models.some(model => `${model.name || ''} ${model.id}`.toLowerCase().includes(query))
+  })
+  const unmatchedPatterns = enabledPatterns.filter(pattern => !availableModels.some(model => modelPatternMatches(pattern, model)))
+
+  const saveModelSelection = (nextIds: Set<string>) => {
+    setSelectionError('')
+    if (nextIds.size === 0) {
+      setSelectionError('至少保留一个模型；如需恢复默认列表，请使用“恢复默认”。')
+      return
+    }
+    save({ ...settings, enabledModels: modelSelectionPatterns(availableModels, nextIds, enabledPatterns) })
+  }
+
+  const restoreDefaults = async () => {
+    setSelectionError('')
+    await save({ ...settings, enabledModels: undefined })
+    const result = await fetch('/api/models').then(j).catch(() => ({ models: [] }))
+    setDefaultModels(result?.models || [])
+  }
+
+  const selectProvider = (provider: string, enabled: boolean) => {
+    const next = new Set(selectedIds)
+    for (const model of availableModels.filter(model => model.provider === provider)) {
+      const id = modelFullId(model)
+      if (enabled) next.add(id)
+      else next.delete(id)
+    }
+    saveModelSelection(next)
+  }
+
+  const selectModel = (model: ModelOption, enabled: boolean) => {
+    const next = new Set(selectedIds)
+    const id = modelFullId(model)
+    if (enabled) next.add(id)
+    else next.delete(id)
+    saveModelSelection(next)
+  }
+
+  const selectAll = () => saveModelSelection(new Set(availableModels.map(modelFullId)))
+
+  return (
+    <div className="space-y-4">
+      <Feedback feedback={feedback} />
       <Card>
-        <CardTitle>Enabled Models <InfoTip text="Glob patterns to filter which models appear in the model picker. Empty = all models." /></CardTitle>
-        <div className="text-meta text-muted opacity-60 mb-2">One pattern per line. Supports wildcards and optional thinking suffixes (e.g. <code className="font-mono text-text">bedrock-mantle/openai.gpt-5.5:xhigh</code>, <code className="font-mono text-text">*/gpt-4o</code>)</div>
-        <textarea
-          className="w-full bg-bg-elevated border border-border rounded-md p-3 text-body-s font-mono text-text resize-none outline-none focus-ring leading-relaxed min-h-[80px]"
-          value={(settings.enabledModels || []).join('\n')}
-          onChange={e => {
-            const lines = e.target.value.split('\n')
-            set('enabledModels', lines.filter(l => l.trim()))
-          }}
-          placeholder="bedrock-mantle/openai.gpt-5.5:xhigh&#10;claude-*&#10;anthropic/*"
-          spellCheck={false}
-        />
+        <CardTitle>Providers & Models <InfoTip text="Choose which Pi-provided models appear in the model picker. Provider credentials are configured in Pi, not here." /></CardTitle>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="m-0 max-w-xl text-meta text-muted">点击 Provider 可全选或取消该服务商下的模型，也可以逐个勾选。全选 Provider 会自动包含其以后新增的模型；部分选择只匹配当前已列出的模型。这里只管理列表可见性，新增 Provider 或配置密钥仍需在 Pi 中完成。</p>
+          <div className="flex shrink-0 gap-2">
+            <button type="button" onClick={selectAll} disabled={modelsLoading || availableModels.length === 0} className="rounded-md border border-border px-2.5 py-1.5 text-meta text-text hover:bg-bg-hover disabled:opacity-40">全选</button>
+            <button type="button" onClick={() => void restoreDefaults()} disabled={modelsLoading} className="rounded-md border border-border px-2.5 py-1.5 text-meta text-muted hover:bg-bg-hover disabled:opacity-40">恢复默认</button>
+          </div>
+        </div>
+        <div className="mb-3 flex items-center gap-3">
+          <input
+            value={modelQuery}
+            onChange={event => setModelQuery(event.target.value)}
+            placeholder="搜索模型或 Provider…"
+            aria-label="搜索模型或 Provider"
+            className="min-w-0 flex-1 rounded-md border border-border bg-bg-elevated px-3 py-2 text-body-s text-text outline-none focus-ring"
+          />
+          <span className="shrink-0 text-meta text-muted">已选 {selectedIds.size} / {availableModels.length}</span>
+        </div>
+        {selectionError && <div role="alert" className="mb-2 text-meta text-danger">{selectionError}</div>}
+        {unmatchedPatterns.length > 0 && <div className="mb-2 text-meta text-muted">有 {unmatchedPatterns.length} 条规则暂时没有匹配到当前 Pi 模型目录，保存选择时会保留。</div>}
+        {modelsLoading ? (
+          <div className="py-4 text-body-s text-muted">读取 Pi 模型列表…</div>
+        ) : availableModels.length === 0 ? (
+          <div className="py-4 text-body-s text-muted">Pi 当前没有返回可用模型。请先在 Pi 中配置 Provider、凭证或自定义模型。</div>
+        ) : modelGroups.length === 0 ? (
+          <div className="py-4 text-body-s text-muted">没有匹配「{modelQuery}」的 Provider 或模型。</div>
+        ) : (
+          <div className="max-h-[min(32rem,60vh)] space-y-3 overflow-y-auto pr-1">
+            {modelGroups.map(({ provider, models }) => {
+              const enabledCount = models.filter(model => selectedIds.has(modelFullId(model))).length
+              const allEnabled = enabledCount === models.length
+              const partiallyEnabled = enabledCount > 0 && !allEnabled
+              return (
+                <section key={provider} className="overflow-hidden rounded-lg border border-border">
+                  <label className="flex cursor-pointer items-center gap-2 border-b border-border bg-bg-elevated px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={allEnabled}
+                      ref={input => { if (input) input.indeterminate = partiallyEnabled }}
+                      onChange={event => selectProvider(provider, event.target.checked)}
+                      aria-label={`启用 ${provider} 的全部模型`}
+                      className="h-4 w-4 accent-accent"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-body-s font-semibold text-text-strong">{provider}</span>
+                    <span className="text-meta text-muted">{enabledCount}/{models.length}</span>
+                  </label>
+                  <div className="divide-y divide-border">
+                    {models.filter(model => {
+                      const query = modelQuery.trim().toLowerCase()
+                      return !query || provider.toLowerCase().includes(query) || `${model.name || ''} ${model.id}`.toLowerCase().includes(query)
+                    }).map(model => {
+                      const enabled = selectedIds.has(modelFullId(model))
+                      return (
+                        <label key={modelFullId(model)} className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-bg-hover">
+                          <input
+                            type="checkbox"
+                            checked={enabled}
+                            onChange={event => selectModel(model, event.target.checked)}
+                            aria-label={`启用 ${provider}/${model.id}`}
+                            className="h-4 w-4 shrink-0 accent-accent"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-body-s text-text">{model.name || model.id}</span>
+                            <span className="block truncate font-mono text-meta text-muted">{model.id}</span>
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </section>
+              )
+            })}
+          </div>
+        )}
+        <details className="mt-3 border-t border-border pt-3">
+          <summary className="cursor-pointer text-meta text-muted hover:text-text">高级：手动编辑模型规则</summary>
+          <p className="mb-2 mt-2 text-meta text-muted">每行一条 glob 规则，也支持思考强度后缀；清空规则会恢复 Dashboard 默认模型列表。</p>
+          <textarea
+            className="w-full resize-y rounded-md border border-border bg-bg-elevated p-3 font-mono text-body-s text-text outline-none focus-ring"
+            value={(settings.enabledModels || []).join('\n')}
+            onChange={event => save({ ...settings, enabledModels: event.target.value.split('\n').map(line => line.trim()).filter(Boolean) })}
+            placeholder="anthropic/*&#10;dashscope/kimi-k3:xhigh"
+            spellCheck={false}
+          />
+        </details>
       </Card>
     </div>
   )
@@ -1526,6 +1676,7 @@ const SETTINGS_GROUPS: { group: string; tabs: { id: Tab; label: string; icon: st
   {
     group: 'Agent',
     tabs: [
+      { id: 'models', label: 'Model List', icon: '☑️', hint: 'Choose providers and available models' },
       { id: 'model', label: 'Model', icon: '🤖', hint: 'Default model & thinking level' },
       { id: 'behavior', label: 'Behavior', icon: '⚙', hint: 'Permissions, tools, runtime' },
       { id: 'skills', label: 'Skills', icon: '🛠', hint: 'Enable & manage skills' },
@@ -1556,7 +1707,7 @@ const SETTINGS_GROUPS: { group: string; tabs: { id: Tab; label: string; icon: st
 const SETTINGS_LS_KEY = 'mc-settings-tab'
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<Tab>(() => (localStorage.getItem(SETTINGS_LS_KEY) as Tab) || 'model')
+  const [tab, setTab] = useState<Tab>(() => (localStorage.getItem(SETTINGS_LS_KEY) as Tab) || 'models')
   const selectTab = (id: Tab) => { setTab(id); localStorage.setItem(SETTINGS_LS_KEY, id) }
   const activeMeta = SETTINGS_GROUPS.flatMap(g => g.tabs).find(t => t.id === tab)
 
@@ -1606,6 +1757,7 @@ export default function SettingsPage() {
             </div>
           )}
           <div className="max-w-2xl">
+            {tab === 'models' && <ModelListTab />}
             {tab === 'model' && <ModelTab />}
             {tab === 'behavior' && <BehaviorTab />}
             {tab === 'terminal' && <TerminalTab />}
