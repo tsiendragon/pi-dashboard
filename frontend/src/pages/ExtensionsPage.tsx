@@ -175,6 +175,97 @@ function Empty({ text }: { text: string }) {
   return <div className="px-4 py-6 text-center text-xs text-muted">{text}</div>
 }
 
+function DependencyGraph({
+  deps,
+  packageLabels,
+}: {
+  deps: ExtDependencies
+  packageLabels: Map<string, string>
+}) {
+  const edgeMap = new Map<string, { from: string; to: string; label: string; count: number }>()
+  for (const edge of deps.crossImports) {
+    const targetKey = edge.toPackageId ?? edge.toManifestPath ?? edge.toPath
+    const targetLabel = edge.toPackageId
+      ? packageLabels.get(edge.toPackageId) ?? edge.toPackageId
+      : edge.toManifestPath ?? edge.toPath.split('/').slice(-2).join('/')
+    const key = `${edge.from}\\0${targetKey}`
+    const previous = edgeMap.get(key)
+    if (previous) previous.count += 1
+    else edgeMap.set(key, { from: edge.from, to: targetKey, label: targetLabel, count: 1 })
+  }
+  const edges = [...edgeMap.values()].sort((a, b) => a.from.localeCompare(b.from) || a.label.localeCompare(b.label))
+  const sources = [...new Set(edges.map(edge => edge.from))]
+  const targets = [...new Map(edges.map(edge => [edge.to, edge.label])).entries()]
+  const rowHeight = 34
+  const height = Math.max(170, Math.max(sources.length, targets.length) * rowHeight + 32)
+  const sourceY = new Map(sources.map((name, index) => [name, 24 + index * rowHeight]))
+  const targetY = new Map(targets.map(([key], index) => [key, 24 + index * rowHeight]))
+  const shorten = (value: string) => value.length > 28 ? `${value.slice(0, 25)}…` : value
+
+  if (edges.length === 0) return <Empty text="没有可绘制的跨包依赖" />
+  return (
+    <div className="space-y-2 px-3 py-3">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+        <Chip mono>{edges.length} 条关系</Chip>
+        <Chip mono>{sources.length} 个来源</Chip>
+        <Chip mono>{targets.length} 个目标包</Chip>
+        <span>左侧为导入条目，右侧为被引用的包或文件。</span>
+      </div>
+      <div className="overflow-x-auto rounded border border-border bg-bg/30 p-2">
+        <svg
+          aria-label="扩展依赖关系图"
+          className="min-w-[44rem] text-muted"
+          role="img"
+          viewBox={`0 0 760 ${height}`}
+          width="100%"
+          height={height}
+        >
+          <defs>
+            <marker id="ext-dependency-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <path d="M0,0 L7,3.5 L0,7 z" fill="currentColor" />
+            </marker>
+          </defs>
+          <text x="16" y="13" className="fill-muted text-[10px]">导入条目</text>
+          <text x="596" y="13" className="fill-muted text-[10px]">被引用目标</text>
+          {edges.map(edge => {
+            const y1 = sourceY.get(edge.from) ?? 24
+            const y2 = targetY.get(edge.to) ?? 24
+            return (
+              <line
+                key={`${edge.from}-${edge.to}`}
+                x1="190"
+                y1={y1}
+                x2="570"
+                y2={y2}
+                stroke="currentColor"
+                strokeOpacity="0.45"
+                markerEnd="url(#ext-dependency-arrow)"
+              />
+            )
+          })}
+          {[...sourceY.entries()].map(([name, y]) => (
+            <g key={`source-${name}`}>
+              <rect x="8" y={y - 12} width="182" height="24" rx="4" className="fill-card stroke-border" />
+              <text x="18" y={y + 4} className="fill-text-strong text-[11px]">{shorten(name)}</text>
+              <title>{name}</title>
+            </g>
+          ))}
+          {[...targetY.entries()].map(([key, y]) => {
+            const label = targets.find(([targetKey]) => targetKey === key)?.[1] ?? key
+            return (
+              <g key={`target-${key}`}>
+                <rect x="570" y={y - 12} width="182" height="24" rx="4" className="fill-card stroke-accent/60" />
+                <text x="580" y={y + 4} className="fill-text-strong text-[11px]">{shorten(label)}</text>
+                <title>{label}</title>
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+    </div>
+  )
+}
+
 interface EntryActions {
   onToggleEnabled: () => void
   onMove: (direction: -1 | 1) => void
@@ -319,10 +410,13 @@ export default function ExtensionsPage() {
   const [pending, setPending] = useState<{ title: string; diff: string[]; note: string; run: () => Promise<void> } | null>(null)
   const [gallery, setGallery] = useState<GalleryPackage[] | null>(null)
   const [galleryLoading, setGalleryLoading] = useState(false)
+  const [galleryError, setGalleryError] = useState<string | null>(null)
   const [audit, setAudit] = useState<AuditRecord[]>([])
   const [auditLoading, setAuditLoading] = useState(false)
+  const [auditError, setAuditError] = useState<string | null>(null)
   const [source, setSource] = useState('')
   const [deps, setDeps] = useState<ExtDependencies | null>(null)
+  const [depsError, setDepsError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [stateFilter, setStateFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
   const [issuesOnly, setIssuesOnly] = useState(false)
@@ -348,12 +442,14 @@ export default function ExtensionsPage() {
 
   const loadAudit = useCallback(async () => {
     setAuditLoading(true)
+    setAuditError(null)
     try {
       const response = await fetch('/api/pi/ext/audit?limit=30')
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const payload = (await response.json()) as { records?: AuditRecord[] }
       setAudit(payload.records ?? [])
-    } catch {
-      setAudit([])
+    } catch (cause) {
+      setAuditError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setAuditLoading(false)
     }
@@ -361,23 +457,27 @@ export default function ExtensionsPage() {
 
   const searchGallery = useCallback(async () => {
     setGalleryLoading(true)
+    setGalleryError(null)
     try {
       const response = await fetch('/api/pi/gallery')
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const payload = (await response.json()) as { packages?: GalleryPackage[] }
       setGallery(payload.packages ?? [])
-    } catch {
-      setGallery([])
+    } catch (cause) {
+      setGalleryError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setGalleryLoading(false)
     }
   }, [])
 
   const loadDeps = useCallback(async () => {
+    setDepsError(null)
     try {
       const response = await fetch('/api/pi/ext/deps')
-      if (response.ok) setDeps((await response.json()) as ExtDependencies)
-    } catch {
-      // the dependency scan is optional information; leave it empty on failure
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      setDeps((await response.json()) as ExtDependencies)
+    } catch (cause) {
+      setDepsError(cause instanceof Error ? cause.message : String(cause))
     }
   }, [])
 
@@ -439,6 +539,14 @@ export default function ExtensionsPage() {
     }
     return map
   }, [deps])
+
+  const packageLabels = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const pkg of data?.packages ?? []) {
+      if (pkg.id) map.set(pkg.id, pkg.name ?? pkg.rawSource)
+    }
+    return map
+  }, [data])
 
   const requestToggle = (entry: ExtensionEntry) => {
     const enabling = entry.state === 'disabled'
@@ -608,6 +716,13 @@ export default function ExtensionsPage() {
           <span className="min-w-0 flex-1 break-all">{notice}</span>
           <TextButton onClick={() => { setTab('diagnostics'); setNotice(null) }}>看审计</TextButton>
           <TextButton title="关闭提示" onClick={() => setNotice(null)}>✕</TextButton>
+        </div>
+      )}
+      {depsError && (
+        <div className="mx-3 mt-3 flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 md:mx-6">
+          <MaterialIcon name="error" className="h-4 w-4" />
+          <span className="min-w-0 flex-1 break-all">依赖扫描加载失败：{depsError}</span>
+          <TextButton onClick={() => void loadDeps()}>重试</TextButton>
         </div>
       )}
 
@@ -833,7 +948,14 @@ export default function ExtensionsPage() {
               <TextButton onClick={() => setSource('git:github.com/tsiendragon/pi-tsien-extension')}>GitHub 装齐 25 个</TextButton>
               <TextButton onClick={() => void searchGallery()}>{galleryLoading ? '搜索中…' : '搜索 npm 上的 pi 包'}</TextButton>
             </div>
-            {gallery && (
+            {galleryError && (
+              <div className="mt-2 flex items-center gap-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                <MaterialIcon name="error" className="h-4 w-4" />
+                <span className="min-w-0 flex-1 break-all">扩展市场加载失败：{galleryError}</span>
+                <TextButton onClick={() => void searchGallery()}>重试</TextButton>
+              </div>
+            )}
+            {gallery && !galleryError && (
               gallery.length === 0
                 ? <Empty text="没有搜到 pi 包" />
                 : (
@@ -917,6 +1039,21 @@ export default function ExtensionsPage() {
           )}
 
           <Section
+            id="sec-graph"
+            title="依赖关系图"
+            count={deps?.crossImports.length ?? 0}
+            hint="把静态扫描到的跨包 import 画成有向图；这里只表示源码中解析到的显式依赖，不代表动态 import 或运行时依赖。"
+            collapsed={collapsed.has('sec-graph')}
+            onToggleCollapsed={() => toggleCollapsed('sec-graph')}
+          >
+            {depsError
+              ? <div className="px-3 py-4 text-xs text-amber-200">依赖扫描失败，无法绘图。请点击上方“重试”。</div>
+              : !deps
+                ? <div className="space-y-2 px-3 py-3"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+                : <DependencyGraph deps={deps} packageLabels={packageLabels} />}
+          </Section>
+
+          <Section
             id="sec-shared"
             title="跨包引用（静态扫描）"
             count={deps?.sharedPackages.length ?? 0}
@@ -971,7 +1108,14 @@ export default function ExtensionsPage() {
               <TextButton onClick={() => void loadAudit()} disabled={auditLoading}>{auditLoading ? '读取中…' : '刷新'}</TextButton>
               <span className="text-[11px] text-muted">最近 30 条（按时间倒序）</span>
             </div>
-            {audit.length === 0
+            {auditError && (
+              <div className="flex items-center gap-2 border-b border-border/60 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                <MaterialIcon name="error" className="h-4 w-4" />
+                <span className="min-w-0 flex-1 break-all">审计记录加载失败：{auditError}</span>
+                <TextButton onClick={() => void loadAudit()}>重试</TextButton>
+              </div>
+            )}
+            {audit.length === 0 && !auditError
               ? <Empty text="暂无记录 —— 做一次启停/排序/安装后就会出现" />
               : (
                 <div className="max-h-80 overflow-auto">
