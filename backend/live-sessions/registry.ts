@@ -290,6 +290,15 @@ export class LiveSessionRegistry extends EventEmitter {
     return result
   }
 
+  /** Cheap preflight before reserving a durable input ID; the dispatch path rechecks it. */
+  hasRemoteLease(processInstanceId: string, sessionId: string, remoteClientId: string, leaseId: string): boolean {
+    const entry = this.entries.get(processInstanceId)
+    const claim = entry?.summary?.claim
+    return !!entry?.attached && !entry.awaitingResync && entry.summary?.sessionId === sessionId &&
+      entry.leaseOwner === remoteClientId && claim?.state === 'claimed' && claim.leaseId === leaseId &&
+      typeof claim.expiresAt === 'number' && Number.isFinite(claim.expiresAt) && claim.expiresAt > this.now()
+  }
+
   /** Remote input is deliberately narrower than the local browser command path. */
   async sendRemoteInput(processInstanceId: string, sessionId: string, remoteClientId: string, leaseId: string, text: string): Promise<unknown> {
     if ([processInstanceId, sessionId, remoteClientId, leaseId].some(value => typeof value !== 'string' || !value.trim()) ||
