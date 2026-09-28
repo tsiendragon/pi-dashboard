@@ -48,7 +48,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | **AGP / Gradle 真实构建** | ❌ **未做** | 无 R 类、无资源合并、无 manifest 合并、无 dex —— 这是最大的剩余不确定性 |
 | **真机运行** | ❌ **未做** | 无触摸/网络/输入法的真实行为反馈 |
 
-### 复现 Kotlin 编译（仅在 DSW 开发机上）
+### 复现 Kotlin 编译（仅在开发机上）
 
 ```bash
 bash ~/kbuild/compile3.sh

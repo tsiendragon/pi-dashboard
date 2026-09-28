@@ -1018,7 +1018,7 @@ fill  = (内容宽 × scale) × (内容高 × scale) / 可用面积
 1 Model → deepseek-v4.1-flash      ← 模型切换
 2 Thinking → max                    ← 思考等级
 3 User · hello
-4 task-pilot-runtime · [task-pi…    ← 遥测
+4 task-runtime · [task-…    ← 遥测
 5 compact-thinking-duration         ← 遥测
 6 compact-thinking-duration         ← 遥测
 7 Assistant · 喵，你好！我在。当前工…
