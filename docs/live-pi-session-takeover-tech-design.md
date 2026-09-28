@@ -3,7 +3,7 @@
 - **状态**：Implemented and verified（本地未提交）
 - **主仓库**：`~/repos/pi-dashboard`
 - **Extension 仓库**：`~/repos/pi-tsien-extension`
-- **目标运行环境**：同一 Linux 用户、同一台 DSW 机器上的多个 Pi 进程
+- **目标运行环境**：同一 Linux 用户、同一台开发机上的多个 Pi 进程
 - **默认发现范围**：`~/repos/worktree` 及其子目录
 - **依赖版本**：`@earendil-works/pi-coding-agent >= 0.84.2`
 
@@ -52,11 +52,11 @@ Dashboard 左侧增加 **Live Pi Sessions** 区域，按 Worktree 工作目录�
 
 ```text
 Live Pi Sessions
-├─ RISKY-18570-security-guard
+├─ PROJ-101-feature-a
 │  └─ ● pi  PID 12345  gpt-5.6-sol  Running
-├─ RISKY-18801-dashboard
+├─ PROJ-102-feature-b
 │  └─ ○ pi  PID 12680  gpt-5.6-sol  Idle
-└─ RISKY-18801-dashboard
+└─ PROJ-102-feature-b
    └─ ○ pi  PID 12702  qwen3-coder-plus  Idle
 ```
 
@@ -297,6 +297,16 @@ const allowed = relative === "" || (!relative.startsWith("..") && !path.isAbsolu
 - 宽限结束才真正移除该行（并清空 `activeId`），语义与服务端 detach 一致，只是延后。
 - `DETACH_FLUSH_MS = 5_000` 为清理周期，行的消失最多滞后这么久。
 
+**但宽限只适用于「可能回来」的断开。** 桥在关闭前会主动发 `goodbye`（`extensions/live-session/client.ts` 的 `stop()`），broker 收到后由 `registry.detach()` 立即删条目（不走 15 s 宽限），并把 `reason` 原样送到浏览器。两个 reason 的语义完全不同：
+
+| reason | 场景 | 前端行为 |
+|---|---|---|
+| `session_switch` | `/clear`、`/ls-fork` 等同进程会话切换（同一 Pi 秒级内重连） | 保留宽限，行显示「重连中」 |
+| `connection_closed` | socket 被掐（无 `goodbye`，如进程被杀） | 保留宽限（可能重连） |
+| `session_shutdown` | 进程真的要退出（`/exit`、`/quit`） | **立即删行**，不保留宽限 |
+
+这就是「敲了 `/exit`，行还在，刷新后才没」的根因：服务端处理得对（立刻 detach），只有浏览器把一个已经结束的会话当成「可能重连」又留了一分钟；刷新时内存里的宽限表被清空，行就消失了。判定放在 `detachGrace.isTransientDetach(reason)`（未知 reason 保守地当「可能回来」：多留一行只是观感问题，误删一个即将重连的行会丢点击目标）。
+
 ## 8. 身份与数据模型
 
 ```ts
@@ -326,6 +336,16 @@ export interface LiveSessionSummary {
     contextWindow: number
     percent: number | null
   }
+  /**
+   * 本会话真正会在哪里压缩，由 bridge 用与触发方相同的 resolver 算出
+   * （`auto-compact-target` 目标 vs pi 的 `window − reserveTokens` 取最早者）。
+   * 旧 bridge 不带该字段，此时 UI 不画阈值刻度。
+   */
+  compact?: {
+    enabled: boolean
+    triggerTokens: number
+    candidates: { source: string; tokens: number }[]
+  }
   git?: {
     root?: string
     branch?: string
@@ -334,6 +354,41 @@ export interface LiveSessionSummary {
 ```
 
 `processInstanceId` 在 Extension 实例创建时生成 UUID，进程存续期间稳定。不能只使用 PID，防止 PID 重用；不能只使用 `sessionId`，因为同一进程可能切换 session。
+
+### 遥测走事件，不走 snapshot
+
+`contextUsage` / `compact` 每轮都在变，而 snapshot 只在 connect、resync、`/tree` 切分支、同进程 fork 时重建（resync 又只由事件序号断档触发——socket 背压把 `message_update` 合并掉才会出现）。把每轮都变的值放在 snapshot 里，等于让页面停在上一次 snapshot 的时刻：新会话就停在 `0`，实测一个 1.9 万事件、无断档无重连的会话一直显示 `0/1.0m 0%`。
+
+所以 bridge 在 `message_end` / `agent_settled` / `session_compact` / `model_select` 额外发一条 `summary_update` 事件（约 200B），data 为 `{ contextUsage, compact }`：
+
+- registry 在 `projectEvent` 里就地修补 `entry.summary`（与 `agent_start` 改 `status` 同一机制），因此 `GET /api/live-sessions/:id`、侧栏、页面 header 读到的是当前值；
+- 浏览器在 `liveSessionsSlice.liveSessionEvent` 里用 `shared/src/live-sessions.ts` 的 `parseLiveSessionContextUsage` / `parseLiveSessionCompact` 修补 `state.sessions[id]` 与 detail 的 summary；
+- 它是「summary 补丁」而不是转写行，registry 与前端都显式跳过它，不会渲染成气泡；
+- 顺序约束：它发布在 `message_end` **之前**，因为消息的 entry id 是靠「最近的、位于其前面的 `message_end`」绑定的。
+
+字段解析只写一份（`shared/src/live-sessions.ts`），前后端共用；非法帧一律丢弃而不覆盖已有值，`tokens: null`（压缩后 pi 尚未拿到新的 assistant usage）必须原样保留，不能当作 0。
+
+### 状态也走补丁，并且按真源推导
+
+`status` 曾经是同一类问题的第二个受害者：它由 bridge 里一个累积标志决定，只被 `agent_start` / `agent_settled` / `session_start` 改写，而 pi 的 `agent_settled` 只在 agent run 循环结束时发一次（`_runAgentPrompt`）——独立压缩（`auto-compact-target` 调 `ctx.compact()`）既没有 `agent_start` 也没有 `agent_settled`，而压缩期间 `isIdle()` 为 false。于是一个“跑完 → 自动压缩开始 → 点重载全部 → `session_start` 把标志写成 `true` → 压缩结束、无人改回”的序列会让面板永久显示「工作中」。
+
+因此：
+
+- bridge 在发布时**直接问 pi**（`ctx.isIdle()`，同时覆盖 agent run 与压缩），不再信任累积标志；
+- 同一个 `summary_update` 补丁携带 `status`，除了 `agent_start` / `agent_settled` 这类事件点外，还有一条**慢心跳**（默认 20s）重算一遍，只在变化时发一条补丁（空闲零流量，且不更新 `lastActivityAt`，免得空闲会话的“最近活动”被心跳刷成刚刚）。
+
+`status` 是会话属性而不是页面属性，所以前端在校验后**即使该会话没有打开页面也要应用补丁**（侧栏读同一份 summary）；打开页面时快照会覆盖全部字段。
+
+### 「清空」= `/clear`，以及它为什么会「点了没作用」
+
+按钮语义是「开一个新的空会话」，发的是文本 `/clear`。这个名字是对的：**`/clear` 是由 `pi-tsien-extension/extensions/session-aliases.ts` 注册的扩展命令**（`waitForIdle()` → `newSession()`），而带 `/` 的文本只有**已注册的扩展命令**会被 pi 执行（`_tryExecuteExtensionCommand`），pi 自己的内置命令（`/new`、`/compact`）由交互式 editor 分发、走不到 input 文本流——所以 web 侧的按钮必须对应到注册名。注意 `/clear` 没有租约闸门，属于「任何人可发」的控制命令（与图谱页的 `/ls-*` 不同）。
+
+故障出在 UI 与这个命令的组合上，而不是命令名：
+
+- 它曾经是两步确认（`window.confirm` 被浏览器静默答 `false` 的替代品），而两步确认自己成了坑：装填窗口只有 5s、过期后横幅不撤，且按钮写成 `disabled={busy || status !== 'idle'}`——会话一开始工作，确认那一下落在**已变灰的按钮**上，事件根本到不了 handler：什么也不发生，屏幕上却还留着「再点一次确认」；
+- **能力要真查，不能假设**：`/clear` 由 `session-aliases` 扩展注册（不是 pi 自带），因此可能不存在——`capabilities` 里的 `session_clear` 由 bridge 用 `pi.getCommands()` 实时检查；没有该能力时 UI 只给出原因（「该会话没有可用的清空命令……先试「重载」」），**不把 `/clear` 当提示词发出去**（那只会烧一轮、什么都不清）。真实事故：`extensions/session-aliases.ts` 被迁进 `packages/` 后，`settings.json`/`loadOrder` 仍指向旧路径，pi 静默跳过 → 新起的会话里 `/clear`、`/exit` 一起消失，dashboard 的「清空」点了没反应。
+
+- 现在**一次点击直接生效**：按钮只在「有命令在飞」时禁用（`/clear` 自己会等 idle，所以工作状态下点击也会被受理），并且一定给回应——空闲时「已请求清空…」，工作时报「等这一轮结束后会自动切换」。这个动作本身可恢复（旧对话留在文件里，只切到新的空会话），不值得用一次额外的点击去换那点「安全感」。
 
 Registry 主键：`processInstanceId`。
 
@@ -635,7 +690,7 @@ Dashboard 首次启动 Live Session 功能时生成：
 - 用户在 Dashboard Settings 中输入一次 token；
 - `POST /api/live-sessions/auth` 校验后设置随机 HttpOnly session cookie；
 - cookie 使用 `SameSite=Strict`；
-- DSW HTTPS 下设置 `Secure`；
+- 反代 HTTPS 下设置 `Secure`；
 - server restart 后现有认证 session 失效，需要重新认证。
 
 ### 14.2 Browser client

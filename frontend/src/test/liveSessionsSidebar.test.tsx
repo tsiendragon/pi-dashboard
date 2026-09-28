@@ -369,22 +369,25 @@ describe('LiveSessionsList sidebar', () => {
     expect(calls.some(call => call.url.startsWith('/api/pty/sessions/'))).toBe(false)
   })
 
-  it('reloads every main session in one click, after a confirmation', async () => {
+  // window.confirm is answered with a silent `false` when the browser suppresses
+  // dialogs, so the rail asks for a second click instead of a dialog.
+  it('reloads every main session after an in-page confirmation', async () => {
     const { calls } = mockFetch()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-child', 202, { role: 'subagent' })]} onSelect={() => {}} />)
     await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: '重载全部' }))
     // The subagent row is left out of the count: the backend skips child processes.
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('1 个会话'))
+    expect(screen.getByRole('status', { name: '重载结果' })).toHaveTextContent('再点一次「重载全部」确认：1 个主会话')
+    expect(calls.some(c => c.url === '/api/live-sessions/reload')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: '确认重载' }))
     await waitFor(() => expect(calls.some(c => c.url === '/api/live-sessions/reload' && c.method === 'POST')).toBe(true))
     await waitFor(() => expect(screen.getByRole('status', { name: '重载结果' })).toHaveTextContent('已重载 2 个会话，跳过 1 个子 Agent'))
   })
 
-  it('does not reload when the confirmation is declined', async () => {
+  it('does not reload until the second click lands', async () => {
     const { calls } = mockFetch()
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
     render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
     await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
 

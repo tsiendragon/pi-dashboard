@@ -4,6 +4,7 @@ import {
   DETACH_GRACE_MS,
   cancelDetach,
   expireDetaches,
+  isTransientDetach,
   pendingSummaries,
   scheduleDetach,
   type PendingDetach,
@@ -85,5 +86,21 @@ describe('live session detach grace in the store', () => {
     const [expired] = expireDetaches(pending, now + DETACH_GRACE_MS + 1)
     state = reducer(state, liveSessionDetached({ summary: expired.summary, ...(expired.reason ? { reason: expired.reason } : {}) }))
     expect(state.sessions.a).toBeUndefined()
+  })
+})
+
+describe('isTransientDetach', () => {
+  it('keeps the grace for a session switch or a dropped socket', () => {
+    // These are the cases the window exists for: the same Pi announces itself again
+    // seconds later (in-process `/clear`, `/ls-fork`) or reconnects after a blip.
+    expect(isTransientDetach('session_switch')).toBe(true)
+    expect(isTransientDetach('connection_closed')).toBe(true)
+    expect(isTransientDetach(undefined)).toBe(true)
+  })
+
+  it('drops a session that said goodbye because the process is shutting down', () => {
+    // `/exit`: the bridge sends GOODBYE with this reason. Holding the row made a
+    // finished session look alive until the next page load.
+    expect(isTransientDetach('session_shutdown')).toBe(false)
   })
 })
