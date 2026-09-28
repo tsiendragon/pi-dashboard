@@ -54,7 +54,7 @@ export function tagColorClass(tag: string): string {
   return TAG_PALETTE[h % TAG_PALETTE.length]
 }
 
-/** `'ai-dev/pi-dashboard'` → last segment; `''` when no cwd. */
+/** `'org/pi-dashboard'` → last segment; `''` when no cwd. */
 export function projectName(cwd?: string | null): string {
   if (!cwd) return ''
   return cwd.replace(/\/+$/, '').split('/').pop() || ''

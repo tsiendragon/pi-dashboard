@@ -5,7 +5,7 @@
   font-style: normal;
 }
 
-/* ── Design tokens (OpenClaw-inspired) ── */
+/* ── Design tokens (community-dashboard-inspired) ── */
 :root,[data-theme="dark"]{
   --bg:#12141a;--bg-accent:#14161d;--bg-elevated:#1a1d25;--bg-hover:#262a35;
   --card:#181b22;--card-fg:#f4f4f5;--card-hl:rgba(255,255,255,.05);
