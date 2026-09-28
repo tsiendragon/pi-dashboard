@@ -122,7 +122,7 @@ if (wsPath === '/api/pty') {
 
 - token 文件 `~/.pi/agent/run/pi-dashboard/live-control-token`（mode 0600）；
 - HttpOnly cookie `pi_live_session`（`SameSite=Strict`，HTTPS 下 `Secure`）；
-- `isOriginAllowed(request, requireOrigin, identity)` 含 DSW gateway origin 判定；
+- `isOriginAllowed(request, requireOrigin, identity)` 含 proxy gateway origin 判定；
 - `getIdentity(request)` 校验 cookie 返回浏览器身份。
 
 `/api/pty` upgrade 前必须同时满足 origin 允许且存在有效 identity，否则 `socket.destroy()`。不需要新增第二套 token；沿用 live-session 已建立的认证面。

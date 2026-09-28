@@ -53,10 +53,10 @@ Open http://localhost:7777.
 **Deployment guide (canonical):** [`guide/README.md`](guide/README.md) — the three layers
 (pi fork build / `pi-tsien-extension` / this dashboard), install paths, env vars, and verification.
 Module docs: [`guide/pi-runtime.md`](guide/pi-runtime.md), [`guide/extensions.md`](guide/extensions.md),
-[`guide/dashboard.md`](guide/dashboard.md).
+[`guide/dashboard.md`](guide/dashboard.md), [`guide/config.md`](guide/config.md).
 
 To stand up this dashboard together with the generic `pi-tsien-extension` set on a clean machine
-(no org-specific marketplace packages, no `task-pilot`/`taskspace`):
+(no org-specific or third-party marketplace packages):
 
 ```bash
 bash scripts/install-standalone.sh            # -y to skip prompts, --help for options

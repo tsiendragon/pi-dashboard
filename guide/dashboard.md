@@ -94,9 +94,9 @@ live session 靠它，Settings 页可改（`/api/dash/config`）：
 {
   "liveSessions": {
     "enabled": true,
-    "roots": ["/home/example/projects"],
+    "roots": ["/home/you", "/home/you/repos"],
     "launch": {
-      "command": "/home/example/.local/bin/pi",
+      "command": "pi",
       "args": [],
       "unsetEnv": ["HF_TOKEN", "AZURE_OPENAI_API_KEY", "…"]
     },
@@ -107,8 +107,8 @@ live session 靠它，Settings 页可改（`/api/dash/config`）：
 
 | 字段 | 作用 |
 |---|---|
-| `roots` | live session 可发现的目录范围 |
-| `launch.command` | live session 用哪个 pi（本机指向 fork 的 `pi-clean` 包装脚本） |
+| `roots` | live session 可发现的目录范围（**默认为空 → live session 默认关闭**，要用就填） |
+| `launch.command` | live session 用哪个 pi（可指向你自己的包装脚本；默认 PATH 上的 `pi`） |
 | `unsetEnv` | 启动前从环境里剔除的变量 |
 | `disconnectGraceMs` | 断连后的宽限时间 |
 

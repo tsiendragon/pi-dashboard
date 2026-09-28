@@ -252,7 +252,7 @@ const SESSIONS = {
   A: { name:'file A · feat-session-tree', alive:false, head:'a3', cwd:'~/repos/pi-dashboard', model:'anthropic/claude-sonnet-4.5' },
   B: { name:'file B · feat-session-tree (fork)', alive:true, head:'a5', cwd:'~/repos/pi-dashboard', model:'anthropic/claude-sonnet-4.5' },
 }
-const OTHER = { C:{ name:'file C · ocr-postprocess', alive:true, head:'c3', cwd:'~/repos/iraq-ocr-postprocess', model:'anthropic/claude-sonnet-4.5' } }
+const OTHER = { C:{ name:'file C · example-service', alive:true, head:'c3', cwd:'~/repos/example-service', model:'anthropic/claude-sonnet-4.5' } }
 const allSessions = { ...SESSIONS, ...OTHER }
 const activePath = new Set()
 function rebuildActivePath() {
@@ -353,7 +353,7 @@ function renderForest() {
     </div>
     <div class="fam">
       <div class="famhd"><span class="pin"></span>
-        <div style="min-width:0"><div class="nm">fam · ocr-postprocess</div><div class="cwd">~/repos/iraq-ocr-postprocess</div></div></div>
+        <div style="min-width:0"><div class="nm">fam · example-service</div><div class="cwd">~/repos/example-service</div></div></div>
       <div class="row" data-s="C"><span class="ic"></span><span class="tx">主干</span><span class="bd pill ok">运行中</span></div>
     </div>`
   document.querySelectorAll('#forest .row[data-s]').forEach(el =>
@@ -554,7 +554,7 @@ function renderSession() {
         <button class="back" style="margin-left:auto" id="backBtn2">⛶ 在图谱中查看</button>
       </div>
       <div class="transcript"><div class="turn assistant"><div class="ic">🤖</div><div class="body">
-        <div class="who">ASSISTANT</div><div class="txt">（ocr-postprocess 会话的转录占位）</div></div></div></div>
+        <div class="who">ASSISTANT</div><div class="txt">（example-service 会话的转录占位）</div></div></div></div>
       <div class="composer"><input disabled placeholder="…"><button disabled>发送</button></div>`
     const b = document.getElementById('backBtn2')
     if (b) b.onclick = () => { state.page='graph'; renderAll() }
