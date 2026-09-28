@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "machine": "",
+  "root": "~/pi-stack",
+  "pi": {
+    "repo": "tsiendragon/pi",
+    "policy": "latest-tag",
+    "ref": "",
+    "prefix": "~/pi-stack/pi"
+  },
+  "extensions": {
+    "policy": "latest-tag",
+    "ref": "",
+    "dir": "~/pi-stack/pi-tsien-extension",
+    "repo": "https://github.com/tsiendragon/pi-tsien-extension.git",
+    "config": "~/.pi/agent/extensions.config.json"
+  },
+  "dashboard": {
+    "policy": "latest-tag",
+    "ref": "",
+    "dir": "",
+    "repo": "https://github.com/tsiendragon/pi-dashboard.git"
+  },
+  "lastApplied": {
+    "pi": "",
+    "extensions": "",
+    "dashboard": "",
+    "at": ""
+  }
+}
