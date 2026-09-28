@@ -85,20 +85,15 @@ pi install /abs/path/to/pi-tsien-extension/packages/pi-tsien-memory
 
 > 因此**要装齐 25 个扩展，优先用 §2.2 的 git 伞形包**；只挑已发布的几个才用 §2.1 的 npm。
 
-维护者补发（token 从 vault 注入，不落盘）：
-
-```bash
-sekret local exec tsien account -- npm run publish:packages    # 断点续发，已发布的自动跳过
-```
+（发布方补发未上架的包：`npm run publish:packages`，断点续发，已发布的自动跳过。）
 
 ---
 
 ## 4. standalone 配置与同步器
 
-独立（不接内部 marketplace）安装用的最小清单是 `config/extensions.standalone.json`：
+独立（不接任何外部市场包）安装用的最小清单是 `config/extensions.standalone.json`：
 当前是 **25 个 package + 25 条 extension 装载项**（包含 `pi-tsien-web-tools`；
-共享库 `pi-tsien-shared` 作为依赖自动带入，不单独列）。它**不含** `task-pilot`、`security-guard`、
-`remote-notifications`、`pi-knowledge` 等外部来源。
+共享库 `pi-tsien-shared` 作为依赖自动带入，不单独列）。它**不含**任何第三方/内部市场来源。
 
 ```bash
 node scripts/pi-extension-sync.mjs --config config/extensions.standalone.json            # 预览
@@ -114,7 +109,25 @@ node scripts/pi-extension-sync.mjs --config config/extensions.standalone.json --
 
 ---
 
-## 5. 避免重复加载
+## 5. 占磁盘的扩展（可选安装）
+
+下面几个会**持续在本地写数据**，长期使用会累积占用磁盘。装之前请确认是否都需要；不要的就别装
+（或从装载清单里去掉）。
+
+| 扩展 | 写什么 | 默认位置 | 关掉方式 |
+|---|---|---|---|
+| `pi-tsien-trajectory-recorder` | agent 轨迹 + 紧凑计时账本（dashboard 时间分析用） | `<agent dir>/pi-traces`、`<agent dir>/pi-timing` | 从 `config/extensions.standalone.json` 的 `loadOrder` 删掉该行再 `--apply` |
+| `pi-tsien-observation-pack` | 超大工具结果归档（**默认关闭**，需配置启用） | `<agent dir>/archiv` | 保持默认关闭，或同上 |
+| `pi-tsien-memory` | 本地长期记忆（SQLite/FTS5） | `~/.pi/tsien-memory/` | 同上 |
+| `pi-tsien-usage-analytics` | 工具/技能使用频率统计 | `<agent dir>/usage-analytics.json` | 同上 |
+
+- 默认位置都在 `<agent dir>/...`（`~/.pi/agent/...`），可用 `PI_TRACE_DIR` / `PI_TIMING_DIR` /
+  `PI_OBSERVATION_DIR` 改到别处。
+- 同步器是**严格模式**：从 `loadOrder` 删掉一行再 `--apply`，它就会从 Pi 设置里移除（不删代码）。
+
+---
+
+## 6. 避免重复加载
 
 如果机器上仍有旧的独立副本，先停用，否则会同时加载两份、命令显示成 `/git-graph:1`、`/git-graph:2`：
 
@@ -128,7 +141,7 @@ node scripts/pi-extension-sync.mjs --config config/extensions.standalone.json --
 
 ---
 
-## 6. 在 dashboard 里管理（推荐）
+## 7. 在 dashboard 里管理（推荐）
 
 打开 `http://<host>:7777/extensions`（见 `guide/extensions-page.md`）：可查看装载事实、启停、排序、
 从 npm registry / 包名 / 本地路径 / git URL 安装、看审计与回滚。
@@ -140,7 +153,7 @@ node scripts/pi-extension-sync.mjs --config config/extensions.standalone.json --
 
 ---
 
-## 7. 验证
+## 8. 验证
 
 1. `pi list` 能看到已装条目
 2. 终端 `pi` 里 `/sidebar`、`/effort`、`/schedule`、`/btw` 等命令存在

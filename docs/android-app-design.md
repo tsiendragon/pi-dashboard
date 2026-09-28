@@ -2,7 +2,7 @@
 
 > 状态：**设计已实现**（代码见 [`../android/`](../android/)）。
 > 实现进度 / 验证证据 / 已修问题清单 / 交接 → **[`../android/HANDOFF.md`](../android/HANDOFF.md)**。
-> 交付方式：代码在本仓库产出，**构建与真机验证在你的 Mac 上完成**（DSW 本机无 Android 工具链）；
+> 交付方式：代码在本仓库产出，**构建与真机验证在你的 Mac 上完成**（本机无 Android 工具链）；
 > 已在本机用 kotlinc 做过纯 Kotlin 编译验证（**0 error / 216 class**）。
 
 ---

@@ -104,7 +104,7 @@ const forkedFile = smForFork.createBranchedSession(userId);   // branch at user 
 ## Reproduce
 
 ```
-cd /local/home/samfp/pi-dashboard        # (or your worktree with node_modules linked)
+cd /path/to/pi-dashboard        # (or your worktree with node_modules linked)
 npx tsx scripts/spike-fork-semantics.ts
 ```
 
