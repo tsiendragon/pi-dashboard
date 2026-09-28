@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LABEL="com.sam.pi-dashboard"
-PLIST_SRC="$(cd "$(dirname "$0")" && pwd)/com.sam.pi-dashboard.plist"
+LABEL="com.pi-dashboard"
+PLIST_SRC="$(cd "$(dirname "$0")" && pwd)/com.pi-dashboard.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$HOME/Library/Logs/pi-dashboard"
 

@@ -48,6 +48,6 @@ describe('model-match', () => {
   })
 
   it('returns nothing when no enabled pattern matches', () => {
-    expect(filterEnabledModels([claude, gpt55], ['azure-okx/gpt-5.6-sol'])).toEqual([])
+    expect(filterEnabledModels([claude, gpt55], ['azure/gpt-5.6-sol'])).toEqual([])
   })
 })

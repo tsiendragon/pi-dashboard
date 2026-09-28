@@ -60,9 +60,9 @@ describe('DirTree', () => {
     render(<DirTree value="/home/user" onChange={vi.fn()} workspaces={workspaces} />)
     fireEvent.click(screen.getByRole('button'))
     const input = await screen.findByLabelText('Directory path')
-    fireEvent.change(input, { target: { value: '/mnt/workspace/custom-project' } })
+    fireEvent.change(input, { target: { value: '/workspace/custom-project' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() => expect(api.browse).toHaveBeenCalledWith('/mnt/workspace/custom-project'))
+    await waitFor(() => expect(api.browse).toHaveBeenCalledWith('/workspace/custom-project'))
   })
 
   it('shows "Use this" button when open', async () => {

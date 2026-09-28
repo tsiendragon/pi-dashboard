@@ -53,7 +53,7 @@ const CRONTAB_DATA = [
 ]
 
 const VAULT_DATA = {
-  path: '/Users/sam/Vault',
+  path: '/Users/you/Vault',
   dailyNotes: 100, taskNotes: 50, meetingNotes: 20,
   persons: 10, recipes: 5, recentDaily: '2026-01-15',
 }
@@ -326,7 +326,7 @@ describe('SystemPage — Vault configured', () => {
 
   it('vault overview card shows vault path', async () => {
     await renderPage()
-    expect(screen.getByText('/Users/sam/Vault')).toBeInTheDocument()
+    expect(screen.getByText('/Users/you/Vault')).toBeInTheDocument()
   })
 })
 
