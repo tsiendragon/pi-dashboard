@@ -87,6 +87,94 @@ describe('LiveSession path/config policy', () => {
 })
 
 describe('LiveSessionRegistry', () => {
+  it('patches the summary from summary_update telemetry instead of waiting for a snapshot', () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const transport = { send() {} }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary(), entries: [] }, transport, '/tmp/root/task')
+    expect(registry.list()[0].contextUsage).toBeUndefined()
+
+    registry.applyEvent({
+      type: 'event', processInstanceId: 'process-a', sequence: 1,
+      event: {
+        type: 'summary_update',
+        data: {
+          contextUsage: { tokens: 166_416, contextWindow: 1_048_576, percent: 15.87066650390625 },
+          compact: {
+            enabled: true,
+            triggerTokens: 270_000,
+            candidates: [{ source: 'auto-compact-target', tokens: 270_000 }, { source: 'pi-reserve-tokens', tokens: 1_026_576 }],
+          },
+        },
+      },
+    }, transport)
+
+    // Snapshots are only built at connect / resync / tree / fork, so a session
+    // without an event-sequence gap would otherwise show its first-second value
+    // (0) forever. The event has to update the summary the browser reads.
+    const patched = registry.list()[0]
+    expect(patched.contextUsage).toEqual({ tokens: 166_416, contextWindow: 1_048_576, percent: 15.87066650390625 })
+    expect(patched.compact).toEqual({
+      enabled: true,
+      triggerTokens: 270_000,
+      candidates: [{ source: 'auto-compact-target', tokens: 270_000 }, { source: 'pi-reserve-tokens', tokens: 1_026_576 }],
+    })
+    // Telemetry is a summary patch, not a transcript row.
+    expect(registry.get('process-a').entries).toEqual([])
+  })
+
+  it('re-asserts a status pi changed without any agent event', () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const transport = { send() {} }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary({ status: 'running' }), entries: [] }, transport, '/tmp/root/task')
+
+    // pi only emits agent_settled when an agent run loop finishes, so a compaction
+    // (or a reload landing while one was in flight) can end without it, leaving the
+    // dashboard claiming 工作中 on a session that is back at its prompt. The bridge
+    // re-asserts the status on a heartbeat; the registry must take it.
+    registry.applyEvent({
+      type: 'event', processInstanceId: 'process-a', sequence: 1,
+      event: { type: 'summary_update', data: { status: 'idle' } },
+    }, transport)
+
+    expect(registry.list()[0].status).toBe('idle')
+    expect(registry.get('process-a').entries).toEqual([])
+
+    // A malformed status must not be written through.
+    registry.applyEvent({
+      type: 'event', processInstanceId: 'process-a', sequence: 2,
+      event: { type: 'summary_update', data: { status: 'sleeping', contextUsage: { tokens: 10, contextWindow: 100, percent: 10 } } },
+    }, transport)
+    expect(registry.list()[0].status).toBe('idle')
+    expect(registry.list()[0].contextUsage).toEqual({ tokens: 10, contextWindow: 100, percent: 10 })
+  })
+
+  it('keeps pi post-compaction "unknown" usage and rejects malformed telemetry', () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const transport = { send() {} }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary(), entries: [] }, transport, '/tmp/root/task')
+
+    // Right after a compaction pi reports null ("unknown"), which is NOT 0 and
+    // must survive the round trip so the UI can keep saying "?".
+    registry.applyEvent({
+      type: 'event', processInstanceId: 'process-a', sequence: 1,
+      event: { type: 'summary_update', data: { contextUsage: { tokens: null, contextWindow: 262_144, percent: null } } },
+    }, transport)
+    expect(registry.list()[0].contextUsage).toEqual({ tokens: null, contextWindow: 262_144, percent: null })
+
+    registry.applyEvent({
+      type: 'event', processInstanceId: 'process-a', sequence: 2,
+      event: { type: 'summary_update', data: { contextUsage: { tokens: 'lots', contextWindow: 0, percent: null }, compact: { enabled: true, triggerTokens: 'many' } } },
+    }, transport)
+    expect(registry.list()[0].contextUsage).toEqual({ tokens: null, contextWindow: 262_144, percent: null })
+    expect(registry.list()[0].compact).toBeUndefined()
+  })
+
   it('mirrors unanswered extension dialogs into the session detail', async () => {
     const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
     cleanups.push(() => registry.stop())
@@ -281,7 +369,7 @@ describe('LiveSessionRegistry', () => {
 })
 
 describe('LiveSession browser routes', () => {
-  it('accepts canonical proxy hosts and constrains DSW gateway origins by port', () => {
+  it('accepts canonical proxy hosts and constrains proxy gateway origins by port', () => {
     const auth = new LiveSessionBrowserAuth({ tokenPath: '/unused' })
     expect(auth.isOriginAllowed({ headers: {
       origin: 'https://dashboard.example.test', host: '127.0.0.1:7777',
@@ -321,7 +409,7 @@ describe('LiveSession browser routes', () => {
     } }, true)).toBe(false)
   })
 
-  it('accepts an authenticated DSW WebSocket upgrade when the gateway strips origin headers', async () => {
+  it('accepts an authenticated WebSocket upgrade when the gateway strips origin headers', async () => {
     const base = await mkdtemp(path.join(os.tmpdir(), 'pi-live-auth-dsw-'))
     const tokenPath = path.join(base, 'live-control-token')
     const auth = new LiveSessionBrowserAuth({ tokenPath })
@@ -489,6 +577,65 @@ describe('LiveSessionBroker', () => {
     socket.destroy()
     await broker.stop()
     await expect(stat(broker.socketPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('detaches at once on goodbye, and only then keeps a grace for a dropped socket', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pi-live-goodbye-'))
+    const root = path.join(base, 'worktree')
+    const cwd = path.join(root, 'task-a')
+    const runDirectory = path.join(base, 'run')
+    await mkdir(cwd, { recursive: true })
+    // Short grace so the test can watch BOTH sides: goodbye = immediate, socket
+    // drop = grace window.
+    const registry = new LiveSessionRegistry({ disconnectGraceMs: 60 })
+    const broker = new LiveSessionBroker({ registry, roots: [root], runDirectory, heartbeatMs: 1_000 })
+    cleanups.push(async () => { await broker.stop(); await registry.stop(); await rm(base, { recursive: true, force: true }) })
+    await broker.start()
+    const token = (await readFile(broker.brokerTokenPath, 'utf8')).trim()
+    const detached = []
+    registry.on('detached', payload => detached.push(payload))
+
+    const socket = createConnection(broker.socketPath)
+    socket.setEncoding('utf8')
+    let received = ''
+    socket.on('data', chunk => { received += chunk })
+    await new Promise(resolve => socket.once('connect', resolve))
+    socket.write(`${JSON.stringify(hello({ brokerToken: token, cwd }))}\n`)
+    await vi.waitFor(() => expect(received).toContain('"type":"welcome"'))
+    socket.write(`${JSON.stringify({
+      type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0,
+      summary: summary({ cwd, canonicalCwd: cwd }), entries: [],
+    })}\n`)
+    await vi.waitFor(() => expect(registry.list()).toHaveLength(1))
+
+    // `/exit` (and any other real quit) makes the bridge send GOODBYE first: the
+    // process is going away, so waiting out the reconnect grace would show a session
+    // that no longer exists — that is the browser bug this pins down (the reason must
+    // also survive, the UI decides from it).
+    socket.write(`${JSON.stringify({ type: 'goodbye', processInstanceId: 'process-a', reason: 'session_shutdown' })}\n`)
+    await vi.waitFor(() => expect(registry.list()).toHaveLength(0))
+    expect(detached).toEqual([{ summary: expect.objectContaining({ processInstanceId: 'process-a' }), reason: 'session_shutdown' }])
+
+    // A socket that just drops (no goodbye) is a RECONNECT candidate: the entry stays
+    // during the grace, marked reconnecting, and only leaves when the window closes.
+    detached.length = 0
+    const dropped = createConnection(broker.socketPath)
+    dropped.setEncoding('utf8')
+    let droppedReceived = ''
+    dropped.on('data', chunk => { droppedReceived += chunk })
+    await new Promise(resolve => dropped.once('connect', resolve))
+    dropped.write(`${JSON.stringify(hello({ brokerToken: token, cwd }))}\n`)
+    await vi.waitFor(() => expect(droppedReceived).toContain('"type":"welcome"'))
+    dropped.write(`${JSON.stringify({
+      type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0,
+      summary: summary({ cwd, canonicalCwd: cwd }), entries: [],
+    })}\n`)
+    await vi.waitFor(() => expect(registry.list()).toHaveLength(1))
+    dropped.destroy()
+    await vi.waitFor(() => expect(registry.list()[0].status).toBe('reconnecting'))
+    expect(detached).toEqual([])
+    await vi.waitFor(() => expect(registry.list()).toHaveLength(0))
+    expect(detached[0]?.reason).toBe('connection_closed')
   })
 
   it('serves the session-family graph only to an authenticated browser, and only inside the pi sessions dir', async () => {

@@ -112,18 +112,26 @@ describe('LiveSessionFeatures', () => {
     expect(btwPanel().getByRole('alert')).toHaveTextContent('no model available')
   })
 
-  // 「清空」no longer relies on window.confirm (browsers answer it with a silent
-  // `false` when dialogs are suppressed), so the rail asks for a second click.
-  it('asks for a second click before clearing the session', () => {
-    const { handlers, unmount } = renderFeatures()
+  // 「清空」used to rely on window.confirm (browsers answer it with a silent `false`),
+  // then on a two-step arm — which failed on its own terms: a 5s window, a banner that
+  // outlived it, and a press that vanished while the session was busy. One click acts.
+  it('clears the session on the first click', () => {
+    const { handlers } = renderFeatures()
 
-    const clear = screen.getByLabelText('开始新的空会话（旧对话保留在文件中）')
+    const clear = screen.getByLabelText('点击即开始新的空会话（旧对话保留在文件中）')
     fireEvent.click(clear)
     expect(handlers.onClear).toHaveBeenCalledOnce()
+  })
 
-    unmount()
-    renderFeatures({ clearArmed: true })
-    expect(screen.getByText('确认清空')).toBeInTheDocument()
-    expect(screen.getByLabelText(/再点一次确认/)).toBeInTheDocument()
+  it('keeps 清空 clickable while the session works', () => {
+    // The old `status !== 'idle'` gate made the confirm press vanish silently: the
+    // button was disabled, so the click never reached the handler, while the banner
+    // kept asking for it. `/clear` waits for idle itself, so the click is always
+    // accepted and always answered.
+    const { handlers } = renderFeatures({ status: 'running' })
+    const clear = screen.getByLabelText(/自动切换/)
+    expect(clear).not.toBeDisabled()
+    fireEvent.click(clear)
+    expect(handlers.onClear).toHaveBeenCalledOnce()
   })
 })

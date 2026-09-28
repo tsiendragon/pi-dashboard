@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events'
 import { randomUUID } from 'crypto'
 import {
+  applyLiveSessionSummaryPatch,
+  parseLiveSessionSummaryPatch,
   type LiveSessionCommand,
   type LiveSessionCommandEnvelope,
   type LiveSessionCommandResult,
@@ -476,6 +478,9 @@ export class LiveSessionRegistry extends EventEmitter {
     // as transcript rows. They are also replayed on resync, so keeping them out of
     // the timeline avoids duplicate "extension ui" noise.
     if (type === 'extension_ui' || type === 'extension_ui_closed' || type === 'extension_ui_notify') return
+    // Live telemetry (context usage + compaction trigger) is a summary patch, not a
+    // transcript row: it carries no message and would render as a stray bubble.
+    if (type === 'summary_update') return
     if (type === 'message_entry') {
       // The bridge can only read a message's session-entry id AFTER pi persists
       // it, so it publishes the id as a follow-up event. Fold it into the message
@@ -554,6 +559,16 @@ export class LiveSessionRegistry extends EventEmitter {
       if (typeof model?.provider === 'string' && typeof model.id === 'string') summary.model = { provider: model.provider, id: model.id }
     }
     if (message.event.type === 'thinking_level_select' && typeof data?.level === 'string') summary.thinkingLevel = data.level
+    // Live summary patches. Without this the summary keeps whatever the last
+    // SNAPSHOT carried — and snapshots are only built at connect / resync / tree /
+    // fork, so a session that never had an event-sequence gap displayed the value
+    // from its own first second (0 tokens for a fresh session) forever, and a
+    // status change pi made without an agent event (a compaction, a reload landing
+    // mid-work) left the dashboard claiming “工作中”.
+    if (message.event.type === 'summary_update') {
+      const patch = parseLiveSessionSummaryPatch(data)
+      if (patch) applyLiveSessionSummaryPatch(summary, patch)
+    }
     if (message.event.type === 'extension_ui' || message.event.type === 'extension_ui_closed') {
       // Mirror the bridge's one-shot dialog events so a browser that reconnects
       // (or comes back to this page) can re-open an unanswered dialog instead of

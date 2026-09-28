@@ -14,6 +14,9 @@ import { detectFileType, usePanelState, type Comment } from '../../hooks/usePane
 import { useDocumentComments } from '../../hooks/useDocumentComments'
 import { loadFileComments, saveFileComments } from '../../api/fileComments'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
+import { useArmedConfirm } from '../../hooks/useArmedConfirm'
+import { clampPercent, contextBarCells, contextTriggerPercent } from './contextStatusBar'
+import { clearCommandAvailable } from './liveSessionCommands'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { resolvePath } from '../../utils/resolvePath'
 import {
@@ -792,13 +795,26 @@ function CwdChip({ path }: { path: string }) {
   </span>
 }
 
+/**
+ * Status-line context bar. The marker position and the whole cell model live in
+ * `contextStatusBar.ts`, so the bar is drawn from the SAME trigger the compaction
+ * policy uses (and can be unit-tested without rendering this page).
+ */
 function TuiLikeStatus({ summary }: { summary: LiveSessionSummary }) {
   const usage = summary.contextUsage
-  const percent = usage?.percent !== null && usage?.percent !== undefined && Number.isFinite(usage.percent) ? Math.max(0, Math.min(100, usage.percent)) : undefined
-  const filled = percent === undefined ? 0 : Math.round(percent / 100 * 12)
-  const bar = `${'█'.repeat(filled)}${'░'.repeat(12 - filled)}│`
-  return <span className="flex min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-2xs text-muted" title="上下文占用和 session 运行时间">
-    <span className={percent !== undefined && percent >= 85 ? 'text-warn' : 'text-muted'}>{bar}</span>
+  const percent = clampPercent(usage?.percent)
+  const trigger = contextTriggerPercent(summary)
+  const cells = contextBarCells(percent, trigger)
+  const atTrigger = trigger !== undefined && percent !== undefined && percent >= trigger
+  const title = summary.compact?.enabled && trigger !== undefined
+    ? `上下文占用和 session 运行时间 · 自动压缩触发点 ${formatStatusTokens(summary.compact.triggerTokens)} / ${formatStatusTokens(usage?.contextWindow)}（${summary.compact.candidates.map(candidate => candidate.source).join(' / ') || 'policy'}）`
+    : '上下文占用和 session 运行时间 · 自动压缩触发点未知'
+  return <span className="flex min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-2xs text-muted" title={title}>
+    <span className={percent !== undefined && percent >= 85 ? 'text-warn' : 'text-muted'}>
+      {cells.map((cell, index) => cell.threshold
+        ? <span key={index} className={atTrigger ? 'text-danger' : 'text-warn'}>{cell.char}</span>
+        : cell.char)}
+    </span>
     <span>{formatStatusTokens(usage?.tokens)}/{formatStatusTokens(usage?.contextWindow)}</span>
     {percent !== undefined && <span>{Math.round(percent)}%</span>}
     <span>· {summary.mode.toUpperCase()}</span>
@@ -1271,8 +1287,8 @@ export default function LiveSessionPage() {
   const agentState = useMemo(() => deriveAgentState(summary?.status, detail?.entries || [], toolStates), [summary?.status, detail?.entries, toolStates])
   const [busy, setBusy] = useState(false)
   const [commandNotice, setCommandNotice] = useState<string>()
-  /** True while 「清空」 waits for the confirming second click (see handleClear). */
-  const [clearArmed, setClearArmed] = useState(false)
+  /** Same guard for closing the file panel while it has unsaved edits. */
+  const panelCloseConfirm = useArmedConfirm()
   /** True from the moment /compact is accepted until its entry lands on disk. */
   const [compacting, setCompacting] = useState(false)
   const compactionAbort = useRef<AbortController | undefined>(undefined)
@@ -1719,11 +1735,18 @@ export default function LiveSessionPage() {
   })
   const clearSession = () => perform(async () => {
     if (!activeId) return
+    // `/clear` is a REGISTERED extension command (`session-aliases.ts`: wait for idle,
+    // then `newSession()`), which is why it works from a text prompt at all — pi only
+    // executes registered commands there, and hands everything else starting with `/`
+    // to the model. It also means no lease is needed: that handler has no lease gate.
     await liveSessionApi.command(activeId, { type: 'input', text: '/clear', channel: 'web' })
     setAvailableModels([])
     // Give the click visible feedback: the page only switches once Pi reports the
-    // new session, which is a few seconds later.
-    setCommandNotice('已请求清空会话（/clear）——新会话就绪后本页会自动切过去')
+    // new session. On a working session `/clear` first waits for the turn to end, so
+    // say that instead of pretending it is instant.
+    setCommandNotice(summary?.status === 'idle'
+      ? '已请求清空会话——新会话就绪后本页会自动切过去'
+      : '已请求清空会话：等这一轮结束后会自动切到新的空会话')
   })
   /**
    * 「清空」used to be gated on `window.confirm`, and browsers answer that with a
@@ -1732,20 +1755,32 @@ export default function LiveSessionPage() {
    * left no trace. Arm on the first click, act on the second, like the sidebar's
    * destructive actions; the arm expires on its own.
    */
+  /**
+   * One click clears.
+   *
+   * The old two-step arm existed only because `window.confirm` is answered with a
+   * silent `false` when a browser suppresses dialogs — but an arm is its own trap
+   * (a 5s window, a banner that outlives it, and the press vanishing whenever the
+   * session happened to be busy). The action is recoverable by design, so the click
+   * goes straight through and the notice says what happened.
+   */
   const handleClear = () => {
-    if (!clearArmed) {
-      setClearArmed(true)
-      setCommandNotice('再点一次「清空」确认：当前对话会保留在文件中，本页将切到新的空会话')
+    // `/clear` is not pi's own command: it comes from an extension, so a session can
+    // genuinely not have it. Say so instead of sending text the model would answer.
+    if (!clearCommandAvailable(summary?.capabilities)) {
+      setCommandNotice('该会话没有可用的「清空」命令（`/clear` 未注册）：通常是扩展没加载成功。先试「重载」加载最新扩展，仍不行就检查扩展配置。')
       return
     }
-    setClearArmed(false)
     void clearSession().catch(() => { /* perform() already surfaced the error */ })
   }
-  useEffect(() => {
-    if (!clearArmed) return
-    const timer = window.setTimeout(() => setClearArmed(false), 5000)
-    return () => window.clearTimeout(timer)
-  }, [clearArmed])
+
+  /** ✕ / Esc / the dimmed backdrop all land here, so the unsaved-edit guard lives
+   *  in one place and can render its confirming state on the panel. */
+  const requestPanelClose = useCallback(() => {
+    if (panel.dirty && !panelCloseConfirm.confirm()) return
+    panel.closePanel()
+  }, [panel.dirty, panel.closePanel, panelCloseConfirm.confirm])
+  useEffect(() => { panelCloseConfirm.disarm() }, [panelCloseConfirm.disarm, panel.filePath, panel.isOpen])
   const abort = () => perform(async () => {
     if (!activeId) return
     const leaseId = await claim()
@@ -1806,6 +1841,17 @@ export default function LiveSessionPage() {
       await liveSessionApi.command(processInstanceId, { type: 'abort', leaseId })
       return
     }
+    // `/clear` = 开新会话（旧对话留在文件中）。它由 `session-aliases.ts` 注册，因此可以
+    // 走 input 文本流；上游那句「TUI 内置命令无法通过文本流触发」不适用于它。
+    if (trimmed === '/clear') {
+      if (!clearCommandAvailable(summary?.capabilities)) {
+        setCommandNotice('该会话没有可用的「清空」命令（`/clear` 未注册）：通常是扩展没加载成功，先试「重载」；这条文本没有发出去，避免被当普通提示词回答。')
+        return
+      }
+      await liveSessionApi.command(processInstanceId, { type: 'input', text: '/clear', channel: 'web' })
+      setCommandNotice('已请求清空会话——新会话就绪后本页会自动切过去')
+      return
+    }
     const modelMatch = trimmed.match(/^\/model[ \t]+([^ \t/]+)\/(.+)$/)
     if (modelMatch) {
       await liveSessionApi.command(processInstanceId, { type: 'set_model', provider: modelMatch[1], modelId: modelMatch[2].trim() })
@@ -1851,7 +1897,6 @@ export default function LiveSessionPage() {
     setQuotes([])
     setChatComments([])
     setCommentTarget(null)
-    setClearArmed(false)
   }, [activeId])
 
   /** A: keep the selected sentence as a chip above the composer. */
@@ -2046,7 +2091,6 @@ export default function LiveSessionPage() {
                 compacting={compacting}
                 onCompact={() => { void compact().catch(() => {}) }}
                 onClear={handleClear}
-                clearArmed={clearArmed}
                 onReload={() => { void reload().catch(() => {}) }}
                 onAbort={() => { void abort().catch(() => {}) }}
               />
@@ -2060,11 +2104,11 @@ export default function LiveSessionPage() {
         <div
           className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
           aria-hidden="true"
-          onClick={() => { if (panel.dirty && !window.confirm('文件有未保存修改，仍然关闭？')) return; panel.closePanel() }}
+          onClick={requestPanelClose}
         />
         <ErrorBoundary
           key={`panel:${panel.filePath}`}
-          fallback={<div className="fixed inset-3 z-[60] flex flex-col items-center justify-center gap-3 rounded-xl border border-danger bg-bg p-6 text-center shadow-2xl md:inset-8"><div className="text-sm text-danger">文件渲染失败</div><div className="max-w-full truncate text-xs text-muted" title={panel.filePath}>{panel.filePath}</div><div className="flex items-center gap-2"><a href={`/api/local-file/download?path=${encodeURIComponent(panel.filePath)}`} download className="rounded border border-accent px-3 py-1 text-xs text-accent no-underline hover:bg-accent hover:text-accent-fg">下载原文件</a><button type="button" onClick={() => window.location.reload()} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">重新加载</button><button type="button" onClick={panel.closePanel} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button></div></div>}
+          fallback={<div className="fixed inset-3 z-[60] flex flex-col items-center justify-center gap-3 rounded-xl border border-danger bg-bg p-6 text-center shadow-2xl md:inset-8"><div className="text-sm text-danger">文件渲染失败</div><div className="max-w-full truncate text-xs text-muted" title={panel.filePath}>{panel.filePath}</div><div className="flex items-center gap-2"><a href={`/api/local-file/download?path=${encodeURIComponent(panel.filePath)}`} download className="rounded border border-accent px-3 py-1 text-xs text-accent no-underline hover:bg-accent hover:text-accent-fg">下载原文件</a><button type="button" onClick={() => window.location.reload()} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">重新加载</button><button type="button" onClick={requestPanelClose} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button></div></div>}
         >
           <Suspense fallback={<div className="fixed inset-3 z-50 flex items-center justify-center rounded-xl border border-border bg-bg text-sm text-muted md:inset-8">加载文件…</div>}>
           <DocumentPanel
@@ -2073,7 +2117,8 @@ export default function LiveSessionPage() {
             content={panel.content}
             onContentChange={content => { panel.setContent(content); panel.setDirty(true) }}
             onSave={handleFileSave}
-            onClose={panel.closePanel}
+            onClose={requestPanelClose}
+            closeArmed={panelCloseConfirm.armed}
             dirty={panel.dirty}
             versions={panel.versions}
             selectedVersion={panel.selectedVersion}

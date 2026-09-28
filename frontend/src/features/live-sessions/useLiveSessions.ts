@@ -15,7 +15,7 @@ import {
   setLiveWebSocketConnected,
 } from '../../store/liveSessionsSlice'
 import { liveSessionApi, LiveSessionApiError } from './api'
-import { cancelDetach, DETACH_FLUSH_MS, expireDetaches, pendingSummaries, scheduleDetach, type PendingDetach } from './detachGrace'
+import { cancelDetach, DETACH_FLUSH_MS, expireDetaches, isTransientDetach, pendingSummaries, scheduleDetach, type PendingDetach } from './detachGrace'
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -77,11 +77,20 @@ export function useLiveSessionsRuntime(): { refresh: () => Promise<void> } {
           dispatch(liveSessionReconnecting(frame.data as LiveSessionSummary))
           break
         case 'live_session_detached': {
-          // Keep the row briefly: the registry dropped the entry, but a Pi that
-          // reconnects will announce itself again and the row would blink.
           const detached = frame.data as { summary: LiveSessionSummary; reason?: string }
-          scheduleDetach(pendingDetach.current, detached.summary, Date.now(), detached.reason)
-          void refresh()
+          if (isTransientDetach(detached.reason)) {
+            // Keep the row briefly: the registry dropped the entry, but a Pi that
+            // reconnects will announce itself again and the row would blink.
+            scheduleDetach(pendingDetach.current, detached.summary, Date.now(), detached.reason)
+            void refresh()
+            break
+          }
+          // The bridge said goodbye with `session_shutdown` (e.g. `/exit`): the process
+          // is going away, so drop the row and its transcript now. Holding it for the
+          // reconnect window showed a session that no longer existed — that is the
+          // “exit 之后还在，刷新才消失” complaint.
+          cancelDetach(pendingDetach.current, detached.summary.processInstanceId)
+          dispatch(liveSessionDetached(detached))
           break
         }
         case 'live_session_error':

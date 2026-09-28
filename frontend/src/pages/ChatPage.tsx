@@ -27,6 +27,7 @@ import SlashCommandMenu from '../components/SlashCommandMenu'
 import PathCompleteMenu from '../components/PathCompleteMenu'
 import FileMentionMenu from '../components/FileMentionMenu'
 import { usePanelState, detectFileType, type Comment } from '../hooks/usePanelState'
+import { useArmedConfirm } from '../hooks/useArmedConfirm'
 import { useDocumentComments } from '../hooks/useDocumentComments'
 import { useChatQuoteSelection, type SelectionTarget } from '../hooks/useChatQuoteSelection'
 import { buildQuoteReplyMessage, commentReviewItems, selectionLabel, type QuotedText, type ReviewItem } from '../utils/reviewComments'
@@ -304,6 +305,14 @@ export default function ChatPage() {
   const isMac = useAppSelector(s => s.dashboard.status?.platform) === 'darwin'
 
   const panel = usePanelState()
+  /** Closing the panel guards unsaved edits with an in-page armed confirm:
+   *  window.confirm returns a silent `false` when dialogs are suppressed. */
+  const panelCloseConfirm = useArmedConfirm()
+  const requestPanelClose = useCallback(() => {
+    if (panel.dirty && !panelCloseConfirm.confirm()) return
+    panel.closePanel()
+  }, [panel.dirty, panel.closePanel, panelCloseConfirm.confirm])
+  /** 「Clear」abandons the running session: arm it instead of using window.confirm. */
   const [documentPreview, setDocumentPreview] = useState<{ filePath: string; content: string; loading: boolean; error: string | null } | null>(null)
   // Comments on the full-screen preview live in the same sidecar as the side panel.
   const previewComments = useDocumentComments(documentPreview?.filePath ?? null)
@@ -943,8 +952,10 @@ export default function ChatPage() {
   const runQuickCommand = useCallback(async (kind: 'compact' | 'clear', command: string): Promise<void> => {
     if (quickAction) return
     // Compact can't run mid-generation; clear may — it abandons the current turn.
+    // Clear is ONE click: the old two-step arm only existed because browsers answer
+    // `window.confirm` with a silent `false`, and it made the button look broken
+    // whenever the arm window had quietly expired.
     if (kind === 'compact' && slotRunning) return
-    if (kind === 'clear' && !window.confirm('开始新的 Pi session？当前对话不会删除，但当前页面会切换到新的空 session。')) return
     setQuickAction(kind)
     try { await send(command) } finally { setQuickAction(undefined) }
   }, [quickAction, send, slotRunning])
@@ -1675,7 +1686,7 @@ export default function ChatPage() {
                 onInput={e => { const t = e.target as HTMLTextAreaElement; const cap = prefillHint ? 320 : 140; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, cap) + 'px' }} />
               </div>
               <button type="button" onClick={() => { void runQuickCommand('compact', '/compact') }} disabled={!activeSlot || slotRunning || !!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-border bg-bg-elevated px-2.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="压缩当前 session context">{quickAction === 'compact' ? '压缩中…' : 'Compact'}</button>
-              <button type="button" onClick={() => { void runQuickCommand('clear', '/clear') }} disabled={!!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-danger bg-danger-subtle px-2.5 text-2xs text-danger hover:border-danger disabled:opacity-40" title="开始新的 session">{quickAction === 'clear' ? '清理中…' : 'Clear'}</button>
+              <button type="button" onClick={() => { void runQuickCommand('clear', '/clear') }} disabled={!!quickAction || slotStopping} className="hidden md:inline-flex h-[44px] items-center rounded-lg border border-danger bg-danger-subtle px-2.5 text-2xs text-danger hover:border-danger disabled:opacity-40" title="点击即开始新的空 session（当前回合会被放弃，旧对话保留在文件中）">{quickAction === 'clear' ? '清理中…' : 'Clear'}</button>
               <div className="relative hidden md:block">
                 <button type="button" onClick={() => setShowQuickModelMenu(value => !value)} disabled={!!quickAction || slotStopping} className="h-[44px] max-w-[180px] truncate rounded-lg border border-border bg-bg-elevated px-2.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-40" title="切换当前模型">{currentSlot?.model ? `模型 · ${modelDisplay}` : '模型'}</button>
                 {showQuickModelMenu && <div className="absolute bottom-full right-0 z-50 mb-2 max-h-72 w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-lg border border-border bg-card p-2 shadow-xl">
@@ -1711,9 +1722,9 @@ export default function ChatPage() {
         <SplitPane slotKey={splitSlot} onClose={() => setSplitSlot(null)} onFileOpen={handleFileOpen} />
       )}
       {panel.isOpen && (
-        <ErrorBoundary key={`panel:${panel.filePath}`} fallback={<div className="flex-[0_0_40%] border-l border-border bg-bg flex flex-col items-center justify-center gap-3 p-6 text-center"><div className="text-sm text-danger">文件渲染失败</div><div className="max-w-full truncate text-xs text-muted" title={panel.filePath}>{panel.filePath}</div><div className="flex items-center gap-2"><a href={`/api/local-file/download?path=${encodeURIComponent(panel.filePath)}`} download className="rounded border border-accent px-3 py-1 text-xs text-accent no-underline hover:bg-accent hover:text-accent-fg">下载原文件</a><button type="button" onClick={() => window.location.reload()} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">重新加载</button><button type="button" onClick={panel.closePanel} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button></div></div>}>
+        <ErrorBoundary key={`panel:${panel.filePath}`} fallback={<div className="flex-[0_0_40%] border-l border-border bg-bg flex flex-col items-center justify-center gap-3 p-6 text-center"><div className="text-sm text-danger">文件渲染失败</div><div className="max-w-full truncate text-xs text-muted" title={panel.filePath}>{panel.filePath}</div><div className="flex items-center gap-2"><a href={`/api/local-file/download?path=${encodeURIComponent(panel.filePath)}`} download className="rounded border border-accent px-3 py-1 text-xs text-accent no-underline hover:bg-accent hover:text-accent-fg">下载原文件</a><button type="button" onClick={() => window.location.reload()} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">重新加载</button><button type="button" onClick={requestPanelClose} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button></div></div>}>
           <Suspense fallback={<div className="flex-[0_0_40%] border-l border-border bg-bg flex items-center justify-center"><span className="text-muted text-sm">Loading…</span></div>}>
-            <DocumentPanel filePath={panel.filePath} content={panel.content} onContentChange={handleContentChange} onSave={handleFileSave} onClose={panel.closePanel} dirty={panel.dirty} versions={panel.versions} selectedVersion={panel.selectedVersion} conflictContent={panel.conflictContent} onSelectVersion={panel.selectVersion} onResolveConflict={panel.resolveConflict} diffMode={panel.diffMode} onToggleDiff={panel.toggleDiffMode} comments={panel.comments} onAddComment={handleAddComment} onEditComment={handleEditComment} onDeleteComment={handleDeleteComment} onReviewComments={handleReviewComments} />
+            <DocumentPanel filePath={panel.filePath} content={panel.content} onContentChange={handleContentChange} onSave={handleFileSave} onClose={requestPanelClose} closeArmed={panelCloseConfirm.armed} dirty={panel.dirty} versions={panel.versions} selectedVersion={panel.selectedVersion} conflictContent={panel.conflictContent} onSelectVersion={panel.selectVersion} onResolveConflict={panel.resolveConflict} diffMode={panel.diffMode} onToggleDiff={panel.toggleDiffMode} comments={panel.comments} onAddComment={handleAddComment} onEditComment={handleEditComment} onDeleteComment={handleDeleteComment} onReviewComments={handleReviewComments} />
           </Suspense>
         </ErrorBoundary>
       )}
