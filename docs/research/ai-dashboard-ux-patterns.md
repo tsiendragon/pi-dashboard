@@ -244,7 +244,6 @@ Mobile is primarily about **monitoring and quick interaction**, not deep coding 
 | Agentfy | iOS Live Activities, Dynamic Island, push notifications | getagentfy.com |
 | Claude Code stream-json | Structured event protocol for custom UIs | anthropics/claude-code |
 | Streamdown | Streaming markdown rendering with Shiki highlighting | streamdown.ai |
-| OpenClaw Mission Control | WebSocket-based multi-agent dashboard | cryptoflexllc.com |
 | Vercel AI SDK chat-sdk | Streaming patterns, fullStream vs textStream | chat-sdk.dev |
 
 ---

@@ -1,7 +1,7 @@
 # 独立安装指南（pi-dashboard + 配套扩展）
 
-目标：在**一台干净的机器**上装出一套可用的 pi coding agent Web 工作台，只包含通用能力，
-不引入任何内部业务内容（task-pilot / taskspace / eagleeye-kyc-llm / kyc-tables / security-guard 等）。
+目标：在**一台干净的机器**上装出一套可用的 pi coding agent Web 工作台，只包含公共的通用能力，
+不引入任何组织内部/专有市场内容（业务插件、规则、技能）。
 
 适用对象：想自己搭一套、或给外部同事/朋友一份可复现安装步骤的人。
 
@@ -16,8 +16,9 @@
 | **pi-tsien-extension** | 一批配套 Pi 扩展（sidebar / schedule / subagent / live session / 后台命令 / goal / memory / git-graph …） | `github.com/tsiendragon/pi-tsien-extension` |
 | **pi-web-tools** | 网页抓取工具扩展，已 vendored 在 pi-tsien-extension 内 | 同上 `vendor/pi-web-tools` |
 
-**不包含**：内部 marketplace（eagleeye-ai-dev）及其业务插件、规则、技能；
-`task-pilot` / `taskspace` / `security-guard` / `remote-notifications` / `pi-knowledge` 默认都不装。
+**不包含**：任何组织内部/专有市场的包及其插件、规则、技能（默认都不装）。
+
+> 装完之后的**日常更新**（多台机器、各自选扩展/版本）见 [stack-update.md](stack-update.md) 与 `scripts/stack-update.sh`。
 
 > **为什么不用官方 npm 版 pi**：官方 `@earendil-works/pi-coding-agent`（至少到 `0.87.1`）缺少
 > `executeTool`、`extension_ui` / `respondExtensionUi` / `extension_ui_notify`、`aboveStatus`、
@@ -94,7 +95,7 @@ bash scripts/install-standalone.sh --skip-pi --pi-prefix ~/pi/bin   # 自备 pi
 > 安全提示：同步器是**严格模式**——不在配置里的 package/extension 会从 Pi 设置移除，
 > `~/.pi/agent/extensions/` 下未托管的单文件扩展会被移入 `extension-quarantine/`。
 > 原 `settings.json` 会备份到 `~/.pi/agent/extension-sync-backups/<时间戳>/`。
-> 如果机器上已有引用 marketplace 的配置，脚本会先告警并要求确认。
+> 如果机器上已有引用外部市场包的配置，脚本会先告警并要求确认。
 
 ---
 
@@ -181,7 +182,7 @@ pi install npm:pi-tsien-web-tools                            # 从公共 npm（�
 pi install git:github.com/tsiendragon/pi-tsien-extension     # 从 GitHub 一条命令装齐 25 个扩展
 ```
 
-细节见 `../guide/extensions-page.md`；外部用户视角的完整步骤见扩展仓库的 `pi-tsien-extension/docs/quickstart.md`。
+细节见 `guide/extensions-page.md`；外部用户视角的完整步骤见扩展仓库的 `pi-tsien-extension/docs/quickstart.md`。
 
 ### 模型凭证
 
@@ -281,13 +282,19 @@ standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsi
 | `pi-tsien-usage-analytics` | 本地统计工具与技能使用频率（不上传提示词/参数/输出，也不自动卸载） | `/usage [tools\|skills\|unused\|export\|reset]`；数据在 `~/.pi/agent/usage-analytics.json` |
 | `pi-tsien-trajectory-recorder` | 记录可复现的 agent 轨迹，并额外写一份紧凑计时账本供 dashboard 时间分析 | 无命令；`PI_TRACE_DIR` / `PI_TIMING_DIR` 可覆盖路径 |
 
-> - 默认关闭或需要配置才能生效的：`observation-pack`（`~/.pi/agent/observation-pack.json`）、
->   bash-digest stage（`~/.pi/agent/bash-digest.json`）。
-> - 两个扩展的默认落盘目录是开发机路径（`trajectory-recorder` → `<agent dir>/pi-traces`，
->   `observation-pack` → `<agent dir>/archiv`）。在新机器上建议用 `PI_TRACE_DIR` /
->   `PI_TIMING_DIR` / `PI_OBSERVATION_DIR` 指向本机目录；不设也不会拖垮 Pi（写失败只告警），但会丢对应数据。
-> - 它们都与业务无关，保留在清单里；只想减少加载量时，从 `config/extensions.standalone.json` 的
->   `loadOrder` 删除对应行即可（同步器会把它从 Pi 设置里移除）。
+> **占磁盘的扩展（装之前请确认）**：下面这几个会在本地持续写数据，长期使用会累积占用磁盘。
+> 按需保留，不要就从清单里去掉。
+>
+> | 扩展 | 写什么 | 默认位置 | 不要怎么去 |
+> |---|---|---|---|
+> | `pi-tsien-trajectory-recorder` | agent 轨迹 + 计时账本 | `<agent dir>/pi-traces`、`<agent dir>/pi-timing` | 从 `config/extensions.standalone.json` 的 `loadOrder` 删掉对应行再 `--apply` |
+> | `pi-tsien-observation-pack` | 超大工具结果归档（**默认关闭**） | `<agent dir>/archiv` | 同上，或保持默认关闭 |
+> | `pi-tsien-memory` | 本地记忆（SQLite/FTS5） | `~/.pi/tsien-memory/` | 同上 |
+> | `pi-tsien-usage-analytics` | 工具/技能使用频率统计 | `<agent dir>/usage-analytics.json` | 同上 |
+>
+> 默认落盘位置都在 `<agent dir>/...`（即可移植的 `~/.pi/agent/...`），可用 `PI_TRACE_DIR` /
+> `PI_TIMING_DIR` / `PI_OBSERVATION_DIR` 改到别处。同步器是严格模式：从 `loadOrder` 删后续跑即可
+> 把它从 Pi 设置里移除。
 
 ---
 
@@ -299,13 +306,13 @@ standalone 配置一共加载 **25 个扩展**（1 个 web-tools + 24 个 pi-tsi
 | 知识库检索（knowledge_search） | 克隆 `github.com/nczz/pi-knowledge`，在 `extensions.config.json` 的 `packages` 加一条该路径、`loadOrder` 加 `{"package":"knowledge","path":"extension.js"}`，再 `--apply` |
 | Slack / Outlook / Lark 通道 | pi-dashboard 的 `channels/`、`plugins/pi-slack`、`plugins/pi-outlook`，按各自 README 配置；Lark 网关在没有账号配置时自动跳过 |
 | iOS App / Electron 桌面端 | `apple/`（Xcode 构建）、`desktop/`（见 README） |
-| 组织内部的 marketplace 包 | 本指南刻意不覆盖；需要时按该 marketplace 自己的安装流程走 |
+| 组织内部/专有市场的包 | 本指南刻意不覆盖；需要时按该市场的安装流程走 |
 
 ---
 
 ## 8. 远程访问
 
-详见 `../guide/remote-access-deployment.md`。要点：pi-dashboard 的 API 默认**没有认证**，
+详见 `guide/remote-access-deployment.md`。要点：pi-dashboard 的 API 默认**没有认证**，
 安全模型是「网络不可达」，所以：
 
 ```bash
@@ -327,12 +334,12 @@ PI_DASH_HOST=your-server PI_DASH_USER=you ./pi-dash-connect.sh
 1. `node -v` ≥ v22
 2. `node ~/pi-stack/pi-tsien-extension/scripts/pi-extension-sync.mjs` 输出
    `Pi extensions already match the ordered user config.`
-3. `~/.pi/agent/settings.json` 的 `packages` 有 25 项、`extensions` 有 25 项，且都不指向 marketplace
+3. `~/.pi/agent/settings.json` 的 `packages` 有 25 项、`extensions` 有 25 项，且都不指向任何外部市场包
 4. `curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:7777/` 返回 `200`
 5. 在 dashboard 里发一条消息，能正常流式返回（说明模型凭证正确）
 6. 终端里 `pi` 能启动，且 `/sidebar`、`/effort`、`/schedule` 等命令存在（说明扩展已加载）
-7. 打开 `http://localhost:7777/extensions`，清单里的条目数与 `settings.json` 一致（本机实测 29 条、
-   `drift` 为空）；页面顶部「跨包引用」能看到 `pi-tsien-shared` 被哪些条目 import
+7. 打开 `http://localhost:7777/extensions`，清单里的条目数与 `settings.json` 一致、`drift` 为空；
+   页面顶部「跨包引用」能看到 `pi-tsien-shared` 被哪些条目 import
 
 ---
 
@@ -342,7 +349,7 @@ PI_DASH_HOST=your-server PI_DASH_USER=you ./pi-dash-connect.sh
 |---|---|
 | `node 版本过低` | 需要 22+；用 nvm/fnm 切换后再跑脚本 |
 | `node-pty` 编译失败 | 缺 `python3` / `make` / `g++`，装 `build-essential` 后重跑 `npm install` |
-| 同步器报 `Cannot resolve ${EAGLEEYE_AI_DEV_ROOT}` | 你用的配置引用了 marketplace 包；independent 安装请用 `config/extensions.standalone.json` |
+| 同步器报 `Cannot resolve ${…ROOT}` | 你用的配置引用了外部市场包；独立安装请用 `config/extensions.standalone.json` |
 | 同步器报某 extension 不存在 | 扩展仓库版本过旧，`git pull` 后重试 |
 | dashboard 起来但会话报找不到 pi | 确认 `node_modules/.bin/pi` 存在（重跑 `npm install`），或全局安装 pi CLI |
 | 扩展命令/面板没生效 | 在 pi 里 `/reload`；live session 等页面需要重开会话进程 |

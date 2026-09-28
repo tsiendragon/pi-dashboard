@@ -72,7 +72,7 @@
 
 ### NFR-1 安全（v1 硬门槛）
 - 终端暴露的是本机 TUI 的 stdin/控制权，等价于「远程接管」，**必须复用 live-session 已有的浏览器认证**（`~/.pi/agent/run/pi-dashboard/live-control-token` + HttpOnly cookie），不对 `/api/pty` 做裸同源放行。
-- WebSocket upgrade 必须做 Origin 校验（沿用 DSW gateway origin 判定），拒绝跨站。
+- WebSocket upgrade 必须做 Origin 校验（沿用 proxy gateway origin 判定），拒绝跨站。
 - 不允许通过终端路径注入任意命令绕过 auth；终端的「任意性」由已认证用户 + tmux session 边界约束。
 
 ### NFR-2 延迟

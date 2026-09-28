@@ -1,6 +1,6 @@
 # 配置盘点（已并入 guide/config.md）
 
-> 本文件内容**已整体并入权威配置文档**：[`../guide/config.md`](config.md)。
+> 本文件内容**已整体并入权威配置文档**：[`config.md`](config.md)。
 > 请以 `guide/config.md` 为准；此文件仅保留为历史入口与链接兼容。
 
 原内容概要（现已收录在 guide/config.md）：

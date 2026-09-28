@@ -8,6 +8,16 @@
 
 ---
 
+## ⚠️ 最小必配（装完只做这一件）
+
+**只有模型凭证是必须的**：在 `<agent dir>/dashboard.env` 写一条 provider key（或在 `pi` 里 `/login`），
+例如 `DASHSCOPE_API_KEY=...` / `ANTHROPIC_API_KEY=...`。不配则任何会话都发不出去。
+
+其它都有可用默认值；唯一「默认关、想用要开」的是 live session（要填 `~/.pi/dashboard.json` 的
+`liveSessions.roots`）。完整分档见 §2。
+
+---
+
 ## 0. 快速索引：我要改 X → 去哪
 
 | 我要改… | 去哪 |
@@ -116,11 +126,11 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `PI_DASH_USAGE_DIR` | dashboard 用量账本目录 | 默认 `<agent dir>/token-usage` |
 | `CODEX_HOME` | Token Cost 读取 Codex 额度时使用的 Codex CLI 配置/登录目录 | Codex CLI 默认目录（通常 `~/.codex`） |
 | `CLAUDE_CONFIG_DIR` | Token Cost 读取 Claude Code 额度时查找 OAuth 登录文件的目录 | `~/.claude` |
-| `PI_DASH_LIVE_SESSION_GROUPS` / `_META` / `_ORDER` | live session 分组/元数据/排序文件 | 默认 `<agent dir>/pi/live-session-*.json` |
+| `PI_DASH_LIVE_SESSION_GROUPS` / `PI_DASH_LIVE_SESSION_META` / `PI_DASH_LIVE_SESSION_ORDER` | live session 分组/元数据/排序文件 | 默认 `<agent dir>/pi/live-session-*.json` |
 | `PI_TASK_JOURNAL_ROOT` | 任务日志仓库根（可选，覆盖 `tasks.journal.roots`） | 默认空：**纯配置驱动**，不探测固定路径 |
 | `PI_DASH_TIMING_REFRESH_MS` | 计时账本刷新间隔 | 内置默认 |
 | `PI_DASH_TOOL_APPROVAL` | 工具审批策略 | 内置默认 |
-| `PI_DASH_LIVE_*` | live session 其它项（groups/meta/order/start timeout） | 内置默认 |
+| `PI_DASH_LIVE_START_TIMEOUT_MS` | live session 启动超时 | 内置默认 |
 | `PI_DASH_BRIDGE_SOCKET` / `PI_DASH_BRIDGE_TOKEN` | 与 live session 桥接 | 无 |
 | `PI_DASH_TRANSPORT` | 传输方式 | 内置默认 |
 | `PI_TRACE_DIR` | `trajectory-recorder` trace 落点 | `<agent dir>/pi-traces`（可移植） |
@@ -132,11 +142,11 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 
 > Token Cost 的额度卡片可选读取本机 Codex / Claude Code 账户：Codex CLI 需可从 dashboard 进程的 `PATH` 启动；Claude Code 使用 `${CLAUDE_CONFIG_DIR:-~/.claude}/.credentials.json` 中的 OAuth 凭证。凭证只在后端读取，不会返回给浏览器。该查询只显示账户接口实际提供的百分比与重置时间；Claude Code 目前只支持 OAuth 订阅用量，API key、Bedrock/Vertex、仅 keychain 存储等情况可能没有数据。没有对应 CLI 登录时页面会显示未提供，不影响 Token Cost 原有统计。
 >
-> 本表只列**部署相关**变量；代码内部还有少量实现用变量（如 `PI_RUNTIME`、`LILONG_TASK_ROOT`、
-> `TAILSCALE_IP` 等），不要依赖它们做配置。以 `backend/` 代码为准；新增对外变量必须同步本表。
+> 本表只列**部署相关**变量；代码内部还有少量实现用变量（如 `PI_RUNTIME`、`TAILSCALE_IP` 等），不要依赖它们做配置。以 `backend/` 代码为准；新增对外变量必须同步本表。
 
-> ⚠️ **已知不一致**：多数地方用 `PI_CODING_AGENT_DIR`，但 `backend/routes/chat.ts` 读的是
-> `PI_AGENT_DIR`。要改 agent 目录时两个都设上，否则该路径会回退到 `~/.pi/agent`。
+> ℹ️ **agent 目录**：统一读 `PI_CODING_AGENT_DIR`（`PI_AGENT_DIR` 作为兼容别名仍被接受），
+> 默认 `~/.pi/agent`。相关路由：`backend/routes/{chat,system,pi-ext-list}.ts`、`backend/settings-store.ts`、
+> `backend/live-sessions/ext-config.ts`。
 
 > `install-standalone.sh` 会自动把 `PI_SCRIPT` 与上面 5 个 `PI_DASH_*` 可移植数据目录写进
 > `<agent dir>/dashboard.env`（已存在的键不覆盖）。

@@ -128,7 +128,7 @@ tmux new-session -d -s pi-dash-smoke1 -c <repo> -e PI_RUNTIME=live -e TERM=xterm
 | session | 模型数 | 多出来的 provider |
 |---|---|---|
 | dashboard 新建（tmux-first） | 134 | huggingface 75、azure-openai-responses 39 |
-| terminal 启动 | 31 | dashscope 8、azure-okx 3 |
+| terminal 启动 | 31 | dashscope 8、azure 3 |
 
 原因不是 flags，也不是 shell alias（`pi-clean` 在本机不存在，且 tmux 直接 exec 二进制、**不会经过 shell，任何 alias 都不会生效**），
 而是**环境变量**：tmux 给 pane 的是 **tmux server 的环境**（server 是之前某个进程起的，已经陈旧），
@@ -177,13 +177,13 @@ tmux 默认项保留，密钥未出现在任何进程 argv。
 
 - 新增 `~/.local/bin/pi-clean`（从 `.bash_aliases` 的函数体搬出，加：source `$BASH_ENV_DIR/.env`（用 `set -a`/`set +a`）+ `exec`）；
 - `$BASH_ENV_DIR/.bash_aliases` 的 `pi-clean()` 改为一行委派（已生成 `.bash_aliases.bak-<时间戳>` 备份），`alias pi='pi-clean'` 不变。
-- 踩到的坑（实测发现）：`.env` 里是**裸赋值**，而 `.bashrc` 是用 `set -a`/`set +a` 包着 source 的；脚本里漏了 `set -a` 就只是 shell 变量、不会导给 `pi` 子进程 → dashscope/azure-okx 凭据丢失。
+- 踩到的坑（实测发现）：`.env` 里是**裸赋值**，而 `.bashrc` 是用 `set -a`/`set +a` 包着 source 的；脚本里漏了 `set -a` 就只是 shell 变量、不会导给 `pi` 子进程 → dashscope/azure 凭据丢失。
 
 **验收（真实环境）**：用与 launcher 完全相同的 argv 起 tmux 会话，调 `get_models` 对比 terminal 里 `pi-clean` 启的会话：
 
 | | 模型数 | provider 分布 |
 |---|---|---|
-| pane（新配置） | 31 | anthropic 14 / openai-codex 6 / dashscope 8 / azure-okx 3 |
+| pane（新配置） | 31 | anthropic 14 / openai-codex 6 / dashscope 8 / azure 3 |
 | terminal（pi-clean） | 31 | 完全相同 |
 
 pane 进程环境核对：`HF_TOKEN`/`AZURE_OPENAI_API_KEY` 缺失（被 `env -u` 移除）、`DASHSCOPE_API_KEY`/`AZURE_GPT4O_API_KEY` 到位。

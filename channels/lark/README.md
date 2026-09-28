@@ -89,7 +89,7 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 - 凭证 `POST /api/lark/accounts/:id/verify` → `{"ok":true}`
 - 长连接 `[gateway] started: transport=lark(cli_..., lark)` + `[ws] ws client ready`
 - 入站：私聊/群 `[in] <chatId> <userId>: /list` 正常；出站：`[out] <session> -> <chatId>` 正常
-- 多群多会话：两个群分别绑定 `ato-gent-analysis` / `kyc-llm`，互不干扰
+- 多群多会话：两个群分别绑定 `group-a` / `group-b`，互不干扰
 
 ### M4 加固证据
 

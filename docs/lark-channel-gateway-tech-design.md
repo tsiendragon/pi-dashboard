@@ -144,7 +144,7 @@ channels/lark/
       "chatId": "oc_xxx",            // 群 / 私聊
       "threadId": null,               // 话题群时使用，默认 null
       "sessionFile": "/.../xxx.jsonl",
-      "sessionName": "kyc-llm",
+      "sessionName": "example-session",
       "boundAt": "2026-09-18T..."
     }
   ]
@@ -218,7 +218,7 @@ Lark 单条文本消息有长度上限。`render.ts` 按上限安全切分（不
 
 1. **令牌**：网关读取本地 control token 换 cookie；token 文件权限校验由 dashboard 侧负责。
 2. **Origin**：所有请求与 WS 握手带 `Origin = dashboardBaseUrl`，满足 `isOriginAllowed`。
-3. **单实例锁**：Lark 长连接同一 app **只能有一个 listener**（eagleeye_bot runbook 的硬约束）。`index.ts` 用锁文件（`~/.pi/agent/run/pi-dashboard/lark-gateway.lock`，`flock`）保证单实例；重复启动直接退出并提示。
+3. **单实例锁**：Lark 长连接同一 app **只能有一个 listener**（运维 runbook 的硬约束）。`index.ts` 用锁文件（`~/.pi/agent/run/pi-dashboard/lark-gateway.lock`，`flock`）保证单实例；重复启动直接退出并提示。
 4. **访问控制**：至少支持 `LARK_ALLOWED_USER_IDS` 白名单；未授权用户消息直接忽略（不进入 session）。
 5. **不暴露公网**：长连接模式为出站连接，dashboard 仍在内网 / tailnet。
 
@@ -267,7 +267,7 @@ env：
 1. **飞书自建应用** + `App ID` / `App Secret`
 2. 开启**长连接事件订阅**，订阅 `im.message.receive_v1`
 3. 机器人能力 + 发消息权限（`im:message`、`im:message:send_as_bot`）
-4. **已决策**：新建**独立自建应用**（避免与 `okx_ai_eagleeye_bot` 撞「同一 app 单 listener」）；账号在 dashboard **Settings → Lark** 配置
+4. **已决策**：新建**独立自建应用**（避免与已有内部 bot 应用撞「同一 app 单 listener」）；账号在 dashboard **Settings → Lark** 配置
 
 ---
 

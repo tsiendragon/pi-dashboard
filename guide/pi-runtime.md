@@ -91,8 +91,8 @@ npm install -g @earendil-works/pi-coding-agent
 
 `dashboard.env` 由 backend 启动时加载，并传给每个 pi 子进程（见 `guide/config.md` §2）。
 
-live session 走的是另一条链：`~/.pi/dashboard.json` 的 `liveSessions.launch.command`，本机指向
-`$HOME/.local/bin/pi` → `<pi-fork-prefix>/bin/pi`（同一个 fork 构建；按本机实际安装目录配置）。
+live session 走的是另一条链：`~/.pi/dashboard.json` 的 `liveSessions.launch.command`
+（可指向你自己的包装脚本，例如一个先 unset 部分变量再 exec pi 的脚本），默认直接用 PATH 上的 `pi`。
 
 ---
 

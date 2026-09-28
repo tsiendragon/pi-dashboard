@@ -94,8 +94,8 @@ spawning the critic by hand. Do not repeat that. For slices 12–17, pick one:
 git fetch origin
 git reset --hard origin/feature/sdk-migration    # take the current tip
 # worktree has no node_modules — symlink from the main checkout:
-ln -s /local/home/samfp/pi-dashboard/node_modules node_modules
-ln -s /local/home/samfp/pi-dashboard/frontend/node_modules frontend/node_modules
+ln -s /path/to/pi-dashboard/node_modules node_modules
+ln -s /path/to/pi-dashboard/frontend/node_modules frontend/node_modules
 cd frontend && npx vite build && cd ..            # BEFORE npm test
 npm test                                          # (never pipe through tail/head/grep)
 ```

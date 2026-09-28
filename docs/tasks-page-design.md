@@ -253,7 +253,7 @@ TasksPage
 ## 14. 分期与验收
 
 **P1**：事实层聚合（task-journal + local 只读）· 自动探测 · 规划层 · 两种视图 · sessionRefs · Settings。
-**P2**：local CRUD、写回/勾选（经 task-pilot）、深链、键盘无障碍、每栏虚拟化。
+**P2**：local CRUD、写回/勾选（经外部任务系统）、深链、键盘无障碍、每栏虚拟化。
 **P3**：时间线/燃尽/周报、插件化 provider。
 
 **P1 验收**
@@ -302,7 +302,7 @@ TasksPage
 
 1. **列表**：打开 `/tasks`，确认能看到 journal 正式任务与本地临时任务；来源筛选在来源 >1 时出现。
 2. **规划**：给一条任务设优先级/聚焦；切到「鸟瞰」确认聚焦栏与泳道分组；拖拽（桌面整卡 / 触屏用 ⠿ 拖柄）换栏后刷新仍保留。
-3. **写入**：`+ 新建` 记一条临时任务 → 改标题/状态/标签 → 删掉；对 journal 任务修改应得只读拒绝（提示走 task-pilot）。
+3. **写入**：`+ 新建` 记一条临时任务 → 改标题/状态/标签 → 删掉；对 journal 任务修改应得只读拒绝（提示走外部任务系统）。
 4. **会话**：抽屉「▶ 起会话」（需先在 Live Pi 认证）以任务目录为 cwd 启动；「+ 关联会话」手动挂载后可用 ✕ 取消。
 5. **深链**：直接访问 `/tasks/task-journal:<id>` 应直接打开抽屉；`Esc` 或 ✕ 关闭回 `/tasks`。
 6. **Settings**：Settings → Tasks 改开关/roots/默认视图/外部来源 JSON；关掉「启用任务面板」后导航项消失。
@@ -342,7 +342,7 @@ TasksPage
 |---|---|
 | 前端 6 条过期断言 | `App.test.tsx`×2（`PI DASH`/`Health` 文案已转中文）、`LiveSessionFeatures.test.tsx`（`BTW · 1`）、`ToolCallBlock.test.tsx`（Arguments 隐藏逻辑）、`ToolSummary.test.tsx`（label 期望 `Read`，现返 `read /path`）、`liveToolEntries.test.ts`（分组数 1→2）。**后两条疑似行为变化**，需先确认是有意改动还是回归，再改断言。 |
 | 未 push | `master` 领先 `origin/master` **18** 个提交。 |
-| journal 写回 | 面板不写 journal 事实层（设计即如此，非缺陷）；改状态请走 task-pilot。 |
+| journal 写回 | 面板不写 journal 事实层（设计即如此，非缺陷）；改状态请走外部任务系统。 |
 | 真机 trend | `history.json` 首日仅 1 点，需 ≥2 天才有趋势线（UI 已提示）。 |
 
 ### 17.5 生效方式

@@ -224,15 +224,15 @@ button.theme:hover{border-color:var(--border-hover)}
             <span style="width:8px;height:8px;border-radius:99px;background:var(--warn);flex:none"></span>
             <div class="grow">
               <div class="pill">⚠ Needs input</div>
-              <div class="ttl" style="display:block">fix(router): recall drop after bump 修复一下 router 的回归并且重跑评测</div>
-              <div class="tags"><span class="chip">router</span><span class="chip">p0</span><span class="chip">wip</span></div>
+              <div class="ttl" style="display:block">fix(tag-c): recall drop after bump 修复一下 tag-c 的回归并且重跑评测</div>
+              <div class="tags"><span class="chip">tag-c</span><span class="chip">p0</span><span class="chip">wip</span></div>
             </div>
             <span class="ic">+</span><span class="ic">🏷</span><span class="ic">✕</span>
           </div>
           <div class="row">
             <div class="grow">
               <div style="display:flex;gap:3px;align-items:center;margin-bottom:2px"><span class="dots"><i></i><i></i><i></i></span></div>
-              <div class="ttl" style="display:block">OCR gold voter 标注批次整理</div>
+              <div class="ttl" style="display:block">示例任务 A</div>
             </div>
             <span class="ic">+</span><span class="ic">🏷</span><span class="ic">✕</span>
           </div>
@@ -250,12 +250,12 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="rows">
           <div class="row">
             <span style="width:8px;height:8px;border-radius:99px;background:var(--info-fg);flex:none"></span>
-            <div class="grow"><div class="ttl" style="display:block">camera fingerprint 设备分类冷启动</div>
-              <div class="tags"><span class="chip">forgery</span></div></div>
+            <div class="grow"><div class="ttl" style="display:block">示例任务 B</div>
+              <div class="tags"><span class="chip">tag-b</span></div></div>
             <span class="ic">+</span><span class="ic">🏷</span><span class="ic">✕</span>
           </div>
           <div class="row">
-            <div class="grow"><div class="ttl" style="display:block">帮我看一下 vLLM 吞吐为什么上不去，先分析 profile</div></div>
+            <div class="grow"><div class="ttl" style="display:block">示例任务 C</div></div>
             <span class="ic">+</span><span class="ic">🏷</span><span class="ic">✕</span>
           </div>
         </div>
@@ -287,9 +287,9 @@ button.theme:hover{border-color:var(--border-hover)}
       </div>
       <div class="tagrail">
         <span class="rf">全部 <span class="n">18</span></span>
-        <span class="rf"><i class="mini" style="width:6px;height:6px;padding:0;border-radius:99px;background:var(--accent);display:inline-block"></i> router <span class="n">4</span></span>
-        <span class="rf on"><i class="mini" style="width:6px;height:6px;padding:0;border-radius:99px;background:var(--ok);display:inline-block"></i> ocr <span class="n">6</span></span>
-        <span class="rf">forgery <span class="n">3</span></span>
+        <span class="rf"><i class="mini" style="width:6px;height:6px;padding:0;border-radius:99px;background:var(--accent);display:inline-block"></i> tag-c <span class="n">4</span></span>
+        <span class="rf on"><i class="mini" style="width:6px;height:6px;padding:0;border-radius:99px;background:var(--ok);display:inline-block"></i> tag-a <span class="n">6</span></span>
+        <span class="rf">tag-b <span class="n">3</span></span>
         <span class="rf">infra <span class="n">2</span></span>
       </div>
       <div class="body">
@@ -298,16 +298,16 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="row">
           <span class="bar"></span>
           <div style="flex:1;min-width:0">
-            <div class="l1"><span class="t">OCR gold 标注 v7 review 修正</span><span class="time">2d</span></div>
-            <div class="l2"><span style="font-size:9px">📌</span><i class="c-o">ocr</i><i class="c-m">review</i><span class="pj">my-task-journal</span></div>
+            <div class="l1"><span class="t">示例任务 D</span><span class="time">2d</span></div>
+            <div class="l2"><span style="font-size:9px">📌</span><i class="c-o">tag-a</i><i class="c-m">tag-d</i><span class="pj">task-journal</span></div>
           </div>
         </div>
 
         <div class="row s-run">
           <span class="bar"></span>
           <div style="flex:1;min-width:0">
-            <div class="l1"><span class="mono" style="font-size:13px">🔨</span><span class="t">camera fingerprint 冷启动</span><span class="time">5d</span></div>
-            <div class="l2"><span style="font-size:9px">📌</span><i class="c-a">router</i><i class="c-d">forgery</i><i class="c-m">+2</i><span class="pj">x-face</span></div>
+            <div class="l1"><span class="mono" style="font-size:13px">🔨</span><span class="t">示例任务 B</span><span class="time">5d</span></div>
+            <div class="l2"><span style="font-size:9px">📌</span><i class="c-a">tag-c</i><i class="c-d">tag-b</i><i class="c-m">+2</i><span class="pj">example-project</span></div>
           </div>
         </div>
 
@@ -316,16 +316,16 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="row s-need on">
           <span class="bar"></span>
           <div style="flex:1;min-width:0">
-            <div class="l1"><span class="dot" title="Waiting for approval"></span><span class="t">fix(router): recall drop after bump…</span><span class="time"></span><span class="more" style="display:grid;background:var(--bg-hover);color:var(--text-strong)">⋯</span></div>
-            <div class="l2"><i class="c-a">router</i><i class="c-w">p0</i><i class="c-m">+1</i><span class="pj" style="color:var(--warn)">needs input</span></div>
+            <div class="l1"><span class="dot" title="Waiting for approval"></span><span class="t">fix(tag-c): recall drop after bump…</span><span class="time"></span><span class="more" style="display:grid;background:var(--bg-hover);color:var(--text-strong)">⋯</span></div>
+            <div class="l2"><i class="c-a">tag-c</i><i class="c-w">p0</i><i class="c-m">+1</i><span class="pj" style="color:var(--warn)">needs input</span></div>
           </div>
         </div>
 
         <div class="row s-run">
           <span class="bar"></span>
           <div style="flex:1;min-width:0">
-            <div class="l1"><span class="mono" style="font-size:13px">🔨</span><span class="t">OCR gold voter 标注批次整理</span><span class="time">4m</span></div>
-            <div class="l2"><i class="c-o">ocr</i><span class="pj">kyc_llm</span></div>
+            <div class="l1"><span class="mono" style="font-size:13px">🔨</span><span class="t">示例任务 A</span><span class="time">4m</span></div>
+            <div class="l2"><i class="c-o">tag-a</i><span class="pj">example-repo</span></div>
           </div>
         </div>
 
@@ -341,7 +341,7 @@ button.theme:hover{border-color:var(--border-hover)}
           <span class="bar"></span>
           <div style="flex:1;min-width:0">
             <div class="l1"><span class="t">dash</span><span class="time">3h</span></div>
-            <div class="l2"><i class="c-i">infra</i><span class="pj">eagleeye-viz</span></div>
+            <div class="l2"><i class="c-i">infra</i><span class="pj">example-project</span></div>
           </div>
         </div>
 
@@ -350,8 +350,8 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="row s-unread">
           <span class="bar"></span>
           <div style="flex:1;min-width:0">
-            <div class="l1"><span class="mono" style="font-size:13px">📬</span><span class="t">帮我看一下 vLLM 吞吐为什么上不去</span><span class="time">1d</span></div>
-            <div class="l2"><i class="c-a">router</i><i class="c-o">ocr</i><span class="pj">it-kyc</span></div>
+            <div class="l1"><span class="mono" style="font-size:13px">📬</span><span class="t">示例任务 C</span><span class="time">1d</span></div>
+            <div class="l2"><i class="c-a">tag-c</i><i class="c-o">tag-a</i><span class="pj">example-service</span></div>
           </div>
         </div>
 
@@ -389,13 +389,13 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="row">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t">OCR gold voter 标注批次整理</span><span class="mini"><i class="c-o">ocr</i></span><span class="time">4m</span><span class="more">⋯</span></div>
+    <div class="l1"><span class="t">示例任务 A</span><span class="mini"><i class="c-o">tag-a</i></span><span class="time">4m</span><span class="more">⋯</span></div>
   </div>
 </div>
 <div class="row on">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="mono" style="font-size:13px;opacity:.6">💤</span><span class="t">fix(router): recall drop after bump</span><span class="mini"><i class="c-a">router</i></span><span class="time"></span><span class="more" style="display:grid;background:var(--bg-elevated);color:var(--text-strong)">⋯</span></div>
+    <div class="l1"><span class="mono" style="font-size:13px;opacity:.6">💤</span><span class="t">fix(tag-c): recall drop after bump</span><span class="mini"><i class="c-a">tag-c</i></span><span class="time"></span><span class="more" style="display:grid;background:var(--bg-elevated);color:var(--text-strong)">⋯</span></div>
   </div>
 </div>
 <div class="row">
@@ -413,19 +413,19 @@ button.theme:hover{border-color:var(--border-hover)}
 <div class="row">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t">camera fingerprint 冷启动</span><span class="mini"><i class="c-d">forgery</i></span><span class="time">1d</span><span class="more">⋯</span></div>
+    <div class="l1"><span class="t">示例任务 B</span><span class="mini"><i class="c-d">tag-b</i></span><span class="time">1d</span><span class="more">⋯</span></div>
   </div>
 </div>
 <div class="row">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t">vLLM 吞吐 profile 分析</span><span class="mini"><i class="c-a">router</i><i class="c-o">ocr</i></span><span class="time">1d</span><span class="more">⋯</span></div>
+    <div class="l1"><span class="t">示例任务 C</span><span class="mini"><i class="c-a">tag-c</i><i class="c-o">tag-a</i></span><span class="time">1d</span><span class="more">⋯</span></div>
   </div>
 </div>
 <div class="row">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t">伊拉克证件 OCR 后处理</span><span class="time">2d</span><span class="more">⋯</span></div>
+    <div class="l1"><span class="t">示例任务 E</span><span class="time">2d</span><span class="more">⋯</span></div>
   </div>
 </div>
 <div class="row">
@@ -457,20 +457,20 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="row">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t">OCR gold voter 标注批次整理</span><span class="mini"><i class="c-o">ocr</i></span><span class="time">4m</span><span class="more">⋯</span></div>
+    <div class="l1"><span class="t">示例任务 A</span><span class="mini"><i class="c-o">tag-a</i></span><span class="time">4m</span><span class="more">⋯</span></div>
   </div>
 </div>
 <div class="row on" style="border-radius:7px 7px 0 0">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="mono" style="font-size:13px;opacity:.6">💤</span><span class="t">fix(router): recall drop after bump</span><span class="more" style="display:grid">⋯</span></div>
+    <div class="l1"><span class="mono" style="font-size:13px;opacity:.6">💤</span><span class="t">fix(tag-c): recall drop after bump</span><span class="more" style="display:grid">⋯</span></div>
         <div class="tagedit">
           <div class="tin">
-            <i class="c-a">router <s>×</s></i><i class="c-w">p0 <s>×</s></i>
+            <i class="c-a">tag-c <s>×</s></i><i class="c-w">p0 <s>×</s></i>
             <input value="for" placeholder="add tag…">
           </div>
           <div class="sug">
-            <div class="hi"><span style="width:6px;height:6px;border-radius:99px;background:var(--danger);display:inline-block"></span> forgery <em>3 个会话</em></div>
+            <div class="hi"><span style="width:6px;height:6px;border-radius:99px;background:var(--danger);display:inline-block"></span> tag-b <em>3 个会话</em></div>
             <div><span style="width:6px;height:6px;border-radius:99px;background:var(--muted-strong);display:inline-block"></span> forge-detector <em>1 个会话</em></div>
   </div>
 </div>
@@ -492,7 +492,7 @@ button.theme:hover{border-color:var(--border-hover)}
     <div class="sb" style="--w:290px">
       <div class="sb-hd"><span class="t">Sessions <span class="cnt">6</span></span><span class="newbtn">+</span></div>
       <div class="tagrail" style="padding-top:10px">
-        <span class="rf on"><i class="mini" style="width:6px;height:6px;padding:0;border-radius:99px;background:var(--ok);display:inline-block"></i> ocr <span class="n">6</span> ×</span>
+        <span class="rf on"><i class="mini" style="width:6px;height:6px;padding:0;border-radius:99px;background:var(--ok);display:inline-block"></i> tag-a <span class="n">6</span> ×</span>
         <span class="rf">+ 标签…</span>
       </div>
       <div class="search">6 / 18 个会话 <kbd>esc</kbd></div>
@@ -501,26 +501,26 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="row">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="mono" style="font-size:13px;opacity:.6">💤</span><span class="t">OCR gold voter 标注批次整理</span><span class="mini"><i class="c-o">ocr</i><i class="c-a">router</i></span><span class="time">4m</span><span class="more">⋯</span></div>
+    <div class="l1"><span class="mono" style="font-size:13px;opacity:.6">💤</span><span class="t">示例任务 A</span><span class="mini"><i class="c-o">tag-a</i><i class="c-a">tag-c</i></span><span class="time">4m</span><span class="more">⋯</span></div>
   </div>
 </div>
 <div class="row">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t">voter 一致性抽检</span><span class="mini"><i class="c-o">ocr</i></span><span class="time">6h</span><span class="more">⋯</span></div>
+    <div class="l1"><span class="t">示例任务 F</span><span class="mini"><i class="c-o">tag-a</i></span><span class="time">6h</span><span class="more">⋯</span></div>
   </div>
 </div>
 <div class="gh open"><span class="chev">▶</span> Last 7 Days <span class="n">4</span></div>
         <div class="row">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t">帮我看一下 vLLM 吞吐为什么上不去</span><span class="mini"><i class="c-o">ocr</i><i class="c-a">router</i></span><span class="time">1d</span><span class="more">⋯</span></div>
+    <div class="l1"><span class="t">示例任务 C</span><span class="mini"><i class="c-o">tag-a</i><i class="c-a">tag-c</i></span><span class="time">1d</span><span class="more">⋯</span></div>
   </div>
 </div>
 <div class="row">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t">伊拉克证件 OCR 后处理</span><span class="mini"><i class="c-o">ocr</i></span><span class="time">3d</span><span class="more">⋯</span></div>
+    <div class="l1"><span class="t">示例任务 E</span><span class="mini"><i class="c-o">tag-a</i></span><span class="time">3d</span><span class="more">⋯</span></div>
   </div>
 </div>
 </div>
@@ -537,7 +537,7 @@ button.theme:hover{border-color:var(--border-hover)}
       <span class="bar" style="position:static;width:2px;height:30px;border-radius:2px;background:var(--warn)"></span>
       <span>dot 5px</span>
       <span style="flex:1;color:var(--text)">标题 13px · ellipsis</span>
-      <span class="mini"><i class="c-a">router</i><i class="c-w">p0</i><i class="c-m">+1</i></span>
+      <span class="mini"><i class="c-a">tag-c</i><i class="c-w">p0</i><i class="c-m">+1</i></span>
       <span>34px 时间</span>
       <span style="width:20px;height:20px;border-radius:6px;background:var(--bg-hover);display:grid;place-items:center">⋯</span>
       <span class="anno">height 30px（紧凑 26px）· padding 0 6px 0 10px · radius 7px · gap 7px</span>
@@ -565,13 +565,13 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="row s-need" style="height:26px">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="mono" style="font-size:13px">⚠️</span><span class="t">fix(router): recall drop after bump</span><span class="mini"><i class="c-w" style="width:5px;height:5px;padding:0;border-radius:99px"></i></span><span class="time">12m</span></div>
+    <div class="l1"><span class="mono" style="font-size:13px">⚠️</span><span class="t">fix(tag-c): recall drop after bump</span><span class="mini"><i class="c-w" style="width:5px;height:5px;padding:0;border-radius:99px"></i></span><span class="time">12m</span></div>
   </div>
 </div>
 <div class="row s-run" style="height:26px">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="mono" style="font-size:13px">🔨</span><span class="t">OCR gold voter 标注批次整理</span><span class="mini"><i class="c-o" style="width:5px;height:5px;padding:0;border-radius:99px"></i></span><span class="time">4m</span></div>
+    <div class="l1"><span class="mono" style="font-size:13px">🔨</span><span class="t">示例任务 A</span><span class="mini"><i class="c-o" style="width:5px;height:5px;padding:0;border-radius:99px"></i></span><span class="time">4m</span></div>
   </div>
 </div>
 <div class="row" style="height:26px">
@@ -583,7 +583,7 @@ button.theme:hover{border-color:var(--border-hover)}
 <div class="row" style="height:26px">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t">camera fingerprint 冷启动</span><span class="mini"><i class="c-d" style="width:5px;height:5px;padding:0;border-radius:99px"></i></span><span class="time">1d</span></div>
+    <div class="l1"><span class="t">示例任务 B</span><span class="mini"><i class="c-d" style="width:5px;height:5px;padding:0;border-radius:99px"></i></span><span class="time">1d</span></div>
   </div>
 </div>
 <div class="row" style="height:26px">
@@ -603,13 +603,13 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="row s-need" style="min-height:44px;align-items:flex-start;padding-top:7px">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="dot" style="margin-top:6px"></span><span class="t" style="white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">fix(router): recall drop after bump</span><span class="time" style="margin-top:6px">12m</span></div>
+    <div class="l1"><span class="dot" style="margin-top:6px"></span><span class="t" style="white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">fix(tag-c): recall drop after bump</span><span class="time" style="margin-top:6px">12m</span></div>
   </div>
 </div>
 <div class="row s-run" style="min-height:44px;align-items:flex-start;padding-top:7px">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="dot" style="margin-top:6px"></span><span class="t" style="white-space:normal">OCR gold voter 标注批次整理</span><span class="time" style="margin-top:6px">4m</span></div>
+    <div class="l1"><span class="dot" style="margin-top:6px"></span><span class="t" style="white-space:normal">示例任务 A</span><span class="time" style="margin-top:6px">4m</span></div>
   </div>
 </div>
 <div class="row" style="min-height:44px;align-items:flex-start;padding-top:7px">
@@ -621,7 +621,7 @@ button.theme:hover{border-color:var(--border-hover)}
 <div class="row" style="min-height:44px;align-items:flex-start;padding-top:7px">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t" style="white-space:normal">camera fingerprint 冷启动</span><span class="mini" style="margin-top:6px"><i class="c-d">f</i></span><span class="time" style="margin-top:6px">1d</span></div>
+    <div class="l1"><span class="t" style="white-space:normal">示例任务 B</span><span class="mini" style="margin-top:6px"><i class="c-d">f</i></span><span class="time" style="margin-top:6px">1d</span></div>
   </div>
 </div>
 </div>
@@ -636,7 +636,7 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="row" style="opacity:.4">
   <span class="bar"></span>
   <div style="flex:1;min-width:0">
-    <div class="l1"><span class="t">OCR gold voter 标注批次整理</span><span class="time">4m</span></div>
+    <div class="l1"><span class="t">示例任务 A</span><span class="time">4m</span></div>
   </div>
 </div>
 <div class="row" style="opacity:.4">
@@ -647,7 +647,7 @@ button.theme:hover{border-color:var(--border-hover)}
 </div>
 </div>
       <div style="margin:8px;background:var(--bg-elevated);border:1px solid var(--danger);border-radius:9px;padding:9px 10px;font-size:12px;color:var(--text)">
-        关闭「fix(router): recall…」？<br><span style="color:var(--muted);font-size:11px">tag 会随会话存档保留，可从历史恢复。</span>
+        关闭「fix(tag-c): recall…」？<br><span style="color:var(--muted);font-size:11px">tag 会随会话存档保留，可从历史恢复。</span>
         <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
           <span class="rf">取消</span><span class="rf on" style="color:var(--danger);border-color:var(--danger)">关闭</span>
         </div>
@@ -675,7 +675,7 @@ button.theme:hover{border-color:var(--border-hover)}
       <div class="body" style="max-height:340px">
         <div style="border-bottom:1px solid var(--border);padding:8px 10px 4px">
           <div style="display:flex;align-items:center;gap:6px">
-            <strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-strong)">OCR 标注</strong>
+            <strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-strong)">示例标签</strong>
             <span class="rf" style="font-size:10px">＋加入 ▾</span>
             <span class="v1 ic">✎</span><span class="v1 ic">×</span>
           </div>
@@ -686,7 +686,7 @@ button.theme:hover{border-color:var(--border-hover)}
             <span style="font-size:13px">💤</span>
             <span class="v1 chip" style="font-size:9px">主 Pi</span>
             <span class="v1 chip" style="font-size:9px">2 子 Agent</span>
-            <span style="flex:1;min-width:0;font-size:12px;color:var(--text)">voter 一致性抽…</span>
+            <span style="flex:1;min-width:0;font-size:12px;color:var(--text)">示例任务 F…</span>
             <span style="font-size:10px;color:var(--muted)">等待输入</span>
           </div>
           <div class="l3">sid 3f2a9c1b…e04d</div>
@@ -698,7 +698,7 @@ button.theme:hover{border-color:var(--border-hover)}
             <span style="flex:1;min-width:0;font-size:12px;color:var(--text)">冷启动分析</span>
             <span style="font-size:10px;color:var(--muted)">工作中</span>
           </div>
-          <div class="l3">~/repos/kyc_llm</div>
+          <div class="l3">~/repos/example</div>
         </div>
       </div>
     </div>
@@ -725,8 +725,8 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="search" style="margin:8px 0 0">🔍 搜索 session / 目录 / 标签…</div>
         <div class="tagrail" style="padding:7px 0 0">
           <span class="rf">全部</span>
-          <span class="rf on"><i class="mini" style="width:6px;height:6px;padding:0;border-radius:99px;background:var(--ok);display:inline-block"></i> ocr <span class="n">3</span></span>
-          <span class="rf">forgery <span class="n">2</span></span>
+          <span class="rf on"><i class="mini" style="width:6px;height:6px;padding:0;border-radius:99px;background:var(--ok);display:inline-block"></i> tag-a <span class="n">3</span></span>
+          <span class="rf">tag-b <span class="n">2</span></span>
           <span class="rf">p0 <span class="n">1</span></span>
         </div>
       </div>
@@ -736,8 +736,8 @@ button.theme:hover{border-color:var(--border-hover)}
         <div class="row on">
           <span class="bar" style="background:transparent"></span>
           <div style="flex:1;min-width:0">
-            <div class="l1"><span class="mono" style="font-size:13px">💤</span><span class="t">voter 一致性抽检</span><span class="time" style="width:0;opacity:0"></span><span class="more" style="display:grid;background:var(--bg-elevated);color:var(--text-strong)">⋯</span></div>
-            <div class="l2"><span style="font-size:9px">📌</span><span style="font-size:10px;color:var(--muted-strong)">等待输入</span><i class="c-o">ocr</i><i class="c-m">voter</i><span class="pj">OCR 标注</span></div>
+            <div class="l1"><span class="mono" style="font-size:13px">💤</span><span class="t">示例任务 F</span><span class="time" style="width:0;opacity:0"></span><span class="more" style="display:grid;background:var(--bg-elevated);color:var(--text-strong)">⋯</span></div>
+            <div class="l2"><span style="font-size:9px">📌</span><span style="font-size:10px;color:var(--muted-strong)">等待输入</span><i class="c-o">tag-a</i><i class="c-m">tag-e</i><span class="pj">示例标签</span></div>
           </div>
         </div>
         <div class="pop" style="left:124px;top:118px">
@@ -745,27 +745,27 @@ button.theme:hover{border-color:var(--border-hover)}
           <div class="it">🏷 标签</div>
           <div class="sep"></div>
           <div class="it">📌 取消置顶</div>
-          <div class="it">⇤ 移出「OCR 标注」</div>
-          <div class="it">→ 加入「Router 评测」</div>
+          <div class="it">⇤ 移出「示例标签」</div>
+          <div class="it">→ 加入「tag-c 评测」</div>
           <div class="sep"></div>
           <div class="it">⧉ 复制 Session ID</div>
           <div class="it mono" style="font-size:10px;color:var(--muted-strong)">3f2a9c1b…e04d · pid 4242</div>
         </div>
 
-        <div class="lv-sec"><span class="chev">▾</span>OCR 标注 <span class="act">✎</span><span class="act del">×</span><span class="lv-n">2</span></div>
+        <div class="lv-sec"><span class="chev">▾</span>示例标签 <span class="act">✎</span><span class="act del">×</span><span class="lv-n">2</span></div>
         <div class="lv-sub">1 等待 · 1 工作</div>
         <div class="row s-run">
           <span class="bar"></span>
           <div style="flex:1;min-width:0">
             <div class="l1"><span class="mono" style="font-size:13px">🔨</span><span class="t">冷启动分析：伊拉克证件 field key</span><span class="time">2m</span><span class="more">⋯</span></div>
-            <div class="l2"><span style="font-size:10px;color:var(--accent)">工作中</span><i class="c-o">ocr</i><i class="c-w">p0</i><i class="c-m">+1</i><span class="pj">feat/iraq</span></div>
+            <div class="l2"><span style="font-size:10px;color:var(--accent)">工作中</span><i class="c-o">tag-a</i><i class="c-w">p0</i><i class="c-m">+1</i><span class="pj">feat/example</span></div>
           </div>
         </div>
         <div class="row">
           <span class="bar" style="background:var(--warn)"></span>
           <div style="flex:1;min-width:0">
             <div class="l1"><span class="mono" style="font-size:13px">🔄</span><span class="t">schema 对齐 card_type</span><span class="time">18m</span><span class="more">⋯</span></div>
-            <div class="l2"><span style="font-size:10px;color:var(--warn)">重连中</span><i class="c-o">ocr</i><span class="pj">kyc_llm</span></div>
+            <div class="l2"><span style="font-size:10px;color:var(--warn)">重连中</span><i class="c-o">tag-a</i><span class="pj">example-repo</span></div>
           </div>
         </div>
 
@@ -782,7 +782,7 @@ button.theme:hover{border-color:var(--border-hover)}
           <span class="bar"></span>
           <div style="flex:1;min-width:0">
             <div class="l1"><span class="mono" style="font-size:13px">💤</span><span class="t">周报生成</span><span class="lv-n" style="width:34px;text-align:right">4h</span><span class="more">⋯</span></div>
-            <div class="l2"><span style="font-size:10px;color:var(--muted-strong)">等待输入</span><span style="font-size:10px;color:var(--muted-strong)">✅ 子 Agent · 已完成</span><span class="pj">my-task-journal</span></div>
+            <div class="l2"><span style="font-size:10px;color:var(--muted-strong)">等待输入</span><span style="font-size:10px;color:var(--muted-strong)">✅ 子 Agent · 已完成</span><span class="pj">task-journal</span></div>
           </div>
         </div>
       </div>

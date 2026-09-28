@@ -89,7 +89,7 @@ Host system information (CPU, memory, disk, network, process stats).
   "proc_cpu_pct": null,
   "child_processes": "3",
   "thread_count": "12",
-  "cwd": "/Users/sam/pi-dashboard",
+  "cwd": "/Users/you/pi-dashboard",
   "ollama_running": false,
   "net_rx_kbs": null,
   "net_tx_kbs": null
@@ -117,7 +117,7 @@ List all slots.
     "stopping": false,
     "pending_approval": false,
     "model": "anthropic/claude-opus-4-6-1m",
-    "cwd": "/Users/sam/project"
+    "cwd": "/Users/you/project"
   }
 ]
 ```
@@ -132,7 +132,7 @@ Create a new slot. Pi process is **not** started yet — deferred until first me
   "name": "My Chat",          // optional, display title
   "agent": "default",         // optional, agent name
   "model": "anthropic/claude-opus-4-6-1m",  // optional, "provider/modelId"
-  "cwd": "/Users/sam/project"  // optional, working directory
+  "cwd": "/Users/you/project"  // optional, working directory
 }
 ```
 
@@ -178,7 +178,7 @@ Get slot detail with message history.
   "has_more": false,
   "total": 4,
   "model": "anthropic/claude-opus-4-6-1m",
-  "cwd": "/Users/sam/project",
+  "cwd": "/Users/you/project",
   "contextUsage": { "tokens": 5000, "contextWindow": 200000, "percent": 2.5 }
 }
 ```
@@ -235,7 +235,7 @@ Set the thinking/reasoning level for a slot.
 
 Set the working directory for a slot. If the process is running with no messages, restarts it.
 
-**Request body:** `{ "cwd": "/Users/sam/project" }`
+**Request body:** `{ "cwd": "/Users/you/project" }`
 
 **Response:** `{ "ok": true }`
 
@@ -736,7 +736,7 @@ Save a base64-encoded image to disk.
 }
 ```
 
-**Response:** `{ "ok": true, "path": "/Users/sam/images/screenshot.png" }`
+**Response:** `{ "ok": true, "path": "/Users/you/images/screenshot.png" }`
 
 #### `GET /api/file-versions`
 
@@ -811,11 +811,11 @@ Browse directory contents (for CWD picker / file tree).
 **Response:**
 ```json
 {
-  "path": "/Users/sam",
+  "path": "/Users/you",
   "parent": "/Users",
   "entries": [
-    { "name": "project", "path": "/Users/sam/project", "isDir": true },
-    { "name": "file.txt", "path": "/Users/sam/file.txt", "isDir": false }
+    { "name": "project", "path": "/Users/you/project", "isDir": true },
+    { "name": "file.txt", "path": "/Users/you/file.txt", "isDir": false }
   ]
 }
 ```
@@ -829,10 +829,10 @@ Autocomplete a partial file/directory path.
 **Response:**
 ```json
 {
-  "dir": "/Users/sam",
+  "dir": "/Users/you",
   "prefix": "pro",
   "entries": [
-    { "name": "project", "path": "/Users/sam/project", "isDir": true }
+    { "name": "project", "path": "/Users/you/project", "isDir": true }
   ]
 }
 ```
@@ -851,8 +851,8 @@ List workspace directories.
 ```json
 {
   "workspaces": [
-    { "name": "~", "path": "/Users/sam" },
-    { "name": "pi-dashboard", "path": "/Users/sam/pi-dashboard" }
+    { "name": "~", "path": "/Users/you" },
+    { "name": "pi-dashboard", "path": "/Users/you/pi-dashboard" }
   ]
 }
 ```
@@ -934,7 +934,7 @@ Scan tmux for running pi processes (excludes the `pi-dash` session itself).
       "tmuxWindow": 0,
       "tmuxPane": 0,
       "pid": 12345,
-      "cwd": "/Users/sam/project",
+      "cwd": "/Users/you/project",
       "windowName": "pi",
       "size": "120x30",
       "model": "claude-opus-4-6-1m",
@@ -942,7 +942,7 @@ Scan tmux for running pi processes (excludes the `pi-dash` session itself).
       "uptime": "2h30m",
       "lastOutput": "Last line of output...",
       "attachCmd": "tmux attach -t main",
-      "sessionFile": "/Users/sam/.pi/agent/sessions/--Users-sam-project--/2026-04-17.jsonl"
+      "sessionFile": "/Users/you/.pi/agent/sessions/--Users-sam-project--/2026-04-17.jsonl"
     }
   ]
 }
@@ -1096,7 +1096,7 @@ Full slot list. Sent on connect and whenever slots change (create, delete, agent
       "stopping": false,
       "pending_approval": false,
       "model": "anthropic/claude-opus-4-6-1m",
-      "cwd": "/Users/sam/project"
+      "cwd": "/Users/you/project"
     }
   ]
 }

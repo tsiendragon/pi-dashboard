@@ -10,6 +10,7 @@
 | [dashboard.md](dashboard.md) | ③ pi-dashboard Web 服务（端口、环境变量、远程访问） |
 | [cloudflare-mobile-gateway.md](cloudflare-mobile-gateway.md) | 多机器移动端接入的公开实施状态（**尚未可公网部署**） |
 | [standalone-install.md](standalone-install.md) | 手动逐步安装版（前置、逐条命令、systemd、排障、卸载） |
+| [stack-update.md](stack-update.md) | 多机更新规范（每机自选扩展/版本，`scripts/stack-update.sh`） |
 | [config.md](config.md) | 配置总览（四层地图、每个 config 谁读、怎么改） |
 
 > 维护规则见 [§7](#7-维护规则必须遵守)：任何影响安装/配置的改动，必须同步更新本目录。
@@ -26,7 +27,7 @@
 └─────────────────────────────────────────────┘
 ```
 
-| 层 | 是什么 | 本机参考位置 | 默认来源 |
+| 层 | 是什么 | 参考位置（示例） | 默认来源 |
 |---|---|---|---|
 | **① pi 宿主** | 真正跑 agent 的 `pi` 可执行文件 | `<pi-fork-prefix>/bin/pi` | `github.com/tsiendragon/pi` 的 GitHub Release（10 个 tgz） |
 | **② 扩展** | `pi-tsien-extension` 仓库（26 个包 / 25 个扩展入口） | `<extension-checkout>` | `github.com/tsiendragon/pi-tsien-extension` |
@@ -36,9 +37,8 @@
 缺 `executeTool` / `extension_ui` 等扩展 API，会让 `run_code`、live session、子 Agent 全屏降级或报错。
 详见 [pi-runtime.md](pi-runtime.md)。
 
-**不包含**：内部 marketplace（eagleeye-ai-dev）及其业务插件/规则/技能
-（`task-pilot` / `taskspace` / `security-guard` / `remote-notifications` / `pi-knowledge`）。
-需要它们时按各自流程单独装。
+**不包含**：任何组织内部/专有市场的包（业务插件、规则、技能）。
+本套只装公共的通用能力；内部包按你们自己的安装流程单独装。
 
 ---
 
@@ -126,7 +126,7 @@ npm install --no-audit --no-fund && npm run build-frontend
 
 1. `node -v` ≥ v22
 2. `node ~/pi-stack/pi-tsien-extension/scripts/pi-extension-sync.mjs` 输出 `Pi extensions already match the ordered user config.`
-3. `~/.pi/agent/settings.json` 的 `packages` / `extensions` 数量与 `extensions.config.json` 一致（standalone 当前为 **25 packages + 25 extensions**），且不指向 marketplace
+3. `~/.pi/agent/settings.json` 的 `packages` / `extensions` 数量与 `extensions.config.json` 一致（standalone 当前为 **25 packages + 25 extensions**），且不指向任何外部市场包
 4. `curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:7777/` 返回 `200`
 5. 在 dashboard 发一条消息，能正常流式返回（凭证正确）
 6. 终端 `pi` 能启动，且 `/sidebar`、`/effort`、`/schedule` 等命令存在
@@ -138,7 +138,7 @@ npm install --no-audit --no-fund && npm run build-frontend
 
 > **本节是硬性约定：凡是影响安装、配置、组件关系、依赖版本的改动，同一次提交里必须更新本 `guide/` 目录。**
 
-- 新增/删除/重命名环境变量 → 更新 [§5 配置总表](#5-配置总表) 和对应模块文档。
+- 新增/删除/重命名环境变量 → 更新 [config.md](config.md) §2，并运行 `npm run docs:env-check` 校验（防漂移）。
 - 新增/删除扩展包、改变装载方式或 npm 发布状态 → 更新 [extensions.md](extensions.md)。
 - 更换 pi fork 版本 / 补丁 API 集合 → 更新 [pi-runtime.md](pi-runtime.md)。
 - 改动安装脚本（`scripts/install-standalone.sh`）行为或参数 → 更新 [§3](#3-一键安装推荐) 与 [dashboard.md](dashboard.md)。
@@ -154,7 +154,7 @@ npm install --no-audit --no-fund && npm run build-frontend
 | 会话报找不到 pi | 确认 `node_modules/.bin/pi` 存在，或 `PI_SCRIPT` 指向有效路径 |
 | `run_code` 报 `Code Mode requires executeTool` | 用的不是 fork 版 pi，见 [pi-runtime.md](pi-runtime.md) |
 | node-pty 编译失败 | 缺 `python3` / `make` / `g++`，装 `build-essential` 后重跑 `npm install` |
-| 同步器报 `Cannot resolve ${EAGLEEYE_AI_DEV_ROOT}` | 配置引用了 marketplace 包；独立安装请用 `config/extensions.standalone.json` |
+| 同步器报 `Cannot resolve ${…ROOT}` | 你的配置引用了外部市场包；独立安装请用 `config/extensions.standalone.json` |
 | 扩展命令/面板没生效 | 在 pi 里 `/reload`；live session 等页面需重开会话进程 |
 | 端口被占用 | `--port` 换端口，或 `lsof -i :7777` 找占用进程 |
 
