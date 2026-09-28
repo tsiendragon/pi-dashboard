@@ -16,6 +16,9 @@
     "lark:probe": "tsx channels/lark/src/probe.ts",
     "lark:dev": "tsx channels/lark/src/index.ts",
     "test": "vitest run --config vitest.backend.config.js",
+    "docs:env-check": "node scripts/check-env-docs.mjs",
+  "stack:check": "bash scripts/stack-update.sh --check",
+  "stack:update": "bash scripts/stack-update.sh --apply",
     "test:watch": "vitest --config vitest.backend.config.js"
   },
   "dependencies": {
