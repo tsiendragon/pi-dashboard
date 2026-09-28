@@ -35,9 +35,11 @@ interface Props {
   onDeleteComment: (id: string) => void
   onReviewComments?: () => void
   presentation?: 'side' | 'modal'
+  /** True while the caller's own close confirmation is armed (see useArmedConfirm). */
+  closeArmed?: boolean
 }
 
-export default memo(function DocumentPanel({ filePath, content, onContentChange, onSave, onClose, dirty, versions, selectedVersion, conflictContent, onSelectVersion, onResolveConflict, diffMode, onToggleDiff, comments, onAddComment, onEditComment, onDeleteComment, onReviewComments, presentation = 'side' }: Props) {
+export default memo(function DocumentPanel({ filePath, content, onContentChange, onSave, onClose, dirty, versions, selectedVersion, conflictContent, onSelectVersion, onResolveConflict, diffMode, onToggleDiff, comments, onAddComment, onEditComment, onDeleteComment, onReviewComments, presentation = 'side', closeArmed = false }: Props) {
   const [mode, setMode] = useState<'preview' | 'edit'>('preview')
   const [copied, setCopied] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -77,19 +79,19 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
   const handleSaveRef = useRef(handleSave)
   useEffect(() => { handleSaveRef.current = handleSave }, [handleSave])
 
-  const guardedClose = useCallback(() => {
-    if (dirty && !window.confirm('Discard unsaved changes?')) return
-    onClose()
-  }, [dirty, onClose])
+  // Closing (✕ / Escape) is owned by the caller: it guards unsaved edits with the
+  // shared armed-confirm instead of `window.confirm`, which browsers answer with
+  // a silent `false` when dialogs are suppressed — that made ✕ look broken.
+  const requestClose = useCallback(() => { onClose() }, [onClose])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') guardedClose()
+      if (e.key === 'Escape') requestClose()
       if ((e.metaKey || e.ctrlKey) && e.key === 's' && mode === 'edit' && dirty) { e.preventDefault(); handleSaveRef.current() }
     }
     document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
-  }, [guardedClose, mode, dirty])
+  }, [requestClose, mode, dirty])
 
   const handleChange = useCallback((v: string) => { onContentChange(v) }, [onContentChange])
 
@@ -156,7 +158,12 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
             <button className="px-2 py-1 rounded-md text-meta text-muted border border-border hover:text-accent hover:border-accent transition cursor-pointer" title="复制文件内容" aria-label="复制文件内容" onClick={async () => { if (await copyText(content)) { setCopied(true); setTimeout(() => setCopied(false), 1500) } }}>{copied ? '✓' : '📋'}</button>
           )}
           <a href={`/api/local-file/download?path=${encodeURIComponent(filePath)}`} download={fileName} className="px-2 py-1 rounded-md text-meta text-muted border border-border hover:text-accent hover:border-accent transition cursor-pointer no-underline" title="Download">⬇</a>
-          <button className="px-2 py-1 rounded-md text-meta text-muted border border-border hover:text-danger hover:border-danger transition cursor-pointer" onClick={guardedClose}>✕</button>
+          <button
+            className={`px-2 py-1 rounded-md text-meta border transition cursor-pointer ${closeArmed ? 'border-danger bg-danger-subtle text-danger font-medium' : 'text-muted border-border hover:text-danger hover:border-danger'}`}
+            title={closeArmed ? '再点一次：丢弃未保存修改并关闭' : '关闭'}
+            aria-label={closeArmed ? '确认关闭（丢弃未保存修改）' : '关闭'}
+            onClick={requestClose}
+          >{closeArmed ? '确认关闭' : '✕'}</button>
         </div>
       </div>
       {saveError && <div className="px-3 py-1 text-2xs text-danger bg-bg-elevated border-b border-border">{saveError}</div>}

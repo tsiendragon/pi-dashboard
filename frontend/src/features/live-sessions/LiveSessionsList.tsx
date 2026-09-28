@@ -15,6 +15,7 @@ import type { SubagentTaskStatus } from './sessionTitle'
 import { moveInOrder, materializeOrder, resolveDropTarget, buildSessionSections, groupOfSession, isSubagent, type DropTarget, type SessionSection } from './sessionOrder'
 import { useLiveSessionMeta } from './useLiveSessionMeta'
 import { useLiveSessionOrder } from './useLiveSessionOrder'
+import { useArmedConfirm } from '../../hooks/useArmedConfirm'
 
 interface LiveSessionsListProps {
   sessions: LiveSessionSummary[]
@@ -393,6 +394,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
    * Subagent child processes are skipped by the backend, so only main sessions
    * are counted here.
    */
+  const reloadAllConfirm = useArmedConfirm()
   const reloadAllSessions = () => {
     if (reloadingAll) return
     const targets = sessions.filter(session => session.role !== 'subagent')
@@ -400,7 +402,12 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
       setReloadNotice({ text: '没有可重载的主会话（子 Agent 进程会被跳过）', danger: false })
       return
     }
-    if (!window.confirm(`重载全部 ${targets.length} 个会话？每个 Pi 进程会重新加载扩展 / 技能 / 提示词 / 主题，Web 端会短暂重连。`)) return
+    // Armed instead of window.confirm: browsers answer a suppressed confirm with a
+    // silent `false`, which made this button look dead.
+    if (!reloadAllConfirm.confirm()) {
+      setReloadNotice({ text: `再点一次「重载全部」确认：${targets.length} 个主会话的 Pi 进程会重新加载扩展 / 技能 / 提示词 / 主题`, danger: false })
+      return
+    }
     setReloadingAll(true)
     setReloadNotice(null)
     void liveSessionApi.reloadAll()
@@ -803,9 +810,9 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
             type="button"
             disabled={reloadingAll}
             onClick={reloadAllSessions}
-            className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-bg px-2 py-1 text-2xs text-muted transition hover:border-accent hover:text-accent disabled:opacity-50"
-            title="重载所有会话：让每个 Pi 进程重新加载扩展 / 技能 / 提示词 / 主题（子 Agent 进程跳过）"
-          ><MaterialIcon name="sync" spin={reloadingAll} className="h-3.5 w-3.5" />重载全部</button>
+            className={`flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-2xs transition disabled:opacity-50 ${reloadAllConfirm.armed ? 'border-danger bg-danger-subtle font-semibold text-danger' : 'border-border bg-bg text-muted hover:border-accent hover:text-accent'}`}
+            title={reloadAllConfirm.armed ? '再点一次确认重载全部' : '重载所有会话：让每个 Pi 进程重新加载扩展 / 技能 / 提示词 / 主题（子 Agent 进程跳过）'}
+          ><MaterialIcon name="sync" spin={reloadingAll} className="h-3.5 w-3.5" />{reloadAllConfirm.armed ? '确认重载' : '重载全部'}</button>
         </div>
 
         {reloadNotice && <div role="status" aria-label="重载结果" className={`mt-1.5 text-2xs ${reloadNotice.danger ? 'text-danger' : 'text-muted-strong'}`}>{reloadNotice.text}</div>}
