@@ -65,6 +65,20 @@ export interface LiveSessionSummary {
     percent: number | null
   }
   /**
+   * Where auto-compaction will actually fire for this session, resolved by the
+   * bridge from the same policy its trigger uses (`auto-compact-target` target vs
+   * pi's `reserveTokens` guard). Additive: absent = older bridge, and a consumer
+   * that ignores it simply draws no threshold marker.
+   *
+   * `candidates` names every enabled policy with its own token count so a UI can
+   * explain which one binds.
+   */
+  compact?: {
+    enabled: boolean
+    triggerTokens: number
+    candidates: { source: string; tokens: number }[]
+  }
+  /**
    * Additive, optional capability list advertised by the bridge. Absent = older
    * bridge. Adding values is backward compatible in both directions and does NOT
    * change {@link LIVE_SESSION_PROTOCOL_VERSION}.
@@ -252,4 +266,108 @@ export type LiveSessionBrowserEventType =
 export interface LiveSessionBrowserEvent {
   type: LiveSessionBrowserEventType
   data: unknown
+}
+
+/**
+ * Parse a bridge `summary_update` payload.
+ *
+ * Both the registry (server-side summary) and the browser (open page) apply the
+ * same telemetry, so the parsing lives here once instead of drifting in two
+ * places. Unknown/invalid fields are dropped rather than trusted: a malformed
+ * frame must never blank a number the UI already shows.
+ *
+ * `tokens`/`percent` stay nullable on purpose — right after a compaction pi has no
+ * post-compaction assistant usage yet and reports `null` ("unknown"), which is not
+ * the same as `0`.
+ */
+export function parseLiveSessionContextUsage(
+  value: unknown,
+): LiveSessionSummary['contextUsage'] | undefined {
+  const record = asRecord(value)
+  if (!record) return undefined
+  const contextWindow = record.contextWindow
+  if (typeof contextWindow !== 'number' || !Number.isFinite(contextWindow) || contextWindow <= 0) return undefined
+  const tokens = numberOrNull(record.tokens)
+  const percent = numberOrNull(record.percent)
+  if (tokens === undefined || percent === undefined) return undefined
+  return { tokens, contextWindow, percent }
+}
+
+/** Parse the effective auto-compaction trigger a bridge advertised. */
+export function parseLiveSessionCompact(
+  value: unknown,
+): LiveSessionSummary['compact'] | undefined {
+  const record = asRecord(value)
+  if (!record) return undefined
+  const triggerTokens = record.triggerTokens
+  if (typeof triggerTokens !== 'number' || !Number.isFinite(triggerTokens)) return undefined
+  const candidates = Array.isArray(record.candidates)
+    ? record.candidates.flatMap((candidate) => {
+        const entry = asRecord(candidate)
+        return entry && typeof entry.source === 'string' && typeof entry.tokens === 'number' && Number.isFinite(entry.tokens)
+          ? [{ source: entry.source, tokens: entry.tokens }]
+          : []
+      })
+    : []
+  return { enabled: record.enabled === true, triggerTokens, candidates }
+}
+
+/** Live status a bridge reports: pi's own busy/idle view, or a dropped socket. */
+export function parseLiveSessionStatus(value: unknown): LiveSessionStatus | undefined {
+  return value === 'idle' || value === 'running' || value === 'reconnecting' ? value : undefined
+}
+
+/**
+ * Fields of a summary a `summary_update` event may patch.
+ *
+ * Snapshots carry the whole summary but are only rebuilt at connect / resync /
+ * tree / fork, so anything that changes every turn (context usage, the compaction
+ * trigger) or without any agent event at all (busy/idle status) travels as a
+ * patch on the event stream instead.
+ */
+export interface LiveSessionSummaryPatch {
+  status?: LiveSessionStatus
+  contextUsage?: LiveSessionSummary['contextUsage']
+  compact?: LiveSessionSummary['compact']
+}
+
+/**
+ * Parse the data of a `summary_update` event.
+ *
+ * Invalid or unknown fields are dropped rather than written through: a partial
+ * or corrupt patch must never overwrite a good value with a worse one.
+ */
+export function parseLiveSessionSummaryPatch(value: unknown): LiveSessionSummaryPatch | undefined {
+  const record = asRecord(value)
+  if (!record) return undefined
+  const patch: LiveSessionSummaryPatch = {}
+  const status = parseLiveSessionStatus(record.status)
+  if (status) patch.status = status
+  const contextUsage = parseLiveSessionContextUsage(record.contextUsage)
+  if (contextUsage) patch.contextUsage = contextUsage
+  const compact = parseLiveSessionCompact(record.compact)
+  if (compact) patch.compact = compact
+  return Object.keys(patch).length > 0 ? patch : undefined
+}
+
+/**
+ * Merge a patch into a summary in place, on the server and in the browser alike
+ * (one implementation, so both can never disagree about what a patch means).
+ */
+export function applyLiveSessionSummaryPatch(
+  summary: LiveSessionSummary,
+  patch: LiveSessionSummaryPatch,
+): void {
+  if (patch.status !== undefined) summary.status = patch.status
+  if (patch.contextUsage !== undefined) summary.contextUsage = patch.contextUsage
+  if (patch.compact !== undefined) summary.compact = patch.compact
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+}
+
+function numberOrNull(value: unknown): number | null | undefined {
+  if (value === null) return null
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }

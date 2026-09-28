@@ -1,9 +1,11 @@
 /**
  * Live Session 斜杠命令菜单（仅用于 `/` 自动补全与提示文案）。
  *
- * TUI 内置命令（/compact /reload /model）无法通过 input 文本流触发，由 submit
- * 翻译成结构化命令；扩展命令（/clear /exit /goal /effort）与 skill 命令 / 普通消息
- * 则原样走 `input` 文本流发送给 Pi。
+ * pi 内置命令（/compact /reload /model）无法通过 input 文本流触发（内置命令由交互式
+ * editor 分发），由 submit 翻译成结构化命令；**扩展注册的命令**（`/clear` 来自
+ * `session-aliases.ts`，`/exit`、`/goal`、`/effort` 同理）与 skill 命令 / 普通消息则原样走
+ * `input` 文本流发送给 Pi —— pi 只执行“已注册的扩展命令”，其余带 `/` 的文本会原样
+ * 交给模型，所以这里列出的名字必须是真被注册过的。
  */
 
 export interface LiveSessionSlashItem {
@@ -42,3 +44,16 @@ export const LIVE_SESSION_TUI_ONLY: LiveSessionSlashItem[] = [
   { command: '/logout', description: '移除 provider 认证', insert: '', kind: 'tui' },
   { command: '/quit', description: '退出 Pi', insert: '', kind: 'tui' },
 ]
+
+/**
+ * Whether this session can really clear.
+ *
+ * The bridge advertises `session_clear` only when `/clear` is present in pi's live
+ * command registry — it comes from the `session-aliases` extension, not from pi, so
+ * it disappears whenever that extension does not load (pi skips a missing extension
+ * file silently). Sending `/clear` anyway would hand the text to the model: a click
+ * that burns a turn and clears nothing, which is worse than an honest refusal.
+ */
+export function clearCommandAvailable(capabilities: readonly string[] | undefined): boolean {
+  return capabilities?.includes('session_clear') === true
+}

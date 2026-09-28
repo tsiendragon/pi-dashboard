@@ -15,6 +15,23 @@ export const DETACH_GRACE_MS = 60_000
 /** How often expired detaches are flushed. Rows may lag the window by this much. */
 export const DETACH_FLUSH_MS = 5_000
 
+/**
+ * Whether a detach is a RECONNECT candidate, or the session is really over.
+ *
+ * The grace window exists because a bridge that switches session (`session_switch`)
+ * or drops its socket (`connection_closed`) comes back seconds later — hiding the
+ * row then made it blink. A bridge that said GOODBYE because the process is shutting
+ * down is not coming back: holding its row for another minute shows a session that
+ * no longer exists. That is exactly what “敲了 exit，行还在，刷新后才没了” was — the
+ * goodbye was handled correctly on the server, only the browser kept pretending.
+ *
+ * Unknown reasons stay transient: keeping a row too long is a cosmetic annoyance,
+ * dropping one that is about to reconnect loses the click target.
+ */
+export function isTransientDetach(reason: string | undefined): boolean {
+  return reason !== 'session_shutdown'
+}
+
 export interface PendingDetach {
   summary: LiveSessionSummary
   reason?: string

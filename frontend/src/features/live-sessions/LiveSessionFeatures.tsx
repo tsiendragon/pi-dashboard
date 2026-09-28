@@ -73,7 +73,7 @@ function SessionAction({ label, icon, disabled, danger, onClick, title }: { labe
   </button>
 }
 
-export default function LiveSessionFeatures({ features, busy, cwd, status, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, onGoal, onCompact, onClear, clearArmed = false, onReload, onAbort }: {
+export default function LiveSessionFeatures({ features, busy, cwd, status, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, onGoal, onCompact, onClear, onReload, onAbort }: {
   features: Record<string, unknown>
   busy?: boolean
   cwd?: string
@@ -93,8 +93,6 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
   compacting?: boolean
   onCompact: () => void
   onClear: () => void
-  /** True while 「清空」 waits for the confirming second click. */
-  clearArmed?: boolean
   onReload: () => void
   onAbort: () => void
 }) {
@@ -139,7 +137,13 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
       <SessionAction label="目标" icon="goal" disabled={busy || status !== 'idle'} onClick={onGoal} title="查看/管理当前 session 的 /goal 状态" />
       <SessionAction label={compacting ? '压缩中…' : '压缩'} icon="compact" disabled={busy || compacting || status !== 'idle'} onClick={onCompact} title={compacting ? '压缩仍在后台进行，等完成后再试' : '压缩当前会话上下文，释放 token'} />
       <SessionAction label="重载" icon="reload" disabled={busy} onClick={onReload} title="重载扩展 / 技能 / 提示词 / 主题" />
-      <SessionAction label={clearArmed ? '确认清空' : '清空'} icon="clear" danger disabled={busy || status !== 'idle'} onClick={onClear} title={clearArmed ? '再点一次确认：旧对话保留在文件中，本页切到新的空会话' : '开始新的空会话（旧对话保留在文件中）'} />
+      {/* Enabled while the session works: `/clear` waits for idle itself, and the old
+          `status !== 'idle'` gate is what made a click vanish without a word. */}
+      {/* One click acts: the two-step arm was only a workaround for browsers that
+          swallow `window.confirm`, and it caused its own failures (a 5s window, a
+          banner that outlived it, a press that vanished while the session was busy).
+          The action is recoverable — the old conversation stays in its file. */}
+      <SessionAction label="清空" icon="clear" danger disabled={busy} onClick={onClear} title={status !== 'idle' ? '点击即开始新的空会话（会等这一轮结束后自动切换；旧对话保留在文件中）' : '点击即开始新的空会话（旧对话保留在文件中）'} />
     </div>
     <div className="my-0.5 h-px w-10 self-center rounded-full bg-border" />
 

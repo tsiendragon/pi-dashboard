@@ -204,3 +204,32 @@ describe('DocumentPanel — Right-click Comment', () => {
     vi.restoreAllMocks()
   })
 })
+
+describe('DocumentPanel — close confirmation', () => {
+  // The guard is owned by the caller (armed confirm instead of window.confirm,
+  // which browsers answer with a silent `false` when dialogs are suppressed).
+  it('marks the close button while the caller has armed it, and closes on click', () => {
+    const onClose = vi.fn()
+    render(<DocumentPanel {...baseProps} onClose={onClose} dirty closeArmed />)
+
+    const confirmButton = screen.getByLabelText('确认关闭（丢弃未保存修改）')
+    fireEvent.click(confirmButton)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the plain ✕ when nothing is armed and still closes on click', () => {
+    const onClose = vi.fn()
+    render(<DocumentPanel {...baseProps} onClose={onClose} dirty />)
+
+    fireEvent.click(screen.getByLabelText('关闭'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes on Escape', () => {
+    const onClose = vi.fn()
+    render(<DocumentPanel {...baseProps} onClose={onClose} />)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})

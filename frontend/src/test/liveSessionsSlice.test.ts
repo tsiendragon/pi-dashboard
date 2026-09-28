@@ -177,6 +177,79 @@ describe('liveSessionsSlice', () => {
     expect((state.details.a.entries.at(-1) as Record<string, unknown>).dashboardQueueState).toBeUndefined()
   })
 
+
+  it('applies summary_update telemetry to both the session row and the open detail, without a transcript row', () => {
+    let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a')] }))
+    state = reducer(state, liveSessionSnapshot(detail(summary('a', 2))))
+
+    state = reducer(state, liveSessionEvent({
+      type: 'event', processInstanceId: 'a', sequence: 1,
+      event: {
+        type: 'summary_update',
+        data: {
+          contextUsage: { tokens: 166_416, contextWindow: 1_048_576, percent: 15.87066650390625 },
+          compact: {
+            enabled: true,
+            triggerTokens: 270_000,
+            candidates: [
+              { source: 'auto-compact-target', tokens: 270_000 },
+              { source: 'pi-reserve-tokens', tokens: 1_026_576 },
+            ],
+          },
+        },
+      },
+    }))
+
+    // The header reads `state.sessions[id]`, the page body reads the detail's
+    // summary: a live number has to reach both, or the bar would keep the value
+    // from the last snapshot (which for a fresh session is 0 forever).
+    expect(state.sessions.a.contextUsage).toEqual({ tokens: 166_416, contextWindow: 1_048_576, percent: 15.87066650390625 })
+    expect(state.details.a.summary.contextUsage).toEqual(state.sessions.a.contextUsage)
+    expect(state.sessions.a.compact?.triggerTokens).toBe(270_000)
+    expect(state.details.a.summary.compact?.candidates).toHaveLength(2)
+    // Telemetry is a summary patch, never a transcript bubble.
+    expect(state.details.a.entries).toHaveLength(0)
+  })
+
+  it('keeps the sidebar status honest for a session with no open page', () => {
+    // Status is a fact about the session, not about the page: the sidebar must
+    // follow the bridge's heartbeat even when nobody has the session open (pi can
+    // end a turn without agent_settled, and a stale 工作中 is what that looks like).
+    let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a')] }))
+    expect(state.sessions.a.status).toBe('idle')
+
+    state = reducer(state, liveSessionEvent({
+      type: 'event', processInstanceId: 'a', sequence: 1,
+      event: { type: 'summary_update', data: { status: 'running' } },
+    }))
+    expect(state.sessions.a.status).toBe('running')
+    expect(state.sessions.a.eventSequence).toBe(1)
+
+    state = reducer(state, liveSessionEvent({
+      type: 'event', processInstanceId: 'a', sequence: 2,
+      event: { type: 'summary_update', data: { status: 'idle' } },
+    }))
+    expect(state.sessions.a.status).toBe('idle')
+
+    // An out-of-range status is ignored instead of inventing a state.
+    state = reducer(state, liveSessionEvent({
+      type: 'event', processInstanceId: 'a', sequence: 3,
+      event: { type: 'summary_update', data: { status: 'sleeping' } },
+    }))
+    expect(state.sessions.a.status).toBe('idle')
+  })
+
+  it('keeps the previous telemetry when a frame is malformed', () => {
+    let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a')] }))
+    state = reducer(state, liveSessionSnapshot(detail(summary('a', 2))))
+    state = reducer(state, liveSessionEvent({
+      type: 'event', processInstanceId: 'a', sequence: 1,
+      event: { type: 'summary_update', data: { contextUsage: { tokens: 'lots', contextWindow: 0, percent: null } } },
+    }))
+    expect(state.sessions.a.contextUsage).toBeUndefined()
+    expect(state.sessions.a.compact).toBeUndefined()
+  })
+
   it('tracks only leases acquired by this browser and clears them on release', () => {
     let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a')] }))
     state = reducer(state, liveSessionOwned({ processInstanceId: 'a', leaseId: 'lease-a', expiresAt: 10 }))

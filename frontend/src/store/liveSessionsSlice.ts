@@ -1,10 +1,12 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
-import type {
-  LiveSessionDetail,
-  LiveSessionEventMessage,
-  LiveSessionImage,
-  LiveSessionSummary,
-  LiveSessionUiRequest,
+import {
+  applyLiveSessionSummaryPatch,
+  parseLiveSessionSummaryPatch,
+  type LiveSessionDetail,
+  type LiveSessionEventMessage,
+  type LiveSessionImage,
+  type LiveSessionSummary,
+  type LiveSessionUiRequest,
 } from '@shared/live-sessions'
 
 export interface LiveSessionDetailState extends LiveSessionDetail {
@@ -118,6 +120,11 @@ function appendEvent(detail: LiveSessionDetailState, message: LiveSessionEventMe
         break
       }
     }
+    return
+  }
+  if (type === 'summary_update') {
+    // Live telemetry (context usage + compaction trigger) is a summary patch, not
+    // a transcript row — it carries no message and would render as a stray bubble.
     return
   }
   if (type === 'live_feature_snapshot') {
@@ -278,7 +285,18 @@ const liveSessionsSlice = createSlice({
       const message = action.payload
       const detail = state.details[message.processInstanceId]
       const summary = state.sessions[message.processInstanceId]
-      if (!detail || !summary) return
+      if (!summary) return
+      if (message.event.type === 'summary_update' && !detail) {
+        // Keep the sidebar's copy honest even for a session this browser never
+        // opened: status and telemetry are facts about the session, not about the
+        // page. Without a detail there is no sequence ledger to gap-check against,
+        // so the patch is simply applied (opening the page replaces all of it).
+        if (message.sequence > summary.eventSequence) summary.eventSequence = message.sequence
+        const patch = parseLiveSessionSummaryPatch(message.event.data)
+        if (patch) applyLiveSessionSummaryPatch(summary, patch)
+        return
+      }
+      if (!detail) return
       const currentSequence = detail.summary.eventSequence
       if (message.sequence <= currentSequence) return
       if (message.sequence !== currentSequence + 1) {
@@ -320,6 +338,16 @@ const liveSessionsSlice = createSlice({
           } else {
             delete bucket[uiId]
           }
+        }
+      }
+      if (message.event.type === 'summary_update') {
+        // Apply the same patch the registry applied to its summary, so the header
+        // and the sidebar stay live instead of waiting for a snapshot (snapshots
+        // only arrive on connect / resync / tree / fork).
+        const patch = parseLiveSessionSummaryPatch(message.event.data)
+        if (patch) {
+          applyLiveSessionSummaryPatch(detail.summary, patch)
+          applyLiveSessionSummaryPatch(summary, patch)
         }
       }
       if (message.event.type === 'extension_ui_notify') {
