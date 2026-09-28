@@ -65,10 +65,10 @@ describe('pastedFileRef', () => {
   })
 
   it('keeps pasted slash commands and command lines as plain text', () => {
-    expect(pastedFileRef({ text: '/taskspace start camfp-user-104925893-analysis' })).toBeNull()
+    expect(pastedFileRef({ text: '/some-command start example-123-analysis' })).toBeNull()
     expect(pastedFileRef({ text: '/compact' })).toBeNull()
     expect(pastedFileRef({ text: '/goal ship the fix' })).toBeNull()
-    expect(pastedFileRef({ text: './taskspace start x' })).toBeNull()
+    expect(pastedFileRef({ text: './some-command start x' })).toBeNull()
     expect(pastedFileRef({ text: '~/workspace' })).toBe('~/workspace')
   })
 })

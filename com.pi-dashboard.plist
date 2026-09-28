@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- macOS launchd 模板（占位符）。装到自己机器上时把 /Users/you 换成你的实际路径，
+     或直接用 `./ctl.sh install`（它会读取本文件并加载到 ~/Library/LaunchAgents）。 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.sam.pi-dashboard</string>
+    <string>com.pi-dashboard</string>
 
     <key>ProgramArguments</key>
     <!-- WASM blast-radius flags (SDK-migration slice 8): the server runs under
@@ -26,14 +28,6 @@
         <string>/Users/you</string>
         <key>SHELL</key>
         <string>/bin/zsh</string>
-        <key>AWS_PROFILE</key>
-        <string>openclaw-bedrock</string>
-        <key>BEDROCK_MANTLE_AWS_PROFILE</key>
-        <string>openclaw-bedrock</string>
-        <key>AWS_REGION</key>
-        <string>us-west-2</string>
-        <key>AWS_DEFAULT_REGION</key>
-        <string>us-west-2</string>
         <key>PI_DASH_PORT</key>
         <string>7777</string>
         <key>BEDROCK_MANTLE_LOG_FILE</key>

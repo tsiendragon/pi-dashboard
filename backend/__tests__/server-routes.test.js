@@ -744,7 +744,7 @@ describe('GET /api/file-read', () => {
   })
 
   it('serves an absolute path with hyphens (the 1-pager.md regression)', async () => {
-    const p = '/workplace/samfp/CSSelfHealingWG/src/CSSelfHealingWG/docs/design/1-pager.md'
+    const p = '/workspace/example-project/docs/design/1-pager.md'
     const res = await get(port, '/api/file-read?path=' + encodeURIComponent(p))
     expect(res.status).toBe(200)
     expect(await res.text()).toBe('# Hello\n')

@@ -16,7 +16,7 @@ function fail(res: Response, error: unknown): void {
 function writeError(res: Response, error: unknown): void {
   const code = error instanceof Error ? error.message : ''
   if (code === 'title_required') return void res.status(400).json({ error: code })
-  if (code === 'read_only_source') return void res.status(409).json({ error: code, message: '此来源只读，修改请走 task-pilot' })
+  if (code === 'read_only_source') return void res.status(409).json({ error: code, message: '此来源只读，修改请走任务系统（外部流程）' })
   if (code === 'task_not_found' || code === 'provider_not_found') return void res.status(404).json({ error: code })
   if (code === 'no_writable_provider') return void res.status(409).json({ error: code, message: '没有可写入的任务来源' })
   fail(res, error)
