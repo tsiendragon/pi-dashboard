@@ -17,7 +17,7 @@ import { requireBrowserAuth } from './require-browser-auth.js'
 import * as piEnv from '../pi-env.js'
 
 const execAsync = promisify(exec)
-const PI_AGENT_DIR = join(os.homedir(), '.pi', 'agent')
+const PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || join(os.homedir(), '.pi', 'agent')
 const DASHBOARD_TOKEN_PATH = join(os.homedir(), '.pi', 'dashboard-token')
 
 function getDashboardToken(): string {

@@ -2,8 +2,8 @@
 #
 # install-standalone.sh — 在干净机器上装一套「pi-dashboard + 配套扩展」。
 #
-# 只装通用能力：pi-dashboard + pi-tsien-extension（含 vendored pi-web-tools）。
-# 不装内部 marketplace 包（task-pilot / taskspace / eagleeye-kyc-llm / security-guard 等）。
+# 只装公共的通用能力：pi-dashboard + pi-tsien-extension（含 vendored pi-web-tools）。
+# 不装任何组织内部/专有市场的包（业务插件、规则、技能）。
 #
 # 用法：
 #   bash scripts/install-standalone.sh                 # 交互式，默认装到 ~/pi-stack
@@ -49,6 +49,25 @@ run() {
     return 0
   fi
   "$@"
+}
+
+# 两个扩展装载清单在语义上是否相同（比较包集合与扩展集合，与具体包名无关）。
+# 用于在覆盖已有配置前给出「会被收敛到通用集合」的提示。
+configs_match() {
+  node -e '
+    const fs = require("fs");
+    const key = (e) => typeof e === "string" ? e : JSON.stringify(e && (e.source || e.id) || e);
+    const read = (p) => {
+      try {
+        const j = JSON.parse(fs.readFileSync(p, "utf8"));
+        return JSON.stringify({
+          p: (j.packages || []).map(key).sort(),
+          e: (j.extensions || j.loadOrder || []).map((x) => typeof x === "string" ? x : JSON.stringify(x)).sort(),
+        });
+      } catch { return "!" + p; }
+    };
+    process.exit(read(process.argv[1]) === read(process.argv[2]) ? 0 : 1);
+  ' "$1" "$2"
 }
 
 usage() {
@@ -160,11 +179,14 @@ if [[ "${SKIP_SYNC}" == "0" ]]; then
 
   # ── 5. 应用 Pi 扩展配置 ─────────────────────────────────────────────────────
   EXISTING_CONFIG="${AGENT_DIR}/extensions.config.json"
+  CONFIG_SRC="${EXT_CONFIG:-${EXT_DIR}/config/extensions.standalone.json}"
+  [[ -f "${CONFIG_SRC}" ]] || die "找不到 Pi 扩展装载清单：${CONFIG_SRC}（模板见 ${EXT_DIR}/config/examples/extensions.config.example.json）"
   if [[ -f "${EXISTING_CONFIG}" ]]; then
-    if grep -qE 'task-pilot|EAGLEEYE|security-guard|remote-notifications' "${EXISTING_CONFIG}" \
+    # 通用判断：已有配置与 standalone 集合不同即提示（不依赖具体包名）
+    if ! configs_match "${EXISTING_CONFIG}" "${CONFIG_SRC}" \
        && ! grep -q 'standalone' "${EXISTING_CONFIG}"; then
-      warn "检测到已有配置引用了 marketplace/业务扩展：${EXISTING_CONFIG}"
-      warn "应用 standalone 配置会把 Pi 设置里的 package/extension 严格收敛为通用集合。"
+      warn "已有配置与 standalone 集合不同：${EXISTING_CONFIG}"
+      warn "应用 standalone 配置会把 Pi 设置里的 package/extension 严格收敛为通用集合（其余会被移除）。"
       confirm "确认继续？" || die "已取消（未修改任何 Pi 配置）"
     fi
     BACKUP="${EXISTING_CONFIG}.bak-$(date +%Y%m%d%H%M%S)"
@@ -172,8 +194,6 @@ if [[ "${SKIP_SYNC}" == "0" ]]; then
     run cp "${EXISTING_CONFIG}" "${BACKUP}"
   fi
 
-  CONFIG_SRC="${EXT_CONFIG:-${EXT_DIR}/config/extensions.standalone.json}"
-  [[ -f "${CONFIG_SRC}" ]] || die "找不到 Pi 扩展装载清单：${CONFIG_SRC}（模板见 ${EXT_DIR}/config/examples/extensions.config.example.json）"
   log "写扩展配置（来源 ${CONFIG_SRC}）"
   run mkdir -p "${AGENT_DIR}"
   run cp "${CONFIG_SRC}" "${EXISTING_CONFIG}"
@@ -340,5 +360,5 @@ cat <<EOF
   3) 如果 Pi 正在运行，执行 /reload 或重启，使扩展配置生效。
   4) 自定义扩展装载清单：复制 ${EXT_DIR}/config/examples/extensions.config.example.json
      改好后用 --ext-config <文件> 重跑，或直接编辑 ${AGENT_DIR}/extensions.config.json。
-  5) 远程访问（Tailscale / SSH 隧道 / nginx 反代）见 docs/remote-access-deployment.md。
+  5) 远程访问（Tailscale / SSH 隧道 / nginx 反代）见 guide/remote-access-deployment.md。
 EOF
