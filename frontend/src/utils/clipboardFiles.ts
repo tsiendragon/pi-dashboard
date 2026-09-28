@@ -56,7 +56,7 @@ const FILE_EXTENSION_RE = /\.[A-Za-z0-9]{1,8}$/
  * Whether a pasted single-line text is worth resolving as a file.
  *
  * Tighter than a bare "starts like a path" check: a pasted slash command such
- * as `/taskspace start …` also begins with `/` but must stay ordinary text, so a
+ * such as `/some-command start …` also begins with `/` but must stay ordinary text, so a
  * leading slash only counts when the rest behaves like a real path (a second
  * separator or a file extension). Whitespace always disqualifies a candidate.
  */

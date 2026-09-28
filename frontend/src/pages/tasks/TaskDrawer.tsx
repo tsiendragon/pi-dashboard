@@ -117,7 +117,7 @@ export default function TaskDrawer({ task, entry, sessions, lanes, planning, aut
           </div>
         ) : (
           <div className="px-4 py-2.5 border-b border-border text-2xs text-muted">
-            只读来源（{task.sourceLabel}）· 修改请走 task-pilot
+            只读来源（{task.sourceLabel}）· 修改请走任务系统
           </div>
         )}
 

@@ -24,35 +24,35 @@ const CONFIG: TasksConfig = {
 
 function makeJournal(): string {
   const root = mkdtempSync(join(tmpdir(), 'journal-'))
-  mkdirSync(join(root, 'tasks', 'ocr', 'RISKY-1-epic', 'RISKY-2-task'), { recursive: true })
+  mkdirSync(join(root, 'tasks', 'ocr', 'PROJ-1-epic', 'PROJ-2-task'), { recursive: true })
   mkdirSync(join(root, 'todos'), { recursive: true })
   writeFileSync(join(root, 'tasks', 'DOMAINS.yaml'), 'schema_version: 1\ndomains:\n  - key: ocr\n    title: OCR\n')
   writeFileSync(join(root, 'tasks', 'ocr', 'epic.yaml'), [
     'schema_version: 1',
     'domain: ocr',
     'epics:',
-    "  - key: RISKY-1",
+    "  - key: PROJ-1",
     "    title: 'Active epic'",
     '    status: active',
-    '    path: tasks/ocr/RISKY-1-epic',
-    "  - key: RISKY-0",
+    '    path: tasks/ocr/PROJ-1-epic',
+    "  - key: PROJ-0",
     "    title: 'Archived epic'",
     '    status: archived',
-    '    path: tasks/ocr/_archive/RISKY-0-epic',
+    '    path: tasks/ocr/_archive/PROJ-0-epic',
     '',
   ].join('\n'))
-  writeFileSync(join(root, 'tasks', 'ocr', 'RISKY-1-epic', 'task.yaml'), [
+  writeFileSync(join(root, 'tasks', 'ocr', 'PROJ-1-epic', 'task.yaml'), [
     'schema_version: 1',
-    'epic: RISKY-1',
+    'epic: PROJ-1',
     'tasks:',
-    '  - key: RISKY-2',
+    '  - key: PROJ-2',
     '    title: Doing thing',
     '    status: in_progress',
-    '    path: tasks/ocr/RISKY-1-epic/RISKY-2-task',
-    '  - key: RISKY-3',
+    '    path: tasks/ocr/PROJ-1-epic/PROJ-2-task',
+    '  - key: PROJ-3',
     '    title: Weird status',
     '    status: Feasibility',
-    '    path: tasks/ocr/RISKY-1-epic/RISKY-2-task',
+    '    path: tasks/ocr/PROJ-1-epic/PROJ-2-task',
     '',
   ].join('\n'))
   writeFileSync(join(root, 'todos', 'followups.md'), '# Follow-ups\n\n- [ ] **Open item**\n  - blocker: key missing\n- [x] **Done item**\n')
@@ -67,18 +67,18 @@ describe('task-journal provider', () => {
       const tasks = await provider.list()
       const byId = new Map(tasks.map(t => [t.id, t]))
 
-      expect(byId.get('RISKY-1')?.kind).toBe('epic')
-      expect(byId.get('RISKY-1')?.completion).toBe('doing')
-      expect(byId.get('RISKY-0')?.archived).toBe(true)
+      expect(byId.get('PROJ-1')?.kind).toBe('epic')
+      expect(byId.get('PROJ-1')?.completion).toBe('doing')
+      expect(byId.get('PROJ-0')?.archived).toBe(true)
 
-      const task2 = byId.get('RISKY-2')
+      const task2 = byId.get('PROJ-2')
       expect(task2?.kind).toBe('task')
       expect(task2?.completion).toBe('doing')
-      expect(task2?.parentUid).toBe('task-journal:RISKY-1')
-      expect(task2?.path).toBe(join(root, 'tasks/ocr/RISKY-1-epic/RISKY-2-task'))
+      expect(task2?.parentUid).toBe('task-journal:PROJ-1')
+      expect(task2?.path).toBe(join(root, 'tasks/ocr/PROJ-1-epic/PROJ-2-task'))
       expect(task2?.plannable).toBe(true)
 
-      const weird = byId.get('RISKY-3')
+      const weird = byId.get('PROJ-3')
       expect(weird?.completion).toBe('todo')
       expect(weird?.completionRaw).toBe('Feasibility')
 
@@ -140,8 +140,8 @@ describe('TaskService write guards', () => {
         listLiveSessions: () => [],
         planningStore: new PlanningStore(planningPath),
       })
-      await expect(service.updateTask('task-journal:RISKY-2', { title: 'x' })).rejects.toThrow('read_only_source')
-      await expect(service.deleteTask('task-journal:RISKY-2')).rejects.toThrow('read_only_source')
+      await expect(service.updateTask('task-journal:PROJ-2', { title: 'x' })).rejects.toThrow('read_only_source')
+      await expect(service.deleteTask('task-journal:PROJ-2')).rejects.toThrow('read_only_source')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -155,16 +155,16 @@ describe('session linker', () => {
   })
 
   it('attaches by longest cwd prefix (no double-attach), tag, and manual', () => {
-    const tasks = [fact('p:EPIC', '/repo/tasks/ocr'), fact('p:TASK', '/repo/tasks/ocr/RISKY-1', 'RISKY-1')]
+    const tasks = [fact('p:EPIC', '/repo/tasks/ocr'), fact('p:TASK', '/repo/tasks/ocr/PROJ-1', 'PROJ-1')]
     const live = [
-      { sessionId: 's1', processInstanceId: 'pr1', cwd: '/repo/tasks/ocr/RISKY-1/stage_1', title: 'deep', tags: [] },
+      { sessionId: 's1', processInstanceId: 'pr1', cwd: '/repo/tasks/ocr/PROJ-1/stage_1', title: 'deep', tags: [] },
       { sessionId: 's2', processInstanceId: 'pr2', cwd: '/repo/tasks/ocr/other', title: 'shallow', tags: [] },
     ]
     const refs = linkSessions(tasks, live, {})
     expect(refs['p:TASK']?.map(r => r.sessionId)).toEqual(['s1'])
     expect(refs['p:EPIC']?.map(r => r.sessionId)).toEqual(['s2'])
 
-    const tagRefs = linkSessions(tasks, [{ sessionId: 's3', processInstanceId: 'pr3', cwd: '/elsewhere', title: 't', tags: ['risky-1'] }], {})
+    const tagRefs = linkSessions(tasks, [{ sessionId: 's3', processInstanceId: 'pr3', cwd: '/elsewhere', title: 't', tags: ['proj-1'] }], {})
     expect(tagRefs['p:TASK']?.map(r => r.sessionId)).toEqual(['s3'])
 
     const manualRefs = linkSessions(tasks, live, { 'p:EPIC': ['s1', 'ghost'] })
@@ -183,9 +183,9 @@ describe('TaskService planning', () => {
         listLiveSessions: () => [],
         planningStore: new PlanningStore(planningPath),
       })
-      const res = await service.updatePlanning({ 'task-journal:RISKY-2': { pinned: true }, 'task-journal:todo:followups:3': { pinned: true } })
+      const res = await service.updatePlanning({ 'task-journal:PROJ-2': { pinned: true }, 'task-journal:todo:followups:3': { pinned: true } })
       expect(res.rejected).toEqual(['task-journal:todo:followups:3'])
-      expect(res.overlay['task-journal:RISKY-2']?.pinned).toBe(true)
+      expect(res.overlay['task-journal:PROJ-2']?.pinned).toBe(true)
       expect(res.overlay['task-journal:todo:followups:3']).toBeUndefined()
     } finally {
       rmSync(root, { recursive: true, force: true })

@@ -191,7 +191,7 @@ export class LiveSessionBrowserAuth {
       try { return urlMatchesRequest(new URL(origin), request) } catch { return false }
     }
     if (!requireOrigin) return true
-    // Some DSW gateways strip Origin, Referer and Sec-Fetch-* from WebSocket
+    // Some proxy gateways strip Origin, Referer and Sec-Fetch-* from WebSocket
     // upgrades. The private HttpOnly control cookie proves authentication, and
     // the encoded gateway host pins the request to this Dashboard port.
     const requestHost = normalizedHost(request.headers.host)

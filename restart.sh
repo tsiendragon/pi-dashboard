@@ -22,7 +22,7 @@ tmux kill-session -t pi-dash 2>/dev/null && echo "Killed stale tmux pi-dash sess
 
 case "$(uname -s)" in
   Darwin)
-    LABEL="com.sam.pi-dashboard"
+    LABEL="com.pi-dashboard"
     DOMAIN="gui/$(id -u)"
     echo "Restarting pi-dashboard launchd service ($LABEL)..."
     # kickstart -k stops then restarts; works even if the job was idle

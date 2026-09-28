@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- macOS launchd 模板（占位符）。装到自己机器上时把 /Users/you 换成你的实际路径，
+     或直接用 `./ctl.sh install`（它会读取本文件并加载到 ~/Library/LaunchAgents）。 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.sam.pi-dashboard</string>
+    <string>com.pi-dashboard</string>
 
     <key>ProgramArguments</key>
     <!-- WASM blast-radius flags (SDK-migration slice 8): the server runs under
@@ -12,34 +14,26 @@
          inside start.sh (this target), NOT here (start.sh is a shell script,
          not node). The server logs the effective V8 flags on boot. -->
     <array>
-        <string>/Users/sam.painter/pi-dashboard/start.sh</string>
+        <string>/Users/you/pi-dashboard/start.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/sam.painter/pi-dashboard</string>
+    <string>/Users/you/pi-dashboard</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/sam.painter/.local/bin:/Users/sam.painter/.cargo/bin</string>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/you/.local/bin:/Users/you/.cargo/bin</string>
         <key>HOME</key>
-        <string>/Users/sam.painter</string>
+        <string>/Users/you</string>
         <key>SHELL</key>
         <string>/bin/zsh</string>
-        <key>AWS_PROFILE</key>
-        <string>openclaw-bedrock</string>
-        <key>BEDROCK_MANTLE_AWS_PROFILE</key>
-        <string>openclaw-bedrock</string>
-        <key>AWS_REGION</key>
-        <string>us-west-2</string>
-        <key>AWS_DEFAULT_REGION</key>
-        <string>us-west-2</string>
         <key>PI_DASH_PORT</key>
         <string>7777</string>
         <key>BEDROCK_MANTLE_LOG_FILE</key>
-        <string>/Users/sam.painter/Library/Logs/pi-dashboard/bedrock-mantle.log</string>
+        <string>/Users/you/Library/Logs/pi-dashboard/bedrock-mantle.log</string>
         <key>BEDROCK_MANTLE_EMPTY_DUMP_DIR</key>
-        <string>/Users/sam.painter/Library/Logs/pi-dashboard/empty-dumps</string>
+        <string>/Users/you/Library/Logs/pi-dashboard/empty-dumps</string>
     </dict>
 
     <!-- Start on login -->
@@ -56,8 +50,8 @@
 
     <!-- Logs -->
     <key>StandardOutPath</key>
-    <string>/Users/sam.painter/Library/Logs/pi-dashboard/stdout.log</string>
+    <string>/Users/you/Library/Logs/pi-dashboard/stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/sam.painter/Library/Logs/pi-dashboard/stderr.log</string>
+    <string>/Users/you/Library/Logs/pi-dashboard/stderr.log</string>
 </dict>
 </plist>

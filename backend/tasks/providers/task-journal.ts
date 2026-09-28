@@ -27,7 +27,7 @@ async function readYaml(file: string): Promise<any | null> {
  * intentionally ignored here (it duplicates the tree); it is only useful for
  * cross-checking in other tooling.
  *
- * Read-only. Facts mirror the journal; writes go through task-pilot.
+ * Read-only. Facts mirror the journal; writes go through the external task system.
  */
 export class TaskJournalProvider implements TaskProvider {
   readonly type = 'task-journal'

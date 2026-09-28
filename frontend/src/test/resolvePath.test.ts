@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { resolvePath } from '../utils/resolvePath'
 
 describe('resolvePath', () => {
-  const cwd = '/workplace/samfp/CSSelfHealingWG/src/CSSelfHealingWG'
+  const cwd = '/workspace/example-project'
 
   it('returns absolute paths unchanged', () => {
-    const p = '/workplace/samfp/CSSelfHealingWG/src/CSSelfHealingWG/docs/design/1-pager.md'
+    const p = '/workspace/example-project/docs/design/1-pager.md'
     expect(resolvePath(p, cwd)).toBe(p)
   })
 
@@ -16,17 +16,17 @@ describe('resolvePath', () => {
 
   it('joins workspace-relative paths against cwd — the 1-pager.md fix', () => {
     expect(resolvePath('docs/design/1-pager.md', cwd))
-      .toBe('/workplace/samfp/CSSelfHealingWG/src/CSSelfHealingWG/docs/design/1-pager.md')
+      .toBe('/workspace/example-project/docs/design/1-pager.md')
   })
 
   it('collapses leading ./ on relative paths', () => {
     expect(resolvePath('./docs/design/1-pager.md', cwd))
-      .toBe('/workplace/samfp/CSSelfHealingWG/src/CSSelfHealingWG/docs/design/1-pager.md')
+      .toBe('/workspace/example-project/docs/design/1-pager.md')
   })
 
   it('handles bare hyphenated filenames', () => {
     expect(resolvePath('1-pager.md', cwd))
-      .toBe('/workplace/samfp/CSSelfHealingWG/src/CSSelfHealingWG/1-pager.md')
+      .toBe('/workspace/example-project/1-pager.md')
   })
 
   it('strips a trailing slash from cwd before joining', () => {
