@@ -562,7 +562,7 @@ export function registerChatRoutes(deps: RouteDeps): void {
       const { buildSystemPrompt } = await import(join(piPkg, 'dist/core/system-prompt.js'))
       const { loadProjectContextFiles } = await import(join(piPkg, 'dist/core/resource-loader.js'))
       const { loadSkills } = await import(join(piPkg, 'dist/core/skills.js'))
-      const agentDir = process.env.PI_AGENT_DIR || join(os.homedir(), '.pi', 'agent')
+      const agentDir = process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || join(os.homedir(), '.pi', 'agent')
       const contextFiles = loadProjectContextFiles({ cwd, agentDir })
       const { skills } = loadSkills({ cwd, agentDir, skillPaths: [], includeDefaults: true })
       const staticPrompt = buildSystemPrompt({ cwd, contextFiles, skills })
@@ -577,7 +577,7 @@ export function registerChatRoutes(deps: RouteDeps): void {
         const piMemoryCandidates = [
           join(os.homedir(), 'Projects', 'pi-memory'),
           join(os.homedir(), 'scratch', 'pi-memory'),
-          '/opt/homebrew/lib/node_modules/@samfp/pi-memory',
+          join(os.homedir(), '.pi', 'agent', 'npm', 'node_modules', 'pi-memory'),
         ]
         const piMemoryPkg = piMemoryCandidates.find(p => {
           try { statSync(join(p, 'dist', 'index.js')); return true } catch { return false }
