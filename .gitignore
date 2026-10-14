@@ -5,7 +5,16 @@ dist/
 .autoloop/
 .ralph/
 .agents/
-.pi/
+!.pi/
+.pi/*
+!.pi/skills/
+.pi/skills/*
+!.pi/skills/dashboard-ui-ux/
+.pi/skills/dashboard-ui-ux/*
+!.pi/skills/dashboard-ui-ux/SKILL.md
+!.pi/skills/dashboard-ui-ux-verify/
+.pi/skills/dashboard-ui-ux-verify/*
+!.pi/skills/dashboard-ui-ux-verify/SKILL.md
 *.log
 tmux-*.log
 .env
