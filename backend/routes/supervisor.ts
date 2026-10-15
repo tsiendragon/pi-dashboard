@@ -9,7 +9,7 @@ import type { SupervisorConfig, SupervisorRequest } from '../../shared/src/super
 import type { SupervisorRuntime } from '../supervisor/runtime.js'
 import type { SupervisorService } from '../supervisor/service.js'
 import type { SupervisorStore } from '../supervisor/store.js'
-import { normalizeEventTypes, normalizeSupervisorConfig } from '../supervisor/config.js'
+import { minimalSupervisorConfig, normalizeEventTypes, normalizeSupervisorConfig } from '../supervisor/config.js'
 
 function routeError(res: Response, e: unknown): void {
   const value = e as { status?: number; code?: string; message?: string }
@@ -71,7 +71,7 @@ export function registerSupervisorRoutes(options: { app: Express; auth: LiveSess
       const config = normalizeSupervisorConfig(raw)
       const paths = [config.cwd, config.agentResources.rolePath, ...config.agentResources.skillPaths, ...config.agentResources.extensionPaths, ...config.allowedRoots]
       if (paths.some(p => !path.isAbsolute(p)) || !Number.isFinite(config.pollIntervalMs) || !Number.isFinite(config.staleAfterMs)) return res.status(400).json({ error: 'absolute_paths_and_finite_intervals_required' })
-      saveDashConfig({ ...getDashConfig(), supervisor: config }); return res.json(config)
+      saveDashConfig({ ...getDashConfig(), supervisor: minimalSupervisorConfig(config) }); return res.json(config)
     } catch(e) { routeError(res, e) }
   })
   app.get('/api/supervisor/state', async (_req, res) => { try { res.json(await runtime.state()) } catch(e) { routeError(res, e) } })

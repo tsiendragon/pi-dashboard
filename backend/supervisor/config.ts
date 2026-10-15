@@ -45,6 +45,25 @@ export function normalizeSupervisorConfig(raw: unknown): SupervisorConfig {
   }
 }
 
+/**
+ * Persisted supervisor config drops the resource paths that already equal the derived defaults.
+ * Those defaults resolve from the dashboard repo location (and its sibling `pi-tsien-extension`), so
+ * echoing them back into `~/.pi/dashboard.json` would freeze machine-specific absolute paths into the
+ * config file and silently break the next time either repo moves.
+ */
+export function minimalSupervisorConfig(config: SupervisorConfig): Partial<SupervisorConfig> {
+  const defaults = normalizeSupervisorConfig({})
+  const sameList = (left: string[], right: string[]): boolean => left.length === right.length && left.every((value, index) => value === right[index])
+  const persisted: Record<string, unknown> = { ...config }
+  if (config.cwd === defaults.cwd) delete persisted.cwd
+  const resources: Record<string, unknown> = { ...config.agentResources }
+  if (config.agentResources.rolePath === defaults.agentResources.rolePath) delete resources.rolePath
+  if (sameList(config.agentResources.skillPaths, defaults.agentResources.skillPaths)) delete resources.skillPaths
+  if (sameList(config.agentResources.extensionPaths, defaults.agentResources.extensionPaths)) delete resources.extensionPaths
+  persisted.agentResources = resources
+  return persisted as Partial<SupervisorConfig>
+}
+
 async function fingerprint(root: string): Promise<string> {
   const info = await stat(root)
   if (info.isFile()) return (await readFile(root)).toString('base64')
