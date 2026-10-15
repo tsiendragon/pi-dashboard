@@ -4,7 +4,11 @@ import { api } from '../api/client'
 import { useAppSelector } from '../store'
 import { liveSessionApi } from '../features/live-sessions/api'
 import type { HistoryPoint, PlanningEntry, PlanningOverlay, SessionRef, TaskFact, TasksResponse } from '@shared/tasks.js'
-import TaskDrawer from './tasks/TaskDrawer'
+import TaskDetailPage from './tasks/TaskDetail'
+import { TasksSectionTabs } from './tasks/TasksSectionTabs'
+import { SupervisorAgentButton } from '../features/supervisor/SupervisorAgentProvider'
+import { supervisorApi } from '../features/supervisor/api'
+import { useSupervisorResource } from '../features/supervisor/useSupervisorResource'
 import TrendPanel from './tasks/TrendPanel'
 import {
   COMPLETION_DOT,
@@ -142,6 +146,8 @@ function CollapsibleGroup({ title, items, limit = GROUP_LIMIT, onDrop, laneId, h
 
 export default function TasksPage() {
   const navigate = useNavigate()
+  const supervisorConfig = useSupervisorResource(supervisorApi.config, true, 5000)
+  const supervised = supervisorConfig.data?.enabled === true
   const params = useParams()
   const routeUid = (() => {
     const raw = params.uid
@@ -303,6 +309,8 @@ export default function TasksPage() {
   const lanes = data?.lanes ?? []
   const sessionRefs = data?.sessionRefs ?? {}
   const writable = providers.some(p => p.capabilities.writable)
+  const localWritable = providers.some(p => p.id === 'local' && p.capabilities.writable)
+  const canCreateTask = localWritable || (writable && !supervised)
   const showProvider = providers.length > 1
 
   const filtered = useMemo(() => {
@@ -369,10 +377,34 @@ export default function TasksPage() {
 
   const byCompletion = (c: TaskFact['completion']) => unfocused.filter(t => t.kind !== 'epic' && t.completion === c)
 
+  // Opening a task is a page, not an overlay: the timeline comes first and the list steps aside.
+  if (selectedTask) {
+    return <div className="p-4 md:p-6 max-w-[1400px] mx-auto">
+      <div className="mb-3"><TasksSectionTabs active="list" /></div>
+      <TaskDetailPage
+        supervised={supervised}
+        task={selectedTask}
+        entry={planning[selectedTask.uid]}
+        sessions={sessionRefs[selectedTask.uid] ?? []}
+        lanes={lanes}
+        planning={planning}
+        authReady={authReady}
+        liveOptions={liveOptions}
+        onClose={closeDrawer}
+        onUpdate={updatePlanning}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onStart={startSession}
+        onOpenSession={pid => navigate(`/live-sessions/${pid}`)}
+      />
+    </div>
+  }
+
   return (
     <div className="p-4 md:p-6 max-w-[1400px] mx-auto">
       <div className="flex items-center gap-3 flex-wrap mb-3">
         <h1 className="text-lg font-bold text-text-strong">Tasks</h1>
+        <TasksSectionTabs active="list" />
         <span className="text-body-s text-muted">
           {stats.total} 活跃 · {stats.doing} 进行中 · {stats.todo} 待办
         </span>
@@ -388,13 +420,14 @@ export default function TasksPage() {
             </button>
           ))}
         </div>
-        {writable && (
+        {supervised && <SupervisorAgentButton prompt="请创建或更新现有任务；先按当前授权范围与来源能力核对目标。">通过主 Agent 管理任务</SupervisorAgentButton>}
+        {canCreateTask && (
           <button onClick={() => setCreating(v => !v)} className="px-3 py-1 rounded-md text-body-s font-medium bg-accent text-accent-fg hover:opacity-90" title="记一条临时任务（等谁 / follow up / 下一步）">＋ 临时任务</button>
         )}
         <button onClick={load} className="px-2.5 py-1 text-body-s text-muted hover:text-text rounded-md hover:bg-bg-hover border border-border">刷新</button>
       </div>
 
-      {creating && (
+      {creating && canCreateTask && (
         <div className="mb-3 flex items-center gap-2">
           <input
             autoFocus
@@ -519,23 +552,6 @@ export default function TasksPage() {
         >＋</button>
       )}
 
-      {selectedTask && (
-        <TaskDrawer
-          task={selectedTask}
-          entry={planning[selectedTask.uid]}
-          sessions={sessionRefs[selectedTask.uid] ?? []}
-          lanes={lanes}
-          planning={planning}
-          authReady={authReady}
-          liveOptions={liveOptions}
-          onClose={closeDrawer}
-          onUpdate={updatePlanning}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onStart={startSession}
-          onOpenSession={pid => navigate(`/live-sessions/${pid}`)}
-        />
-      )}
     </div>
   )
 }
