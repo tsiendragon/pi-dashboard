@@ -1,6 +1,8 @@
-import type { TaskFact, ProviderCapabilities } from '@shared/tasks.js'
+import type { TaskFact, TaskKind, ProviderCapabilities } from '@shared/tasks.js'
 
 export interface TaskCreateInput {
+  kind?: TaskKind
+  parentUid?: string
   title: string
   description?: string
   status?: string

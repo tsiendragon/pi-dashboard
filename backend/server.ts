@@ -19,6 +19,7 @@ import { PiManager } from './pi-manager.js'
 import type { PiSession } from './pi-session.js'
 import { deriveStatsFrames } from './pi-session.js'
 import { saveSlotState, saveSlotStateSync, loadSlotState, parseSessionMessages, ChatMessage } from './session-store.js'
+import { readSessionHistoryPage } from './session-history.js'
 import type { Notification } from '@shared/types.js'
 import {
   registerChatRoutes,
@@ -43,6 +44,11 @@ import {
 import { extensionBridgeRegistry } from './extension-bridge/registry.js'
 import { rpcExtensionBridgeServer } from './extension-bridge/rpc-server.js'
 import { getDashConfig, getTasksConfig } from './pi-env.js'
+import { normalizeSupervisorConfig, supervisorRoot } from './supervisor/config.js'
+import { SupervisorStore } from './supervisor/store.js'
+import { SupervisorService } from './supervisor/service.js'
+import { SupervisorRuntime } from './supervisor/runtime.js'
+import { registerSupervisorRoutes, protectSupervisorFiles } from './routes/supervisor.js'
 import { TaskService } from './tasks/service.js'
 import { parseLiveSessionConfig } from './live-sessions/config.js'
 import { LiveSessionBrowserAuth } from './live-sessions/auth.js'
@@ -56,6 +62,7 @@ import { UsageLedger } from './usage-ledger.js'
 import { UsageLimitsService } from './usage-limits.js'
 import { TimingLedger } from './timing-ledger.js'
 import { handlePtyConnection, shutdownPtyClients } from './pty-manager.js'
+import { ASR_REALTIME_PATH, handleAsrRealtimeConnection } from './asr-realtime.js'
 
 process.env.PI_RUNTIME = 'dashboard'
 if (!process.env.VITEST) {
@@ -75,6 +82,11 @@ const app = express()
 const server = createServer(app)
 const wss = new WebSocketServer({ noServer: true })
 const ptyWss = new WebSocketServer({ noServer: true })
+const asrRealtimeWss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 })
+asrRealtimeWss.on('connection', (ws, req) => {
+  const language = new URL(req.url || '/', 'http://localhost').searchParams.get('language')
+  handleAsrRealtimeConnection(ws, language)
+})
 const manager = new PiManager()
 const liveSessionConfig = parseLiveSessionConfig((getDashConfig() as Record<string, unknown>).liveSessions)
 const liveSessionAuth = new LiveSessionBrowserAuth()
@@ -131,9 +143,19 @@ const savedSlots = loadSlotState()
 const _resumeMidTurnKeys: string[] = []
 for (const s of savedSlots) {
   let messages: ChatMessage[] = s.messages || []
+  let historyTruncated = false
   if (s.sessionFile && !messages.length) {
     try {
-      messages = parseSessionMessages(s.sessionFile, 200)
+      // Only a bounded tail is loaded into memory; older history is paged
+      // from the transcript file on demand (session-history.ts).
+      const page = readSessionHistoryPage(s.sessionFile, { rows: 200 })
+      if (page) {
+        messages = page.messages
+        historyTruncated = true
+      } else {
+        messages = parseSessionMessages(s.sessionFile, 200)
+        historyTruncated = true
+      }
     } catch {}
   }
   if (messages.length > 0 || s.sessionFile) {
@@ -157,6 +179,10 @@ for (const s of savedSlots) {
     // visible resume offer; auto-resume itself is the existing ensureRunning
     // respawn-on-next-prompt path (no forced restart here).
     if (s.midTurn) _resumeMidTurnKeys.push(s.key)
+    if (historyTruncated) {
+      const restored = manager.getSlot(s.key)
+      if (restored) restored._historyTruncated = true
+    }
   }
 }
 for (const slot of savedSlots) {
@@ -919,6 +945,7 @@ const routeDeps = {
 }
 
 registerChatRoutes(routeDeps)
+app.use(protectSupervisorFiles(supervisorRoot, liveSessionAuth))
 registerFileRoutes(routeDeps)
 registerSystemRoutes(routeDeps, liveSessionAuth)
 registerSessionRoutes(routeDeps)
@@ -943,6 +970,17 @@ const taskService = new TaskService({
   })),
 })
 registerTaskRoutes({ app, service: taskService })
+const supervisorStore = new SupervisorStore(supervisorRoot)
+let supervisorRuntime: SupervisorRuntime
+const supervisorService = new SupervisorService({
+  store: supervisorStore,
+  taskService,
+  getConfig: () => normalizeSupervisorConfig(getDashConfig().supervisor),
+  listSessions: () => supervisorRuntime?.listSessions() || [],
+})
+supervisorRuntime = new SupervisorRuntime({ registry: liveSessionRegistry, service: supervisorService, getConfig: () => normalizeSupervisorConfig(getDashConfig().supervisor), liveConfig: liveSessionConfig, protectedPaths: [dirname(liveSessionAuth.tokenPath), join(os.homedir(), '.pi', 'dashboard-token')] })
+registerSupervisorRoutes({ app, auth: liveSessionAuth, runtime: supervisorRuntime, service: supervisorService, store: supervisorStore })
+if (!process.env.VITEST) void supervisorRuntime.boot().catch(error => console.error('[supervisor] initialization failed:', error))
 registerVoiceRoutes({ app })
 registerLarkRoutes(app)
 void liveSessionAuth.start().then(() => {
@@ -965,6 +1003,17 @@ server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
   const wsPath = (req.url || '').split('?')[0]
   console.log('  WS upgrade:', wsPath)
   if (liveSessionRoutes?.handleUpgrade(req, socket, head)) return
+  if (wsPath === ASR_REALTIME_PATH) {
+    if (!originAllowed(req.headers.origin, req.headers.host)) {
+      console.warn('  WS upgrade rejected: cross-origin ASR', req.headers.origin)
+      socket.destroy()
+      return
+    }
+    asrRealtimeWss.handleUpgrade(req, socket, head, (ws) => {
+      asrRealtimeWss.emit('connection', ws, req)
+    })
+    return
+  }
   if (wsPath === '/api/pty') {
     const ptyIdentity = liveSessionAuth.getIdentity(req)
     if (!ptyIdentity || !liveSessionAuth.isOriginAllowed(req, true, ptyIdentity)) {
@@ -1045,6 +1094,7 @@ if (!process.env.VITEST) server.listen(PORT, BIND_HOST, () => {
 })
 
 async function stopLiveSessions(): Promise<void> {
+  await supervisorRuntime.close()
   machineStopping = true
   await machineOutbound?.stop()
   machineReplay?.close()

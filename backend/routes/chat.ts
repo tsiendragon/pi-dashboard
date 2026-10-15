@@ -8,6 +8,7 @@ import { execSync } from 'child_process'
 import os from 'os'
 import type { RouteDeps, ChatMessage } from './types.js'
 import { parseSessionMessages, parseSessionTree, findSessionFile } from '../session-store.js'
+import { readSessionHistoryPage } from '../session-history.js'
 import { PiRpcSession } from '../pi-manager.js'
 import type { PiSession, PiTransport } from '../pi-session.js'
 import * as piEnv from '../pi-env.js'
@@ -210,7 +211,8 @@ export function registerChatRoutes(deps: RouteDeps): void {
 
   app.get('/api/chat/slots/:key', (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string || '200', 10)
-    const detail = manager.getSlotDetail(req.params.key as string, limit)
+    const cursor = typeof req.query.cursor === 'string' && req.query.cursor ? req.query.cursor : undefined
+    const detail = manager.getSlotDetail(req.params.key as string, limit, cursor)
     if (!detail) return res.status(404).json({ error: 'slot not found' })
     res.json(detail)
   })
@@ -351,8 +353,18 @@ export function registerChatRoutes(deps: RouteDeps): void {
     const sessionKey = req.params.key as string
     const sessionPath = bodyFile || findSessionFile(sessionKey)
     let messages: ChatMessage[] = []
+    let nextCursor: string | null = null
     if (sessionPath) {
-      messages = parseSessionMessages(sessionPath, 200)
+      // Read the newest window of the transcript instead of whole-file parsing
+      // (session files can reach hundreds of MB) and hand the caller the
+      // cursor to page older history on demand.
+      const page = readSessionHistoryPage(sessionPath, { rows: 200 })
+      if (page) {
+        messages = page.messages
+        nextCursor = page.nextCursor
+      } else {
+        messages = parseSessionMessages(sessionPath, 200)
+      }
     }
     const slot = manager.createSlot(title || name || sessionKey, null, {
       messages,
@@ -360,11 +372,14 @@ export function registerChatRoutes(deps: RouteDeps): void {
       title: title || name || sessionKey,
     })
     const pi = manager.getSlot(slot.key)!
+    // Memory now holds only a bounded tail of the conversation; older
+    // history must be paged from sessionFile.
+    if (sessionPath) pi._historyTruncated = true
     wireSlotEvents(pi, slot.key)
     pi._wired = true
     broadcastSlots()
     persistSlots()
-    res.json({ ok: true, key: slot.key, messages, has_more: false, total: messages.length })
+    res.json({ ok: true, key: slot.key, messages, has_more: nextCursor !== null, next_cursor: nextCursor, total: messages.length })
   })
 
   // Send chat message

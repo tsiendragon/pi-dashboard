@@ -37,6 +37,7 @@ interface UsageRecord extends UsageTotals {
   label?: string
   cwd?: string
   modelKey: string
+  effort?: string
 }
 
 interface RawUsage {
@@ -135,10 +136,21 @@ function timestampOf(value: unknown): number | undefined {
   return Number.isFinite(timestamp) ? timestamp : undefined
 }
 
+function responseModelOf(message: Record<string, unknown>): string | undefined {
+  const reported = stringValue(message.responseModel)
+  const requested = stringValue(message.model)
+  // Some OpenAI-compatible gateways report provider-internal deployment names
+  // for streamed responses (the the LLM Gateway echoes `MaaS_*` names). Those
+  // are not the model the user selected, so keep the requested id instead and
+  // let cost reporting stay on the user-facing model.
+  if (reported && requested && reported.startsWith('MaaS_')) return requested
+  return reported || requested
+}
+
 function modelKeyOf(message: Record<string, unknown>): string {
   if (message.role === 'toolResult') return 'Tools/summaries'
   const provider = stringValue(message.provider) || 'unknown'
-  const model = stringValue(message.responseModel) || stringValue(message.model) || 'unknown'
+  const model = responseModelOf(message) || 'unknown'
   // Self-hosted servers often echo a provider-qualified canonical name (for
   // example a vLLM `--served-model-name` of `provider/model`). Adding
   // the provider again would produce `provider/provider/model`, so keep a
@@ -249,6 +261,7 @@ export class UsageLedger {
       at: timestampOf(sourceMessage.timestamp) || Date.now(),
       usage,
       modelKey: modelKeyOf(sourceMessage),
+      effort: stringValue(sourceMessage.reasoningEffort) || stringValue(sourceMessage.thinkingLevel),
       meta: {
         sessionId: summary?.sessionId,
         sessionFile: summary?.sessionFile,
@@ -268,6 +281,7 @@ export class UsageLedger {
     const daily = new Map<string, UsageTotals>()
     const dailyModels = new Map<string, Map<string, UsageTotals>>()
     const models = new Map<string, UsageTotals>()
+    const efforts = new Map<string, Map<string, UsageTotals>>()
     const sessions = new Map<string, { totals: UsageTotals; label: string; sessionId?: string; sessionFile?: string; cwd?: string }>()
     const prefix = `${month}-`
 
@@ -286,6 +300,12 @@ export class UsageLedger {
       const model = models.get(item.modelKey) || emptyTotals()
       addTotals(model, item)
       models.set(item.modelKey, model)
+      const groups = efforts.get(item.modelKey) || new Map<string, UsageTotals>()
+      const effort = item.effort || 'unknown'
+      const subtotal = groups.get(effort) || emptyTotals()
+      addTotals(subtotal, item)
+      groups.set(effort, subtotal)
+      efforts.set(item.modelKey, groups)
 
       const session = sessions.get(item.sessionKey) || {
         totals: emptyTotals(),
@@ -311,7 +331,9 @@ export class UsageLedger {
     }
 
     const modelsResult: UsageModelSummary[] = [...models.entries()]
-      .map(([key, totals]) => ({ key, ...totals, effectiveUsdPerMillionTokens: effectiveUsdPerMillionTokens(totals) }))
+      .map(([key, totals]) => ({ key, ...totals, effectiveUsdPerMillionTokens: effectiveUsdPerMillionTokens(totals),
+        efforts: [...efforts.get(key)!.entries()].map(([key, totals]) => ({ key, ...totals, effectiveUsdPerMillionTokens: effectiveUsdPerMillionTokens(totals) })).sort((a, b) => b.costUsd - a.costUsd),
+      }))
       .sort((left, right) => right.costUsd - left.costUsd)
     const sessionsResult: UsageSessionSummary[] = [...sessions.entries()]
       .map(([key, value]) => ({
@@ -364,6 +386,7 @@ export class UsageLedger {
             at: value.at,
             sessionKey: value.sessionKey,
             modelKey: value.modelKey,
+            effort: stringValue(value.effort),
             ...(value.sessionId ? { sessionId: value.sessionId } : {}),
             ...(value.sessionFile ? { sessionFile: value.sessionFile } : {}),
             ...(value.processInstanceId ? { processInstanceId: value.processInstanceId } : {}),
@@ -395,6 +418,7 @@ export class UsageLedger {
     if (cached && cached.size === fileStats.size && cached.mtimeMs === fileStats.mtimeMs) return 0
 
     let sessionId = meta.sessionId
+    let effort: string | undefined
     let added = 0
     const input = createReadStream(sessionFile, { encoding: 'utf8' })
     const lines = createInterface({ input, crlfDelay: Infinity })
@@ -411,10 +435,14 @@ export class UsageLedger {
           sessionId = stringValue(entry.id) || sessionId
           continue
         }
+        if (entry.type === 'thinking_level_change') {
+          effort = stringValue(entry.thinkingLevel)
+          continue
+        }
         const entryId = stringValue(entry.id)
         const message = record(entry.message)
         if (entry.type === 'message' && message && isUsageMessage(message)) {
-          if (await this.recordMessage(message, entryId, { ...meta, sessionId, sessionFile }, entry.timestamp)) added += 1
+          if (await this.recordMessage(message, entryId, { ...meta, sessionId, sessionFile }, entry.timestamp, effort)) added += 1
           continue
         }
         const summaryUsage = usageTotals(entry.usage)
@@ -436,7 +464,7 @@ export class UsageLedger {
     return added
   }
 
-  private async recordMessage(message: Record<string, unknown>, entryId: string | undefined, meta: UsageLedgerMessageMeta, entryTimestamp?: unknown): Promise<boolean> {
+  private async recordMessage(message: Record<string, unknown>, entryId: string | undefined, meta: UsageLedgerMessageMeta, entryTimestamp?: unknown, effort?: string): Promise<boolean> {
     const usage = usageTotals(message.usage)
     if (!usage) return false
     return this.recordUsage({
@@ -444,6 +472,7 @@ export class UsageLedger {
       at: timestampOf(message.timestamp) || timestampOf(entryTimestamp) || Date.now(),
       usage,
       modelKey: modelKeyOf(message),
+      effort: stringValue(message.reasoningEffort) || stringValue(message.thinkingLevel) || effort,
       meta,
     })
   }
@@ -460,12 +489,13 @@ export class UsageLedger {
     })}`
   }
 
-  private async recordUsage(input: { id: string; at: number; usage: UsageTotals; modelKey: string; meta: UsageLedgerMessageMeta }): Promise<boolean> {
+  private async recordUsage(input: { id: string; at: number; usage: UsageTotals; modelKey: string; effort?: string; meta: UsageLedgerMessageMeta }): Promise<boolean> {
     await this.start()
     const month = monthInTimezone(input.at, this.timezone)
     await this.loadMonth(month)
     const monthRecords = this.recordsByMonth.get(month)!
-    if (monthRecords.has(input.id)) return false
+    const existing = monthRecords.get(input.id)
+    if (existing && (existing.effort || !input.effort)) return false
 
     const sessionKey = input.meta.sessionId || input.meta.sessionFile || input.meta.processInstanceId || input.meta.slotKey || 'unknown-session'
     const item: UsageRecord = {
@@ -473,6 +503,7 @@ export class UsageLedger {
       at: input.at,
       sessionKey,
       modelKey: input.modelKey,
+      effort: input.effort,
       ...input.usage,
       ...(input.meta.sessionId ? { sessionId: input.meta.sessionId } : {}),
       ...(input.meta.sessionFile ? { sessionFile: input.meta.sessionFile } : {}),
@@ -488,7 +519,8 @@ export class UsageLedger {
     try {
       await write
     } catch (error) {
-      monthRecords.delete(item.id)
+      if (existing) monthRecords.set(item.id, existing)
+      else monthRecords.delete(item.id)
       throw error
     }
     return true

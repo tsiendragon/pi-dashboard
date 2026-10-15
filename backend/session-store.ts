@@ -73,86 +73,109 @@ type ContentPart = { type: string; text?: string; thinking?: string }
 
 // ── Parse a pi session JSONL into chat messages ──
 
-export function parseSessionMessages(sessionPath: string, limit: number = 200): ChatMessage[] {
-  if (!existsSync(sessionPath)) return []
-  const messages: ChatMessage[] = []
-  try {
-    const raw = readFileSync(sessionPath, 'utf-8')
-    for (const line of raw.split('\n')) {
-      if (!line.trim()) continue
-      try {
-        const obj = JSON.parse(line)
-        if (obj.type !== 'message') continue
-        const msg = obj.message
-        if (!msg) continue
-        const role: string = msg.role
-        const ts: string | undefined = msg.timestamp ? new Date(msg.timestamp).toISOString() : undefined
+/**
+ * Incremental line parser for pi session transcripts.
+ *
+ * Feed JSONL lines oldest-first. The history pager (session-history.ts)
+ * drives this parser over a bounded window of lines so a partial read
+ * produces the same message sequence as a full-file parse. toolResult lines
+ * merge into the most recent matching tool message; when the matching
+ * toolCall falls outside the fed window the result surfaces as a standalone
+ * tool message (same fallback as a truncated transcript).
+ */
+export interface SessionLineParser {
+  readonly messages: ChatMessage[]
+  feed(line: string): void
+}
 
-        if (role === 'user') {
-          const text = stripInjectedBlocks(extractText(msg.content))
-          if (text) messages.push({ role: 'user', content: text, ts })
-        } else if (role === 'assistant') {
-          // Extract thinking blocks
-          if (Array.isArray(msg.content)) {
-            for (const part of msg.content) {
-              if (part.type === 'thinking' && part.thinking) {
-                messages.push({ role: 'thinking', content: part.thinking, ts })
-              }
+export function createSessionLineParser(): SessionLineParser {
+  const messages: ChatMessage[] = []
+  function feed(line: string): void {
+    if (!line.trim()) return
+    try {
+      const obj = JSON.parse(line)
+      if (obj.type !== 'message') return
+      const msg = obj.message
+      if (!msg) return
+      const role: string = msg.role
+      const ts: string | undefined = msg.timestamp ? new Date(msg.timestamp).toISOString() : undefined
+
+      if (role === 'user') {
+        const text = stripInjectedBlocks(extractText(msg.content))
+        if (text) messages.push({ role: 'user', content: text, ts })
+      } else if (role === 'assistant') {
+        // Extract thinking blocks
+        if (Array.isArray(msg.content)) {
+          for (const part of msg.content) {
+            if (part.type === 'thinking' && part.thinking) {
+              messages.push({ role: 'thinking', content: part.thinking, ts })
             }
-          }
-          const text = extractText(msg.content)
-          if (text) messages.push({ role: 'assistant', content: text, ts })
-          // Extract tool calls with args
-          if (Array.isArray(msg.content)) {
-            for (const part of msg.content) {
-              if (part.type === 'toolCall') {
-                messages.push({
-                  role: 'tool',
-                  content: `🔧 ${part.name || 'tool'}`,
-                  ts,
-                  meta: {
-                    toolName: part.name,
-                    toolCallId: part.id,
-                    args: typeof part.arguments === 'string'
-                      ? part.arguments
-                      : JSON.stringify(part.arguments || {}, null, 2),
-                  },
-                })
-              }
-            }
-          }
-        } else if (role === 'toolResult') {
-          // Attach result to the matching tool message
-          const resultText: string = Array.isArray(msg.content)
-            ? msg.content.filter((c: ContentPart) => c.type === 'text').map((c: ContentPart) => c.text).join('')
-            : ''
-          const toolMsg = [...messages].reverse().find(
-            (m: ChatMessage) => m.role === 'tool' && m.meta?.toolCallId === msg.toolCallId
-          )
-          if (toolMsg) {
-            toolMsg.meta = {
-              ...toolMsg.meta,
-              result: resultText.slice(0, 5000),
-              isError: msg.isError || false,
-            }
-          } else {
-            messages.push({
-              role: 'tool',
-              content: `🔧 ${msg.toolName || 'tool'}`,
-              ts,
-              meta: { result: resultText.slice(0, 5000), isError: msg.isError || false },
-            })
           }
         }
-      } catch {
-        // skip malformed lines
+        const text = extractText(msg.content)
+        if (text) messages.push({ role: 'assistant', content: text, ts })
+        // Extract tool calls with args
+        if (Array.isArray(msg.content)) {
+          for (const part of msg.content) {
+            if (part.type === 'toolCall') {
+              messages.push({
+                role: 'tool',
+                content: `🔧 ${part.name || 'tool'}`,
+                ts,
+                meta: {
+                  toolName: part.name,
+                  toolCallId: part.id,
+                  args: typeof part.arguments === 'string'
+                    ? part.arguments
+                    : JSON.stringify(part.arguments || {}, null, 2),
+                },
+              })
+            }
+          }
+        }
+      } else if (role === 'toolResult') {
+        // Attach result to the matching tool message
+        const resultText: string = Array.isArray(msg.content)
+          ? msg.content.filter((c: ContentPart) => c.type === 'text').map((c: ContentPart) => c.text).join('')
+          : ''
+        const toolMsg = [...messages].reverse().find(
+          (m: ChatMessage) => m.role === 'tool' && m.meta?.toolCallId === msg.toolCallId
+        )
+        if (toolMsg) {
+          toolMsg.meta = {
+            ...toolMsg.meta,
+            result: resultText.slice(0, 5000),
+            isError: msg.isError || false,
+          }
+        } else {
+          messages.push({
+            role: 'tool',
+            content: `🔧 ${msg.toolName || 'tool'}`,
+            ts,
+            meta: { result: resultText.slice(0, 5000), isError: msg.isError || false },
+          })
+        }
       }
+    } catch {
+      // skip malformed lines
     }
+  }
+  return { messages, feed }
+}
+
+export function parseSessionMessages(sessionPath: string, limit: number = 200): ChatMessage[] {
+  if (!existsSync(sessionPath)) return []
+  try {
+    const parser = createSessionLineParser()
+    // Whole-file parse; callers page through session-history.ts instead when
+    // the file can be large.
+    for (const line of readFileSync(sessionPath, 'utf-8').split('\n')) parser.feed(line)
+    // Return last N messages
+    return parser.messages.slice(-limit)
   } catch {
     // skip unreadable files
+    return []
   }
-  // Return last N messages
-  return messages.slice(-limit)
 }
 
 export function extractText(content: string | ContentPart[] | null | undefined, separator: string = ''): string {

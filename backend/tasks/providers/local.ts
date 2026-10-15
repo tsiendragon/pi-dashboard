@@ -3,13 +3,15 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import type { TaskFact } from '@shared/tasks.js'
+import type { TaskFact, TaskKind } from '@shared/tasks.js'
 import type { TaskProvider, TaskCreateInput, TaskUpdateInput } from '../types.js'
 import { mapCompletion } from '../mapping.js'
 
 export const DEFAULT_LOCAL_TASKS_PATH = join(homedir(), '.pi', 'tasks', 'tasks.json')
 
 interface LocalTaskRecord {
+  kind?: TaskKind
+  parentUid?: string
   id: string
   title: string
   description?: string
@@ -36,7 +38,7 @@ interface StoredLocal {
 export class LocalTaskProvider implements TaskProvider {
   readonly type = 'local'
   readonly capabilities = { writable: true, providesTodos: true, providesProgress: false }
-  private queue: Promise<unknown> = Promise.resolve()
+  private static queues = new Map<string, Promise<unknown>>()
 
   constructor(
     private readonly path: string = DEFAULT_LOCAL_TASKS_PATH,
@@ -49,18 +51,21 @@ export class LocalTaskProvider implements TaskProvider {
   }
 
   private serialize<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.queue.then(task, task)
-    this.queue = run.then(() => undefined, () => undefined)
-    return run as Promise<T>
+    const run = (LocalTaskProvider.queues.get(this.path) || Promise.resolve()).then(task, task)
+    LocalTaskProvider.queues.set(this.path, run)
+    const clear = () => { if (LocalTaskProvider.queues.get(this.path) === run) LocalTaskProvider.queues.delete(this.path) }
+    void run.then(clear, clear)
+    return run
   }
 
   private async read(): Promise<StoredLocal> {
     if (!existsSync(this.path)) return { version: 1, tasks: [] }
     try {
       const raw = JSON.parse(await readFile(this.path, 'utf8')) as Partial<StoredLocal>
-      return { version: typeof raw.version === 'number' ? raw.version : 1, tasks: Array.isArray(raw.tasks) ? raw.tasks : [] }
-    } catch {
-      return { version: 1, tasks: [] }
+      if (!raw || !Array.isArray(raw.tasks) || raw.tasks.some(t => !t || typeof t.id !== 'string' || typeof t.title !== 'string')) throw new Error('invalid_local_task_store')
+      return { version: typeof raw.version === 'number' ? raw.version : 1, tasks: raw.tasks }
+    } catch (error) {
+      throw new Error('local_task_store_unreadable', { cause: error })
     }
   }
 
@@ -77,8 +82,8 @@ export class LocalTaskProvider implements TaskProvider {
       uid: `${this.id}:${record.id}`,
       providerId: this.id,
       id: record.id,
-      kind: 'item',
-      parentUid: record.parentId ? `${this.id}:${record.parentId}` : undefined,
+      kind: record.kind ?? 'item',
+      parentUid: record.parentUid || (record.parentId ? `${this.id}:${record.parentId}` : undefined),
       title: record.title,
       description: record.description,
       completion,
@@ -109,7 +114,11 @@ export class LocalTaskProvider implements TaskProvider {
     return this.serialize(async () => {
       const store = await this.read()
       const now = new Date().toISOString()
+      if (input.kind !== undefined && !['epic', 'task', 'todo', 'item'].includes(input.kind)) throw new Error('invalid_task_kind')
+      if (input.parentUid !== undefined && !/^[^\s:]+:[^\s]+$/.test(input.parentUid)) throw new Error('invalid_parent_uid')
       const record: LocalTaskRecord = {
+        kind: input.kind,
+        parentUid: input.parentUid,
         id: `t-${randomUUID().slice(0, 8)}`,
         title: input.title.trim(),
         description: input.description,

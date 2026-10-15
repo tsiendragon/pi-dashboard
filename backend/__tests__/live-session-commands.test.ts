@@ -8,7 +8,11 @@
 import { describe, expect, it } from 'vitest'
 import { validateLiveSessionCommand } from '../live-sessions/protocol.js'
 
-describe('feature_command validation', () => {
+describe('live-session command validation', () => {
+  it('accepts the dedicated shutdown control as a browser command', () => {
+    expect(validateLiveSessionCommand({ type: 'shutdown' }, true)).toEqual({ type: 'shutdown' })
+  })
+
   it('accepts the background-commands handoff command', () => {
     const command = {
       type: 'feature_command',

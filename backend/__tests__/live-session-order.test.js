@@ -182,4 +182,39 @@ describe('live-session order HTTP routes', () => {
       })
     } finally { await srv.close() }
   })
+
+  it('merges a duplicate task group into another and deletes the source', async () => {
+    const srv = await serve()
+    try {
+      const [source] = await srv.groupStore.create('hold')
+      const created = await srv.groupStore.create('risktag')
+      const target = created.find(group => group.name === 'risktag')
+      await srv.groupStore.addMember(source.id, 'session-1')
+      await srv.groupStore.addMember(source.id, 'session-2')
+      await srv.groupStore.addMember(target.id, 'session-2')
+
+      const response = await fetch(`${srv.origin}/api/live-session-groups/${source.id}/merge`, {
+        method: 'POST', headers: { cookie: srv.cookie, origin: srv.origin, 'content-type': 'application/json' },
+        body: JSON.stringify({ targetId: target.id }),
+      })
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body.ok).toBe(true)
+      expect(body.groups.map(group => group.name)).toEqual(['risktag'])
+      expect([...body.groups[0].sessionIds].sort()).toEqual(['session-1', 'session-2'])
+
+      // Same-group and empty-target merges are rejected before touching state.
+      const same = await fetch(`${srv.origin}/api/live-session-groups/${target.id}/merge`, {
+        method: 'POST', headers: { cookie: srv.cookie, origin: srv.origin, 'content-type': 'application/json' },
+        body: JSON.stringify({ targetId: target.id }),
+      })
+      expect(same.status).toBe(400)
+      const missing = await fetch(`${srv.origin}/api/live-session-groups/does-not-exist/merge`, {
+        method: 'POST', headers: { cookie: srv.cookie, origin: srv.origin, 'content-type': 'application/json' },
+        body: JSON.stringify({ targetId: target.id }),
+      })
+      expect(missing.status).toBe(404)
+      expect((await srv.groupStore.list()).map(group => group.name)).toEqual(['risktag'])
+    } finally { await srv.close() }
+  })
 })

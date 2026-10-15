@@ -130,7 +130,7 @@ describe('asr routes', () => {
 
     const body = res.jsonBody as Record<string, unknown>
     expect(body.available).toBe(true)
-    expect(body.defaultModel).toBe('qwen3-asr-flash')
+    expect(body.defaultModel).toBe('qwen3-asr-flash-realtime')
     expect((body.languages as { id: string }[]).some(language => language.id === 'zh')).toBe(true)
   })
 

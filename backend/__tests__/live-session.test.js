@@ -57,6 +57,10 @@ describe('LiveSession input channel tagging', () => {
     expect(() => validateLiveSessionCommand({ type: 'input', text: 'hi', channel: 'web', expandPromptTemplates: true })).toThrow()
     expect(() => validateLiveSessionCommand({ type: 'input', leaseId: 'lease-1', text: 'hi', channel: 'web' })).toThrow()
   })
+
+  it('allows read-only resync from a browser command', () => {
+    expect(validateLiveSessionCommand({ type: 'resync' }, true)).toEqual({ type: 'resync' })
+  })
 })
 
 describe('LiveSession path/config policy', () => {
@@ -87,6 +91,32 @@ describe('LiveSession path/config policy', () => {
 })
 
 describe('LiveSessionRegistry', () => {
+  it('blocks concurrent dispatch while an exclusive session operation is running', async () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const transport = { send() {} }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary(), entries: [] }, transport, '/tmp/root/task')
+    let release = () => {}
+    let markStarted = () => {}
+    const started = new Promise(resolve => { markStarted = resolve })
+    const blocked = new Promise(resolve => { release = resolve })
+    const operation = registry.withExclusiveSession('process-a', async () => {
+      markStarted()
+      await blocked
+    })
+    await started
+    try {
+      await expect(registry.dispatch('process-a', { type: 'input', text: 'late input', channel: 'web' }))
+        .rejects.toMatchObject({ code: 'session_operation_in_progress' })
+      await expect(registry.withExclusiveSession('process-a', async () => undefined))
+        .rejects.toMatchObject({ code: 'session_operation_in_progress' })
+    } finally {
+      release()
+    }
+    await operation
+  })
+
   it('patches the summary from summary_update telemetry instead of waiting for a snapshot', () => {
     const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
     cleanups.push(() => registry.stop())
@@ -122,6 +152,25 @@ describe('LiveSessionRegistry', () => {
     })
     // Telemetry is a summary patch, not a transcript row.
     expect(registry.get('process-a').entries).toEqual([])
+
+    // The compaction marker rides the same channel: `null` clears it, and a
+    // malformed marker must not blank the good one (the browser says “压缩中”
+    // and explains why its messages are queued from this field).
+    registry.applyEvent({
+      type: 'event', processInstanceId: 'process-a', sequence: 2,
+      event: { type: 'summary_update', data: { compacting: { since: 1_700_000_000_000, reason: 'threshold', willRetry: false }, status: 'running' } },
+    }, transport)
+    expect(registry.list()[0].compacting).toEqual({ since: 1_700_000_000_000, reason: 'threshold', willRetry: false })
+    registry.applyEvent({
+      type: 'event', processInstanceId: 'process-a', sequence: 3,
+      event: { type: 'summary_update', data: { compacting: { reason: 'threshold' } } },
+    }, transport)
+    expect(registry.list()[0].compacting).toEqual({ since: 1_700_000_000_000, reason: 'threshold', willRetry: false })
+    registry.applyEvent({
+      type: 'event', processInstanceId: 'process-a', sequence: 4,
+      event: { type: 'summary_update', data: { compacting: null, status: 'idle' } },
+    }, transport)
+    expect(registry.list()[0].compacting).toBeUndefined()
   })
 
   it('re-asserts a status pi changed without any agent event', () => {
@@ -175,6 +224,24 @@ describe('LiveSessionRegistry', () => {
     expect(registry.list()[0].compact).toBeUndefined()
   })
 
+  it('keeps the client heartbeat out of lastActivityAt', () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const transport = { send() {} }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary({ lastActivityAt: 2 }), entries: [] }, transport, '/tmp/root/task')
+
+    // The browser pings every 10 s while an idle bridge publishes nothing, so a ping
+    // must NOT count as activity: otherwise every sidebar row reads a few seconds old
+    // and can never show how long a session has really been silent.
+    registry.heartbeat('process-a', transport, Date.now())
+    expect(registry.list()[0].lastActivityAt).toBe(2)
+
+    // A real event still moves it.
+    registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 1, event: { type: 'summary_update', data: { status: 'running' } } }, transport)
+    expect(registry.list()[0].lastActivityAt).toBeGreaterThan(2)
+  })
+
   it('mirrors unanswered extension dialogs into the session detail', async () => {
     const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
     cleanups.push(() => registry.stop())
@@ -220,6 +287,8 @@ describe('LiveSessionRegistry', () => {
     expect(second).toMatchObject({ leaseId: 'lease-a', alreadyClaimed: true })
     expect(commands.filter(command => command.type === 'claim')).toHaveLength(1)
 
+    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'resync' })
+    expect(commands.at(-1)).toEqual({ type: 'resync' })
     await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'input', text: 'shared prompt', channel: 'web' })
     expect(commands.at(-1)).toEqual({ type: 'input', text: 'shared prompt', channel: 'web' })
     await registry.sendBrowserCommand('process-a', 'browser-b', {
@@ -234,6 +303,8 @@ describe('LiveSessionRegistry', () => {
     expect(commands.at(-1)).toEqual({ type: 'compact', leaseId: 'lease-a' })
     await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'input', text: '/clear', channel: 'web' })
     expect(commands.at(-1)).toEqual({ type: 'input', text: '/clear', channel: 'web' })
+    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'shutdown' })
+    expect(commands.at(-1)).toEqual({ type: 'shutdown' })
 
     registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 1, event: { type: 'agent_start', data: {} } }, transport)
     expect(registry.get('process-a').summary.status).toBe('running')
@@ -258,6 +329,57 @@ describe('LiveSessionRegistry', () => {
     expect(registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary({ sessionId: 'session-b', revision: 1 }), entries: [] }, transportB, '/tmp/root/task')).toBe(false)
     // And the old connection cannot push the previous session back.
     expect(() => registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 8, sequence: 7, summary: summary({ revision: 8, eventSequence: 7 }), entries: [] }, transportA, '/tmp/root/task')).toThrow()
+  })
+
+  it('re-anchors the cursor when a reconnected bridge restarts its numbering without a session switch', () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000, resyncRetryIntervalMs: 0 })
+    cleanups.push(() => registry.stop())
+    const transportA = { send() {} }
+    registry.connect(hello(), '/tmp/root/task', transportA)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 7, sequence: 6, summary: summary({ revision: 7, eventSequence: 6 }), entries: [] }, transportA, '/tmp/root/task')
+
+    // `/reload` inside pi: same session, but the bridge rebuilt its projector
+    // (revision 1, sequence 0) and reconnected on a fresh transport.
+    const transportB = { send() {} }
+    registry.connect(hello(), '/tmp/root/task', transportB)
+    expect(registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary({ revision: 1, eventSequence: 0 }), entries: [] }, transportB, '/tmp/root/task')).toBe(true)
+
+    // The frozen-transcript bug: before the fix this event (and every later one)
+    // was dropped because the entry never left `awaitingResync`.
+    expect(registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 1, event: { type: 'agent_start', data: {} } }, transportB)).toBe(true)
+    expect(registry.get('process-a').summary.status).toBe('running')
+  })
+
+  it('retries resync while an entry waits for a snapshot, and stops once one lands', async () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000, resyncRetryIntervalMs: 20 })
+    cleanups.push(() => registry.stop())
+    const resyncs = []
+    const transport = {
+      send(envelope) {
+        if (envelope.type !== 'command' || envelope.command.type !== 'resync') return
+        resyncs.push(envelope.requestId)
+        if (resyncs.length >= 3) {
+          // The third retry finally gets an answer: a fresh snapshot the broker accepts.
+          queueMicrotask(() => registry.applySnapshot({
+            type: 'snapshot', processInstanceId: 'process-a', revision: 9, sequence: 0,
+            summary: summary({ revision: 9, eventSequence: 0 }), entries: [],
+          }, transport, '/tmp/root/task'))
+        }
+      },
+    }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 8, sequence: 7, summary: summary({ revision: 8, eventSequence: 7 }), entries: [] }, transport, '/tmp/root/task')
+
+    // A sequence gap strands the entry in awaitingResync; the single request sent
+    // at that moment used to be the last attempt ever made.
+    expect(registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 99, event: { type: 'agent_start', data: {} } }, transport)).toBe(false)
+    await vi.waitFor(() => expect(resyncs.length).toBeGreaterThanOrEqual(3))
+
+    // Once the snapshot lands the entry accepts events again and the retries stop.
+    await vi.waitFor(() => expect(registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 1, event: { type: 'agent_settled', data: {} } }, transport)).toBe(true))
+    const settled = resyncs.length
+    await new Promise(resolve => setTimeout(resolve, 80))
+    expect(resyncs.length).toBe(settled)
   })
 
   it('dispatches answer_ui from a non-lease holder so any channel can answer a UI request', async () => {
