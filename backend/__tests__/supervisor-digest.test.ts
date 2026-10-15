@@ -15,7 +15,7 @@ function detail(messages: Array<string | { role: 'user' | 'assistant'; text: str
 describe('session digest', () => {
   it('keeps the newest result as headline and readable points, dropping commands, paths and code', () => {
     const digest = digestSession(detail([
-      '喵，先跑一段：\n```bash\nnpm test -- --run\n```\n~/repos/x/a.ts 这个文件路径不应出现。',
+      '喵，先跑一段：\n```bash\nnpm test -- --run\n```\n/home/user/repos/x/a.ts 这个文件路径不应出现。',
       '喵，回答你的问题：预览页已加上示例，刷新即可看到效果。',
       '喵，这个任务的结果我已经读过了：exit=0，3 个测试文件 23 项全部通过，和刚才汇报的一致。',
     ]))
@@ -24,7 +24,7 @@ describe('session digest', () => {
     expect(digest?.headline).toBe('这个任务的结果我已经读过了：exit=0，3 个测试文件 23 项全部通过，和刚才汇报的一致。')
     expect(digest?.points).toEqual(['回答你的问题：预览页已加上示例，刷新即可看到效果。'])
     expect(JSON.stringify(digest)).not.toContain('npm test')
-    expect(JSON.stringify(digest)).not.toContain('/home/user/projects')
+    expect(JSON.stringify(digest)).not.toContain('/home/user/repos')
   })
 
   it('reports an open question and a follow-up separately, and never repeats them as points', () => {
