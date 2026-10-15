@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live 会话侧栏行 · mock（仅供 review，未实现）</title>
+<style>
+  /* ====== pi-dashboard 主题令牌（取自 frontend/src/themes/light.css / rose-pine.css） ====== */
+  :root[data-theme="light"]{
+    --bg:#fafafa;--bg-accent:#f5f5f5;--bg-elevated:#ffffff;--bg-hover:#f0f0f0;
+    --card:#ffffff;--text:#3f3f46;--text-strong:#18181b;--muted:#71717a;--muted-strong:#52525b;
+    --border:#e4e4e7;--border-strong:#d4d4d8;
+    --accent:#1d5aaf;--accent-subtle:rgba(29,90,175,.12);
+    --ok:#11695e;--ok-subtle:rgba(17,105,94,.1);
+    --warn:#935b06;--warn-subtle:rgba(147,91,6,.1);
+    --danger:#c8196a;--danger-subtle:rgba(200,25,106,.1);
+    --shadow:0 6px 22px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.04);
+  }
+  :root[data-theme="dark"]{
+    --bg:#191724;--bg-accent:#1f1d2e;--bg-elevated:#26233a;--bg-hover:#2a2740;
+    --card:#1f1d2e;--text:#e0def4;--text-strong:#e0def4;--muted:#908caa;--muted-strong:#6e6a86;
+    --border:#26233a;--border-strong:#393552;
+    --accent:#c4a7e7;--accent-subtle:rgba(196,167,231,.15);
+    --ok:#9ccfd8;--ok-subtle:rgba(156,207,216,.15);
+    --warn:#f6c177;--warn-subtle:rgba(246,193,119,.15);
+    --danger:#eb6f92;--danger-subtle:rgba(235,111,146,.15);
+    --shadow:0 6px 22px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.04);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:400 14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+       letter-spacing:-.01em;padding:20px 24px 48px}
+  .mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:16px;margin:0;color:var(--text-strong)}
+  .badge{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--warn-subtle);color:var(--warn)}
+  .spacer{flex:1}
+  button.toggle{font-size:12px;padding:4px 10px;border-radius:8px;border:1px solid var(--border);
+                background:var(--bg-elevated);color:var(--text);cursor:pointer}
+  button.toggle:hover{border-color:var(--accent);color:var(--accent)}
+
+  .layout{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:16px}
+  .col{min-width:0}
+  .note{max-width:560px}
+  .note h2{font-size:13px;margin:0 0 8px;color:var(--text-strong)}
+  .note ol{margin:0;padding-left:18px;font-size:13px;color:var(--text)}
+  .note li{margin-bottom:6px}
+  .note .dim{color:var(--muted);font-size:12px}
+
+  /* ====== 侧栏（320px，同真实侧栏宽度） ====== */
+  .sidebar{width:320px;flex:0 0 320px;border:1px solid var(--border);border-radius:10px;
+           background:var(--bg-accent);overflow:hidden}
+  .sb-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)}
+  .sb-title{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  .count{font-size:11px;color:var(--muted-strong)}
+  .section{padding:10px 10px 6px;border-bottom:1px solid var(--border)}
+  .sec-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+            text-transform:uppercase;letter-spacing:.06em;color:var(--text-strong);margin-bottom:2px}
+  .sec-count{font-size:11px;color:var(--muted-strong)}
+  .sec-sub{font-size:11px;color:var(--muted-strong);padding:0 0 4px}
+
+  .row{position:relative;display:flex;gap:8px;padding:6px;border-radius:8px;cursor:default}
+  .row:hover{background:var(--bg-hover)}
+  .row.active{background:var(--accent-subtle)}
+  .gutter{width:26px;flex:0 0 26px;display:flex;align-items:center;justify-content:center}
+  .dot{width:7px;height:7px;border-radius:50%;border:1px solid var(--muted-strong);opacity:.6}
+  .dot.running{background:var(--ok);border-color:var(--ok);opacity:1;animation:pulse 1.6s infinite}
+  @keyframes pulse{50%{opacity:.45}}
+  .row-main{flex:1;min-width:0}
+  .line1{display:flex;align-items:center;gap:6px;height:18px}
+  .title{flex:1;min-width:0;font-size:13px;color:var(--text-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sub-count{flex:0 0 auto;font-size:11px;padding:0 6px;border-radius:999px;background:var(--bg-hover);color:var(--muted)}
+  .act{flex:0 0 auto;display:flex;align-items:center;gap:2px;font-size:11px;color:var(--muted-strong)}
+  .menu-btn{flex:0 0 auto;width:20px;height:20px;display:grid;place-items:center;border-radius:5px;
+            color:var(--muted);font-size:14px;line-height:1}
+  .line2{display:flex;align-items:center;gap:4px;height:16px;overflow:hidden}
+  .chip{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;padding:0 6px;border-radius:999px;
+        background:var(--bg-elevated);font-size:11px;line-height:14px;color:var(--muted-strong)}
+  .chip.tag{background:var(--accent-subtle);color:var(--accent)}
+  .chip.goal{background:var(--ok-subtle);color:var(--ok)}
+  .proj{margin-left:auto;display:flex;min-width:0;flex:0 1 auto;font-size:11px;color:var(--muted-strong);
+        font-family:"JetBrains Mono",ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .proj .del{ text-decoration:line-through;opacity:.45}
+  .ico{width:12px;height:12px;flex:0 0 12px;stroke:currentColor;fill:none;stroke-width:1.8;
+       stroke-linecap:round;stroke-linejoin:round}
+
+  /* ====== ⋯ 菜单 ====== */
+  .menu{position:absolute;z-index:5;width:300px;padding:6px;border-radius:12px;background:var(--card);
+        border:1px solid var(--border);box-shadow:var(--shadow)}
+  .m-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+  .m-item{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:8px;font-size:12.5px;color:var(--text)}
+  .m-item:hover{background:var(--bg-hover)}
+  .m-item.danger{color:var(--danger)}
+  .m-item .hint{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m-item .k{flex:0 0 auto;opacity:.85}
+  .m-sep{height:1px;background:var(--border);margin:5px 4px}
+  /* 新增：tmux 只读信息组 */
+  .m-tmux{padding:4px 8px 6px}
+  .m-tmux-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:2px}
+  .m-tmux-name{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-strong)}
+  .m-tmux-name .copy{margin-left:auto;font-size:11px;color:var(--accent)}
+  .new{outline:1.5px dashed var(--warn);outline-offset:2px;border-radius:8px}
+  .legend{font-size:11px;color:var(--warn);margin-top:14px}
+
+  .compare{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
+  .cmp{flex:1 1 260px;border:1px dashed var(--border-strong);border-radius:10px;padding:8px 10px;min-width:0}
+  .cmp h3{margin:0 0 6px;font-size:11.5px;font-weight:600;color:var(--muted)}
+  .cmp .row{padding:4px 2px}
+  footer{margin-top:22px;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Live 会话侧栏行 · mock</h1>
+  <span class="badge">仅供 review，未实现</span>
+  <span class="spacer"></span>
+  <button class="toggle" onclick="const r=document.documentElement;r.dataset.theme=r.dataset.theme==='light'?'dark':'light'">切换 浅色 / 深色</button>
+</header>
+
+<div class="layout">
+
+  <!-- ============ 左：目标效果 ============ -->
+  <div class="sidebar col">
+    <div class="sb-head">
+      <span class="sb-title">Live Pi Sessions</span><span class="count">5</span>
+      <span class="spacer"></span>
+      <span class="chip">＋ 启动</span><span class="chip">＋ 任务</span>
+    </div>
+
+    <div class="section">
+      <div class="sec-head">未分组 <span class="sec-count">5</span></div>
+      <div class="sec-sub">目标：第二行右侧只显示项目路径的 basename，不再显示分支；tmux 名字只在 ⋯ 菜单里</div>
+
+      <!-- 行 1：有 tmux，菜单展开 -->
+      <div class="row active" style="background:var(--bg-hover)">
+        <div class="gutter"><span class="dot"></span></div>
+        <div class="row-main">
+          <div class="line1">
+            <span class="title">修复 Dashboard 压缩状态未清除</span>
+            <span class="act"><span>活动</span><span>8m</span></span>
+            <span class="menu-btn" title="Session menu">⋯</span>
+          </div>
+          <div class="line2">
+            <span class="chip"><svg class="ico" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg>终端</span>
+            <span class="chip tag">ai-tools</span>
+            <span class="proj" title="~/repos/pi-dashboard">pi-dashboard</span>
+          </div>
+        </div>
+        <!-- ⋯ 菜单：tmux 名字放在「命令 / 关闭」上方，只读 -->
+        <div class="menu" style="right:-8px;top:6px">
+          <div class="m-grid">
+            <span class="m-item">✎ 重命名</span><span class="m-item">🏷 标签</span>
+            <span class="m-item">⑂ 从此分叉</span><span class="m-item">独立 Pi 会话</span>
+          </div>
+          <div class="m-sep"></div>
+          <div class="m-grid">
+            <span class="m-item">📌 置顶</span>
+            <span class="m-item">↑ 上移</span>
+          </div>
+          <div class="m-sep"></div>
+          <div class="m-tmux new">
+            <div class="m-tmux-label">终端 · tmux 会话</div>
+            <div class="m-tmux-name mono">
+              <svg class="ico" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg>
+              pi-dash-live-3f559605
+              <span class="copy">⧉ 复制 attach 命令</span>
+            </div>
+          </div>
+          <div class="m-grid">
+            <span class="m-item">⧉ 命令<span class="hint">tmux attach -t …</span></span>
+            <span class="m-item danger">⏻ 关闭</span>
+          </div>
+          <div class="m-sep"></div>
+          <div class="m-grid">
+            <span class="m-item">移动到分组 <span class="hint">›</span></span>
+            <span class="m-item">⧉ 复制 ID<span class="hint">01a13a61…e65</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 行 2 -->
+      <div class="row">
+        <div class="gutter"><span class="dot"></span></div>
+        <div class="row-main">
+          <div class="line1">
+            <span class="title">Pi 3608458</span>
+            <span class="act"><span>活动</span><span>3m</span></span>
+            <span class="menu-btn">⋯</span>
+          </div>
+          <div class="line2">
+            <span class="chip"><svg class="ico" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg>终端</span>
+            <span class="proj" title="~/repos/pi-dashboard">pi-dashboard</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 行 3：无 tmux，菜单里不出现终端组 -->
+      <div class="row">
+        <div class="gutter"><span class="dot"></span></div>
+        <div class="row-main">
+          <div class="line1">
+            <span class="title">历史</span>
+            <span class="act"><span>活动</span><span>5h</span></span>
+            <span class="menu-btn">⋯</span>
+          </div>
+          <div class="line2">
+            <span class="proj" title="~/repos/task-journal">task-journal</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 行 4：正在运行 + 任务锚点 -->
+      <div class="row">
+        <div class="gutter"><span class="dot running"></span></div>
+        <div class="row-main">
+          <div class="line1">
+            <span class="title">自动推进全球证件类型清理任务</span>
+            <span class="act"><span>活动</span><span>45s</span></span>
+            <span class="menu-btn">⋯</span>
+          </div>
+          <div class="line2">
+            <span class="chip goal">3/5</span>
+            <span class="proj" title="~/repos/task-journal/tasks/card-router/TASK-0000-whole-doc-cardtype/global-remaining-cardtype-expansion-v1">global-remaining-cardtype-expansion-v1</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 行 5：长 basename 截断 -->
+      <div class="row">
+        <div class="gutter"><span class="dot"></span></div>
+        <div class="row-main">
+          <div class="line1">
+            <span class="title">llmdateway-provider</span>
+            <span class="act"><span>活动</span><span>13m</span></span>
+            <span class="menu-btn">⋯</span>
+          </div>
+          <div class="line2">
+            <span class="proj" title="~/repos/ai-dev/marketplace/packages/skills/delegate-work">delegate-work</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 右：说明 ============ -->
+  <div class="note col">
+    <h2>改动点（3 处）</h2>
+    <ol>
+      <li><b>行上不放 tmux 名字</b>：撤销上一轮加的名字，恢复成原来的「🖥 终端」小标签。</li>
+      <li><b>tmux 名字进 ⋯ 菜单</b>：在「命令 / 关闭」那组上方加一段<b>只读</b>的 tmux 会话名（虚线框 = 新增），右侧带「复制 attach 命令」；没有 tmux 的会话（如外部自己起的 pi）菜单里不出现这一段。</li>
+      <li><b>行尾只显示项目 basename</b>：<span class="mono">~/repos/pi-dashboard</span> → <span class="mono">pi-dashboard</span>；<b>不再显示分支</b>。完整路径仍在悬停提示和行 tooltip 里。</li>
+    </ol>
+    <p class="dim">不动的内容：任务锚点、标签、分组、`活动` 时间、重命名/置顶/移动到分组/复制 ID 等菜单项。</p>
+
+    <div class="compare">
+      <div class="cmp">
+        <h3>现状（改前）第二行</h3>
+        <div class="row"><div class="row-main"><div class="line2">
+          <span class="chip">🖥 终端</span>
+          <span class="proj"><span class="del">pi-extension · </span>pi-dashboard</span>
+        </div></div></div>
+        <div class="row"><div class="row-main"><div class="line2">
+          <span class="chip">🖥 终端</span>
+          <span class="proj"><span class="del">master · </span>pi-dashboard</span>
+        </div></div></div>
+        <p class="dim">分支名占了宽度，basename 被挤得看不全。</p>
+      </div>
+      <div class="cmp">
+        <h3>目标（改后）第二行</h3>
+        <div class="row"><div class="row-main"><div class="line2">
+          <span class="chip">🖥 终端</span>
+          <span class="proj">pi-dashboard</span>
+        </div></div></div>
+        <div class="row"><div class="row-main"><div class="line2">
+          <span class="chip">🖥 终端</span>
+          <span class="proj">pi-dashboard</span>
+        </div></div></div>
+        <p class="dim">同一项目的会话一眼能对上；分支信息收进悬停提示。</p>
+      </div>
+    </div>
+
+    <p class="legend">虚线框 = 本次新增的部分。</p>
+
+    <h2 style="margin-top:18px">两个待确认的小点</h2>
+    <ol>
+      <li><b>basename 可能重名</b>：好几个会话都在 <span class="mono">pi-dashboard</span> 里。若想区分，可以显示「父目录/basename」（如 <span class="mono">repos/pi-dashboard</span>）——默认我按你说的只用最后一截。</li>
+      <li><b>任务目录很长</b>：像 <span class="mono">global-remaining-cardtype-expansion-v1</span> 这种任务目录名本身就很长，会占满第二行（见行 4），超宽自动省略、悬停看全路径。可接受的话就照此实现。</li>
+    </ol>
+  </div>
+</div>
+
+<footer>mock 里的数据是编的，只用于看版式；颜色用的是仓库主题令牌（浅色 / 深色可切换）。</footer>
+
+</body>
+</html>
