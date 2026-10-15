@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  CHAT_REVIEW_INTRO,
   MAX_QUOTE_CHARS,
   buildQuoteReplyMessage,
   buildReviewMessage,
@@ -7,6 +8,8 @@ import {
   describeCommentTarget,
   formatLineRef,
   normalizeQuote,
+  quoteOrCommentKind,
+  quotedSnippets,
   resolveSelectionToLines,
   selectionLabel,
 } from '../utils/reviewComments'
@@ -155,5 +158,45 @@ describe('resolveSelectionToLines', () => {
 
   it('falls back to line 1 for an empty selection', () => {
     expect(resolveSelectionToLines('alpha\nbeta', '')).toEqual({ startLine: 1, endLine: 1 })
+  })
+})
+describe('quoteOrCommentKind', () => {
+  const quoteReply = buildQuoteReplyMessage([{ id: 'q1', text: '这一步为什么这么慢', role: 'assistant' }])
+
+  it('reads a quote reply built by this module', () => {
+    expect(quoteOrCommentKind(`${quoteReply}\n\n先解释一下`)).toBe('quote')
+    expect(quoteOrCommentKind(quoteReply)).toBe('quote')
+  })
+
+  it('reads a conversation comment round', () => {
+    const message = buildReviewMessage('上面的会话', [{ id: 'c1', label: 'Agent 回复', quote: '这一步为什么这么慢', content: '说清楚原因' }], CHAT_REVIEW_INTRO)
+    expect(quoteOrCommentKind(message)).toBe('comment')
+  })
+
+  it('reads a document comment round', () => {
+    const message = buildReviewMessage('docs/plan.md', [{ id: 'c1', label: 'Line 3', quote: '目录', content: '补一节' }])
+    expect(quoteOrCommentKind(message)).toBe('comment')
+  })
+
+  it('still reads a quote reply that was sent together with attached files', () => {
+    expect(quoteOrCommentKind(`Attached files:\n- /tmp/a.png\n\n${quoteReply}`)).toBe('quote')
+  })
+
+  it('leaves ordinary messages alone', () => {
+    expect(quoteOrCommentKind('把这一步重做')).toBeUndefined()
+    expect(quoteOrCommentKind('引用：')).toBeUndefined()
+    expect(quoteOrCommentKind('我在文档里写了「引用：」这个词')).toBeUndefined()
+  })
+})
+
+describe('quotedSnippets', () => {
+  it('collects quoted lines and commented quotes', () => {
+    const quoteReply = buildQuoteReplyMessage([{ id: 'q1', text: '这一步为什么这么慢', role: 'assistant' }])
+    expect(quotedSnippets(quoteReply)).toEqual(['这一步为什么这么慢'])
+    const message = buildReviewMessage('上面的会话', [
+      { id: 'c1', label: 'A', quote: '第一句', content: 'x' },
+      { id: 'c2', label: 'B', quote: '第二句', content: 'y' },
+    ], CHAT_REVIEW_INTRO)
+    expect(quotedSnippets(message)).toEqual(['第一句', '第二句'])
   })
 })

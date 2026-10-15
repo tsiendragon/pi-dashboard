@@ -5,9 +5,26 @@ import type { ChatMessage, SessionInfo } from '../types'
 
 const SKIP_ROLES = new Set(['chunk', 'done'])
 const MAX_MESSAGES_PER_SESSION = 500
+// When the user has paged older history into view, keep a larger window so
+// the loaded history is not trimmed away under their eyes.
+const MAX_MESSAGES_WITH_HISTORY = 2000
 const NO_DEDUP_TOOL_MESSAGES = new Set(['subagent', 'process', 'ensemble_spawn', 'ensemble_send'])
 
 const filterMessages = (msgs: ChatMessage[]) => msgs.filter(m => !SKIP_ROLES.has(m.role))
+
+/**
+ * Fingerprint used to drop duplicate messages when an older page overlaps
+ * with what is already loaded (paging may re-read a boundary row).
+ */
+const msgFingerprint = (m: ChatMessage): string => `${m.role}|${m.ts || ''}|${(m.content || '').slice(0, 200)}`
+
+/** Trim the in-memory message window; widens once history has been loaded. */
+function trimMessages(state: { messages: ChatMessage[]; slotOldestIndex: number }) {
+  const cap = state.slotOldestIndex > 0 ? MAX_MESSAGES_WITH_HISTORY : MAX_MESSAGES_PER_SESSION
+  if (state.messages.length > cap) {
+    state.messages = state.messages.slice(state.messages.length - cap)
+  }
+}
 
 type SlotState = 'idle' | 'streaming' | 'tool_running' | 'stopping'
 
@@ -60,7 +77,11 @@ interface ChatState {
   slotStopping: boolean
   slotState: SlotState
   slotHasMore: boolean
+  /** Number of older messages prepended by history paging (monotonic; feeds
+   *  the virtual list's firstItemIndex so prepends do not jump the viewport). */
   slotOldestIndex: number
+  /** Opaque cursor for the next older page; null when at the transcript head. */
+  slotOlderCursor: string | null
   loadingOlder: boolean
   history: SessionInfo[]
   historyHasMore: boolean
@@ -88,6 +109,7 @@ const initialState: ChatState = {
   slotState: 'idle',
   slotHasMore: false,
   slotOldestIndex: 0,
+  slotOlderCursor: null,
   loadingOlder: false,
   history: [],
   historyHasMore: false,
@@ -120,10 +142,10 @@ export const fetchHistory = createAsyncThunk(
 export const switchSlot = createAsyncThunk(
   'chat/switchSlot',
   async (key: string | null, { dispatch }) => {
-    if (!key) return { key: null, messages: [], running: false, stopping: false, hasMore: false, total: 0, contextUsage: null, tokenStats: null }
+    if (!key) return { key: null, messages: [], running: false, stopping: false, hasMore: false, total: 0, olderCursor: null, contextUsage: null, tokenStats: null }
     dispatch(markSlotRead(key))
     const d = await api.chatSlotDetail(key, 200)
-    return { key, messages: filterMessages(d.messages || []), running: d.running || false, stopping: d.stopping || false, hasMore: d.has_more || false, total: d.total || 0, contextUsage: d.contextUsage || null, tokenStats: d.tokenStats || null }
+    return { key, messages: filterMessages(d.messages || []), running: d.running || false, stopping: d.stopping || false, hasMore: d.has_more || false, total: d.total || 0, olderCursor: (d.next_cursor ?? null) as string | null, contextUsage: d.contextUsage || null, tokenStats: d.tokenStats || null }
   },
 )
 
@@ -134,7 +156,7 @@ export const refreshSlot = createAsyncThunk(
     const state = (getState() as { chat: ChatState }).chat
     if (state.activeSlot !== key) return null
     const d = await api.chatSlotDetail(key, 200)
-    return { key, messages: filterMessages(d.messages || []), running: d.running || false, stopping: d.stopping || false, hasMore: d.has_more || false, total: d.total || 0, contextUsage: d.contextUsage || null }
+    return { key, messages: filterMessages(d.messages || []), running: d.running || false, stopping: d.stopping || false, hasMore: d.has_more || false, total: d.total || 0, olderCursor: (d.next_cursor ?? null) as string | null, contextUsage: d.contextUsage || null }
   },
 )
 
@@ -167,7 +189,7 @@ export const resumeFromHistory = createAsyncThunk(
   async ({ key, title, file }: { key: string; title: string; file?: string }, { dispatch }) => {
     const d = await api.resumeChatSlot(key, title, file)
     if (d.ok) dispatch(addSlotOptimistic({ key: d.key, title: title || d.key, messages: 0, running: false }))
-    return { ok: d.ok, key: d.key, messages: filterMessages(d.messages || []), hasMore: d.has_more || false, total: d.total || 0 }
+    return { ok: d.ok, key: d.key, messages: filterMessages(d.messages || []), hasMore: d.has_more || false, total: d.total || 0, olderCursor: (d.next_cursor ?? null) as string | null }
   },
 )
 
@@ -180,10 +202,9 @@ export const loadOlderMessages = createAsyncThunk(
   'chat/loadOlder',
   async (_, { getState }) => {
     const state = (getState() as { chat: ChatState }).chat
-    if (!state.activeSlot || !state.slotHasMore || state.loadingOlder) return null
-    if (state.slotOldestIndex <= 0) return null
-    const d = await api.chatSlotDetail(state.activeSlot, 100, state.slotOldestIndex)
-    return { messages: filterMessages(d.messages || []), hasMore: d.has_more || false, total: d.total || 0 }
+    if (!state.activeSlot || !state.slotOlderCursor || state.loadingOlder) return null
+    const d = await api.chatSlotDetail(state.activeSlot, 100, state.slotOlderCursor)
+    return { messages: filterMessages(d.messages || []), hasMore: d.has_more || false, olderCursor: (d.next_cursor ?? null) as string | null }
   },
 )
 
@@ -197,9 +218,7 @@ const chatSlice = createSlice({
     promoteQueued(state) { for (const m of state.messages) { if (m.role === 'queued') m.role = 'user' } },
     appendMessage(state, action: PayloadAction<ChatMessage>) {
       state.messages.push(action.payload)
-      if (state.messages.length > MAX_MESSAGES_PER_SESSION) {
-        state.messages = state.messages.slice(state.messages.length - MAX_MESSAGES_PER_SESSION)
-      }
+      trimMessages(state)
     },
     updateStreamingMessage(state, action: PayloadAction<string>) {
       const last = state.messages[state.messages.length - 1]
@@ -274,7 +293,7 @@ const chatSlice = createSlice({
       if (action.payload?.id && state.toolApprovalRequest?.id !== action.payload.id) return
       state.toolApprovalRequest = null
     },
-    clearMessages(state) { state.messages = []; state.slotHasMore = false; state.slotOldestIndex = 0 },
+    clearMessages(state) { state.messages = []; state.slotHasMore = false; state.slotOldestIndex = 0; state.slotOlderCursor = null },
     /** Handle chat messages pushed via global SSE/WS (works after refresh). */
     sseChatMessage(state, action: PayloadAction<{ slot: string; role: string; content: string; ts?: string; cls?: string; meta?: Record<string, unknown>; seq?: number }>) {
       const { slot, role, content, ts, cls, meta } = action.payload
@@ -417,9 +436,7 @@ const chatSlice = createSlice({
         state.messages.push(newMsg)
       }
       // Trim to prevent unbounded memory growth
-      if (state.messages.length > MAX_MESSAGES_PER_SESSION) {
-        state.messages = state.messages.slice(state.messages.length - MAX_MESSAGES_PER_SESSION)
-      }
+      trimMessages(state)
     },
   },
   extraReducers: (builder) => {
@@ -443,6 +460,7 @@ const chatSlice = createSlice({
           state.messages = []
           state.slotHasMore = false
           state.slotOldestIndex = 0
+          state.slotOlderCursor = null
           state.contextUsage = null
           state.tokenStats = null
           state._turnBaselineStats = null
@@ -454,7 +472,7 @@ const chatSlice = createSlice({
       })
       .addCase(switchSlot.fulfilled, (state, action) => {
         state.slotSwitching = false
-        const { key, messages, running, hasMore, total } = action.payload
+        const { key, messages, running, hasMore } = action.payload
         // User may have switched again while this fetch was in flight
         if (state.activeSlot !== key) return
         // WS may have delivered messages during the fetch. The API response
@@ -484,7 +502,8 @@ const chatSlice = createSlice({
         state.slotStopping = action.payload.stopping ?? false
         state.foregroundSpawnActive = false // reset on slot switch
         state.slotHasMore = hasMore
-        state.slotOldestIndex = hasMore ? total - messages.length : 0
+        state.slotOldestIndex = 0
+        state.slotOlderCursor = action.payload.olderCursor
         state.contextUsage = action.payload.contextUsage
         state.tokenStats = action.payload.tokenStats || null
       })
@@ -493,13 +512,14 @@ const chatSlice = createSlice({
       })
       .addCase(refreshSlot.fulfilled, (state, action) => {
         if (!action.payload) return
-        const { key, messages, running, hasMore, total } = action.payload
+        const { key, messages, running, hasMore } = action.payload
         if (state.activeSlot !== key) return  // user switched away
         state.messages = messages
         state.slotRunning = running
         state.slotStopping = action.payload.stopping ?? false
         state.slotHasMore = hasMore
-        state.slotOldestIndex = hasMore ? total - messages.length : 0
+        state.slotOldestIndex = 0
+        state.slotOlderCursor = action.payload.olderCursor
         if (action.payload.contextUsage) state.contextUsage = action.payload.contextUsage
       })
       .addCase(createSlot.fulfilled, (state, action) => {
@@ -510,6 +530,7 @@ const chatSlice = createSlice({
         state.slotState = 'idle'
         state.slotHasMore = false
         state.slotOldestIndex = 0
+        state.slotOlderCursor = null
       })
       .addCase(deleteSlot.fulfilled, (state, action) => {
         if (state.activeSlot === action.payload) {
@@ -523,7 +544,8 @@ const chatSlice = createSlice({
           state.messages = action.payload.messages
           state.slotState = 'idle'
           state.slotHasMore = action.payload.hasMore
-          state.slotOldestIndex = action.payload.hasMore ? action.payload.total - action.payload.messages.length : 0
+          state.slotOldestIndex = 0
+          state.slotOlderCursor = action.payload.olderCursor
         }
       })
       .addCase(deleteHistorySession.fulfilled, (state, action) => {
@@ -535,9 +557,14 @@ const chatSlice = createSlice({
       .addCase(loadOlderMessages.fulfilled, (state, action) => {
         state.loadingOlder = false
         if (action.payload) {
-          state.messages = [...action.payload.messages, ...state.messages]
+          // Pages can overlap with already-loaded messages (boundary rows);
+          // drop duplicates before prepending.
+          const existing = new Set(state.messages.map(msgFingerprint))
+          const fresh = action.payload.messages.filter(m => !existing.has(msgFingerprint(m)))
+          state.messages = [...fresh, ...state.messages]
           state.slotHasMore = action.payload.hasMore
-          state.slotOldestIndex = action.payload.hasMore ? action.payload.total - state.messages.length : 0
+          state.slotOldestIndex += fresh.length
+          state.slotOlderCursor = action.payload.olderCursor
         }
       })
       .addCase(loadOlderMessages.rejected, (state) => {

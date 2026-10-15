@@ -60,6 +60,9 @@ describe('pendingDelivery', () => {
     // Extension commands run immediately and are never echoed as a user message.
     expect(queuedDeliveryFor({ status: 'running', text: '/goal ship it' })).toBeUndefined()
     expect(queuedDeliveryFor({ status: 'running', text: '   /compact' })).toBeUndefined()
+    // A compaction queues the message even before its status patch lands: the
+    // bridge holds the whole input queue until the compaction ends.
+    expect(queuedDeliveryFor({ status: 'idle', text: 'during compaction', compacting: true })).toBe('followUp')
   })
 
   it('spells out the delivery mode, and flags a not-yet-accepted send', () => {
@@ -68,6 +71,8 @@ describe('pendingDelivery', () => {
     expect(pendingDeliveryLabel(delivery({ state: 'sending' }))).toBe('发送中…')
     expect(pendingDeliveryTitle(delivery({ state: 'sending' }))).toBe('已发出，等待 Pi 确认接收')
     expect(pendingDeliveryTitle(delivery({ deliverAs: 'steer' }))).toContain('下一个工具调用后插入')
+    // During a compaction the queue waits for the summary, not for a turn.
+    expect(pendingDeliveryLabel(delivery(), { compacting: true })).toBe('排队中 · 等压缩完成')
   })
 
   it('renders a bar above the composer, and nothing when the queue is empty', () => {
@@ -82,5 +87,8 @@ describe('pendingDelivery', () => {
 
     rerender(<PendingDeliveryBar deliveries={[delivery({ text: 'steer it', deliverAs: 'steer' })]} />)
     expect(screen.getByRole('status', { name: '排队中的消息' })).toHaveTextContent('（下个工具调用生效）')
+
+    rerender(<PendingDeliveryBar deliveries={[delivery({ text: 'queued' })]} compacting />)
+    expect(screen.getByRole('status', { name: '排队中的消息' })).toHaveTextContent('（等上下文压缩完成）')
   })
 })

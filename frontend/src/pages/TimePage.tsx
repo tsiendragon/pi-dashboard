@@ -292,7 +292,7 @@ function topTool(tools: TimingToolSummary[]): TimingToolSummary | undefined {
   return tools.length > 0 ? tools[0] : undefined
 }
 
-export default function TimePage() {
+export default function TimePage({ embedded = false }: { embedded?: boolean } = {}) {
   const [range, setRange] = useState<TimingRange>('month')
   const [month, setMonth] = useState(currentMonth)
   const [report, setReport] = useState<TimingReport>()
@@ -334,10 +334,12 @@ export default function TimePage() {
     <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 bg-bg">
       <div className="max-w-6xl mx-auto space-y-4">
         <header className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+          {embedded
+            ? <h2 className="text-sm font-medium text-text-strong">Agent 时间分析</h2>
+            : <div>
             <h1 className="text-lg font-semibold text-text-strong">Agent 时间分析</h1>
             <p className="text-xs text-muted mt-1">模型首 token / decode 速度、thinking、工具执行与 Agent 墙钟时间的统一计时统计</p>
-          </div>
+          </div>}
           <div className="flex items-center gap-2 text-xs">
             <div className="inline-flex overflow-hidden rounded-md border border-border">
               {(['month', '7d', '30d'] as TimingRange[]).map(value => (

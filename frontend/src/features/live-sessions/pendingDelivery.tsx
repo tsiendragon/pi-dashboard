@@ -66,19 +66,24 @@ export function pendingDeliveries(entries: readonly unknown[]): PendingDelivery[
  * is not expected to wait in a queue.
  *
  * Mirrors the bridge's own default: an explicit `steer`/`followUp` wins, otherwise a
- * prompt sent while Pi is working is queued as `followUp`. Slash-prefixed text is
- * excluded — Pi runs a registered extension command immediately and never echoes it
- * back as a user message, so calling that “queued” would be a lie.
+ * prompt sent while Pi is working is queued as `followUp`. A compaction counts as
+ * working even before its status patch arrives (`ctx.isIdle()` is false for the
+ * whole run), and the bridge holds such inputs until it ends. Slash-prefixed text
+ * is excluded — Pi runs a registered extension command immediately and never
+ * echoes it back as a user message, so calling that “queued” would be a lie.
  */
-export function queuedDeliveryFor(input: { status?: LiveSessionStatus; deliverAs?: 'steer' | 'followUp'; text: string }): 'steer' | 'followUp' | undefined {
+export function queuedDeliveryFor(input: { status?: LiveSessionStatus; deliverAs?: 'steer' | 'followUp'; text: string; compacting?: boolean }): 'steer' | 'followUp' | undefined {
   if (input.text.trim().startsWith('/')) return undefined
-  return input.deliverAs ?? (input.status === 'running' ? 'followUp' : undefined)
+  return input.deliverAs ?? (input.compacting || input.status === 'running' ? 'followUp' : undefined)
 }
 
 /** Short badge for the message header, e.g. 「排队中 · 等当前回合结束」. */
-export function pendingDeliveryLabel(delivery: PendingDelivery): string {
+export function pendingDeliveryLabel(delivery: PendingDelivery, options: { compacting?: boolean } = {}): string {
   if (delivery.state === 'sending') return '发送中…'
-  return delivery.deliverAs === 'steer' ? '插话中 · 下个工具调用生效' : '排队中 · 等当前回合结束'
+  if (delivery.deliverAs === 'steer') return '插话中 · 下个工具调用生效'
+  // A queued message waits for whatever holds pi up: the turn, or the compaction
+  // the bridge holds the whole queue behind.
+  return options.compacting ? '排队中 · 等压缩完成' : '排队中 · 等当前回合结束'
 }
 
 /** Tooltip explaining what the badge means for this delivery mode. */
@@ -90,7 +95,7 @@ export function pendingDeliveryTitle(delivery: PendingDelivery): string {
 }
 
 /** Sits directly above the composer so a queued message stays visible while the turn keeps scrolling. */
-export function PendingDeliveryBar({ deliveries }: { deliveries: PendingDelivery[] }) {
+export function PendingDeliveryBar({ deliveries, compacting = false }: { deliveries: PendingDelivery[]; compacting?: boolean }) {
   if (deliveries.length === 0) return null
   const sending = deliveries.filter(delivery => delivery.state === 'sending').length
   const texts = deliveries.map(delivery => delivery.text).join(' / ')
@@ -99,13 +104,14 @@ export function PendingDeliveryBar({ deliveries }: { deliveries: PendingDelivery
       <MaterialIcon name="schedule" className="h-3.5 w-3.5 shrink-0" />
       <span className="shrink-0">
         {deliveries.length} 条消息尚未被 Pi 处理
-        {sending > 0 ? `（${sending} 条仍在发送）` : deliveryHint(deliveries)}
+        {sending > 0 ? `（${sending} 条仍在发送）` : deliveryHint(deliveries, compacting)}
       </span>
       <span className="min-w-0 flex-1 truncate text-muted" title={deliveries.map(delivery => delivery.text).join('\n')}>{texts}</span>
     </div>
   )
 }
 
-function deliveryHint(deliveries: PendingDelivery[]): string {
+function deliveryHint(deliveries: PendingDelivery[], compacting: boolean): string {
+  if (compacting) return '（等上下文压缩完成）'
   return deliveries.every(delivery => delivery.deliverAs === 'steer') ? '（下个工具调用生效）' : '（等当前回合结束）'
 }

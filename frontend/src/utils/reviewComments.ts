@@ -85,6 +85,48 @@ export function buildQuoteReplyMessage(quotes: QuotedText[]): string {
     .join('\n\n')
 }
 
+/** Opening line used when the comments target the conversation itself. */
+export const CHAT_REVIEW_INTRO = 'Please review and address these comments about the quoted parts of our conversation:'
+
+/** Headline `buildReviewMessage` writes when no intro is given (document comments). */
+const FILE_REVIEW_HEAD = /^Please review and address the comments? in .+:$/
+/** First line of a quote reply block: `引用（来自 Agent 回复）：`. */
+const QUOTE_REPLY_HEAD = /^引用（来自.+）：$|^引用：$/
+
+export type FollowUpKind = 'quote' | 'comment'
+
+/**
+ * What kind of follow-up this chat message is, or undefined for an ordinary one.
+ *
+ * Both shapes are built by this module, so recognising them by their own markers
+ * is exact — the timeline can merge a quote or a comment round into the activity
+ * it belongs to instead of splitting the work in two.
+ */
+export function quoteOrCommentKind(text: string): FollowUpKind | undefined {
+  // Attached-file text and images are prefixed before the quote block, so look
+  // through the opening lines instead of trusting the very first one.
+  const head = text.split('\n', 12).map(line => line.trim()).filter(Boolean)
+  if (head.some(line => line === CHAT_REVIEW_INTRO || FILE_REVIEW_HEAD.test(line))) return 'comment'
+  if (head.some(line => QUOTE_REPLY_HEAD.test(line)) && /^> /m.test(text)) return 'quote'
+  return undefined
+}
+
+/**
+ * The sentences a follow-up points at: quoted lines of a quote reply, or the
+ * `Quoted: "…"` entries of a comment round. Used to find the activity the note
+ * belongs to.
+ */
+export function quotedSnippets(text: string): string[] {
+  const snippets: string[] = []
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    const comment = /^Quoted: "(.*)"$/.exec(line)
+    if (comment?.[1]) snippets.push(comment[1])
+    else if (line.startsWith('> ')) snippets.push(line.slice(2))
+  }
+  return snippets
+}
+
 /**
  * The single chat message an agent receives for one review round. Every item
  * carries what it points at, the quoted text, and the feedback.

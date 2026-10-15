@@ -33,10 +33,11 @@ import {
 } from '../../store/liveSessionsSlice'
 import { liveSessionApi, LiveSessionApiError } from './api'
 import LiveSessionComposer from './LiveSessionComposer'
+import ActivityTimeline, { type ActivityImage, type ActivityNote, type ActivityReply, type ActivityStep, type LiveActivity } from './ActivityTimeline'
 import FullContentModal from '../../components/FullContentModal'
 import { SelectionQuoteMenu, QuoteCommentPopover } from '../../components/SelectionQuoteMenu'
 import { useChatQuoteSelection, type SelectionTarget } from '../../hooks/useChatQuoteSelection'
-import { commentReviewItems, selectionLabel, type QuotedText, type ReviewItem } from '../../utils/reviewComments'
+import { CHAT_REVIEW_INTRO, commentReviewItems, quoteOrCommentKind, quotedSnippets, selectionLabel, type FollowUpKind, type QuotedText, type ReviewItem } from '../../utils/reviewComments'
 
 /** One review round: what the comments point at and how to clear them after sending. */
 interface ReviewRequest {
@@ -46,11 +47,17 @@ interface ReviewRequest {
   intro?: string
 }
 
-/** Opening line used when the comments target the conversation itself. */
-const CHAT_REVIEW_INTRO = 'Please review and address these comments about the quoted parts of our conversation:'
+/**
+ * Sent when the user asks the agent to re-check its own checklist. Kept short and
+ * read-only in intent: the agent reports truth, it does not get to rewrite the
+ * objective or the acceptance criteria (the goal extension blocks that anyway).
+ */
+const GOAL_SYNC_REQUEST = '请对照本会话最初的需求，把「任务锚点」里的工作项状态更新为真实进度（已完成 / 进行中 / 未开始），并补齐或关闭已经变化的阻塞项。不要改动目标原文和验收标准。'
 import { watchCompaction } from './compactionWatch'
 import LiveSessionFeatures from './LiveSessionFeatures'
+import { sessionGoalFromEntries, type SessionGoalSummary, type SessionGoalWorkItem } from './sessionGoal'
 import LiveSubagentPanel from './LiveSubagentPanel'
+import ToolResultCard, { shortToolId } from './ToolResultCard'
 import LiveWorkflowPanel from './LiveWorkflowPanel'
 import LiveWorkflowProgressCard, { type WorkflowRecord } from './LiveWorkflowProgressCard'
 import { loadTtsSettings, saveTtsSettings, subscribeTtsSettings, type TtsSettings } from '../voice/ttsSettings'
@@ -81,20 +88,60 @@ function textContent(content: unknown): string {
   }).filter(Boolean).join('\n')
 }
 
-function messageFromEntry(entry: unknown): { role: string; text: string; content: unknown; channel?: string; toolName?: string; toolCallId?: string; isError?: boolean } | undefined {
+function userActivityInput(content: unknown, fallbackText: string): { title: string; images: ActivityImage[] } {
+  const textParts: string[] = []
+  const images: ActivityImage[] = []
+  if (typeof content === 'string') textParts.push(content)
+  else if (Array.isArray(content)) {
+    for (const part of content) {
+      if (!part || typeof part !== 'object' || Array.isArray(part)) continue
+      const record = part as Record<string, unknown>
+      if (record.type === 'text' && typeof record.text === 'string') textParts.push(record.text)
+      if (record.type !== 'image' || typeof record.data !== 'string' || !record.data) continue
+      const mimeType = typeof record.mimeType === 'string' ? record.mimeType : ''
+      if (mimeType.startsWith('image/')) images.push({ data: record.data, mimeType })
+    }
+  }
+  const text = shortTarget(textParts.join('\n'), 150)
+  return {
+    title: text || (images.length > 0 ? `用户发送了 ${images.length} 张图片` : shortTarget(fallbackText, 150) || fallbackText),
+    images,
+  }
+}
+
+function editableTextContent(content: unknown): string | undefined {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return undefined
+  const textParts: string[] = []
+  for (const part of content) {
+    if (!part || typeof part !== 'object' || Array.isArray(part)) return undefined
+    const record = part as Record<string, unknown>
+    if (record.type !== 'text' || typeof record.text !== 'string') return undefined
+    textParts.push(record.text)
+  }
+  return textParts.join('\n')
+}
+
+function messageFromEntry(entry: unknown): { role: string; text: string; content: unknown; channel?: string; toolName?: string; toolCallId?: string; isError?: boolean; providerError?: string } | undefined {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined
   const record = entry as Record<string, unknown>
   let message: Record<string, unknown> | undefined
   let channel: string | undefined
   if (record.type === 'message' && record.message && typeof record.message === 'object') message = record.message as Record<string, unknown>
-  if ((record.type === 'message_end' || record.type === 'message_update') && record.data && typeof record.data === 'object') {
-    const data = record.data as Record<string, unknown>
-    if (data.message && typeof data.message === 'object') message = data.message as Record<string, unknown>
+  if (record.type === 'message_end' || record.type === 'message_update') {
+    const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data)
+      ? record.data as Record<string, unknown> : record
+    const rawMessage = data.message && typeof data.message === 'object' ? data.message : record.message
+    if (rawMessage && typeof rawMessage === 'object' && !Array.isArray(rawMessage)) message = rawMessage as Record<string, unknown>
     if (typeof data.channel === 'string') channel = data.channel
   }
   if (!message || typeof message.role !== 'string') return undefined
   const text = textContent(message.content)
   if (message.role !== 'assistant' && !text) return undefined
+  const rawProviderError = typeof message.errorMessage === 'string' ? message.errorMessage : ''
+  const providerError = rawProviderError.trim()
+    ? rawProviderError
+    : message.stopReason === 'error' ? '模型请求失败，但未提供错误详情。' : undefined
   return {
     role: message.role,
     text,
@@ -103,6 +150,7 @@ function messageFromEntry(entry: unknown): { role: string; text: string; content
     ...(typeof message.toolName === 'string' ? { toolName: message.toolName } : {}),
     ...(typeof message.toolCallId === 'string' ? { toolCallId: message.toolCallId } : {}),
     ...(typeof message.isError === 'boolean' ? { isError: message.isError } : {}),
+    ...(providerError ? { providerError } : {}),
   }
 }
 
@@ -160,10 +208,6 @@ function entryTimestamp(entry: unknown): string | undefined {
   if (Number.isNaN(date.getTime())) return undefined
   const pad = (part: number) => String(part).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-}
-
-function shortToolId(value?: string): string {
-  return value ? `#${value.length > 12 ? value.slice(0, 8) : value}` : ''
 }
 
 const CHANNEL_LABELS: Record<string, string> = { web: 'web', terminal: '终端', chatapp: '聊天', mobile: '手机' }
@@ -460,7 +504,7 @@ function assistantBodyEntry(entry: unknown): unknown | undefined {
 }
 
 export interface LiveTimelineHidden {
-  /** Tool call/result rows folded away. */
+  /** Tool call/result/execution rows folded away. */
   tools: number
   /** Thinking entries folded away. */
   thinking: number
@@ -471,10 +515,9 @@ export interface LiveTimelineHidden {
 /**
  * Group live entries into timeline items.
  *
- * @param auxiliary when false, thinking and tool/script execution are left out
- *                  entirely (they are not even rendered as collapsed one-liners),
- *                  so the reader sees the agent's reply body plus user turns.
- *                  Entries that would render nothing are dropped, not blanked.
+ * @param auxiliary when false, thinking and raw tool/script execution are left
+ *                  out of the message timeline; the activity timeline is rendered
+ *                  instead. Entries that would render nothing are dropped.
  */
 export function groupLiveToolEntries(
   entries: unknown[],
@@ -529,6 +572,12 @@ export function groupLiveToolEntries(
       // real session had 434 `compact-thinking-duration` rows against 1008 messages.
       if (record?.type === 'custom') {
         hidden.other += 1
+        return
+      }
+      // Tool execution lifecycle events are rendered as cards by TimelineEntry,
+      // but carry no readable message body. Keep them out of compact reading too.
+      if (typeof record?.type === 'string' && record.type.startsWith('tool_execution_')) {
+        hidden.tools += 1
         return
       }
       const parts = contentParts(message?.content)
@@ -586,46 +635,21 @@ export function groupLiveToolEntries(
   return { items: result, hidden }
 }
 
-function ToolResultCard({ text, toolName, toolCallId, command, isError, timestamp, revealOnMount = false }: { text: string; toolName?: string; toolCallId?: string; command?: string; isError?: boolean; timestamp?: string; revealOnMount?: boolean }) {
-  const lines = text.split('\n')
-  const [expanded, setExpanded] = useState(revealOnMount)
-  const statusTone = isError ? 'border-danger bg-danger-subtle' : 'border-ok bg-ok-subtle'
-  return (
-    <article className={`w-full max-w-full overflow-hidden rounded-md border bg-card ${statusTone}`}>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded(value => !value)}
-        className="flex w-full min-w-0 items-center gap-2 border-none bg-bg-elevated px-2 py-1.5 text-left hover:bg-bg-hover"
-      >
-        <ToolSummaryLine toolName={toolName || 'tool'} command={command} timestamp={timestamp} status={isError ? 'error' : 'success'} className="flex-1" />
-        <span className="flex shrink-0 items-center gap-2 text-2xs text-muted">
-          <span>{lines.length} 行</span>
-          <span className="text-accent">{expanded ? '收起' : '展开'}</span>
-        </span>
-      </button>
-      {expanded && (
-        <div className="max-h-[320px] overflow-auto border-t border-border px-2 py-1.5">
-          {toolCallId && <div className="mb-1 text-2xs text-muted">tool call {shortToolId(toolCallId)}</div>}
-          <pre className="m-0 whitespace-pre-wrap break-words font-mono text-2xs leading-4 text-text">{text}</pre>
-        </div>
-      )}
-    </article>
-  )
-}
-
-type ToolState = {
+export type ToolState = {
   toolCallId: string
   toolName?: string
   called: boolean
   started: boolean
   ended: boolean
+  abandoned: boolean
+  isError?: boolean
+  errorText?: string
   command?: string
   partialText?: string
   result?: { text: string; toolName?: string; isError?: boolean; timestamp?: string }
 }
 
-type ToolStateMap = Map<string, ToolState>
+export type ToolStateMap = Map<string, ToolState>
 
 function partialText(value: unknown): string {
   if (typeof value === 'string') return value
@@ -634,16 +658,31 @@ function partialText(value: unknown): string {
   return textContent(record.content) || (typeof record.text === 'string' ? record.text : '')
 }
 
-function collectToolStates(entries: unknown[]): ToolStateMap {
+function toolTerminalMessage(state?: ToolState): string | undefined {
+  if (!state || state.result) return undefined
+  if (state.abandoned) return state.errorText || '未收到工具完成结果；该调用已停止显示为运行中。'
+  if (state.ended) return state.errorText || (state.isError ? '工具执行失败，但没有返回结果文本。' : '工具已结束，但没有返回结果文本。')
+  return undefined
+}
+
+export function collectToolStates(entries: unknown[]): ToolStateMap {
   const states: ToolStateMap = new Map()
   const ensure = (toolCallId: string): ToolState => {
     const existing = states.get(toolCallId)
     if (existing) return existing
-    const created: ToolState = { toolCallId, called: false, started: false, ended: false }
+    const created: ToolState = { toolCallId, called: false, started: false, ended: false, abandoned: false }
     states.set(toolCallId, created)
     return created
   }
   for (const entry of entries) {
+    const record = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : undefined
+    if (record?.type === 'compaction_end' || record?.type === 'agent_settled') {
+      for (const state of states.values()) {
+        if (!state.result && !state.ended && (state.started || state.called)) state.abandoned = true
+      }
+      continue
+    }
+
     const message = messageFromEntry(entry)
     if (message?.role === 'assistant') {
       for (const part of contentParts(message.content)) {
@@ -661,23 +700,657 @@ function collectToolStates(entries: unknown[]): ToolStateMap {
     if (message?.role === 'toolResult' && message.toolCallId) {
       const state = ensure(message.toolCallId)
       state.result = { text: message.text, toolName: message.toolName, isError: message.isError, timestamp: entryTimestamp(entry) }
+      state.abandoned = false
+      state.isError = message.isError === true
       if (message.toolName) state.toolName = message.toolName
     }
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
-    const record = entry as Record<string, unknown>
-    if (!record.type || !String(record.type).startsWith('tool_execution_')) continue
+    if (!record || typeof record.type !== 'string' || !record.type.startsWith('tool_execution_')) continue
     const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : record
     if (typeof data.toolCallId !== 'string') continue
     const state = ensure(data.toolCallId)
     if (typeof data.toolName === 'string') state.toolName = data.toolName
-    if (record.type === 'tool_execution_start' || record.type === 'tool_execution_update') state.started = true
-    if (record.type === 'tool_execution_end') state.ended = true
+    if (record.type === 'tool_execution_start' || record.type === 'tool_execution_update') {
+      state.started = true
+      state.abandoned = false
+    }
+    if (record.type === 'tool_execution_end') {
+      state.ended = true
+      state.abandoned = false
+      state.isError = data.isError === true || data.isError === 'true'
+      const errorText = partialText(data.result) || (typeof data.error === 'string' ? data.error : '')
+      if (errorText) state.errorText = errorText
+    }
     if (record.type === 'tool_execution_update') state.partialText = partialText(data.partialResult)
   }
   return states
 }
 
-type AgentState = {
+type ActivityCandidate = {
+  key: string
+  index: number
+  toolName: string
+  toolCallId?: string
+  argsText?: string
+  detail?: string
+  isError?: boolean
+  ended?: boolean
+  started?: boolean
+}
+
+function objectArgs(value?: string): Record<string, unknown> {
+  if (!value) return {}
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
+
+function shortTarget(value: unknown, max = 42): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  const normalized = value.split('\n').join(' ').split('\t').join(' ').replace(/ {2,}/g, ' ').trim()
+  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized
+}
+
+function activityAction(toolName: string, argsText?: string, detail?: string): { label: string; detail?: string; path?: string; isTest: boolean } {
+  const name = toolName.toLowerCase().replace(/[_-]+/g, ' ')
+  const args = objectArgs(argsText)
+  const pathValue = typeof args.path === 'string' ? args.path : typeof args.filePath === 'string' ? args.filePath : typeof args.file_path === 'string' ? args.file_path : undefined
+  const file = pathValue?.split('/').filter(Boolean).pop()
+  const extension = file?.split('.').pop()?.toLowerCase()
+  const codeFile = ['c', 'cc', 'cpp', 'cs', 'go', 'java', 'js', 'jsx', 'mjs', 'py', 'rb', 'rs', 'ts', 'tsx', 'vue', 'svelte'].includes(extension || '')
+  const normalizedPath = (pathValue || '').toLowerCase()
+  const testFile = /(?:^|[._-])(?:test|spec)(?:[._-]|$)/i.test(file || '') || normalizedPath.includes('/test/') || normalizedPath.includes('/tests/') || (file || '').toLowerCase().startsWith('test_')
+  const command = typeof args.command === 'string' ? args.command : detail || ''
+  const normalizedCommand = command.toLowerCase()
+  const query = typeof args.query === 'string' ? args.query : typeof args.pattern === 'string' ? args.pattern : undefined
+
+  if (/^(?:edit|write|apply patch|patch|replace)$/.test(name)) {
+    return { label: testFile ? '编写回归测试' : codeFile ? '修改代码' : '修改文件', ...(file ? { detail: file } : {}), ...(pathValue ? { path: pathValue } : {}), isTest: false }
+  }
+  if (/^(?:read|open|view|list files?)$/.test(name)) {
+    return { label: testFile ? '检查测试用例' : codeFile ? '检查代码逻辑' : '读取文件', ...(file ? { detail: file } : {}), ...(pathValue ? { path: pathValue } : {}), isTest: false }
+  }
+  if (/web|browser|knowledge|fetch url/.test(name)) {
+    return { label: '查找资料', ...(query ? { detail: shortTarget(query) } : {}), isTest: false }
+  }
+  if (/search|grep|ripgrep|find files?/.test(name)) {
+    return { label: '搜索代码或文件', ...(query ? { detail: shortTarget(query) } : {}), isTest: false }
+  }
+  const shellLike = name === 'bash' || name === 'shell' || name === 'sh'
+  if (shellLike || typeof args.command === 'string') {
+    const testRunners = ['npm run test', 'npm test', 'pnpm test', 'yarn test', 'pytest', 'vitest', 'jest', 'mocha', 'cargo test']
+    const commandTokens = normalizedCommand.split(' ').filter(Boolean)
+    const runner = testRunners.find(value => normalizedCommand.includes(value))
+      || (['npm', 'pnpm', 'yarn'].includes(commandTokens[0] || '') && commandTokens.includes('test') ? 'test' : undefined)
+    if (runner) return { label: '运行回归测试', detail: runner, isTest: true }
+    if (['tsc', 'typecheck', 'mypy', 'pyright'].some(value => normalizedCommand.includes(value))) return { label: '运行类型检查', detail: '类型检查', isTest: false }
+    if (['eslint', 'ruff', 'flake8', 'pylint'].some(value => normalizedCommand.includes(value))) return { label: '运行代码检查', detail: 'lint', isTest: false }
+    if (['build', 'vite build', 'webpack', 'rollup'].some(value => normalizedCommand.includes(value))) return { label: '构建项目', detail: 'build', isTest: false }
+    if (['rg ', 'grep ', 'find ', 'fd '].some(value => normalizedCommand.includes(value))) return { label: '搜索代码或文件', isTest: false }
+    if (['git status', 'git diff', 'git log', 'git show'].some(value => normalizedCommand.includes(value))) return { label: '检查代码变更', detail: 'git', isTest: false }
+    if (['python', 'node ', 'ruby '].some(value => normalizedCommand.includes(value))) return { label: '运行脚本', isTest: false }
+    return { label: '执行命令', isTest: false }
+  }
+  return { label: '调用外部工具', isTest: false }
+}
+
+function passingTestCount(text: string): string | undefined {
+  const matches = [...text.matchAll(/Tests? +[0-9]+ +passed/gi)]
+  const count = matches[matches.length - 1]?.[0].match(/[0-9]+/)?.[0]
+  return count ? `${count} 项通过` : undefined
+}
+
+function collectLiveActivityEvidence(entries: unknown[]): ActivityStep[] {
+  const candidates = new Map<string, ActivityCandidate>()
+  const states = collectToolStates(entries)
+
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]
+    for (const item of liveToolItems(index, entry)) {
+      const key = item.toolCallId || item.key
+      const existing = candidates.get(key)
+      if (item.source === 'call') {
+        if (existing) {
+          existing.argsText ||= item.argsText
+          existing.detail ||= item.detail
+          continue
+        }
+        candidates.set(key, {
+          key,
+          index,
+          toolName: item.toolName,
+          ...(item.toolCallId ? { toolCallId: item.toolCallId } : {}),
+          ...(item.argsText ? { argsText: item.argsText } : {}),
+          ...(item.detail ? { detail: item.detail } : {}),
+        })
+      } else if (existing) {
+        existing.isError = item.isError || existing.isError
+      } else {
+        candidates.set(key, {
+          key,
+          index,
+          toolName: item.toolName,
+          ...(item.toolCallId ? { toolCallId: item.toolCallId } : {}),
+          isError: item.isError,
+        })
+      }
+    }
+
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const record = entry as Record<string, unknown>
+    if (typeof record.type !== 'string' || !record.type.startsWith('tool_execution_')) continue
+    const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : record
+    const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+    if (!toolCallId && record.type === 'tool_execution_update') continue
+    const key = toolCallId || `event:${index}`
+    const existing = candidates.get(key)
+    const payload = data.input ?? data.args
+    const argsText = typeof payload === 'string'
+      ? payload
+      : payload && typeof payload === 'object'
+        ? JSON.stringify(payload)
+        : typeof data.command === 'string' ? JSON.stringify({ command: data.command }) : undefined
+    const detail = typeof data.command === 'string' ? data.command : undefined
+    if (existing) {
+      existing.argsText ||= argsText
+      existing.detail ||= detail
+      existing.isError = data.isError === true || data.isError === 'true' || existing.isError
+      existing.ended ||= record.type === 'tool_execution_end'
+      existing.started ||= record.type === 'tool_execution_start' || record.type === 'tool_execution_update'
+    } else {
+      candidates.set(key, {
+        key,
+        index,
+        toolName: typeof data.toolName === 'string' ? data.toolName : 'tool',
+        ...(toolCallId ? { toolCallId } : {}),
+        ...(argsText ? { argsText } : {}),
+        ...(detail ? { detail } : {}),
+        isError: data.isError === true || data.isError === 'true',
+        ended: record.type === 'tool_execution_end',
+        started: record.type === 'tool_execution_start' || record.type === 'tool_execution_update',
+      })
+    }
+  }
+
+  return [...candidates.values()]
+    .sort((left, right) => left.index - right.index)
+    .map(candidate => {
+      const state = candidate.toolCallId ? states.get(candidate.toolCallId) : undefined
+      const isError = candidate.isError || state?.result?.isError === true || state?.isError === true || state?.abandoned === true
+      const status: ActivityStep['status'] = isError
+        ? 'error'
+        : state?.result || state?.ended || candidate.ended
+          ? 'done'
+          : state?.started || candidate.started
+            ? 'running'
+            : 'pending'
+      const action = activityAction(candidate.toolName, candidate.argsText, candidate.detail || state?.command)
+      const testCount = action.isTest && status === 'done' ? passingTestCount(state?.result?.text || '') : undefined
+      return {
+        id: candidate.key,
+        label: action.label,
+        detail: [action.detail, testCount].filter(Boolean).join(' · ') || undefined,
+        ...(action.path ? { path: action.path } : {}),
+        status,
+        entryIndex: candidate.index,
+      }
+    })
+}
+
+export function buildLiveActivityEvidence(entries: unknown[]): ActivityStep[] {
+  return collectLiveActivityEvidence(entries).slice(-6)
+}
+
+function entryChannel(entry: unknown): string | undefined {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined
+  const record = entry as Record<string, unknown>
+  const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
+  const message = record.message && typeof record.message === 'object' && !Array.isArray(record.message)
+    ? record.message as Record<string, unknown>
+    : data?.message && typeof data.message === 'object' && !Array.isArray(data.message)
+      ? data.message as Record<string, unknown>
+      : undefined
+  return typeof data?.channel === 'string' ? data.channel : typeof message?.channel === 'string' ? message.channel : typeof record.channel === 'string' ? record.channel : undefined
+}
+
+export function currentActivityDescription(entries: unknown[], goal: SessionGoalSummary | null): { title: string; sourceLabel: string; lastSummary?: string } {
+  if (goal?.progress.current) return { title: goal.progress.current, sourceLabel: 'Agent 阶段报告', ...(goal.progress.lastSummary ? { lastSummary: goal.progress.lastSummary } : {}) }
+
+  let latestUserIndex = -1
+  entries.forEach((entry, index) => {
+    if (messageFromEntry(entry)?.role === 'user') latestUserIndex = index
+  })
+  for (let index = entries.length - 1; index > latestUserIndex; index -= 1) {
+    const message = messageFromEntry(entries[index])
+    if (message?.role !== 'assistant' || entryChannel(entries[index]) !== 'commentary' || !message.text) continue
+    return { title: shortTarget(message.text, 150) || message.text, sourceLabel: 'Agent 进度说明' }
+  }
+
+  const currentWorkItem = goal?.workItems.find(item => item.state === 'in_progress')
+  if (currentWorkItem) return { title: currentWorkItem.title, sourceLabel: '当前工作项', ...(currentWorkItem.description ? { lastSummary: currentWorkItem.description } : {}) }
+  if (goal?.objective && goal.status !== 'complete') return { title: goal.objective, sourceLabel: '任务目标', ...(goal.progress.lastSummary ? { lastSummary: goal.progress.lastSummary } : {}) }
+
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const message = messageFromEntry(entries[index])
+    if (message?.role === 'user' && message.text) return { title: shortTarget(message.text, 150) || message.text, sourceLabel: '最近用户请求' }
+  }
+  return { title: '等待 Agent 报告当前工作事项', sourceLabel: '等待进度' }
+}
+
+type ActivityReport = {
+  title: string
+  sourceLabel: string
+  index: number
+  lastSummary?: string
+  completed?: boolean
+  /** 计划要点（如 goal 工作项），展示在用户请求下方而不混进实际步骤。 */
+  planItems?: ActivityStep[]
+  /** Agent 对需求的理解与计划（动手之前的说明），不放回复区。 */
+  planLines?: string[]
+  images?: ActivityImage[]
+}
+
+/** 把 goal 工作项映射成计划要点，保留其真实状态。 */
+function goalPlanItems(workItems: readonly SessionGoalWorkItem[], index: number): ActivityStep[] {
+  return workItems.flatMap(item => {
+    const label = shortTarget(item.title, 150)
+    if (!label) return []
+    const status: ActivityStep['status'] = item.state === 'done'
+      ? 'done'
+      : item.state === 'in_progress'
+        ? 'running'
+        : item.state === 'blocked' ? 'blocked' : 'pending'
+    const detail = shortTarget(item.description, 180)
+    return [{
+      id: `goal-work:${item.id}`,
+      label,
+      ...(detail ? { detail } : {}),
+      status,
+      entryIndex: index,
+    }]
+  })
+}
+
+function goalActivityReport(entry: unknown, index: number): ActivityReport | undefined {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined
+  const record = entry as Record<string, unknown>
+  if (record.type !== 'custom' || record.customType !== 'goal-state') return undefined
+  const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
+  const state = data?.state && typeof data.state === 'object' && !Array.isArray(data.state) ? data.state as Record<string, unknown> : undefined
+  const progress = state?.progress && typeof state.progress === 'object' && !Array.isArray(state.progress) ? state.progress as Record<string, unknown> : undefined
+  const title = shortTarget(progress?.current, 150) ?? ''
+  const lastSummary = shortTarget(progress?.lastSummary, 180)
+  const workItems = (Array.isArray(state?.workItems) ? state.workItems : []).flatMap(value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+    const item = value as Record<string, unknown>
+    const label = shortTarget(item.title, 150)
+    if (!label) return []
+    return [{
+      id: typeof item.id === 'string' ? item.id : label,
+      title: label,
+      ...(shortTarget(item.description, 180) ? { description: shortTarget(item.description, 180) } : {}),
+      ...(typeof item.state === 'string' ? { state: item.state as SessionGoalWorkItem['state'] } : {}),
+      dependsOn: [],
+    }]
+  })
+  const planItems = goalPlanItems(workItems, index)
+  // 目标收尾或只有清单、没有「当前正在做」时，工作项仍然是该活动的计划要点 ——
+  // 只是没有可以当标题的句子，交给调用方沿用当前活动标题。
+  if (!title && !lastSummary && planItems.length === 0) return undefined
+  return {
+    // 被快照钉住带到末尾的状态是「当前状态」而不是新阶段：只补充计划/小结，不开新活动。
+    title: record.pinned === true ? '' : title,
+    sourceLabel: 'Agent 阶段报告',
+    index,
+    ...(lastSummary ? { lastSummary } : {}),
+    ...(planItems.length ? { planItems } : {}),
+    ...(state?.status === 'complete' ? { completed: true } : {}),
+  }
+}
+
+export function buildLiveActivities(entries: unknown[], sessionStatus: string, goal: SessionGoalSummary | null): LiveActivity[] {
+  const evidenceByIndex = new Map<number, ActivityStep[]>()
+  for (const step of collectLiveActivityEvidence(entries)) {
+    const existing = evidenceByIndex.get(step.entryIndex) || []
+    existing.push(step)
+    evidenceByIndex.set(step.entryIndex, existing)
+  }
+
+  const activities: LiveActivity[] = []
+  const phaseClosed = new Set<string>()
+  const settled = new Set<string>()
+  let current: LiveActivity | undefined
+  let pendingCommentary: ActivityReport | undefined
+  // Pi 正在干活时发来的输入只是排队：它不属于新活动，后续步骤也仍然属于旧活动。
+  let agentBusy = false
+  // 上一个回合真正结束的位置：它之后的 agent 文字已经是新排队输入的答复。
+  let lastSettledIndex = -1
+  const queuedInputs: Array<{ text: string; index: number; deliverAs?: string }> = []
+  const queuedUserImages = new Map<number, ActivityImage[]>()
+  const queueInput = (activity: LiveActivity | undefined, text: string, index: number, deliverAs?: string): void => {
+    if (!activity) return
+    const queued = activity.queuedInputs || []
+    if (!queued.includes(text)) activity.queuedInputs = [...queued, text]
+    if (!queuedInputs.some(item => item.text === text)) queuedInputs.push({ text, index, ...(deliverAs ? { deliverAs } : {}) })
+  }
+  const dropQueuedInput = (text: string): void => {
+    for (const activity of activities) {
+      if (!activity.queuedInputs?.includes(text)) continue
+      activity.queuedInputs = activity.queuedInputs.filter(item => item !== text)
+    }
+  }
+  /**
+   * 引用 / 批注是对已经做完那件事的追问。
+   *
+   * 把它当新用户请求另开一个活动，会把同一件事拆成两段，前因后果说不清；
+   * 所以并入它指向的那个活动（原文找不到时并入当前活动），接下来的执行也留在这里。
+   */
+  const attachFollowUp = (activity: LiveActivity, text: string, index: number, kind: FollowUpKind, queued: boolean): void => {
+    const list = activity.followUps || []
+    if (list.some(item => item.entryIndex === index)) return
+    activity.followUps = [...list, { id: `follow-up-${index}`, kind, text, entryIndex: index, ...(queued ? { queued: true } : {}) }]
+  }
+  /** 引用/批注指向的活动：拿引文去活动的计划与回复里找，找不到就不自带归属。 */
+  const quoteOwner = (text: string): LiveActivity | undefined => {
+    const flat = (value: string): string => value.replace(/\s+/g, ' ').trim()
+    for (const snippet of quotedSnippets(text)) {
+      // 引文是长度截断过的片段，去掉省略号再比。
+      // 下限按字符数算（中文一句话只有十来个字），太短的片段容易误命中，不作线索。
+      const needle = flat(snippet).replace(/…$/, '')
+      if (needle.length < 8) continue
+      for (let index = activities.length - 1; index >= 0; index -= 1) {
+        const notes = [...(activities[index].plan?.lines || []), ...activities[index].replies, ...(activities[index].followUps || [])]
+        if (notes.some(note => flat(note.text).includes(needle))) return activities[index]
+      }
+    }
+    return undefined
+  }
+  const mergePlan = (activity: LiveActivity, report: ActivityReport): void => {
+    const hasPlan = (report.planLines?.length || 0) > 0 || (report.planItems?.length || 0) > 0
+    if (!hasPlan) return
+    const plan = activity.plan || { lines: [], items: [] }
+    // 标题已经就是这句话时不再重复一遍。
+    const entryId = entryIdOf(entries[report.index])
+    for (const line of report.planLines || []) {
+      if (line === activity.title || plan.lines.some(note => note.text === line)) continue
+      plan.lines.push({ text: line, entryIndex: report.index, related: [], ...(entryId ? { entryId } : {}) })
+    }
+    for (const item of report.planItems || []) {
+      const existingIndex = plan.items.findIndex(candidate => candidate.id === item.id)
+      if (existingIndex >= 0) plan.items[existingIndex] = { ...item, entryIndex: plan.items[existingIndex].entryIndex }
+      else plan.items.push(item)
+    }
+    plan.items.sort((left, right) => left.entryIndex - right.entryIndex)
+    activity.plan = plan
+  }
+  const startActivity = (report: ActivityReport): LiveActivity => {
+    const activity: LiveActivity = {
+      id: `activity-${report.index}-${activities.length}`,
+      title: report.title,
+      sourceLabel: report.sourceLabel,
+      status: 'pending',
+      steps: [],
+      replies: [],
+      ...(report.images?.length ? { images: report.images } : {}),
+      ...(entryTimestamp(entries[report.index]) ? { startedAt: entryTimestamp(entries[report.index]) } : {}),
+      ...(report.lastSummary ? { lastSummary: report.lastSummary } : {}),
+    }
+    mergePlan(activity, report)
+    activities.push(activity)
+    current = activity
+    return activity
+  }
+  const updateActivity = (activity: LiveActivity, report: ActivityReport): LiveActivity => {
+    // 报告可以不带标题（例如只有工作项、没有「当前正在做」）；那就不动现有标题。
+    if (report.title) activity.title = report.title
+    activity.sourceLabel = report.sourceLabel
+    activity.startedAt ||= entryTimestamp(entries[report.index])
+    if (report.lastSummary) activity.lastSummary = report.lastSummary
+    mergePlan(activity, report)
+    return activity
+  }
+  const ensureFallbackActivity = (index: number): LiveActivity => current || startActivity({
+    title: '正在处理会话任务',
+    sourceLabel: '执行记录',
+    index,
+  })
+  const startUserActivity = (report: ActivityReport): LiveActivity => {
+    const fallback = current
+    const hasPlan = (fallback?.plan?.lines.length || 0) > 0 || (fallback?.plan?.items.length || 0) > 0
+    if (fallback?.title === '正在处理会话任务'
+      && fallback.sourceLabel === '执行记录'
+      && fallback.replies.length === 0
+      && !fallback.lastSummary
+      && !hasPlan
+      && !(fallback.followUps?.length)
+      && !(fallback.queuedInputs?.length)) {
+      fallback.title = report.title
+      fallback.sourceLabel = report.sourceLabel
+      fallback.startedAt ||= entryTimestamp(entries[report.index])
+      if (report.images?.length) fallback.images = [...(fallback.images || []), ...report.images]
+      settled.delete(fallback.id)
+      phaseClosed.delete(fallback.id)
+      mergePlan(fallback, report)
+      current = fallback
+      return fallback
+    }
+    return startActivity(report)
+  }
+  // Agent 正文（进度说明与最终回复）跟着它所属的活动走；重复的流式片段只留一条。
+  const attachReply = (activity: LiveActivity, text: string, kind: ActivityReply['kind'], index: number): void => {
+    const previous = activity.replies[activity.replies.length - 1]
+    if (previous && previous.text === text) return
+    const entryId = entryIdOf(entries[index])
+    activity.replies.push({ id: `reply-${index}-${activity.replies.length}`, text, kind, entryIndex: index, related: [], ...(entryId ? { entryId } : {}) })
+  }
+  // 动手之前（还没有任何步骤）的说明是 agent 的理解与计划，不再当回复展示。
+  const rememberPlan = (activity: LiveActivity, text: string, index: number): void => {
+    if (text === activity.title) return
+    const plan = activity.plan || { lines: [], items: [] }
+    if (plan.lines.some(note => note.text === text)) return
+    const entryId = entryIdOf(entries[index])
+    plan.lines.push({ text, entryIndex: index, related: [], ...(entryId ? { entryId } : {}) })
+    activity.plan = plan
+  }
+  // 没能开新活动的进度说明，归到当前活动的回复区，避免正文丢失。
+  const flushCommentaryAsReply = (report: ActivityReport): void => {
+    if (!current) return
+    for (const line of report.planLines || []) attachReply(current, line, 'commentary', report.index)
+  }
+
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]
+    const record = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : undefined
+    const message = messageFromEntry(entry)
+    const userInput = message?.role === 'user' && message.text ? userActivityInput(message.content, message.text) : undefined
+    const goalReport = goalActivityReport(entry, index)
+
+    const queuedDelivery = pendingDeliveryOf(entry)
+    // 引用 / 批注是追问，不是新请求：并入所属活动，别把工作切成两段。
+    const followUpKind = message?.role === 'user' && message.text ? quoteOrCommentKind(message.text) : undefined
+    if (message?.role === 'user' && message.text && followUpKind) {
+      if (pendingCommentary && current) current.lastSummary = pendingCommentary.title
+      pendingCommentary = undefined
+      const target = quoteOwner(message.text) || current || ensureFallbackActivity(index)
+      attachFollowUp(target, message.text, index, followUpKind, Boolean(queuedDelivery || agentBusy))
+      if (userInput?.images.length) target.images = [...(target.images || []), ...userInput.images]
+      // 后续执行也要留在同一个活动里，否则等于又拆开了。
+      current = target
+    } else if (message?.role === 'user' && message.text && (queuedDelivery || agentBusy)) {
+      // 排队输入：先挂在当前活动上，等 Pi 真正接手（下一次 agent_start）再单独成活动。
+      if (pendingCommentary && current) current.lastSummary = pendingCommentary.title
+      pendingCommentary = undefined
+      if (userInput?.images.length) {
+        if (queuedDelivery?.deliverAs === 'steer') {
+          const target = current || ensureFallbackActivity(index)
+          target.images = [...(target.images || []), ...userInput.images]
+        } else queuedUserImages.set(index, userInput.images)
+      }
+      queueInput(current || ensureFallbackActivity(index), userInput?.title || message.text, index, queuedDelivery?.deliverAs)
+    } else if (message?.role === 'user' && message.text) {
+      if (pendingCommentary) {
+        flushCommentaryAsReply(pendingCommentary)
+        if (current) current.lastSummary = pendingCommentary.title
+      }
+      pendingCommentary = undefined
+      startUserActivity({
+        title: userInput?.title || shortTarget(message.text, 150) || message.text,
+        sourceLabel: '用户请求',
+        index,
+        ...(userInput?.images.length ? { images: userInput.images } : {}),
+      })
+    } else if (goalReport) {
+      if (pendingCommentary) flushCommentaryAsReply(pendingCommentary)
+      pendingCommentary = undefined
+      // 目标状态只带来工作项时，挂到当前活动上；别为它单开一个没有标题的活动。
+      if (!goalReport.title) updateActivity(current || ensureFallbackActivity(index), goalReport)
+      else if (!current) startActivity(goalReport)
+      else if (current.title === goalReport.title) updateActivity(current, goalReport)
+      else if (current.steps.length === 0) updateActivity(current, goalReport)
+      else {
+        phaseClosed.add(current.id)
+        startActivity(goalReport)
+      }
+      if (goalReport.completed && current) settled.add(current.id)
+    } else if (message?.role === 'assistant' && entryChannel(entry) === 'commentary' && message.text) {
+      const report: ActivityReport = {
+        title: shortTarget(message.text, 150) || message.text,
+        sourceLabel: 'Agent 进度说明',
+        index,
+        planLines: [message.text],
+      }
+      if (!current) startActivity(report)
+      else if (current.steps.length === 0) rememberPlan(current, message.text, index)
+      else if (current.title !== report.title) pendingCommentary = report
+      else attachReply(current, message.text, 'commentary', index)
+    } else if (message?.role === 'assistant' && message.text && (entryChannel(entry) === undefined || entryChannel(entry) === 'final')) {
+      const activity = current || startActivity({ title: shortTarget(message.text, 150) || message.text, sourceLabel: 'Agent 回复', index })
+      // 夹在工具调用里的文字只是过程中的说明，不算最终回复。
+      const intermediate = contentParts(message.content).some(part => part.type === 'thinking' || part.type === 'toolCall')
+      attachReply(activity, message.text, intermediate ? 'commentary' : 'final', index)
+    }
+
+    const steps = evidenceByIndex.get(index) || []
+    if (steps.length > 0) {
+      if (pendingCommentary && current && pendingCommentary.title !== current.title) {
+        phaseClosed.add(current.id)
+        startActivity(pendingCommentary)
+      } else if (pendingCommentary && current) {
+        flushCommentaryAsReply(pendingCommentary)
+        if (pendingCommentary.lastSummary) current.lastSummary = pendingCommentary.lastSummary
+      }
+      pendingCommentary = undefined
+      const activity = ensureFallbackActivity(index)
+      activity.steps.push(...steps)
+    }
+
+    const channel = entryChannel(entry)
+    const hasHiddenOrToolParts = message?.role === 'assistant' && contentParts(message.content).some(part => part.type === 'thinking' || part.type === 'toolCall')
+    if (current && message?.role === 'assistant' && message.text && (channel === undefined || channel === 'final') && !hasHiddenOrToolParts) settled.add(current.id)
+
+    if (record?.type === 'agent_start' || record?.type === 'turn_start') {
+      agentBusy = true
+      if (current) settled.delete(current.id)
+      // Pi 开始处理回合：追问里「排队中」的标记可以收了。
+      for (const activity of activities) {
+        for (const item of activity.followUps || []) {
+          if (item.queued && item.entryIndex < index) delete item.queued
+        }
+      }
+      // 新回合开始了：Pi 接下来处理的就是排队中的那条输入（插话除外，它属于当前活动）。
+      const promotedIndex = queuedInputs.findIndex(item => item.deliverAs !== 'steer')
+      if (promotedIndex >= 0) {
+        const [promoted] = queuedInputs.splice(promotedIndex, 1)
+        if (promoted) {
+          dropQueuedInput(promoted.text)
+          const images = queuedUserImages.get(promoted.index)
+          queuedUserImages.delete(promoted.index)
+          const started = startUserActivity({ title: shortTarget(promoted.text, 150) || promoted.text, sourceLabel: '用户请求', index: promoted.index, ...(images?.length ? { images } : {}) })
+          // Pi 接手前，agent 已经为这条排队输入写下的计划与回复要跟着搬进新活动，
+          // 否则它们会被留在上一个活动里（用户看到的错位就是这里）。
+          const boundary = Math.max(promoted.index, lastSettledIndex)
+          for (const activity of activities) {
+            if (activity.id === started.id) continue
+            const movedReplies = activity.replies.filter(reply => reply.entryIndex > boundary)
+            if (movedReplies.length === 0) continue
+            activity.replies = activity.replies.filter(reply => reply.entryIndex <= boundary)
+            started.replies.push(...movedReplies)
+            started.replies.sort((left, right) => left.entryIndex - right.entryIndex)
+            const movedPlan = (activity.plan?.lines || []).filter(line => line.entryIndex > boundary)
+            if (movedPlan.length > 0 && activity.plan) {
+              activity.plan.lines = activity.plan.lines.filter(line => line.entryIndex <= boundary)
+              const plan = started.plan || { lines: [], items: [] }
+              plan.lines.push(...movedPlan)
+              plan.lines.sort((left, right) => left.entryIndex - right.entryIndex)
+              started.plan = plan
+            }
+          }
+        }
+      }
+    } else if (record?.type === 'agent_settled') {
+      agentBusy = false
+      lastSettledIndex = index
+      if (current) settled.add(current.id)
+    } else if (record?.type === 'custom' && record.customType === 'goal-state') {
+      const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
+      const state = data?.state && typeof data.state === 'object' && !Array.isArray(data.state) ? data.state as Record<string, unknown> : undefined
+      if (state?.status === 'complete' && current) settled.add(current.id)
+    }
+  }
+
+  if (pendingCommentary && current) {
+    flushCommentaryAsReply(pendingCommentary)
+    current.lastSummary = pendingCommentary.title
+  }
+  if (activities.length === 0 && goal) {
+    const fallback = currentActivityDescription(entries, goal)
+    const fallbackIndex = Math.max(0, entries.length - 1)
+    const activity = startActivity({
+      ...fallback,
+      index: fallbackIndex,
+      ...(goal.workItems.length ? { planItems: goalPlanItems(goal.workItems, fallbackIndex) } : {}),
+    })
+    if (goal.status === 'complete') settled.add(activity.id)
+  }
+
+  // 每条说明（计划与回复）带上紧随其后真实发生的动作，让“Docs 同步：”这类短句能说清到底动了什么。
+  for (const activity of activities) {
+    const notes: ActivityNote[] = [...(activity.plan?.lines || []), ...activity.replies]
+      .sort((left, right) => left.entryIndex - right.entryIndex)
+    notes.forEach((note, noteIndex) => {
+      const until = notes[noteIndex + 1]?.entryIndex ?? Number.POSITIVE_INFINITY
+      const related: string[] = []
+      for (const step of activity.steps) {
+        if (step.entryIndex <= note.entryIndex || step.entryIndex >= until) continue
+        const value = step.detail ? `${step.label}：${step.detail}` : step.label
+        if (!related.includes(value)) related.push(value)
+        if (related.length >= 4) break
+      }
+      note.related = related
+    })
+  }
+
+  for (const activity of activities) {
+    const planItems = activity.plan?.items || []
+    const hasError = activity.steps.some(step => step.status === 'error')
+    const hasPending = activity.steps.some(step => step.status === 'pending' || step.status === 'blocked')
+      || planItems.some(item => item.status === 'pending' || item.status === 'blocked')
+    const hasRunning = activity.steps.some(step => step.status === 'running') || planItems.some(item => item.status === 'running')
+    const allStepsDone = activity.steps.length > 0 && activity.steps.every(step => step.status === 'done')
+    if (hasError) activity.status = 'incomplete'
+    else if (hasRunning || (activity === current && (sessionStatus === 'running' || sessionStatus === 'reconnecting'))) activity.status = 'running'
+    else if (hasPending) activity.status = 'incomplete'
+    else if (settled.has(activity.id) || (phaseClosed.has(activity.id) && allStepsDone) || (activity === current && sessionStatus === 'idle' && allStepsDone)) activity.status = 'done'
+    else if (activity.steps.length === 0 && settled.has(activity.id)) activity.status = 'done'
+    else if (activity.steps.length === 0) activity.status = 'pending'
+    else activity.status = 'incomplete'
+  }
+  return activities
+}
+
+export type AgentState = {
   label: string
   tone: 'muted' | 'accent' | 'ok' | 'danger'
   activeTools: string[]
@@ -685,12 +1358,12 @@ type AgentState = {
   thinkingStartedAt?: number
 }
 
-function deriveAgentState(status: string | undefined, entries: unknown[], toolStates: ToolStateMap): AgentState {
+export function deriveAgentState(status: string | undefined, entries: unknown[], toolStates: ToolStateMap, compacting = false): AgentState {
   const states = [...toolStates.values()]
-  const active = states.filter(state => !state.result && !state.ended && (state.started || state.called))
+  const active = states.filter(state => !state.result && !state.ended && !state.abandoned && (state.started || state.called))
   const running = active.filter(state => state.started)
   const toolNames = (running.length ? running : active).map(state => state.toolName || 'tool')
-  const doneTools = states.filter(state => !!state.result || state.ended).length
+  const doneTools = states.filter(state => !!state.result || state.ended || state.abandoned).length
   let observedStatus = status
   for (let index = entries.length - 1; index >= 0; index--) {
     const candidate = entries[index]
@@ -700,6 +1373,9 @@ function deriveAgentState(status: string | undefined, entries: unknown[], toolSt
     if (type === 'agent_settled') { observedStatus = 'idle'; break }
   }
   if (observedStatus === 'reconnecting') return { label: '重连中', tone: 'danger', activeTools: toolNames, doneTools }
+  // A compaction is not an agent run: no tools, no messages of its own, and pi
+  // reports it as “not idle” exactly like a running turn. Say what it really is.
+  if (compacting) return { label: '压缩上下文', tone: 'accent', activeTools: [], doneTools }
   if (observedStatus !== 'running') return { label: '等待输入', tone: 'muted', activeTools: [], doneTools }
   if (running.length) return { label: `执行工具 · ${toolNames.slice(0, 2).join('、')}${toolNames.length > 2 ? ` 等 ${toolNames.length} 个` : ''}`, tone: 'accent', activeTools: toolNames, doneTools }
   if (active.length) return { label: `准备工具 · ${toolNames.slice(0, 2).join('、')}`, tone: 'accent', activeTools: toolNames, doneTools }
@@ -743,7 +1419,11 @@ function SessionElapsed({ startedAt }: { startedAt: number }) {
     const timer = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(timer)
   }, [])
-  return <span title="Pi session 已运行时间">◷ {formatSessionElapsed(now - startedAt)}</span>
+  // `startedAt` is the Pi PROCESS start reported by the bridge, so spell that out:
+  // “147h46m” is otherwise read as “this conversation”, which after a /clear or a
+  // resume is wrong on purpose (the process outlives the session file).
+  const elapsed = formatSessionElapsed(now - startedAt)
+  return <span title={`本会话的 Pi 进程启动于 ${new Date(startedAt).toLocaleString()}，已运行 ${elapsed}`}>◷ 运行 {elapsed}</span>
 }
 
 /**
@@ -810,6 +1490,7 @@ function TuiLikeStatus({ summary }: { summary: LiveSessionSummary }) {
     ? `上下文占用和 session 运行时间 · 自动压缩触发点 ${formatStatusTokens(summary.compact.triggerTokens)} / ${formatStatusTokens(usage?.contextWindow)}（${summary.compact.candidates.map(candidate => candidate.source).join(' / ') || 'policy'}）`
     : '上下文占用和 session 运行时间 · 自动压缩触发点未知'
   return <span className="flex min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-2xs text-muted" title={title}>
+    {summary.compacting && <span className="text-accent" title="上下文正在压缩：期间发送的消息会排队，压缩完成后自动发送">⟳ 压缩中</span>}
     <span className={percent !== undefined && percent >= 85 ? 'text-warn' : 'text-muted'}>
       {cells.map((cell, index) => cell.threshold
         ? <span key={index} className={atTrigger ? 'text-danger' : 'text-warn'}>{cell.char}</span>
@@ -824,7 +1505,9 @@ function TuiLikeStatus({ summary }: { summary: LiveSessionSummary }) {
 
 function ToolCallCard({ name, toolCallId, argsText, timestamp, state }: { name: string; toolCallId?: string; argsText: string; timestamp?: string; state?: ToolState }) {
   const result = state?.result
-  const status: ToolSummaryStatus = result?.isError ? 'error' : result || state?.ended ? 'success' : state?.started || state?.partialText ? 'running' : 'pending'
+  const terminalMessage = toolTerminalMessage(state)
+  const isError = result?.isError === true || state?.isError === true || state?.abandoned === true
+  const status: ToolSummaryStatus = isError ? 'error' : result || state?.ended ? 'success' : state?.started || state?.partialText ? 'running' : 'pending'
   const statusTone = status === 'error'
     ? 'border-danger bg-danger-subtle'
     : status === 'success'
@@ -841,6 +1524,7 @@ function ToolCallCard({ name, toolCallId, argsText, timestamp, state }: { name: 
         <div className="space-y-2 border-t border-border px-3 pb-3">
           {toolCallId && <div className="pt-2 text-2xs text-muted">tool call {shortToolId(toolCallId)}</div>}
           {argsText && <pre className="m-0 max-h-[12rem] max-w-full overflow-auto whitespace-pre-wrap break-words rounded bg-bg-hover px-2 py-1.5 font-mono text-2xs leading-4 text-muted">{argsText.slice(0, 100_000)}</pre>}
+          {terminalMessage && !result && <div role={isError ? 'alert' : 'status'} className={`rounded px-2 py-1 text-2xs ${isError ? 'bg-danger-subtle text-danger' : 'bg-bg-hover text-muted'}`}>{terminalMessage}</div>}
           {!result && state?.partialText && (
             <pre className="m-0 max-h-[150px] overflow-auto whitespace-pre-wrap break-words rounded bg-bg-hover px-2 py-1.5 font-mono text-2xs leading-4 text-text">{state.partialText}</pre>
           )}
@@ -870,7 +1554,7 @@ function LiveCommandBar({ toolStates, features, onMoveToBackground }: { toolStat
   const commands = useMemo<MonitoredCommand[]>(() => {
     const result: MonitoredCommand[] = []
     for (const state of toolStates.values()) {
-      if (!state.started || state.ended || state.result) continue
+      if (!state.started || state.ended || state.abandoned || state.result) continue
       const command = state.command || state.toolName || 'tool'
       result.push({
         key: `foreground:${state.toolCallId}`,
@@ -992,7 +1676,7 @@ function MessageContent({ content, onFileOpen, toolStates, timestamp, auxiliary 
               return <ToolCallBlock
                 key={index}
                 content={`🔧 ${name}`}
-                meta={{ toolName: name, toolCallId, args: argsText, result: state?.result?.text, isError: state?.result?.isError, timestamp: state?.result?.timestamp || timestamp }}
+                meta={{ toolName: name, toolCallId, args: argsText, result: state?.result?.text ?? toolTerminalMessage(state), isError: state?.result?.isError === true || state?.isError === true || state?.abandoned === true, timestamp: state?.result?.timestamp || timestamp }}
                 onFileOpen={onFileOpen}
               />
             }
@@ -1013,7 +1697,36 @@ function MessageContent({ content, onFileOpen, toolStates, timestamp, auxiliary 
   )
 }
 
-const TimelineEntry = memo(function TimelineEntry({ entry, onFileOpen, toolStates, auxiliary = true, onForkAt, forkingEntryId, onReadStart }: { entry: unknown; onFileOpen: (path: string) => void; toolStates: ToolStateMap; auxiliary?: boolean; onForkAt?: (entryId: string) => void; forkingEntryId?: string; onReadStart?: () => void }) {
+export function ProviderErrorNotice({ title, message }: { title: string; message: string }) {
+  return (
+    <div role="alert" className="my-2 rounded-md border border-danger bg-danger-subtle px-3 py-2 text-xs text-danger">
+      <div className="mb-1 font-semibold">{title}</div>
+      <pre className="m-0 max-h-[20rem] overflow-auto whitespace-pre-wrap break-words font-mono text-2xs">{message}</pre>
+    </div>
+  )
+}
+
+export const TimelineEntry = memo(function TimelineEntry({
+  entry, onFileOpen, toolStates, auxiliary = true, onForkAt, forkingEntryId,
+  onDiscardAfter, discardingEntryId, onWithdrawMessage, latestUserMessageId, rewindingEntryId,
+  discardDisabled, onReadStart, compacting = false,
+}: {
+  entry: unknown
+  onFileOpen: (path: string) => void
+  toolStates: ToolStateMap
+  auxiliary?: boolean
+  onForkAt?: (entryId: string) => void
+  forkingEntryId?: string
+  onDiscardAfter?: (entryId: string) => void
+  discardingEntryId?: string
+  onWithdrawMessage?: (entryId: string, editText?: string) => void
+  latestUserMessageId?: string
+  rewindingEntryId?: string
+  discardDisabled?: boolean
+  onReadStart?: () => void
+  /** True while a compaction runs: a queued bubble waits for that, not for a turn. */
+  compacting?: boolean
+}) {
   const timestamp = entryTimestamp(entry)
   const entryRecord = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : undefined
   const eventData = entryRecord?.data && typeof entryRecord.data === 'object' && !Array.isArray(entryRecord.data)
@@ -1037,6 +1750,9 @@ const TimelineEntry = memo(function TimelineEntry({ entry, onFileOpen, toolState
     const assistant = message.role === 'assistant'
     const user = message.role === 'user'
     const forkEntryId = user || assistant ? entryIdOf(entry) : undefined
+    const discardEntryId = user ? entryIdOf(entry) : undefined
+    const canWithdraw = user && discardEntryId === latestUserMessageId && !!onWithdrawMessage
+    const editableText = user ? editableTextContent(message.content) : undefined
     // A prompt this browser just sent may still be sitting in Pi's queue; until Pi
     // echoes it back, say so instead of looking like a handled message.
     const pending = user ? pendingDeliveryOf(entry) : undefined
@@ -1055,7 +1771,7 @@ const TimelineEntry = memo(function TimelineEntry({ entry, onFileOpen, toolState
           <span className="min-w-0 truncate">
             {message.role}
             {message.channel && <span className="ml-2 normal-case text-accent">来自 {channelLabel(message.channel)}</span>}
-            {pending && <span className="ml-2 normal-case text-warn" title={pendingDeliveryTitle(pending)}>{pendingDeliveryLabel(pending)}</span>}
+            {pending && <span className="ml-2 normal-case text-warn" title={pendingDeliveryTitle(pending)}>{pendingDeliveryLabel(pending, { compacting })}</span>}
           </span>
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {forkEntryId && onForkAt && (
@@ -1067,9 +1783,39 @@ const TimelineEntry = memo(function TimelineEntry({ entry, onFileOpen, toolState
                 className="cursor-pointer rounded-full px-1.5 py-px normal-case text-2xs text-muted opacity-60 transition-opacity hover:bg-bg-hover hover:text-accent focus-visible:opacity-100 disabled:opacity-50 md:opacity-0 md:group-hover/msg:opacity-100"
               >{forkingEntryId === forkEntryId ? '分叉中…' : '⑂ 从此分叉'}</button>
             )}
+            {canWithdraw && discardEntryId && onWithdrawMessage && (
+              <>
+                <button
+                  type="button"
+                  disabled={discardDisabled || !!rewindingEntryId}
+                  onClick={() => onWithdrawMessage(discardEntryId)}
+                  title="撤回这条输入及其后续记录；不会撤销已经执行的工具或外部操作"
+                  className="cursor-pointer rounded-full px-1.5 py-px normal-case text-2xs text-warn opacity-70 transition-opacity hover:bg-warn-subtle focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 md:opacity-0 md:group-hover/msg:opacity-100"
+                >{rewindingEntryId === discardEntryId ? '撤回中…' : '↶ 撤回'}</button>
+                {editableText !== undefined && (
+                  <button
+                    type="button"
+                    disabled={discardDisabled || !!rewindingEntryId}
+                    onClick={() => onWithdrawMessage(discardEntryId, editableText)}
+                    title="先撤回这条输入及后续记录，再把文本放入输入框供你修改；不会自动发送"
+                    className="cursor-pointer rounded-full px-1.5 py-px normal-case text-2xs text-accent opacity-70 transition-opacity hover:bg-accent-subtle focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 md:opacity-0 md:group-hover/msg:opacity-100"
+                  >编辑</button>
+                )}
+              </>
+            )}
+            {discardEntryId && onDiscardAfter && (
+              <button
+                type="button"
+                disabled={discardDisabled || !!discardingEntryId}
+                onClick={() => onDiscardAfter(discardEntryId)}
+                title="永久删除这条用户输入之后的会话记录；该输入保留，原会话会重启"
+                className="cursor-pointer rounded-full px-1.5 py-px normal-case text-2xs text-danger opacity-70 transition-opacity hover:bg-danger-subtle focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 md:opacity-0 md:group-hover/msg:opacity-100"
+              >{discardingEntryId === discardEntryId ? '处理中…' : '⌫ 丢弃后续'}</button>
+            )}
             <time className="shrink-0 font-mono normal-case text-2xs font-normal text-muted-strong">{timestamp || '—'}</time>
           </span>
         </div>
+        {message.providerError && <ProviderErrorNotice title="⚠️ 模型请求失败" message={message.providerError} />}
         {assistant
           ? <MessageContent content={message.content} onFileOpen={onFileOpen} toolStates={toolStates} timestamp={timestamp} auxiliary={auxiliary} onReadStart={onReadStart} />
           : <MessageContent content={message.content} onFileOpen={onFileOpen} toolStates={toolStates} timestamp={timestamp} auxiliary={auxiliary} showRaw={false} onReadStart={onReadStart} />}
@@ -1079,6 +1825,19 @@ const TimelineEntry = memo(function TimelineEntry({ entry, onFileOpen, toolState
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
   const record = entry as Record<string, unknown>
   const type = typeof record.type === 'string' ? record.type : 'event'
+  const payload = eventData || record
+  if (type === 'auto_retry_start' && typeof payload.errorMessage === 'string' && payload.errorMessage.trim()) {
+    const attempt = typeof payload.attempt === 'number' ? payload.attempt : undefined
+    const maxAttempts = typeof payload.maxAttempts === 'number' ? payload.maxAttempts : undefined
+    const attemptLabel = attempt && maxAttempts ? `（${attempt}/${maxAttempts}）` : ''
+    return <ProviderErrorNotice title={`⚠️ 自动重试${attemptLabel}：请求失败`} message={payload.errorMessage} />
+  }
+  if (type === 'auto_retry_end' && payload.success === false) {
+    const attempt = typeof payload.attempt === 'number' ? `（第 ${payload.attempt} 次）` : ''
+    const finalError = typeof payload.finalError === 'string' && payload.finalError.trim()
+      ? payload.finalError : '自动重试失败，但未提供错误详情。'
+    return <ProviderErrorNotice title={`⚠️ 自动重试最终失败${attempt}`} message={finalError} />
+  }
   if (type === 'message_start' || type === 'live_feature_snapshot' || type === 'agent_start' || type === 'agent_end' || type === 'agent_settled' || type === 'turn_start' || type === 'turn_end' || type === 'claim_changed') return null
   if (type === 'tool_execution_update') {
     const data = record.data && typeof record.data === 'object' ? record.data as Record<string, unknown> : record
@@ -1123,12 +1882,17 @@ const TimelineEntry = memo(function TimelineEntry({ entry, onFileOpen, toolState
   if (type === 'custom_message') {
     return <details className="rounded-lg border border-border bg-card"><summary className="px-3 py-2 cursor-pointer text-xs text-text">custom message</summary><pre className="p-3 pt-1 text-xs text-text whitespace-pre-wrap">{JSON.stringify(record.data, null, 2).slice(0, 100_000)}</pre></details>
   }
+  // 目标进度由「目标」面板展示；在对话里再摊一份原始 JSON 只会是噪声。
+  if (record.customType === 'goal-state') return null
   return <div className="text-2xs text-muted border-l-2 border-border pl-3 py-1">{type.split('_').join(' ')}</div>
 })
 
 const LiveToolGroup = memo(function LiveToolGroup({ items, thinking, onFileOpen, toolStates, onReadStart }: { items: LiveToolItem[]; thinking: { index: number; entry: unknown }[]; onFileOpen: (path: string) => void; toolStates: ToolStateMap; onReadStart?: () => void }) {
-  const done = items.filter(item => item.resultText !== undefined || item.isError).length
-  const errors = items.filter(item => item.isError).length
+  const stateFor = (item: LiveToolItem) => item.toolCallId ? toolStates.get(item.toolCallId) : undefined
+  const itemHasError = (item: LiveToolItem) => item.isError || stateFor(item)?.result?.isError === true || stateFor(item)?.isError === true || stateFor(item)?.abandoned === true
+  const itemIsDone = (item: LiveToolItem) => item.resultText !== undefined || !!stateFor(item)?.result || !!stateFor(item)?.ended || !!stateFor(item)?.abandoned || itemHasError(item)
+  const done = items.filter(itemIsDone).length
+  const errors = items.filter(itemHasError).length
   const running = done < items.length
   // Open work in flight automatically: a running command is the thing the user
   // came to watch, and it used to hide behind three nested clicks.
@@ -1165,7 +1929,11 @@ const LiveToolGroup = memo(function LiveToolGroup({ items, thinking, onFileOpen,
           <div className="space-y-0.5">
             {items.map(item => {
               const active = selectedKey === item.key
-              const status: ToolSummaryStatus = item.isError ? 'error' : item.resultText !== undefined ? 'success' : 'running'
+              const state = stateFor(item)
+              const isError = itemHasError(item)
+              const resultText = item.resultText ?? state?.result?.text
+              const terminalMessage = resultText === undefined ? toolTerminalMessage(state) : undefined
+              const status: ToolSummaryStatus = isError ? 'error' : resultText !== undefined || state?.ended ? 'success' : 'running'
               return (
                 <div key={item.key}>
                   <button
@@ -1179,9 +1947,9 @@ const LiveToolGroup = memo(function LiveToolGroup({ items, thinking, onFileOpen,
                   {active && (
                     <div className="mb-1.5 ml-3.5 mt-1">
                       {item.argsText
-                        ? <ToolCallBlock content={`🔧 ${item.toolName}`} meta={{ toolName: item.toolName, toolCallId: item.toolCallId, args: item.argsText, result: item.resultText, isError: item.isError, timestamp: item.timestamp }} onFileOpen={onFileOpen} defaultExpanded />
-                        : item.resultText !== undefined
-                          ? <ToolResultCard text={item.resultText} toolName={item.toolName} toolCallId={item.toolCallId} command={item.detail} isError={item.isError} timestamp={item.timestamp} revealOnMount />
+                        ? <ToolCallBlock content={`🔧 ${item.toolName}`} meta={{ toolName: item.toolName, toolCallId: item.toolCallId, args: item.argsText, result: resultText ?? terminalMessage, isError, timestamp: item.timestamp }} onFileOpen={onFileOpen} defaultExpanded />
+                        : resultText !== undefined || terminalMessage
+                          ? <ToolResultCard text={resultText ?? terminalMessage ?? ''} toolName={item.toolName} toolCallId={item.toolCallId} command={item.detail} isError={isError} timestamp={item.timestamp} revealOnMount />
                           : <TimelineEntry entry={item.entry} onFileOpen={onFileOpen} toolStates={toolStates} onReadStart={onReadStart} />}
                     </div>
                   )}
@@ -1227,6 +1995,21 @@ export function AuthPanel({ onAuthenticated }: { onAuthenticated: (browserClient
   )
 }
 
+/**
+ * 时间线默认视图：主 Agent 会话（role `main`）默认活动视图——只留关键节点与回复，
+ * 中间的工具/终端输出按需再看；其他会话沿用旧默认（宽屏看完整对话，窄屏看活动）。
+ * 用户一旦自己切过视图，浏览器里的偏好优先（见 LiveSessionPage）。
+ */
+export function defaultAuxiliaryView(role: string | undefined, compactViewport: boolean): boolean {
+  return !(role === 'main') && !compactViewport
+}
+
+/**
+ * 时间线视图偏好存这个键。`-v2` 有意弃用旧键：旧值是在「桌面默认完整对话」下的
+ * 一次手动切换，沿用它会把这个改动要离开的视图固定在读者面前。
+ */
+const AUXILIARY_STORAGE_KEY = 'live-session-auxiliary-v2'
+
 export default function LiveSessionPage() {
   const { processInstanceId } = useParams<{ processInstanceId?: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1260,41 +2043,77 @@ export default function LiveSessionPage() {
   const notifications = activeId ? state.notifications[activeId] ?? [] : []
   const features = useMemo(() => collectLiveFeatures(detail?.entries || []), [detail?.entries])
   const toolStates = useMemo(() => collectToolStates(detail?.entries || []), [detail?.entries])
+  // `detail.goal` is the server-cached anchor: it still resolves after a long
+  // session pushed its `goal-state` entry out of the entries window. Older
+  // servers only ship entries, so fall back to parsing those.
+  const sessionGoalSummary = useMemo(
+    () => detail?.goal ?? sessionGoalFromEntries(detail?.entries || []),
+    [detail?.goal, detail?.entries],
+  )
   const compactViewport = useMediaQuery('(max-width: 767px)')
   /**
-   * Show thinking + tool/script execution in the transcript. Defaults to OFF on a
-   * phone (the reply body is what matters there) and ON elsewhere; an explicit
-   * toggle is remembered in localStorage.
+   * Show thinking + raw tool/script execution in the transcript. Activity view
+   * replaces those low-level rows with time-ordered task and step summaries.
    */
   const [auxiliary, setAuxiliary] = useState<boolean>(() => {
-    const stored = localStorage.getItem('live-session-auxiliary')
+    const stored = localStorage.getItem(AUXILIARY_STORAGE_KEY)
     if (stored === 'show') return true
     if (stored === 'hide') return false
-    return !compactViewport
+    return defaultAuxiliaryView(summary?.role, compactViewport)
   })
   const toggleAuxiliary = useCallback(() => {
     setAuxiliary(value => {
       const next = !value
-      localStorage.setItem('live-session-auxiliary', next ? 'show' : 'hide')
+      localStorage.setItem(AUXILIARY_STORAGE_KEY, next ? 'show' : 'hide')
       return next
     })
   }, [])
+
+  /**
+   * 主 Agent 会话默认用活动视图：只留关键节点与回复，中间的工具/终端输出按需再看。
+   * 只有用户还没手动切过（浏览器里没有存过偏好）时才套用默认；切过一次之后就尊重那个选择。
+   */
+  useEffect(() => {
+    if (localStorage.getItem(AUXILIARY_STORAGE_KEY)) return
+    setAuxiliary(defaultAuxiliaryView(summary?.role, compactViewport))
+  }, [activeId, summary?.role, compactViewport])
 
   const timeline = useMemo(() => groupLiveToolEntries(detail?.entries || [], auxiliary), [detail?.entries, auxiliary])
   /** Prompts this browser sent that Pi has not picked up yet (追加/插话 while a turn runs). */
   const pendingMessages = useMemo(() => pendingDeliveries(detail?.entries || []), [detail?.entries])
   const timelineItems = timeline.items
-  const agentState = useMemo(() => deriveAgentState(summary?.status, detail?.entries || [], toolStates), [summary?.status, detail?.entries, toolStates])
+  const latestUserMessageId = useMemo(() => {
+    const entries = detail?.entries || []
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      if (messageFromEntry(entries[index])?.role === 'user') return entryIdOf(entries[index])
+    }
+    return undefined
+  }, [detail?.entries])
+  const agentState = useMemo(() => deriveAgentState(summary?.status, detail?.entries || [], toolStates, !!summary?.compacting), [summary?.status, summary?.compacting, detail?.entries, toolStates])
+  const activityStatus = summary?.status === 'reconnecting'
+    ? 'reconnecting'
+    : summary?.status === 'running' || agentState.tone === 'accent'
+      ? 'running'
+      : sessionGoalSummary?.status === 'complete'
+        ? 'complete'
+        : sessionGoalSummary?.status === 'paused' ? 'paused' : 'idle'
+  const activities = useMemo(() => buildLiveActivities(detail?.entries || [], activityStatus, sessionGoalSummary), [detail?.entries, activityStatus, sessionGoalSummary])
   const [busy, setBusy] = useState(false)
   const [commandNotice, setCommandNotice] = useState<string>()
   /** Same guard for closing the file panel while it has unsaved edits. */
   const panelCloseConfirm = useArmedConfirm()
   /** True from the moment /compact is accepted until its entry lands on disk. */
   const [compacting, setCompacting] = useState(false)
+  /** True while either this browser's /compact or an automatic compaction runs. */
+  const compactingNow = compacting || !!summary?.compacting
   const compactionAbort = useRef<AbortController | undefined>(undefined)
   useEffect(() => () => compactionAbort.current?.abort(), [])
   /** entryId of the bubble whose 「从此分叉」 request is in flight. */
   const [forkingEntryId, setForkingEntryId] = useState<string>()
+  const [discardingEntryId, setDiscardingEntryId] = useState<string>()
+  const [rewindingEntryId, setRewindingEntryId] = useState<string>()
+  const [composerHasDraft, setComposerHasDraft] = useState(false)
+  const [rewoundDraft, setRewoundDraft] = useState<{ id: string; text: string }>()
   const [forkNotice, setForkNotice] = useState<string>()
 
   /**
@@ -1319,6 +2138,31 @@ export default function LiveSessionPage() {
       setForkingEntryId(undefined)
     }
   }, [activeId, navigate, refresh, state.sessions])
+  const discardAfterEntry = useCallback(async (entryId: string) => {
+    if (!activeId || busy || summary?.status === 'running' || summary?.status === 'reconnecting') return
+    const confirmed = window.confirm('将永久删除所选用户输入之后的会话记录（包括其生成的回复和后续分支），并重启原会话。所选输入会保留；此操作不可撤销。继续？')
+    if (!confirmed) return
+    setDiscardingEntryId(entryId)
+    setForkNotice(undefined)
+    try {
+      const result = await liveSessionApi.discardAfter(activeId, entryId)
+      if (!result.processInstanceId) throw new Error('Pi 已重启，但没有返回新的会话进程标识')
+      let refreshError: unknown
+      try {
+        await refresh()
+      } catch (reason) {
+        refreshError = reason
+      }
+      setForkNotice(refreshError
+        ? `已完成截断并重启，但会话列表刷新失败：${refreshError instanceof Error ? refreshError.message : String(refreshError)}`
+        : `已永久删除 ${result.deletedEntries} 条后续记录，原会话已恢复到所选输入。`)
+      navigate(`/live-sessions/${encodeURIComponent(result.processInstanceId)}`)
+    } catch (reason) {
+      setForkNotice(`丢弃失败：${reason instanceof Error ? reason.message : String(reason)}`)
+    } finally {
+      setDiscardingEntryId(undefined)
+    }
+  }, [activeId, busy, navigate, refresh, summary?.status])
   const [sessionSidebarVisible, setSessionSidebarVisible] = useState(() => typeof window === 'undefined' || localStorage.getItem('live-session-sidebar') !== 'hidden')
   const timelineScrollRef = useRef<HTMLDivElement>(null)
   const timelineContentRef = useRef<HTMLDivElement>(null)
@@ -1334,6 +2178,48 @@ export default function LiveSessionPage() {
   // Quoted sentences picked in the transcript (A) and comments collected on them (B).
   const quoteSelection = useChatQuoteSelection()
   const [quotes, setQuotes] = useState<QuotedText[]>([])
+  const rewindLatestUserMessage = useCallback(async (entryId: string, initialText?: string) => {
+    if (!activeId || busy || summary?.status === 'running' || summary?.status === 'reconnecting') return
+    let editedText: string | undefined
+    if (initialText !== undefined) {
+      const proposed = window.prompt('编辑撤回消息的文本。操作完成后会放入输入框，不会自动发送。', initialText)
+      if (proposed === null) return
+      editedText = proposed
+      if ((composerHasDraft || quotes.length > 0) && !window.confirm('当前输入框有未发送内容或引用；继续会用撤回消息覆盖输入框草稿并清除引用。继续吗？')) return
+    }
+    const scope = editedText === undefined ? '撤回这条用户输入及其所有后续回复和记录' : '撤回这条用户输入及其所有后续回复和记录，并将修改后的文本放入输入框'
+    if (!window.confirm(`${scope}。原会话会重启；已经执行的工具、文件修改或外部操作不会被撤销。此操作不可撤销。继续？`)) return
+    setRewindingEntryId(entryId)
+    setForkNotice(undefined)
+    try {
+      const result = await liveSessionApi.withdrawMessage(activeId, entryId)
+      if (!result.processInstanceId) throw new Error('Pi 已重启，但没有返回新的会话进程标识')
+      let refreshError: unknown
+      try {
+        await refresh()
+      } catch (reason) {
+        refreshError = reason
+      }
+      if (editedText !== undefined) {
+        setRewoundDraft({ id: `${entryId}-${Date.now()}`, text: editedText })
+        setQuotes([])
+      }
+      const outcome = editedText === undefined
+        ? `已撤回，共删除 ${result.removedEntries} 条会话记录。`
+        : `已撤回，共删除 ${result.removedEntries} 条记录；修改后的文本已放入输入框，请检查后手动发送。`
+      setForkNotice(refreshError
+        ? `${outcome} 但会话列表刷新失败：${refreshError instanceof Error ? refreshError.message : String(refreshError)}`
+        : outcome)
+      navigate(`/live-sessions/${encodeURIComponent(result.processInstanceId)}`)
+    } catch (reason) {
+      setForkNotice(`撤回失败：${reason instanceof Error ? reason.message : String(reason)}`)
+    } finally {
+      setRewindingEntryId(undefined)
+    }
+  }, [activeId, busy, composerHasDraft, navigate, quotes.length, refresh, summary?.status])
+  const markRewoundDraftApplied = useCallback((id: string) => {
+    setRewoundDraft(current => current?.id === id ? undefined : current)
+  }, [])
   const [commentTarget, setCommentTarget] = useState<SelectionTarget | null>(null)
   const [chatComments, setChatComments] = useState<ReviewItem[]>([])
   const [focusedSubagentId, setFocusedSubagentId] = useState<string>()
@@ -1729,9 +2615,14 @@ export default function LiveSessionPage() {
       }
     })
   })
-  const goal = () => perform(async () => {
+  /**
+   * Ask the agent to re-read its own checklist against what actually happened.
+   * The anchor is reactive, so this only nudges the agent — it never edits state.
+   */
+  const syncGoalChecklist = () => perform(async () => {
     if (!activeId) return
-    await liveSessionApi.command(activeId, { type: 'input', text: '/goal', channel: 'web' })
+    await liveSessionApi.command(activeId, { type: 'input', text: GOAL_SYNC_REQUEST, channel: 'web' })
+    setCommandNotice('已请求 agent 对照原始需求核对任务锚点的工作项状态')
   })
   const clearSession = () => perform(async () => {
     if (!activeId) return
@@ -1868,7 +2759,7 @@ export default function LiveSessionPage() {
     // Pi 正在工作时这条消息只是被排队（追加等本轮结束 / 插话等下个工具调用），
     // 直到 Pi 回显这条 user 消息前都还没被真正处理；记住交付方式，气泡才能显示排队状态
     // （判定规则见 pendingDelivery.queuedDeliveryFor）。
-    const queuedDelivery = queuedDeliveryFor({ status: summary?.status, ...(deliverAs ? { deliverAs } : {}), text })
+    const queuedDelivery = queuedDeliveryFor({ status: summary?.status, ...(deliverAs ? { deliverAs } : {}), text, compacting: !!summary?.compacting })
     dispatch(liveSessionUserMessageAdded({
       processInstanceId, localId, text, ...(images?.length ? { images } : {}), ...(queuedDelivery ? { deliverAs: queuedDelivery } : {}),
     }))
@@ -1937,9 +2828,9 @@ export default function LiveSessionPage() {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
+    <div className="relative flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
       {sessionSidebarVisible && <LiveSessionsList sessions={sessions} sessionTitles={sessionTitles} subagentStatuses={subagentStatuses} activeId={activeId} onRefresh={refresh} pendingUiCounts={pendingUiCounts} onSelect={id => navigate(`/live-sessions/${encodeURIComponent(id)}`)} />}
-      <main className="min-w-0 flex-1 flex flex-col bg-bg">
+      <main className={`min-w-0 flex-1 flex flex-col bg-bg ${summary && detail ? 'md:pr-[84px]' : ''}`}>
         <div className="flex h-8 min-w-0 items-center justify-between gap-2 border-b border-border bg-card px-2 text-2xs text-muted">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {summary?.parentSessionId && <button type="button" onClick={() => parentSession ? navigate(`/live-sessions/${encodeURIComponent(parentSession.processInstanceId)}`) : navigate('/live-sessions/gallery')} className="shrink-0 rounded border border-accent bg-accent-subtle px-2 py-0.5 text-2xs text-accent hover:border-accent">← 返回主 Agent</button>}
@@ -1954,10 +2845,10 @@ export default function LiveSessionPage() {
             </span>}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {summary && (ownedLeaseId ? <button type="button" disabled={busy} onClick={() => { void release().catch(() => {}) }} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted disabled:opacity-50">释放控制</button> : <button type="button" disabled={busy || summary.status === 'reconnecting'} onClick={() => { void perform(async () => { await claim() }).catch(() => {}) }} className="rounded border border-accent bg-accent px-2 py-0.5 text-2xs text-accent-fg disabled:opacity-50">取得控制</button>)}
+            {summary && ownedLeaseId && <button type="button" disabled={busy} onClick={() => { void release().catch(() => {}) }} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted disabled:opacity-50">释放控制</button>}
             <button type="button" onClick={() => navigate(summary?.sessionFile ? `/live-sessions/graph?file=${encodeURIComponent(summary.sessionFile)}` : '/live-sessions/graph')} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent" title="在会话家族图谱中查看该会话">◈ 在图谱中查看</button>
-            <button type="button" onClick={toggleAuxiliary} className={`shrink-0 rounded border px-2 py-0.5 text-2xs ${auxiliary ? 'border-border bg-bg text-muted hover:border-accent hover:text-accent' : 'border-accent bg-accent-subtle text-accent'}`} title={auxiliary ? '当前显示思路与工具/脚本执行；点一下切换为精简阅读' : '精简阅读：只留正文（思路与工具/脚本已隐去）'}>
-              {auxiliary ? '👁 显示全部' : ' 精简阅读'}
+            <button type="button" onClick={toggleAuxiliary} className={`shrink-0 rounded border px-2 py-0.5 text-2xs ${auxiliary ? 'border-border bg-bg text-muted hover:border-accent hover:text-accent' : 'border-accent bg-accent-subtle text-accent'}`} title={auxiliary ? '切换到按活动分组的时间线' : '切回完整对话与工具记录'}>
+              {auxiliary ? '活动视图' : '👁 完整对话'}
             </button>
             <button type="button" onClick={toggleVoice} className={`flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-2xs ${tts.enabled ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-bg text-muted hover:border-accent hover:text-accent'}`} title={tts.enabled ? '语音输出已开启：Pi 回复结束会自动朗读（点击关闭；模型/音色见 设置 → Voice）' : '语音输出已关闭（点击开启；模型/音色见 设置 → Voice）'}>
               <MaterialIcon name={tts.enabled ? 'volume_up' : 'volume_off'} className="h-3.5 w-3.5" />语音输出
@@ -1997,7 +2888,7 @@ export default function LiveSessionPage() {
           <span className="min-w-0 flex-1 truncate" title={voiceError}>语音输出：{voiceError}</span>
           <button type="button" onClick={clearVoiceError} className="shrink-0 rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted">关闭</button>
         </div>}
-        {commandNotice && !state.error && <div className="flex items-center gap-1.5 px-4 py-2 bg-accent-subtle text-accent text-xs border-b border-accent" role="status">{compacting && <MaterialIcon name="sync" spin className="h-3.5 w-3.5 shrink-0" />}{commandNotice}</div>}
+        {commandNotice && !state.error && <div className="flex items-center gap-1.5 px-4 py-2 bg-accent-subtle text-accent text-xs border-b border-accent" role="status">{compactingNow && <MaterialIcon name="sync" spin className="h-3.5 w-3.5 shrink-0" />}{commandNotice}</div>}
         {forkNotice && <div className="px-4 py-2 bg-accent-subtle text-accent text-xs border-b border-accent">{forkNotice}</div>}
         {childCloseNotice && <div className="px-4 py-2 bg-accent-subtle text-accent text-xs border-b border-accent" role="status">{childCloseNotice}</div>}
         {graphNodeId && <div className="flex items-center gap-2 border-b border-accent bg-accent-subtle px-4 py-2 text-xs text-accent">
@@ -2025,31 +2916,39 @@ export default function LiveSessionPage() {
             <div className="flex min-h-0 flex-1">
               <div className="flex min-w-0 flex-1 flex-col">
                 <div ref={timelineScrollRef} onScroll={handleTimelineScroll} data-timeline-scroll="" className="flex flex-1 flex-col overflow-y-auto p-3">
-                <div ref={timelineContentRef} className="flex flex-col space-y-3">
-                  {workflowItems.map(workflow => <LiveWorkflowProgressCard key={String(workflow.id)} workflow={workflow} sessions={sessions} onOpen={workflowValue => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflowValue) }} />)}
-                  {detail.entries.length === 0 && workflowItems.length === 0 && <div className="text-sm text-muted text-center py-10">该 session 暂无可显示消息。</div>}
-                  {!auxiliary && (timeline.hidden.tools > 0 || timeline.hidden.thinking > 0 || timeline.hidden.other > 0) ? (
-                    <div className="flex items-center gap-2 rounded-md border border-border bg-bg-elevated px-3 py-2 text-2xs text-muted">
-                      <span className="min-w-0 flex-1">
-                        精简阅读：已隐去思路 {timeline.hidden.thinking} 片段 · 工具/脚本 {timeline.hidden.tools} 处 · 遥测 {timeline.hidden.other} 条
-                      </span>
-                      <button
-                        type="button"
-                        onClick={toggleAuxiliary}
-                        className="shrink-0 cursor-pointer rounded border border-border bg-card px-2 py-0.5 text-2xs text-muted transition-colors hover:border-accent hover:text-accent"
-                      >显示思路与工具</button>
-                    </div>
-                  ) : null}
-                  {timelineItems.map(item => item.type === 'toolGroup'
-                    ? <LiveToolGroup key={`tool-group-${item.items[0]?.index ?? 0}`} items={item.items} thinking={item.thinking} onFileOpen={openTimelineFile} toolStates={toolStates} onReadStart={pauseTimelineFollow} />
-                    : <TimelineEntry key={`${item.index}-${typeof item.entry === 'object' && item.entry ? String((item.entry as Record<string, unknown>).type || '') : ''}`} entry={item.entry} onFileOpen={openTimelineFile} toolStates={toolStates} auxiliary={auxiliary} onForkAt={forkAtEntry} forkingEntryId={forkingEntryId} onReadStart={pauseTimelineFollow} />
-                  )}
+                  {/* 活动视图与完整对话都占满时间线列，宽屏下不再留出两侧空白。 */}
+                  <div ref={timelineContentRef} className={auxiliary ? 'flex flex-col space-y-3' : 'w-full space-y-3'}>
+                    {workflowItems.map(workflow => <LiveWorkflowProgressCard key={String(workflow.id)} workflow={workflow} sessions={sessions} onOpen={workflowValue => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflowValue) }} />)}
+                    {auxiliary
+                      ? detail.entries.length === 0 && workflowItems.length === 0
+                        ? <div className="py-10 text-center text-sm text-muted">该 session 暂无可显示消息。</div>
+                        : timelineItems.map(item => item.type === 'toolGroup'
+                          ? <LiveToolGroup key={`tool-group-${item.items[0]?.index ?? 0}`} items={item.items} thinking={item.thinking} onFileOpen={openTimelineFile} toolStates={toolStates} onReadStart={pauseTimelineFollow} />
+                          : <TimelineEntry
+                            key={`${item.index}-${typeof item.entry === 'object' && item.entry ? String((item.entry as Record<string, unknown>).type || '') : ''}`}
+                            entry={item.entry} onFileOpen={openTimelineFile} toolStates={toolStates} auxiliary={auxiliary}
+                            onForkAt={forkAtEntry} forkingEntryId={forkingEntryId}
+                            onDiscardAfter={discardAfterEntry} discardingEntryId={discardingEntryId}
+                            onWithdrawMessage={rewindLatestUserMessage} latestUserMessageId={latestUserMessageId}
+                            rewindingEntryId={rewindingEntryId}
+                            discardDisabled={busy || summary?.status === 'running' || summary?.status === 'reconnecting' || !!discardingEntryId || !!rewindingEntryId}
+                            onReadStart={pauseTimelineFollow}
+                            compacting={!!summary.compacting}
+                          />)
+                      : <ActivityTimeline activities={activities} onFileOpen={openTimelineFile} />}
+                  </div>
                 </div>
-                </div>
-                <LiveCommandBar toolStates={toolStates} features={features} onMoveToBackground={moveToBackground} />
-                <PendingDeliveryBar deliveries={pendingMessages} />
+                {auxiliary && <LiveCommandBar toolStates={toolStates} features={features} onMoveToBackground={moveToBackground} />}
+                {summary.compacting && <div role="status" aria-label="上下文压缩中" className="flex items-center gap-2 border-t border-border bg-accent-subtle px-3 py-1 text-2xs text-accent">
+                  <MaterialIcon name="sync" spin className="h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 truncate">压缩期间发送的消息会排队，压缩完成后自动发送</span>
+                </div>}
+                <PendingDeliveryBar deliveries={pendingMessages} compacting={!!summary.compacting} />
                 <LiveSessionComposer
-                  sessionKey={activeId}
+                  sessionKey={summary.sessionId}
+                  restoreDraft={rewoundDraft}
+                  onRestoreDraftApplied={markRewoundDraftApplied}
+                  onDraftStateChange={setComposerHasDraft}
                   status={summary.status}
                   activity={agentState}
                   disabled={busy || summary.status === 'reconnecting'}
@@ -2075,25 +2974,30 @@ export default function LiveSessionPage() {
                   <button type="button" onClick={handleChatCommentsReview} className="shrink-0 rounded border border-accent px-2 py-0.5 text-accent hover:bg-accent-subtle">发送批注</button>
                 </div>}
               </div>
-              <LiveSessionFeatures
-                features={features}
-                busy={busy}
-                cwd={summary.canonicalCwd}
-                status={summary.status}
-                onFileOpen={path => { void handleFileOpen(path) }}
-                onOpenBtw={() => { void btwCommand({ type: 'open' }).catch(() => {}) }}
-                onCloseBtw={() => { void btwCommand({ type: 'close' }).catch(() => {}) }}
-                onBtwSubmit={text => { void btwCommand({ type: 'submit', text }).catch(() => {}) }}
-                onBtwAbort={() => { void btwCommand({ type: 'abort' }).catch(() => {}) }}
-                onBtwRefreshParent={() => { void btwCommand({ type: 'refresh-parent' }).catch(() => {}) }}
-                onOpenWorkflow={workflow => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflow) }}
-                onGoal={() => { void goal().catch(() => {}) }}
-                compacting={compacting}
-                onCompact={() => { void compact().catch(() => {}) }}
-                onClear={handleClear}
-                onReload={() => { void reload().catch(() => {}) }}
-                onAbort={() => { void abort().catch(() => {}) }}
-              />
+              <div className="md:absolute md:inset-y-0 md:right-0 md:z-30 md:flex md:items-stretch">
+                <LiveSessionFeatures
+                  features={features}
+                  busy={busy}
+                  cwd={summary.canonicalCwd}
+                  status={summary.status}
+                  onFileOpen={path => { void handleFileOpen(path) }}
+                  onOpenBtw={() => { void btwCommand({ type: 'open' }).catch(() => {}) }}
+                  onCloseBtw={() => { void btwCommand({ type: 'close' }).catch(() => {}) }}
+                  onBtwSubmit={text => { void btwCommand({ type: 'submit', text }).catch(() => {}) }}
+                  onBtwAbort={() => { void btwCommand({ type: 'abort' }).catch(() => {}) }}
+                  onBtwRefreshParent={() => { void btwCommand({ type: 'refresh-parent' }).catch(() => {}) }}
+                  onOpenWorkflow={workflow => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflow) }}
+                  goal={sessionGoalSummary}
+                  goalLoaded={detail !== undefined}
+                  goalBusy={busy}
+                  onGoalSync={() => { void syncGoalChecklist().catch(() => {}) }}
+                  compacting={compactingNow}
+                  onCompact={() => { void compact().catch(() => {}) }}
+                  onClear={handleClear}
+                  onReload={() => { void reload().catch(() => {}) }}
+                  onAbort={() => { void abort().catch(() => {}) }}
+                />
+              </div>
             </div>
           </>
         )}

@@ -5,7 +5,7 @@ import { buildQuoteReplyMessage, selectionLabel, type QuotedText } from '../../u
 import { LIVE_SESSION_SLASH_MENU, LIVE_SESSION_TUI_ONLY, type LiveSessionSlashItem } from './liveSessionCommands'
 import { MaterialIcon } from '../../components/MaterialIcon'
 import { loadTtsSettings, subscribeTtsSettings } from '../voice/ttsSettings'
-import { useVoiceInput } from '../voice/useVoiceInput'
+import { appendVoiceTranscript, useVoiceInput } from '../voice/useVoiceInput'
 import { clipboardFiles, pastedFileRef, splitFilesByKind } from '../../utils/clipboardFiles'
 import { resolveFileRef, uploadAttachedFiles, withAttachedFile, type AttachedFile } from '../../utils/attachmentIntake'
 import { formatBytes, imageBudgetForCount, prepareImageForAttach, type PreparedImage } from '../../utils/imageResize'
@@ -38,6 +38,9 @@ interface LiveSessionComposerProps {
   /** An interrupt is in flight. */
   interrupting?: boolean
   onSubmit: (text: string, deliverAs?: 'steer' | 'followUp', images?: LiveSessionImage[]) => Promise<void>
+  restoreDraft?: { id: string; text: string }
+  onRestoreDraftApplied?: (id: string) => void
+  onDraftStateChange?: (hasDraft: boolean) => void
   /** Quoted sentences from the transcript, sent together with the next message. */
   quotes?: QuotedText[]
   onRemoveQuote?: (id: string) => void
@@ -45,6 +48,15 @@ interface LiveSessionComposerProps {
 }
 
 type PendingImage = LiveSessionImage & PreparedImage
+
+/**
+ * How a message sent while Pi is already working is delivered.
+ *
+ * `steer` interrupts the current turn and takes effect after the next tool call, which is what
+ * people almost always mean — stopping a wrong direction early is cheaper than waiting it out.
+ * `followUp` queues the message until the turn ends; it stays one click away in the picker.
+ */
+const DEFAULT_DELIVER_AS: 'steer' | 'followUp' = 'steer'
 
 /** Downscale oversized pastes instead of rejecting them (see utils/imageResize). */
 async function readImage(file: File, budgetBytes: number): Promise<PendingImage> {
@@ -96,25 +108,28 @@ function formatContextWindow(tokens: number): string {
 function AgentActivityBar({ activity }: { activity?: LiveSessionActivity }) {
   if (!activity || activity.label === '等待输入') return null
   const reconnecting = activity.label === '重连中'
+  const compacting = activity.label === '压缩上下文'
   return (
     <div className={`flex min-h-7 items-center gap-2 bg-card px-3 py-1 text-2xs ${activityTextClass(activity.tone)}`} role="status" aria-live="polite" aria-label={`Agent 状态：${activity.label}`}>
       {reconnecting
         ? <span aria-hidden="true">◐</span>
-        : <span className="typing-dots shrink-0" aria-hidden="true"><span /><span /><span /></span>}
+        : compacting
+          ? <MaterialIcon name="sync" spin className="h-3.5 w-3.5 shrink-0" />
+          : <span className="typing-dots shrink-0" aria-hidden="true"><span /><span /><span /></span>}
       <span className="min-w-0 truncate">{activity.label}</span>
       {activity.label === '思考中' && <ThinkingElapsed startedAt={activity.thinkingStartedAt} />}
     </div>
   )
 }
 
-export default function LiveSessionComposer({ status, activity, disabled, models = [], currentModel, modelsLoading = false, onLoadModels, onSelectModel, cwd, sessionKey, currentThinkingLevel, onSelectThinkingLevel, onInterrupt, interrupting = false, onSubmit, quotes, onRemoveQuote, onClearQuotes }: LiveSessionComposerProps) {
+export default function LiveSessionComposer({ status, activity, disabled, models = [], currentModel, modelsLoading = false, onLoadModels, onSelectModel, cwd, sessionKey, currentThinkingLevel, onSelectThinkingLevel, onInterrupt, interrupting = false, onSubmit, restoreDraft, onRestoreDraftApplied, onDraftStateChange, quotes, onRemoveQuote, onClearQuotes }: LiveSessionComposerProps) {
   const [text, setText] = useState('')
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
   const [pendingFiles, setPendingFiles] = useState<AttachedFile[]>([])
   const [imageError, setImageError] = useState<string>()
   const [fileError, setFileError] = useState<string>()
   const [uploadingFiles, setUploadingFiles] = useState(false)
-  const [deliverAs, setDeliverAs] = useState<'steer' | 'followUp'>('followUp')
+  const [deliverAs, setDeliverAs] = useState<'steer' | 'followUp'>(DEFAULT_DELIVER_AS)
   const [sending, setSending] = useState(false)
   const [resizingImages, setResizingImages] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
@@ -130,7 +145,7 @@ export default function LiveSessionComposer({ status, activity, disabled, models
   // Per-session draft: the composer is reused across live sessions, so an unsent
   // draft must be stashed under the previous session and restored for the next one.
   const draftsRef = useRef<Map<string, ComposerDraft>>(new Map())
-  const activeDraftRef = useRef<ComposerDraft>({ text: '', images: [], files: [], deliverAs: 'followUp' })
+  const activeDraftRef = useRef<ComposerDraft>({ text: '', images: [], files: [], deliverAs: DEFAULT_DELIVER_AS })
   const composerKeyRef = useRef(sessionKey)
   useEffect(() => {
     activeDraftRef.current = { text, images: pendingImages, files: pendingFiles, deliverAs }
@@ -143,19 +158,38 @@ export default function LiveSessionComposer({ status, activity, disabled, models
     setText(saved?.text ?? '')
     setPendingImages(saved?.images ?? [])
     setPendingFiles(saved?.files ?? [])
-    setDeliverAs(saved?.deliverAs ?? 'followUp')
+    setDeliverAs(saved?.deliverAs ?? DEFAULT_DELIVER_AS)
     setImageError(undefined)
     setFileError(undefined)
     setSlashDismissed(false)
     composerKeyRef.current = sessionKey
   }, [sessionKey])
+  useEffect(() => {
+    if (!restoreDraft) return
+    setText(restoreDraft.text)
+    setPendingImages([])
+    setPendingFiles([])
+    setDeliverAs(DEFAULT_DELIVER_AS)
+    setImageError(undefined)
+    setFileError(undefined)
+    setSlashDismissed(true)
+    requestAnimationFrame(() => {
+      const input = inputRef.current
+      input?.focus()
+      input?.setSelectionRange(restoreDraft.text.length, restoreDraft.text.length)
+    })
+    onRestoreDraftApplied?.(restoreDraft.id)
+  }, [restoreDraft, onRestoreDraftApplied])
+  useEffect(() => {
+    onDraftStateChange?.(!!text.trim() || pendingImages.length > 0 || pendingFiles.length > 0)
+  }, [text, pendingImages.length, pendingFiles.length, onDraftStateChange])
 
   // Voice input (speech-to-text). Language follows Settings → Voice unless set.
   const [voiceSettings, setVoiceSettings] = useState(loadTtsSettings)
   useEffect(() => subscribeTtsSettings(() => setVoiceSettings(loadTtsSettings())), [])
   const voiceInput = useVoiceInput({
     language: voiceSettings.sttLanguage,
-    onTranscript: text => { setText(text); setSlashDismissed(false) },
+    onTranscript: text => { setText(current => appendVoiceTranscript(current, text)); setSlashDismissed(false) },
   })
 
   const intakeImages = (files: File[]): void => {
@@ -405,7 +439,9 @@ export default function LiveSessionComposer({ status, activity, disabled, models
         </div>}
         {resizingImages && <div className="mb-2 flex items-center gap-1.5 text-2xs text-muted" role="status"><MaterialIcon name="sync" spin className="h-3.5 w-3.5" />图片过大，正在压缩…</div>}
         {imageError && <div className="mb-2 text-2xs text-danger" role="alert">{imageError}</div>}
-        {voiceInput.transcribing && <div className="mb-2 flex items-center gap-1.5 text-2xs text-accent" role="status"><MaterialIcon name="sync" spin className="h-3.5 w-3.5" />正在识别语音…</div>}
+        {voiceInput.connecting && <div className="mb-2 flex items-center gap-1.5 text-2xs text-accent" role="status"><MaterialIcon name="sync" spin className="h-3.5 w-3.5" />正在连接实时语音识别…</div>}
+        {voiceInput.interimTranscript && <div className="mb-2 text-2xs text-muted" role="status" aria-live="polite">正在识别：{voiceInput.interimTranscript}</div>}
+        {voiceInput.transcribing && <div className="mb-2 flex items-center gap-1.5 text-2xs text-accent" role="status"><MaterialIcon name="sync" spin className="h-3.5 w-3.5" />正在确认最终文字…</div>}
         {voiceInput.error && <div className="mb-2 flex items-center gap-2 text-2xs text-danger" role="alert">
           <span className="min-w-0 flex-1">{voiceInput.error}</span>
           <button type="button" onClick={voiceInput.clearError} className="shrink-0 rounded border border-border bg-bg px-1.5 py-0.5 text-muted">关闭</button>
@@ -451,26 +487,26 @@ export default function LiveSessionComposer({ status, activity, disabled, models
         <button
           type="button"
           onClick={() => { setSlashDismissed(false); voiceInput.toggle() }}
-          disabled={disabled || sending || voiceInput.transcribing}
+          disabled={disabled || sending || voiceInput.connecting || voiceInput.transcribing}
           aria-pressed={voiceInput.listening}
-          aria-label={voiceInput.listening ? '停止录音并识别' : '开始语音输入'}
+          aria-label={voiceInput.listening ? '停止录音并识别' : voiceInput.connecting ? '正在连接语音识别' : voiceInput.transcribing ? '正在确认最终文字' : '开始语音输入'}
           title={voiceInput.supported
-            ? (voiceInput.listening ? '正在录音…点一下结束并识别' : '语音输入：点一下开始录音，再点一下结束并识别')
-            : '当前浏览器不支持录音（需要支持 MediaRecorder 的浏览器）'}
+            ? (voiceInput.listening ? '正在实时录音…点一下结束并确认文字' : '语音输入：点一下开始实时录音，再点一下结束并确认文字')
+            : '当前浏览器不支持实时录音（需要麦克风、AudioContext 和 WebSocket）'}
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-none transition disabled:opacity-40 ${voiceInput.listening
             ? 'bg-danger text-danger-fg animate-pulse'
             : voiceInput.supported
               ? 'bg-transparent text-muted hover:bg-bg-hover hover:text-text'
               : 'bg-transparent text-muted opacity-50'}`}
         >
-          {voiceInput.transcribing
+          {voiceInput.connecting || voiceInput.transcribing
             ? <MaterialIcon name="sync" spin className="h-4 w-4" />
             : <MaterialIcon name={voiceInput.listening ? 'stop' : 'mic'} className="h-4 w-4" />}
         </button>
         {status === 'running' && (
           <select value={deliverAs} onChange={event => setDeliverAs(event.target.value as 'steer' | 'followUp')} className="h-9 rounded-full border-none bg-transparent px-2 text-2xs text-muted transition hover:bg-bg-hover hover:text-text">
             <option value="followUp">追加</option>
-            <option value="steer">插话（改方向）</option>
+            <option value="steer">插话</option>
           </select>
         )}
         <div className="relative">

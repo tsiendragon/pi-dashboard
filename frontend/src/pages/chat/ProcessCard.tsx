@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { truncate, parseToolArgs } from './cardHelpers'
+import { normalizeToolOutputText } from '../../utils/toolOutputText'
 
 interface Props {
   meta?: Record<string, unknown>
@@ -116,7 +117,7 @@ export default function ProcessCard({ meta }: Props) {
                 {isError ? 'Error' : 'Result'}
               </div>
               <pre className={`bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${isError ? 'text-danger' : 'text-muted'}`}>
-                {result}
+                {normalizeToolOutputText(result)}
               </pre>
             </>
           ) : null}

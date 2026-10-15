@@ -1,6 +1,7 @@
 import type { LiveSessionDetail, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import WorkingHammerIcon from '../../components/WorkingHammerIcon'
+import ToolResultCard from './ToolResultCard'
 import { displayWorktreePath } from '../../utils/displayPath'
 
 interface LiveSubagentPanelProps {
@@ -12,8 +13,8 @@ interface LiveSubagentPanelProps {
 }
 
 type PanelItem =
-  | { kind: 'message'; index: number; role: string; text: string; thinking?: string }
-  | { kind: 'tool'; index: number; name: string; output: string; status: string }
+  | { kind: 'message'; index: number; role: string; text: string; thinking?: string; toolName?: string; toolCallId?: string; isError?: boolean }
+  | { kind: 'tool'; index: number; name: string; output: string; isError: boolean; toolCallId?: string }
 
 function textOf(value: unknown): string {
   if (typeof value === 'string') return value
@@ -38,7 +39,7 @@ function contentOf(value: unknown): { text: string; thinking?: string } {
   return { text: text.trim(), ...(thinking.trim() ? { thinking: thinking.trim() } : {}) }
 }
 
-function messageFromEntry(entry: unknown): { role: string; text: string; thinking?: string } | undefined {
+function messageFromEntry(entry: unknown): { role: string; text: string; thinking?: string; toolName?: string; toolCallId?: string; isError?: boolean } | undefined {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined
   const record = entry as Record<string, unknown>
   const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
@@ -50,20 +51,28 @@ function messageFromEntry(entry: unknown): { role: string; text: string; thinkin
   if (!message || typeof message.role !== 'string') return undefined
   const content = contentOf(message.content)
   if (!content.text && !content.thinking) return undefined
-  return { role: message.role, ...content }
+  return {
+    role: message.role,
+    ...content,
+    ...(typeof message.toolName === 'string' ? { toolName: message.toolName } : {}),
+    ...(typeof message.toolCallId === 'string' ? { toolCallId: message.toolCallId } : {}),
+    ...(message.isError === true ? { isError: true } : {}),
+  }
 }
 
-function toolFromEntry(entry: unknown): { name: string; output: string; status: string } | undefined {
+function toolFromEntry(entry: unknown): { name: string; output: string; isError: boolean; toolCallId?: string } | undefined {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined
   const record = entry as Record<string, unknown>
   const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
   if (!data || data.type !== 'tool_execution_end') return undefined
   const result = data.result && typeof data.result === 'object' && !Array.isArray(data.result) ? data.result as Record<string, unknown> : data.result
   const resultRecord = result && typeof result === 'object' && !Array.isArray(result) ? result as Record<string, unknown> : undefined
+  const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : typeof data.tool_call_id === 'string' ? data.tool_call_id : undefined
   return {
     name: typeof data.toolName === 'string' ? data.toolName : typeof data.tool_name === 'string' ? data.tool_name : '工具',
     output: textOf(resultRecord?.content ?? result ?? data.output),
-    status: data.isError === true ? '失败' : '完成',
+    isError: data.isError === true,
+    ...(toolCallId ? { toolCallId } : {}),
   }
 }
 
@@ -84,7 +93,11 @@ function panelItems(entries: unknown[]): PanelItem[] {
       if (tool) items.push({ kind: 'tool', index, ...tool })
     }
   })
-  return items
+  // The same result can arrive twice: as the tool-execution event that finished
+  // it and as the tool-result message the model then read. The message carries
+  // the text shown in the transcript, so the duplicate event row is dropped.
+  const resultIds = new Set(items.flatMap(item => item.kind === 'message' && item.role === 'toolResult' && item.toolCallId ? [item.toolCallId] : []))
+  return items.filter(item => !(item.kind === 'tool' && item.toolCallId && resultIds.has(item.toolCallId)))
 }
 
 function shortSessionId(sessionId: string): string {
@@ -140,13 +153,21 @@ export default function LiveSubagentPanel({ summary, detail, loading = false, on
         {!loading && detail && items.length === 0 && <div className="flex h-full items-center justify-center text-sm text-muted">该子 Agent 暂无可显示内容。</div>}
         {!loading && detail && items.length > 0 && <div className="space-y-2">
           {items.map(item => item.kind === 'tool' ? (
-            <details key={`${item.kind}-${item.index}`} className="rounded border border-border bg-card">
-              <summary className="cursor-pointer list-none px-2 py-1.5 text-2xs text-muted hover:text-accent">
-                <span className="mr-1.5 rounded bg-bg px-1 py-0.5 font-mono text-2xs text-accent">工具</span>
-                {item.name} <span className={item.status === '失败' ? 'text-danger' : 'text-muted opacity-60'}>· {item.status}</span>
-              </summary>
-              {item.output && <pre className="max-h-40 overflow-auto border-t border-border px-2 py-1.5 font-mono text-2xs leading-4 text-muted">{item.output}</pre>}
-            </details>
+            <ToolResultCard
+              key={`${item.kind}-${item.index}`}
+              text={item.output.trim() ? item.output : '（无输出文本）'}
+              toolName={item.name}
+              toolCallId={item.toolCallId}
+              isError={item.isError}
+            />
+          ) : item.role === 'toolResult' ? (
+            <ToolResultCard
+              key={`${item.kind}-${item.index}`}
+              text={item.text}
+              toolName={item.toolName}
+              toolCallId={item.toolCallId}
+              isError={item.isError}
+            />
           ) : (
             <article key={`${item.kind}-${item.index}`} className={`rounded border px-2.5 py-2 ${item.role === 'user' ? 'ml-8 border-accent bg-accent-subtle' : 'mr-2 border-border bg-card'}`}>
               <div className="mb-1 text-2xs font-medium text-muted">{roleLabel(item.role)}</div>
