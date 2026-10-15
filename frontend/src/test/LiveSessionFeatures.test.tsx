@@ -14,7 +14,7 @@ function renderFeatures(overrides: Partial<Props> = {}) {
     onBtwAbort: vi.fn(),
     onBtwRefreshParent: vi.fn(),
     onOpenWorkflow: vi.fn(),
-    onGoal: vi.fn(),
+    onGoalSync: vi.fn(),
     onCompact: vi.fn(),
     onClear: vi.fn(),
     onReload: vi.fn(),
@@ -28,7 +28,7 @@ function renderFeatures(overrides: Partial<Props> = {}) {
     ...overrides,
   }
   const view = render(<LiveSessionFeatures {...props} />)
-  return { handlers, unmount: view.unmount }
+  return { handlers: props, unmount: view.unmount }
 }
 
 /** The panel body lives next to the rail button, inside the same <details>. */
@@ -121,6 +121,138 @@ describe('LiveSessionFeatures', () => {
     const clear = screen.getByLabelText('点击即开始新的空会话（旧对话保留在文件中）')
     fireEvent.click(clear)
     expect(handlers.onClear).toHaveBeenCalledOnce()
+  })
+
+  it('shows checklist progress, blockers and expandable details while the session is running', async () => {
+    const { handlers } = renderFeatures({
+      status: 'running',
+      onGoalSync: vi.fn(),
+      goal: {
+        objective: '显示当前 goal',
+        status: 'active',
+        progress: { lastSummary: '已完成主视图', current: '补齐可展开详情' },
+        blockers: [{
+          title: '等待接口权限',
+          reason: '需要管理员确认',
+          owner: 'user',
+          kind: 'user_decision',
+          disposition: 'needs_user',
+          proposedResolution: '请管理员确认权限',
+        }],
+        acceptanceCriteria: ['弹窗展示目标和未解决 blocker'],
+        constraints: ['不向聊天发送 /goal'],
+        workItems: [
+          { id: 'main', title: '主视图', state: 'done', dependsOn: [] },
+          { id: 'details', title: '补齐可展开详情', state: 'in_progress', dependsOn: ['主视图'] },
+        ],
+        sourceDocs: [{ path: 'docs/goal-ui.md', kind: 'prd', brief: '目标弹窗需求' }],
+        updatedAt: Date.now(),
+        messagesSinceUpdate: 0,
+      },
+    })
+    const goal = screen.getByRole('button', { name: /任务锚点：进行中/ })
+
+    expect(goal).toBeEnabled()
+    fireEvent.click(goal)
+    const dialog = await screen.findByRole('dialog', { name: '任务锚点' })
+    expect(within(dialog).getByText('显示当前 goal')).toBeInTheDocument()
+    expect(within(dialog).getByText('1/2 完成')).toBeInTheDocument()
+    expect(within(dialog).getByText('1 项需要你处理')).toBeInTheDocument()
+    
+    expect(within(dialog).getAllByText('补齐可展开详情').length).toBeGreaterThan(0)
+    expect(within(dialog).getByText('依赖：主视图')).toBeInTheDocument()
+    expect(within(dialog).getByText('当前在哪一步')).toBeInTheDocument()
+    expect(dialog.textContent).toContain('已完成主视图')
+    expect(within(dialog).getByText('等待接口权限')).toBeInTheDocument()
+    expect(within(dialog).getByText('需要管理员确认')).toBeInTheDocument()
+    expect(within(dialog).getByText('请管理员确认权限')).toBeInTheDocument()
+
+    const summary = within(dialog).getByText(/更多详情/).closest('details') as HTMLElement
+    fireEvent.click(within(summary).getByText(/更多详情/))
+    expect(within(summary).getByText('弹窗展示目标和未解决 blocker')).toBeInTheDocument()
+    expect(within(summary).getByText('不向聊天发送 /goal')).toBeInTheDocument()
+    expect(within(summary).getByText('目标弹窗需求')).toBeInTheDocument()
+    expect(within(summary).getByText('docs/goal-ui.md')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '让 agent 同步清单' }))
+    expect(handlers.onGoalSync).toHaveBeenCalledOnce()
+  })
+
+  it('warns when the goal is complete but its checklist was never ticked', async () => {
+    renderFeatures({
+      status: 'running',
+      onGoalSync: vi.fn(),
+      goal: {
+        objective: '监督台 PRD 规划',
+        status: 'complete',
+        progress: {},
+        blockers: [],
+        acceptanceCriteria: [],
+        constraints: [],
+        workItems: [
+          { id: 'a', title: '写 PRD 草案', state: 'todo', dependsOn: [] },
+          { id: 'b', title: '列出 MVP 范围', state: 'todo', dependsOn: [] },
+        ],
+        sourceDocs: [],
+        updatedAt: Date.now(),
+        messagesSinceUpdate: 0,
+      },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /任务锚点：已完成/ }))
+    const dialog = await screen.findByRole('dialog', { name: '任务锚点' })
+    expect(within(dialog).getByText('这份清单可能过期')).toBeInTheDocument()
+    expect(dialog.textContent).toContain('但 2 个工作项还没勾选')
+    expect(within(dialog).getAllByRole('button', { name: '让 agent 同步清单' }).length).toBeGreaterThan(0)
+  })
+
+  it('invites a goal draft when the session never set one', async () => {
+    renderFeatures({ status: 'running' })
+
+    fireEvent.click(screen.getByRole('button', { name: /查看当前 session 的目标/ }))
+    const dialog = await screen.findByRole('dialog', { name: '任务锚点' })
+    expect(within(dialog).getByText('这条会话还没有设目标')).toBeInTheDocument()
+    expect(dialog.textContent).toContain('每轮对话前重新放进上下文')
+  })
+
+
+  it('disables 目标 while the session is reconnecting', () => {
+    renderFeatures({ status: 'reconnecting' })
+
+    expect(screen.getByRole('button', { name: /查看当前 session 的目标/ })).toBeDisabled()
+  })
+
+  it('shows the goal working even before any checklist item exists', () => {
+    renderFeatures({
+      status: 'running',
+      goal: {
+        objective: '自动推进 global-remaining 任务',
+        status: 'active',
+        progress: { current: '扫描第 3 批' },
+        blockers: [], acceptanceCriteria: [], constraints: [], workItems: [], sourceDocs: [],
+        updatedAt: Date.now(), messagesSinceUpdate: 0,
+      },
+    })
+
+    const goal = screen.getByRole('button', { name: /任务锚点：进行中/ })
+    expect(goal).toHaveAttribute('data-goal-state', 'active')
+    expect(goal.querySelector('.animate-pulse')).not.toBeNull()
+  })
+
+  it('marks a paused goal so it is not mistaken for running', () => {
+    renderFeatures({
+      status: 'running',
+      goal: {
+        objective: '等待权限后继续',
+        status: 'paused',
+        progress: {}, blockers: [], acceptanceCriteria: [], constraints: [], workItems: [], sourceDocs: [],
+        updatedAt: Date.now(), messagesSinceUpdate: 0,
+      },
+    })
+
+    const goal = screen.getByRole('button', { name: /任务锚点：已暂停/ })
+    expect(goal).toHaveAttribute('data-goal-state', 'paused')
+    expect(goal.querySelector('.animate-pulse')).toBeNull()
   })
 
   it('keeps 清空 clickable while the session works', () => {

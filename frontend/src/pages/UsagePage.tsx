@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { UsageDailyPoint, UsageLimitProviderReport, UsageLimitWindow, UsageModelSummary, UsageReport, UsageSessionSummary, UsageTotals, UsageLimitsReport } from '@shared/usage'
-import { displayWorktreePath } from '../utils/displayPath'
+import type { UsageDailyPoint, UsageLimitProviderReport, UsageLimitWindow, UsageModelSummary, UsageReport, UsageTotals, UsageLimitsReport } from '@shared/usage'
 
 function currentMonth(): string {
   const now = new Date()
@@ -381,27 +380,13 @@ function ModelTable({ items }: { items: UsageModelSummary[] }) {
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs">
         <thead className="text-2xs text-muted uppercase"><tr><th className="py-2 pr-3">模型</th><th className="py-2 pr-3">加权单价</th><th className="py-2 pr-3">费用</th><th className="py-2 pr-3">Token</th><th className="py-2">输入 / 输出</th></tr></thead>
-        <tbody>{items.length === 0 ? <tr><td colSpan={5} className="py-5 text-center text-muted">本月暂无记录</td></tr> : items.map(item => (
-          <tr key={item.key} className="border-t border-border"><td className="py-2 pr-3 font-mono whitespace-normal break-all text-text" title={item.key}>{item.key}</td><td className="py-2 pr-3 text-text">{formatUnitCost(item.effectiveUsdPerMillionTokens)}</td><td className="py-2 pr-3 text-text-strong">{formatCost(item.costUsd)}</td><td className="py-2 pr-3"><Totals item={item} /></td><td className="py-2 text-muted">{formatTokens(item.inputTokens)} / {formatTokens(item.outputTokens)}</td></tr>
+        <tbody>{items.length === 0 ? <tr><td colSpan={5} className="py-5 text-center text-muted">本月暂无记录</td></tr> : items.flatMap(model => [model, ...(model.efforts || []).map(effort => ({ ...effort, key: `${model.key} / ${effort.key}`, effortLabel: effort.key === 'unknown' ? '未知 effort' : effort.key }))]).map(item => (
+          <tr key={item.key} className="border-t border-border"><td className="py-2 pr-3 font-mono whitespace-normal break-all text-text" title={item.key}>{'effortLabel' in item ? <span className="pl-4 text-muted">↳ {String(item.effortLabel)}</span> : item.key}</td><td className="py-2 pr-3 text-text">{formatUnitCost(item.effectiveUsdPerMillionTokens)}</td><td className="py-2 pr-3 text-text-strong">{formatCost(item.costUsd)}</td><td className="py-2 pr-3"><Totals item={item} /></td><td className="py-2 text-muted">{formatTokens(item.inputTokens)} / {formatTokens(item.outputTokens)}</td></tr>
         ))}</tbody>
       </table>
     </div>
   )
 }
-
-function SessionTable({ items }: { items: UsageSessionSummary[] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-xs">
-        <thead className="text-2xs text-muted uppercase"><tr><th className="py-2 pr-3">Session</th><th className="py-2 pr-3">费用</th><th className="py-2 pr-3">Token</th><th className="py-2">缓存读取</th></tr></thead>
-        <tbody>{items.length === 0 ? <tr><td colSpan={4} className="py-5 text-center text-muted">本月暂无记录</td></tr> : items.map(item => (
-          <tr key={item.key} className="border-t border-border"><td className="py-2 pr-3"><div className="whitespace-normal break-words text-text" title={item.label}>{displayWorktreePath(item.label)}</div><div className="text-2xs text-muted font-mono whitespace-normal break-all" title={item.cwd || item.sessionFile || item.key}>{displayWorktreePath(item.cwd || item.sessionFile || item.key)}</div></td><td className="py-2 pr-3 text-text-strong">{formatCost(item.costUsd)}</td><td className="py-2 pr-3"><Totals item={item} /></td><td className="py-2 text-muted">{formatTokens(item.cacheReadTokens)}</td></tr>
-        ))}</tbody>
-      </table>
-    </div>
-  )
-}
-
 function resetTime(value: number | null): string {
   if (!value) return '重置时间未提供'
   return `重置 ${new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))}`
@@ -443,7 +428,7 @@ function ProviderLimitCard({ provider }: { provider: UsageLimitProviderReport })
   )
 }
 
-export default function UsagePage() {
+export default function UsagePage({ embedded = false }: { embedded?: boolean } = {}) {
   const [month, setMonth] = useState(currentMonth)
   const [report, setReport] = useState<UsageReport>()
   const [error, setError] = useState<string>()
@@ -516,7 +501,9 @@ export default function UsagePage() {
     <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 bg-bg">
       <div className="max-w-6xl mx-auto space-y-4">
         <header className="flex flex-wrap items-center justify-between gap-3">
-          <div><h1 className="text-lg font-semibold text-text-strong">Token Cost</h1><p className="text-xs text-muted mt-1">Terminal、Web 和 Dashboard session 的统一用量统计</p></div>
+          {embedded
+            ? <h2 className="text-sm font-medium text-text-strong">Token 用量与费用</h2>
+            : <div><h1 className="text-lg font-semibold text-text-strong">Token Cost</h1><p className="text-xs text-muted mt-1">Terminal、Web 和 Dashboard session 的统一用量统计</p></div>}
           <label className="text-xs text-muted flex items-center gap-2">月份<input type="month" value={month} onChange={event => setMonth(event.target.value)} className="rounded-md border border-border bg-card px-2 py-1.5 text-text" /></label>
         </header>
         {error && <div className="rounded-md border border-danger bg-danger-subtle px-3 py-2 text-xs text-danger">统计读取失败：{error}</div>}
@@ -568,10 +555,7 @@ export default function UsagePage() {
               />
             </section>
           </div>
-          <div className="grid xl:grid-cols-2 gap-4">
-            <section className="rounded-lg border border-border bg-card p-4"><h2 className="text-sm font-medium text-text-strong mb-2">按模型</h2><ModelTable items={report.models} /></section>
-            <section className="rounded-lg border border-border bg-card p-4"><h2 className="text-sm font-medium text-text-strong mb-2">按 Session</h2><SessionTable items={report.sessions} /></section>
-          </div>
+          <section className="rounded-lg border border-border bg-card p-4"><h2 className="text-sm font-medium text-text-strong mb-2">按模型</h2><ModelTable items={report.models} /></section>
           <p className="text-2xs text-muted">费用来自 Pi session 中记录的 provider usage 和本地模型价格配置；没有 usage 或价格的调用不会被虚构为 0 元。</p>
         </>}
       </div>

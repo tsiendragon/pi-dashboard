@@ -44,6 +44,15 @@ export const liveSessionApi = {
   forkAtEntry: (processInstanceId: string, entryId: string) => post<{ ok: true; result: { processInstanceId?: string; sessionId?: string; tmuxSession?: string; forkedFrom?: string; entryId?: string } }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/fork`, { entryId },
   ).then(result => result.result),
+  discardAfter: (processInstanceId: string, entryId: string) => post<{ ok: true; result: { processInstanceId?: string; sessionId?: string; tmuxSession: string; entryId: string; deletedEntries: number } }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/discard-after`, { entryId },
+  ).then(result => result.result),
+  withdrawMessage: (processInstanceId: string, entryId: string) => post<{ ok: true; result: { processInstanceId?: string; sessionId?: string; tmuxSession: string; entryId: string; removedEntries: number } }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/withdraw-message`, { entryId },
+  ).then(result => result.result),
+  restart: (processInstanceId: string) => post<{ ok: true; result: { processInstanceId?: string; sessionId?: string; tmuxSession: string } }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/restart`, {},
+  ).then(result => result.result),
   rename: (processInstanceId: string, name: string) => post<{ ok: true; result: unknown }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'set_session_name', name } },
   ).then(result => result.result),
@@ -77,6 +86,10 @@ export const liveSessionApi = {
   deleteGroup: (groupId: string) => fetch(`/api/live-session-groups/${encodeURIComponent(groupId)}`, {
     method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
   }).then(json<{ ok: true; groups: LiveSessionGroup[] }>).then(result => result.groups),
+  /** Move a duplicate group's members into `targetId` and delete the source. */
+  mergeGroup: (groupId: string, targetId: string) => post<{ ok: true; groups: LiveSessionGroup[] }>(
+    `/api/live-session-groups/${encodeURIComponent(groupId)}/merge`, { targetId },
+  ).then(result => result.groups),
   addGroupMember: (groupId: string, processInstanceId: string) => post<{ ok: true; groups: LiveSessionGroup[] }>(
     `/api/live-session-groups/${encodeURIComponent(groupId)}/members`, { processInstanceId },
   ).then(result => result.groups),
@@ -97,7 +110,7 @@ export const liveSessionApi = {
   models: (processInstanceId: string) => post<{ ok: true; result: { models: LiveSessionModelOption[] } }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'get_models' } },
   ).then(result => result.result.models),
-  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'input' | 'abort' | 'set_session_name' | 'get_models' | 'set_model' | 'compact' | 'reload' | 'feature_command' | 'answer_ui' }>) => post<{ ok: true; result: unknown }>(
+  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'resync' | 'input' | 'abort' | 'set_session_name' | 'get_models' | 'set_model' | 'compact' | 'reload' | 'shutdown' | 'feature_command' | 'answer_ui' }>) => post<{ ok: true; result: unknown }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command },
   ),
   /** Close a tmux-first live session: kills the tmux session hosting its Pi. */
@@ -135,6 +148,25 @@ export const liveSessionApi = {
         throw new LiveSessionApiError(502, 'session_tree_unavailable', '会话图谱接口不可用：后端可能是旧版本，请重启 dashboard（./run.sh）')
       }
       return graph
+    }),
+  /**
+   * Task anchor of one session file.
+   *
+   * Read-only, and deliberately keyed by file so a session that is no longer
+   * running still answers: the checklist of a finished task is exactly what gets
+   * lost once the process is gone.
+   */
+  sessionGoal: (file: string) => fetch(
+    `/api/session-goal?file=${encodeURIComponent(file)}`,
+    { credentials: 'same-origin' },
+  )
+    .then(json<{ ok: true; result: { goal: import('@shared/goal-anchor').GoalAnchor | null; partial: boolean } }>)
+    .then(payload => {
+      const result = payload?.result
+      if (!result || typeof result !== 'object' || !('goal' in result)) {
+        throw new LiveSessionApiError(502, 'session_goal_unavailable', '任务锚点接口不可用：后端可能是旧版本，请重启 dashboard（./run.sh）')
+      }
+      return result
     }),
   /**
    * Compaction markers of one session file.

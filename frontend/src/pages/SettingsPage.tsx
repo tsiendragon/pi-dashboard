@@ -11,7 +11,7 @@ import { BUILTIN_THEMES } from '../themes'
 import { loadChatConfig, saveChatConfig, type ChatConfig } from './chat/ChatSettings'
 import { loadTtsSettings, saveTtsSettings, type TtsSettings } from '../features/voice/ttsSettings'
 import { useVoiceOutput } from '../features/voice/useVoiceOutput'
-import { asrLanguageLabel, ASR_DEFAULT_MODEL, ASR_LANGUAGES, type AsrConfigResponse } from '@shared/asr.js'
+import { asrLanguageLabel, ASR_REALTIME_MODEL, ASR_LANGUAGES, type AsrConfigResponse } from '@shared/asr.js'
 import { TTS_LANGUAGES, TTS_MODELS, TTS_VOICES, type TtsConfigResponse } from '@shared/tts.js'
 import { SettingsSectionSlot } from '../plugins/slot-consumers'
 import { ACTIONS, formatKey, setShortcut, resetShortcut, resetAllShortcuts, hasCustomShortcuts, subscribeShortcuts, eventToKeyString, type ActionCategory } from '../shortcuts'
@@ -851,7 +851,7 @@ function VoiceTab() {
           )}
           <SelectRow
             label="识别语言"
-            hint={`由后端 DashScope 识别（${asrCatalog?.defaultModel ?? ASR_DEFAULT_MODEL}，当前：${asrLanguageLabel(config.sttLanguage)}），任意现代浏览器可用`}
+            hint={`由后端 DashScope 实时识别（${asrCatalog?.defaultModel ?? ASR_REALTIME_MODEL}，当前：${asrLanguageLabel(config.sttLanguage)}），需浏览器支持麦克风和实时音频`}
             value={config.sttLanguage}
             options={STT_LANGUAGES}
             onChange={v => set('sttLanguage', v)}

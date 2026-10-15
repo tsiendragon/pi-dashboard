@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { QUOTE_UI_ATTR, type SelectionTarget } from '../hooks/useChatQuoteSelection'
+import { appendVoiceTranscript, useVoiceInput } from '../features/voice/useVoiceInput'
 import { selectionLabel } from '../utils/reviewComments'
 
 /** Anchor the floating card near the selection, flipping below when there is no room above. */
@@ -51,14 +52,19 @@ export const SelectionQuoteMenu = memo(function SelectionQuoteMenu({ target, onQ
 
 interface QuoteCommentPopoverProps {
   target: SelectionTarget
+  language?: string
   onSave: (content: string) => void
   onCancel: () => void
 }
 
 /** Comment box for one quoted sentence (the conversation comment box). */
-export const QuoteCommentPopover = memo(function QuoteCommentPopover({ target, onSave, onCancel }: QuoteCommentPopoverProps) {
+export const QuoteCommentPopover = memo(function QuoteCommentPopover({ target, language, onSave, onCancel }: QuoteCommentPopoverProps) {
   const [value, setValue] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
+  const voiceInput = useVoiceInput({
+    language,
+    onTranscript: text => setValue(current => appendVoiceTranscript(current, text)),
+  })
 
   useEffect(() => { ref.current?.focus() }, [])
 
@@ -69,7 +75,7 @@ export const QuoteCommentPopover = memo(function QuoteCommentPopover({ target, o
       {...{ [QUOTE_UI_ATTR]: '' }}
       role="dialog"
       aria-label="批注选中的内容"
-      style={menuStyle(target, 150)}
+      style={menuStyle(target, 180)}
       className="z-[76] w-[min(360px,calc(100vw-24px))] rounded-lg border border-border bg-bg-elevated p-2 shadow-xl"
     >
       <div className="mb-1 text-2xs text-muted">
@@ -89,9 +95,22 @@ export const QuoteCommentPopover = memo(function QuoteCommentPopover({ target, o
           if (event.key === 'Escape') { event.stopPropagation(); onCancel() }
         }}
       />
-      <div className="mt-1 flex gap-1">
-        <button type="button" className="cursor-pointer rounded border border-accent px-2 py-0.5 text-2xs text-accent disabled:opacity-40" disabled={!value.trim()} onClick={save}>添加批注</button>
-        <button type="button" className="cursor-pointer rounded border border-border px-2 py-0.5 text-2xs text-muted" onClick={onCancel}>取消</button>
+      <div className="mt-1 flex flex-wrap items-center gap-1">
+        <button
+          type="button"
+          aria-label={voiceInput.listening ? '结束录音并识别' : voiceInput.connecting ? '正在连接语音识别' : voiceInput.transcribing ? '正在完成识别' : '开始语音输入'}
+          aria-pressed={voiceInput.listening}
+          title={voiceInput.supported ? '点击开始实时录音，再点一次结束并确认文字' : '当前浏览器不支持实时录音'}
+          className="cursor-pointer rounded border border-border px-2 py-0.5 text-2xs text-muted disabled:cursor-default disabled:opacity-40"
+          disabled={!voiceInput.supported || voiceInput.connecting || voiceInput.transcribing}
+          onClick={voiceInput.toggle}
+        >{voiceInput.listening ? '⏹ 结束录音' : voiceInput.connecting ? '连接中…' : voiceInput.transcribing ? '整理文字…' : '🎙 语音输入'}</button>
+        {voiceInput.interimTranscript && <span role="status" aria-live="polite" className="w-full text-2xs text-muted">正在识别：{voiceInput.interimTranscript}</span>}
+        {voiceInput.error && <span role="alert" className="w-full text-2xs text-danger">{voiceInput.error}</span>}
+        <div className="ml-auto flex gap-1">
+          <button type="button" className="cursor-pointer rounded border border-accent px-2 py-0.5 text-2xs text-accent disabled:opacity-40" disabled={!value.trim()} onClick={save}>添加批注</button>
+          <button type="button" className="cursor-pointer rounded border border-border px-2 py-0.5 text-2xs text-muted" onClick={onCancel}>取消</button>
+        </div>
       </div>
     </div>
   )

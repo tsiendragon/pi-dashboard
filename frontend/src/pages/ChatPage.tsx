@@ -30,7 +30,7 @@ import { usePanelState, detectFileType, type Comment } from '../hooks/usePanelSt
 import { useArmedConfirm } from '../hooks/useArmedConfirm'
 import { useDocumentComments } from '../hooks/useDocumentComments'
 import { useChatQuoteSelection, type SelectionTarget } from '../hooks/useChatQuoteSelection'
-import { buildQuoteReplyMessage, commentReviewItems, selectionLabel, type QuotedText, type ReviewItem } from '../utils/reviewComments'
+import { buildQuoteReplyMessage, CHAT_REVIEW_INTRO, commentReviewItems, selectionLabel, type QuotedText, type ReviewItem } from '../utils/reviewComments'
 import { loadFileComments, saveFileComments } from '../api/fileComments'
 import { resolvePath } from '../utils/resolvePath'
 import { clipboardFiles, splitFilesByKind, pastedFileRef } from '../utils/clipboardFiles'
@@ -48,6 +48,7 @@ import { supportedThinkingLevels, modelLabel, modelFullId } from '../utils/model
 import StatChipRail from './chat/StatChipRail'
 import SessionTree from './chat/SessionTree'
 import MessageSearch from './chat/MessageSearch'
+import { collapseOldTurns, CollapsedTurnRow } from './chat/TurnCollapse'
 import StatusLine from './chat/StatusLine'
 import SplitPane from './chat/SplitPane'
 import MemoryFlash from './chat/MemoryFlash'
@@ -60,7 +61,7 @@ import { StatusBarSlot } from '../plugins'
 import type { ChatMessage } from '../types'
 import { toSpeechText } from '../features/voice/speechText'
 import { loadTtsSettings, subscribeTtsSettings } from '../features/voice/ttsSettings'
-import { useVoiceInput } from '../features/voice/useVoiceInput'
+import { appendVoiceTranscript, useVoiceInput } from '../features/voice/useVoiceInput'
 
 /** One review round: what the comments point at and how to clear them after sending. */
 interface ReviewRequest {
@@ -70,8 +71,16 @@ interface ReviewRequest {
   intro?: string
 }
 
-/** Opening line used when the comments target the conversation itself. */
-const CHAT_REVIEW_INTRO = 'Please review and address these comments about the quoted parts of our conversation:'
+/**
+ * Base for the virtual list's firstItemIndex. react-virtuoso requires the
+ * value to stay >= 0, so instead of counting the prepended items from zero
+ * we start high and decrease it on every older-page prepend (which keeps the
+ * scroll position stable while messages are inserted at the top).
+ */
+const FIRST_ITEM_INDEX_BASE = 1_000_000
+
+/** How many of the newest turns always render in full (older ones collapse). */
+const COLLAPSE_KEEP_TURNS = 3
 
 export default function ChatPage() {
   const dispatch = useAppDispatch()
@@ -94,6 +103,7 @@ export default function ChatPage() {
   const pendingApproval = useAppSelector(s => { const slot = s.dashboard.slots.find(sl => sl.key === s.chat.activeSlot); return slot?.pending_approval ?? false })
   const slotHasMore = useAppSelector(s => s.chat.slotHasMore)
   const slotOldestIndex = useAppSelector(s => s.chat.slotOldestIndex)
+  const slotOlderCursor = useAppSelector(s => s.chat.slotOlderCursor)
 
   // Per-slot input state: store draft text per slot key
   const slotInputsRef = useRef<Map<string, string>>(new Map())
@@ -131,9 +141,9 @@ export default function ChatPage() {
   useEffect(() => subscribeTtsSettings(() => setVoiceSettings(loadTtsSettings())), [])
   const voiceInput = useVoiceInput({
     language: voiceSettings.sttLanguage,
-    onTranscript: text => setInput(text),
+    onTranscript: text => setInput(current => appendVoiceTranscript(current, text)),
   })
-  // Native iOS drives the mic through the WebKit bridge; the web path records a clip locally.
+  // Native iOS uses the WebKit speech bridge; the web path streams audio to realtime ASR.
   const listeningVoice = isNativeIOS ? isListeningVoice : voiceInput.listening
   // Spike: conversational voice mode (STT → send → TTS → STT loop)
   const [voiceMode, setVoiceMode] = useState(false)
@@ -143,15 +153,16 @@ export default function ChatPage() {
   const voiceLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const voiceLongPressFired = useRef(false)
   const voiceDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const nativeVoiceBaseRef = useRef('')
 
   const handleVoiceInput = useCallback(() => {
     if (isNativeIOS) {
-      // On native iOS, trigger speech via WebKit bridge if available
+      nativeVoiceBaseRef.current = input
       ;(window as any).webkit?.messageHandlers?.piSpeech?.postMessage({})
       return
     }
     voiceInput.toggle()
-  }, [isNativeIOS, voiceInput.toggle])
+  }, [input, isNativeIOS, voiceInput.toggle])
 
   const handleVoicePressStart = useCallback((_e: React.TouchEvent | React.PointerEvent) => {
     // No preventDefault — we need the click event to still fire for short taps
@@ -804,14 +815,16 @@ export default function ChatPage() {
       } else if (detail?.type === 'speech-start') {
         setIsListeningVoice(true)
       } else if (detail?.type === 'speech-result') {
-        const text = detail.text as string
-        setInput(text)
+        const text = typeof detail.text === 'string' ? detail.text : ''
+        const fullText = appendVoiceTranscript(nativeVoiceBaseRef.current, text)
+        setInput(fullText)
         if (detail.final) {
+          nativeVoiceBaseRef.current = fullText
           // Recognizer delivered a clean final result
           if (voiceDebounceTimer.current) { clearTimeout(voiceDebounceTimer.current); voiceDebounceTimer.current = null }
           setIsListeningVoice(false)
           if (voiceModeRef.current && text.trim()) {
-            setTimeout(() => sendRef.current(text), 100)
+            setTimeout(() => { nativeVoiceBaseRef.current = ''; sendRef.current(text) }, 100)
           }
         } else if (voiceModeRef.current && text.trim()) {
           // Partial result — debounce: if recognizer never fires final, submit after 2s of silence
@@ -829,6 +842,7 @@ export default function ChatPage() {
       } else if (detail?.type === 'speak-done') {
         // Voice mode loop: TTS finished → restart STT automatically
         if (voiceModeRef.current) {
+          nativeVoiceBaseRef.current = ''
           ;(window as any).webkit?.messageHandlers?.piSpeech?.postMessage({})
         }
       } else if (detail?.type === 'open-sidebar') {
@@ -875,6 +889,13 @@ export default function ChatPage() {
     const txt = (filePrefix + quoted + (optionText || input)).trim()
     const images = pendingImages.map(img => ({ type: 'image' as const, data: img.data, mimeType: img.mimeType }))
     if (!txt && images.length === 0) return
+    if (voiceDebounceTimer.current) { clearTimeout(voiceDebounceTimer.current); voiceDebounceTimer.current = null }
+    if (isNativeIOS) {
+      ;(window as any).webkit?.messageHandlers?.piSpeechStop?.postMessage({})
+      setIsListeningVoice(false)
+    } else {
+      voiceInput.stop()
+    }
     const isSlashCmd = txt.startsWith('/')
     // Handle /new and /clear client-side — they create a new session, not send to pi
     if (txt === '/new' || txt === '/clear') {
@@ -944,7 +965,7 @@ export default function ChatPage() {
       }
     }
     inputRef.current?.focus()
-  }, [input, pendingImages, pendingFiles, pendingModel, pendingCwd, activeSlot, slotRunning, dispatch, scrollBottom])
+  }, [input, pendingImages, pendingFiles, pendingModel, pendingCwd, activeSlot, slotRunning, dispatch, scrollBottom, isNativeIOS, voiceInput.stop])
 
   // Keep sendRef current so the pi-native event handler always calls the latest send
   useEffect(() => { sendRef.current = send }, [send])
@@ -1026,6 +1047,11 @@ export default function ChatPage() {
 
   /** Send the typed message, carrying the quote chips with it. */
   const sendInput = useCallback(() => {
+    if (voiceModeRef.current) {
+      voiceModeRef.current = false
+      setVoiceMode(false)
+      ;(window as any).webkit?.messageHandlers?.piSpeakStop?.postMessage({})
+    }
     const prefix = quotes.length > 0 ? buildQuoteReplyMessage(quotes) : undefined
     setQuotes([])
     void send(undefined, prefix)
@@ -1081,16 +1107,40 @@ export default function ChatPage() {
 
   const lastRole = messages[messages.length - 1]?.role ?? ''
   const virtuosoComponents = useMemo(() => ({
-    Header: () => slotHasMore && slotOldestIndex > 0 ? (
+    Header: () => slotHasMore ? (
       <div className="text-center py-2.5 px-5">
-        {loadingOlder ? <span className="text-muted text-body-s">Loading…</span> : <span className="text-muted text-body-s opacity-40">scroll up for more</span>}
+        {loadingOlder
+          ? <span className="text-muted text-body-s">Loading older messages…</span>
+          : <button type="button" className="bg-transparent border-none cursor-pointer text-accent text-body-s hover:underline font-body" onClick={() => dispatch(loadOlderMessages())}>Load older messages</button>}
       </div>
     ) : null,
     Footer: () => <ChatFooter running={slotRunning} stopping={slotStopping} state={slotState} lastRole={lastRole} />,
-  }), [slotRunning, slotStopping, slotState, slotHasMore, slotOldestIndex, loadingOlder, lastRole])
+  }), [slotRunning, slotStopping, slotState, slotHasMore, loadingOlder, lastRole, dispatch])
 
   // Group consecutive tool messages for collapsible rendering
   const groupedMessages = useMemo(() => groupToolMessages(messages), [messages])
+
+  // Collapse older turns: the newest few turns render in full, older turns
+  // keep the user prompt + final reply and hide tool/thinking activity behind
+  // one expandable row.
+  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => new Set())
+  useEffect(() => { setExpandedTurns(new Set()) }, [activeSlot])
+  const { items: renderItems, turnKeyByIndex, collapsibleTurnKeys } = useMemo(
+    () => collapseOldTurns(groupedMessages, { keepTurns: COLLAPSE_KEEP_TURNS, expandedTurns }),
+    [groupedMessages, expandedTurns],
+  )
+  // Message index of the first render item — used to suppress the turn
+  // separator above the very first message.
+  const firstRenderIndex = useMemo(() => {
+    const first = renderItems[0]
+    if (!first || first.type === 'collapsed') return -1
+    return first.type === 'single' ? first.index : first.tools[0]?.index ?? -1
+  }, [renderItems])
+  const renderItemsRef = useRef(renderItems)
+  useEffect(() => { renderItemsRef.current = renderItems }, [renderItems])
+  const expandTurn = useCallback((turnKey: string) => {
+    setExpandedTurns(prev => { const next = new Set(prev); next.add(turnKey); return next })
+  }, [])
 
   // Collect queued messages (with their absolute index) for the pills UI above the input
   const queuedMessages = useMemo(
@@ -1411,12 +1461,23 @@ export default function ChatPage() {
                 <MessageSearch
                   messages={messages}
                   onJumpToIndex={(msgIdx) => {
-                    // Map message index to grouped messages index for Virtuoso
-                    const gIdx = groupedMessages.findIndex(g =>
-                      g.type === 'single' ? g.index === msgIdx
-                        : g.tools.some(t => t.index === msgIdx)
-                    )
-                    if (gIdx >= 0) virtuosoRef.current?.scrollToIndex({ index: gIdx, behavior: 'smooth', align: 'center' })
+                    // When the target message sits inside a collapsed turn,
+                    // expand that turn first, then scroll after the re-render.
+                    const turnKey = turnKeyByIndex.get(msgIdx)
+                    const scroll = () => {
+                      const gIdx = renderItemsRef.current.findIndex(g =>
+                        g.type === 'collapsed' ? false
+                          : g.type === 'single' ? g.index === msgIdx
+                            : g.tools.some(t => t.index === msgIdx)
+                      )
+                      if (gIdx >= 0) virtuosoRef.current?.scrollToIndex({ index: gIdx, behavior: 'smooth', align: 'center' })
+                    }
+                    if (turnKey && collapsibleTurnKeys.has(turnKey) && !expandedTurns.has(turnKey)) {
+                      expandTurn(turnKey)
+                      setTimeout(scroll, 60)
+                    } else {
+                      scroll()
+                    }
                   }}
                   onClose={() => setShowSearch(false)}
                 />
@@ -1474,20 +1535,34 @@ export default function ChatPage() {
               ref={virtuosoRef}
               onTouchStart={() => { if (document.activeElement instanceof HTMLElement && document.activeElement.tagName === 'TEXTAREA') document.activeElement.blur() }}
               style={{ flex: 1, paddingBottom: 24 }}
-              data={groupedMessages}
+              data={renderItems}
+              // The list index space starts at a high value so prepends can
+              // decrease it without going negative (react-virtuoso requires
+              // firstItemIndex >= 0); the decrease keeps the viewport stable
+              // while older messages are inserted at the top.
+              firstItemIndex={FIRST_ITEM_INDEX_BASE - slotOldestIndex}
               followOutput={followOutput}
               atBottomThreshold={100}
               atBottomStateChange={handleAtBottom}
-              initialTopMostItemIndex={groupedMessages.length - 1}
+              initialTopMostItemIndex={renderItems.length - 1}
               atTopStateChange={(atTop) => {
-                if (atTop && slotHasMore && slotOldestIndex > 0 && !loadingOlder) {
+                if (atTop && slotHasMore && slotOlderCursor && !loadingOlder) {
                   dispatch(loadOlderMessages())
                 }
               }}
               components={virtuosoComponents}
               itemContent={(_i, item) => {
-                // Add turn separator before user messages (except the first)
-                const isUserTurn = item.type === 'single' && item.message.role === 'user' && _i > 0
+                if (item.type === 'collapsed') {
+                  return (
+                    <div className="px-5 py-1">
+                      <CollapsedTurnRow item={item} onExpand={() => expandTurn(item.turnKey)} />
+                    </div>
+                  )
+                }
+                // Add turn separator before user messages (except the first
+                // render item). NOTE: `_i` is react-virtuoso's absolute item
+                // number (includes firstItemIndex), so compare indices instead.
+                const isUserTurn = item.type === 'single' && item.message.role === 'user' && item.index !== firstRenderIndex
                 return (
                   <div className="px-5 py-2">
                     {isUserTurn && <div className="border-t border-border mb-4 mt-2" />}
@@ -1534,6 +1609,9 @@ export default function ChatPage() {
                 <button className="text-muted text-meta hover:text-text ml-auto" onClick={() => setImageError(undefined)}>✕</button>
               </div>
             )}
+            {!isNativeIOS && voiceInput.connecting && <div className="flex items-center gap-2 px-5 py-1 text-accent text-body-s" role="status">正在连接实时语音识别…</div>}
+            {!isNativeIOS && voiceInput.interimTranscript && <div className="px-5 py-1 text-muted text-body-s" role="status" aria-live="polite">正在识别：{voiceInput.interimTranscript}</div>}
+            {!isNativeIOS && voiceInput.transcribing && <div className="px-5 py-1 text-accent text-body-s" role="status">正在确认最终文字…</div>}
             {voiceInput.error && (
               <div className="flex items-center gap-2 px-5 py-2 bg-danger-subtle" role="alert">
                 <span className="flex items-center gap-1 text-danger text-body-s"><MaterialIcon name="mic" className="h-3.5 w-3.5" />{voiceInput.error}</span>
@@ -1601,6 +1679,8 @@ export default function ChatPage() {
                       : 'bg-bg-elevated border-border text-muted hover:text-text hover:border-border-strong'
                 }`}
                 onClick={handleVoiceClick}
+                disabled={!isNativeIOS && (voiceInput.connecting || voiceInput.transcribing)}
+                aria-label={listeningVoice ? '停止语音输入' : voiceInput.connecting ? '正在连接语音识别' : voiceInput.transcribing ? '正在确认识别文字' : '开始语音输入'}
                 onPointerDown={handleVoicePressStart}
                 onPointerUp={handleVoicePressEnd}
                 onPointerLeave={handleVoicePressEnd}
@@ -1608,7 +1688,7 @@ export default function ChatPage() {
                 onTouchEnd={handleVoicePressEnd}
                 onTouchCancel={handleVoicePressEnd}
                 onContextMenu={e => e.preventDefault()}
-                title={voiceMode ? 'Voice mode on — tap to exit' : 'Tap: dictate  Hold: voice mode'}
+                title={voiceMode ? 'Voice mode on — tap to exit' : voiceInput.interimTranscript ? `正在识别：${voiceInput.interimTranscript}` : 'Tap: dictate  Hold: voice mode'}
               >
                 {voiceMode && !listeningVoice ? (
                   <MaterialIcon name="graphic_eq" className="h-5 w-5" />
@@ -1749,6 +1829,7 @@ export default function ChatPage() {
           <ReviewCommentsDialog
             target={reviewDraft.label}
             items={reviewDraft.items}
+            language={voiceSettings.sttLanguage}
             intro={reviewDraft.intro}
             onCancel={() => setReviewDraft(null)}
             onSend={handleReviewSend}
@@ -1765,6 +1846,7 @@ export default function ChatPage() {
       {commentTarget && (
         <QuoteCommentPopover
           target={commentTarget}
+          language={voiceSettings.sttLanguage}
           onSave={addChatComment}
           onCancel={() => { setCommentTarget(null); quoteSelection.clear() }}
         />

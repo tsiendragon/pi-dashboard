@@ -6,13 +6,14 @@ import type { ModelLike } from '../../utils/modelUtils'
 import { modelFullId, modelLabel } from '../../utils/modelUtils'
 import { SearchInput } from '../../components/ui'
 import PathCompleteMenu from '../../components/PathCompleteMenu'
-import { TagChip, TagEditor, RowMenu, type RowMenuItem } from '../../components/sessionMetaUi'
+import { TagChip, TagEditor, RowMenu, type RowMenuAction, type RowMenuItem } from '../../components/sessionMetaUi'
 import MaterialIcon, { type MaterialIconName } from '../../components/MaterialIcon'
 import WorkingHammerIcon from '../../components/WorkingHammerIcon'
 import { relTime, projectName } from '../../pages/chat/sessionMeta'
 import { liveSessionApi } from './api'
 import type { SubagentTaskStatus } from './sessionTitle'
 import { moveInOrder, materializeOrder, resolveDropTarget, buildSessionSections, groupOfSession, isSubagent, type DropTarget, type SessionSection } from './sessionOrder'
+import { START_PATH_HISTORY_KEEP, isPathLikeQuery, matchStartPaths, mergeStartPathHistory } from './startPathHistory'
 import { useLiveSessionMeta } from './useLiveSessionMeta'
 import { useLiveSessionOrder } from './useLiveSessionOrder'
 import { useArmedConfirm } from '../../hooks/useArmedConfirm'
@@ -38,6 +39,10 @@ const MAX_TAG_CHIPS = 2
  */
 function formatStartError(message: string): string {
   const paneTail = message.split('\n').slice(1).join('\n').trim()
+  if (message.includes('live_pi_blocked_on_prompt')) {
+    const hint = '这次启动卡在 Pi 的「是否信任该工程目录」提问上：启动用的后台窗口没人能按键，Pi 就一直没注册，所以看起来像超时。解决办法任选一个：在终端里对该目录跑一次 pi 并选 Trust（会记进 ~/.pi/agent/trust.json，或直接手写该目录或其父目录）；或者给这台机器设 liveSessions.launch.approve=true 让它启动时自动信任。'
+    return `${hint}${paneTail ? `\n${paneTail}` : ''}`
+  }
   if (message.includes('live_pi_registration_timeout')) {
     const waited = /after (\d+)ms/.exec(message)?.[1]
     const seconds = waited ? Math.round(Number(waited) / 1000) : 120
@@ -126,6 +131,7 @@ interface RowProps {
   depth: number
   active: boolean
   groupName?: string
+  groupId?: string
   childCount: number
   subagent: boolean
   taskStatus?: SubagentTaskStatus
@@ -152,6 +158,9 @@ interface RowProps {
   onCopyTerminalCommand: () => void
   onCloseSession: () => void
   onExitSession: () => Promise<void>
+  restartDisabledReason?: string
+  shutdownDisabledReason?: string
+  onRestartSession: () => Promise<void>
   /** Section this row renders in; drop targets are resolved per block. */
   blockId: string
   dragging: boolean
@@ -171,6 +180,8 @@ function SessionRow(p: RowProps) {
   const [renameValue, setRenameValue] = useState(p.title)
   const [exitArmed, setExitArmed] = useState(false)
   const [exitPending, setExitPending] = useState(false)
+  const [restartArmed, setRestartArmed] = useState(false)
+  const [restartPending, setRestartPending] = useState(false)
 
   useEffect(() => {
     if (!exitArmed) return
@@ -184,10 +195,29 @@ function SessionRow(p: RowProps) {
     return () => window.clearTimeout(timer)
   }, [exitPending])
 
+  useEffect(() => {
+    if (!restartArmed) return
+    const timer = window.setTimeout(() => setRestartArmed(false), 5_000)
+    return () => window.clearTimeout(timer)
+  }, [restartArmed])
+
+  const requestRestart = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (restartPending || p.restartDisabledReason) return
+    if (!restartArmed) {
+      setRestartArmed(true)
+      return
+    }
+    setRestartArmed(false)
+    setRestartPending(true)
+    void p.onRestartSession().finally(() => setRestartPending(false))
+  }
+
   const requestExit = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     event.stopPropagation()
-    if (exitPending) return
+    if (exitPending || p.shutdownDisabledReason) return
     if (!exitArmed) {
       setExitArmed(true)
       return
@@ -203,31 +233,50 @@ function SessionRow(p: RowProps) {
   const cwd = p.session.canonicalCwd || p.session.cwd
   const branch = p.session.git?.branch
 
-  const groupItems: RowMenuItem[] = p.groups.slice(0, 6).map(g => (g.name === p.groupName
+  const groupItems: RowMenuAction[] = p.groups.map(g => (g.id === p.groupId
     ? { label: `⇤ 移出「${g.name}」`, onClick: () => p.onLeaveGroup(g.id) }
     : { label: `→ 加入「${g.name}」`, onClick: () => p.onJoinGroup(g.id) }))
+  const orderActions: RowMenuAction[] = [
+    { label: p.pinned ? '📌 取消置顶' : '📌 置顶', shortLabel: p.pinned ? '📌✓' : '📌', onClick: () => p.onPin(!p.pinned) },
+    ...(p.moveIndex > 0 ? [
+      { label: '↑ 上移', shortLabel: '↑', onClick: () => p.onMove('up') },
+      { label: '⤒ 移到本组顶部', shortLabel: '⤒', onClick: () => p.onMove('top') },
+    ] : []),
+    ...(p.moveIndex >= 0 && p.moveIndex < p.moveCount - 1
+      ? [{ label: '↓ 下移', shortLabel: '↓', onClick: () => p.onMove('down') }]
+      : []),
+  ]
 
   const items: RowMenuItem[] = [
-    { label: '✎ 重命名', onClick: () => { setRenameValue(p.title); setRenaming(true) } },
-    { label: '🏷 标签', onClick: () => setTagEditing(true) },
-    ...(p.subagent ? [] : [{ label: '⑂ 从此分叉', hint: '新建一个独立的 Pi 会话，继承任务分组并排在下方', onClick: p.onFork } as RowMenuItem]),
+    { actions: [
+      { label: '✎ 重命名', onClick: () => { setRenameValue(p.title); setRenaming(true) } },
+      { label: '🏷 标签', onClick: () => setTagEditing(true) },
+    ] },
+    ...(p.subagent ? [] : [{ label: '⑂ 从此分叉', hint: '独立 Pi 会话', inlineHint: true, onClick: p.onFork } as RowMenuItem]),
     { separator: true },
-    { label: p.pinned ? '📌 取消置顶' : '📌 置顶', onClick: () => p.onPin(!p.pinned) },
-    ...(p.moveCount > 1 ? [{ separator: true } as RowMenuItem] : []),
-    ...(p.moveIndex > 0 ? [
-      { label: '↑ 上移', onClick: () => p.onMove('up') } as RowMenuItem,
-      { label: '⤒ 移到本组顶部', onClick: () => p.onMove('top') } as RowMenuItem,
-    ] : []),
-    ...(p.moveIndex >= 0 && p.moveIndex < p.moveCount - 1 ? [{ label: '↓ 下移', onClick: () => p.onMove('down') } as RowMenuItem] : []),
+    { actions: orderActions },
     ...(p.tmuxSession ? [
       { separator: true } as RowMenuItem,
-      { label: '⧉ 复制终端命令', hint: `tmux attach -t ${p.tmuxSession}`, onClick: p.onCopyTerminalCommand } as RowMenuItem,
-      { label: '⏻ 关闭 session（kill tmux）', hint: `${p.tmuxSession} · Pi 进程会一起结束`, confirmLabel: '再点一次确认关闭', danger: true, onClick: p.onCloseSession } as RowMenuItem,
+      // The tmux session IS the terminal handle. Its name lives here, not on the
+      // row, so the row stays about the project and the menu answers “which tmux?”.
+      { info: {
+          label: '终端 · tmux 会话',
+          value: p.tmuxSession,
+          actionLabel: '⧉ 复制 attach 命令',
+          onAction: p.onCopyTerminalCommand,
+          title: `tmux attach -t ${p.tmuxSession}（点击复制）`,
+      } } as RowMenuItem,
+      { actions: [
+        { label: '⧉ 复制终端命令', shortLabel: '⧉ 命令', hint: `tmux attach -t ${p.tmuxSession}`, onClick: p.onCopyTerminalCommand },
+        { label: '⏻ 关闭 session（kill tmux）', shortLabel: '⏻ 关闭', hint: `${p.tmuxSession} · Pi 进程会一起结束`, confirmLabel: '确认关闭', danger: true, onClick: p.onCloseSession },
+      ] } as RowMenuItem,
     ] : []),
-    ...(groupItems.length ? [{ separator: true } as RowMenuItem] : []),
-    ...groupItems,
+    ...(groupItems.length ? [
+      { separator: true } as RowMenuItem,
+      { label: '移动到分组', submenu: groupItems } as RowMenuItem,
+    ] : []),
     { separator: true },
-    { label: '⧉ 复制 Session ID', hint: `${shortSessionId(p.session.sessionId)} · pid ${p.session.pid}`, onClick: p.onCopySessionId },
+    { label: '⧉ 复制 Session ID', shortLabel: '⧉ 复制 ID', hint: `${shortSessionId(p.session.sessionId)} · pid ${p.session.pid}`, inlineHint: true, onClick: p.onCopySessionId },
   ]
 
   const submitRename = (commit: boolean) => {
@@ -295,12 +344,25 @@ function SessionRow(p: RowProps) {
             )}
             {p.childCount > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1.5 text-2xs leading-[14px] text-muted" title={`${p.childCount} 个子 Agent`}>{p.childCount} 子</span>}
             {p.session.claim.state === 'claimed' && <span className="flex shrink-0 items-center text-muted-strong" title="已被其他浏览器接管"><MaterialIcon name="lock" className="h-3.5 w-3.5" /></span>}
-            <span className={`shrink-0 font-mono text-2xs leading-none text-muted-strong ${menuOpen ? 'invisible' : ''}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}`}>{relTime(p.session.lastActivityAt)}</span>
+            {/* "活动" is the session's LAST activity, not how long it has run: an idle
+                Pi sends nothing, so this is the honest "silent since" clock. The label
+                is spelled out because the bare number read as an unexplained “几秒”. */}
+            <span className={`flex shrink-0 items-center gap-0.5 font-mono text-2xs leading-none text-muted-strong ${menuOpen ? 'invisible' : ''}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}\n本会话启动于：${new Date(p.session.startedAt).toLocaleString()}`}><span className="opacity-70">活动</span><span>{relTime(p.session.lastActivityAt)}</span></span>
             <button
               type="button"
-              disabled={exitPending}
+              disabled={restartPending || !!p.restartDisabledReason}
+              aria-label={restartPending ? `正在重启 session ${p.title}` : restartArmed ? `确认重启 session ${p.title}` : `重启 session ${p.title}`}
+              title={p.restartDisabledReason || (restartPending ? '正在退出并恢复 Pi session…' : restartArmed ? '再点一次确认重启；未完成工作可能中断' : '重启 Pi 并恢复同一 session（需要二次确认）')}
+              onPointerDown={event => event.stopPropagation()}
+              onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
+              onClick={requestRestart}
+              className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-not-allowed disabled:opacity-40 ${restartArmed ? 'bg-danger-subtle text-danger opacity-100' : restartPending ? 'text-muted opacity-100' : 'text-muted opacity-50 hover:bg-accent-subtle hover:text-accent group-hover:opacity-100 md:opacity-0 focus-visible:opacity-100'}`}
+            ><MaterialIcon name="restore" spin={restartPending} className="h-3.5 w-3.5" />{restartArmed ? '确认' : ''}</button>
+            <button
+              type="button"
+              disabled={exitPending || !!p.shutdownDisabledReason}
               aria-label={exitPending ? `正在退出 session ${p.title}` : exitArmed ? `确认退出 session ${p.title}` : `退出 session ${p.title}`}
-              title={exitPending ? '正在退出 Pi…' : exitArmed ? '再点一次确认退出 Pi（发送 /exit）' : '退出 Pi（发送 /exit）'}
+              title={p.shutdownDisabledReason || (exitPending ? '正在安全关闭 Pi…' : exitArmed ? '再点一次确认退出 Pi（会中断未完成工作）' : '退出 Pi（通过专用关闭指令）')}
               onPointerDown={event => event.stopPropagation()}
               onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
               onClick={requestExit}
@@ -319,16 +381,48 @@ function SessionRow(p: RowProps) {
           <div className="flex h-[16px] items-center gap-1 overflow-hidden">
             {p.pinned && <span className="flex shrink-0 items-center text-accent" title="已置顶"><MaterialIcon name="push_pin" className="h-3.5 w-3.5" /></span>}
             {p.tmuxSession && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-1.5 text-2xs leading-[14px] text-muted-strong" title={`终端可访问：tmux attach -t ${p.tmuxSession}`}><MaterialIcon name="terminal" className="h-3 w-3" />终端</span>}
-            {p.subagent
-              ? <span className={`inline-flex shrink-0 items-center gap-0.5 text-2xs leading-none ${taskStatusClass(p.taskStatus)}`} title={`子 Agent 任务：${taskStatusLabel(p.taskStatus)}`}>{p.taskStatus === 'running' ? <WorkingHammerIcon className="h-3 w-3" /> : <MaterialIcon name={taskStatusIcon(p.taskStatus)} className="h-3.5 w-3.5" />}子 Agent · {taskStatusLabel(p.taskStatus)}</span>
-              : <span className={`shrink-0 text-2xs leading-none ${tone === 'running' ? 'text-accent' : tone === 'reconnecting' ? 'text-warn' : 'text-muted-strong'}`}>{statusLabel(p.session.status)}</span>}
+            {p.subagent && <span className={`inline-flex shrink-0 items-center gap-0.5 text-2xs leading-none ${taskStatusClass(p.taskStatus)}`} title={`子 Agent 任务：${taskStatusLabel(p.taskStatus)}`}>{p.taskStatus === 'running' ? <WorkingHammerIcon className="h-3 w-3" /> : <MaterialIcon name={taskStatusIcon(p.taskStatus)} className="h-3.5 w-3.5" />}子 Agent · {taskStatusLabel(p.taskStatus)}</span>}
             {(p.pendingUiCount ?? 0) > 0 && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-warn-subtle px-1.5 text-2xs leading-[14px] text-warn" title={`该会话有 ${p.pendingUiCount} 个待应答请求，agent 正在等待回答`}><MaterialIcon name="error" className="h-3 w-3" />待应答 {p.pendingUiCount}</span>}
+            {/* Task anchor state. Sessions that never set a goal draw nothing — a "—"
+                chip on every row would drown the ones that do carry a goal. A goal
+                without a checklist still gets a chip: its state (进行中/已暂停) is
+                what tells the user the loop is working on this session. */}
+            {p.session.goal && (() => {
+              const goal = p.session.goal
+              const status = goal.status
+              const statusLabel = status === 'active' ? '进行中' : status === 'paused' ? '已暂停' : status === 'complete' ? '已完成' : undefined
+              const label = goal.total > 0 ? `${goal.done}/${goal.total}` : statusLabel
+              if (!label) return null
+              const complete = goal.total > 0 ? goal.done === goal.total && !goal.stale : status === 'complete'
+              const working = status === 'active' && !goal.stale
+              const paused = status === 'paused'
+              const tone = goal.stale || goal.needsUser > 0 || paused
+                ? 'bg-warn-subtle text-warn'
+                : complete ? 'bg-ok-subtle text-ok' : 'bg-accent-subtle text-accent'
+              const hint = [
+                statusLabel ? `任务锚点：${statusLabel}` : `任务锚点：${goal.done}/${goal.total} 完成`,
+                statusLabel && goal.total > 0 ? `${goal.done}/${goal.total} 完成` : '',
+                working ? '会话会按间隔自动继续推进' : '',
+                goal.needsUser > 0 ? `${goal.needsUser} 项需要你处理` : '',
+                goal.stale ? '清单可能过期' : '',
+              ].filter(Boolean).join('，')
+              return <span
+                data-session-goal={goal.stale ? 'stale' : paused ? 'paused' : complete ? 'complete' : 'active'}
+                className={`inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 text-2xs leading-[14px] ${tone}`}
+                title={hint}
+              >
+                {working && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden="true" />}
+                {paused && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />}
+                {!working && !paused && (goal.stale || complete) && <MaterialIcon name={goal.stale ? 'error' : 'check'} className="h-3 w-3" />}
+                {goal.stale ? '需核对' : label}
+              </span>
+            })()}
             {chips.map(t => <TagChip key={t} tag={t} active={p.tagFilter === t} onClick={p.onToggleTagFilter} />)}
             {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-2xs font-semibold leading-[14px] text-muted-strong" title={p.tags.join(', ')}>+{extra}</span>}
             {p.groupName && <span className="shrink-0 truncate rounded-full bg-ok-subtle px-1.5 text-2xs leading-[14px] text-ok" title={`任务分组：${p.groupName}`}>{p.groupName}</span>}
             <span className="ml-auto flex min-w-0 shrink items-center gap-1 text-2xs leading-none text-muted-strong">
-              {branch && <span className="shrink-0 truncate" title={`分支：${branch}`}>{branch}</span>}
-              {branch && <span className="shrink-0 text-muted-strong opacity-40" aria-hidden="true">·</span>}
+              {/* basename only: it is what tells the user what a session works on; the
+                  full path stays in the row tooltip and the branch in `git.branch`. */}
               <span className="min-w-0 truncate font-mono" title={cwd}>{projectName(cwd) || displayWorktreePath(cwd)}</span>
             </span>
           </div>
@@ -342,6 +436,88 @@ function SessionRow(p: RowProps) {
   )
 }
 
+/**
+ * One row of the task-group admin list.
+ *
+ * Empty groups never render a sidebar section (a section with no rows is
+ * filtered out), so without this list a duplicated “hold” can neither be seen
+ * nor removed. Rename / merge / delete only touch the group — running sessions
+ * keep going.
+ */
+function GroupAdminRow({ group, groups, busy, onRename, onMerge, onDelete }: {
+  group: LiveSessionGroup
+  groups: LiveSessionGroup[]
+  busy: boolean
+  onRename: (name: string) => void
+  onMerge: (targetId: string) => void
+  onDelete: () => void
+}) {
+  const [renaming, setRenaming] = useState(false)
+  const [draft, setDraft] = useState(group.name)
+  const [merging, setMerging] = useState(false)
+  const [target, setTarget] = useState('')
+  const [armed, setArmed] = useState(false)
+  const others = groups.filter(candidate => candidate.id !== group.id)
+  const count = group.sessionIds.length
+
+  const submitRename = () => {
+    const name = draft.trim()
+    setRenaming(false)
+    if (name && name !== group.name) onRename(name)
+  }
+
+  return (
+    <div data-group-admin={group.id} className="rounded border border-border bg-card px-1.5 py-1">
+      <div className="flex items-center gap-1">
+        {renaming ? (
+          <input
+            autoFocus
+            aria-label={`重命名分组 ${group.name}`}
+            value={draft}
+            maxLength={120}
+            onChange={event => setDraft(event.target.value)}
+            onBlur={submitRename}
+            onKeyDown={event => {
+              if (event.key === 'Enter') { event.preventDefault(); submitRename() }
+              else if (event.key === 'Escape') { event.preventDefault(); setRenaming(false) }
+            }}
+            className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-2xs text-text-strong outline-none"
+          />
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-2xs font-semibold text-text-strong" title={group.name}>{group.name}</span>
+        )}
+        <span className="shrink-0 rounded-full bg-bg-hover px-1.5 font-mono text-2xs leading-[14px] text-muted-strong" title={`${count} 个 session`}>{count || '空'}</span>
+        <button type="button" disabled={busy} aria-label={`重命名分组 ${group.name}`} title="重命名" onClick={() => { setDraft(group.name); setRenaming(true) }} className="flex shrink-0 items-center rounded px-1 text-muted opacity-70 transition-opacity hover:bg-bg-hover hover:text-accent hover:opacity-100 disabled:opacity-40"><MaterialIcon name="edit" className="h-3.5 w-3.5" /></button>
+        <button
+          type="button"
+          disabled={busy || others.length === 0}
+          aria-label={`合并分组 ${group.name}`}
+          title={others.length === 0 ? '只有一个分组，没有可合并的目标' : '把本组 session 移到另一个分组，然后删除本组'}
+          onClick={() => { setMerging(value => !value); setTarget('') }}
+          className="flex shrink-0 items-center rounded px-1 text-muted opacity-70 transition-opacity hover:bg-bg-hover hover:text-accent hover:opacity-100 disabled:opacity-40"
+        ><MaterialIcon name="call_merge" className="h-3.5 w-3.5" /></button>
+        <button
+          type="button"
+          disabled={busy}
+          aria-label={`删除分组 ${group.name}`}
+          title={armed ? '再点一次确认删除（session 不会被删除）' : '删除分组（session 不会被删除）'}
+          onClick={() => { if (armed) { setArmed(false); onDelete() } else setArmed(true) }}
+          className={armed ? 'flex shrink-0 items-center rounded bg-danger-subtle px-1.5 py-0.5 text-2xs font-semibold text-danger disabled:opacity-40' : 'flex shrink-0 items-center rounded px-1 text-muted opacity-70 transition-opacity hover:bg-danger-subtle hover:text-danger hover:opacity-100 disabled:opacity-40'}
+        >{armed ? '确认删除' : <MaterialIcon name="close" className="h-3.5 w-3.5" />}</button>
+      </div>
+      {merging && (
+        <div className="mt-1 flex items-center gap-1">
+          <select aria-label={`合并 ${group.name} 到`} value={target} onChange={event => setTarget(event.target.value)} className="min-w-0 flex-1 rounded border border-border bg-bg px-1 py-0.5 text-2xs text-text outline-none">
+            <option value="">合并到…</option>
+            {others.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}（{candidate.sessionIds.length} 个 session）</option>)}
+          </select>
+          <button type="button" disabled={busy || !target} onClick={() => { setMerging(false); onMerge(target) }} className="shrink-0 rounded border border-border bg-bg px-1.5 py-0.5 text-2xs text-muted transition hover:border-accent hover:text-accent disabled:opacity-50">确认合并</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function LiveSessionsList({ sessions, sessionTitles = {}, subagentStatuses = {}, activeId, onSelect, onRefresh, pendingUiCounts = {} }: LiveSessionsListProps) {
   const [groups, setGroups] = useState<LiveSessionGroup[]>([])
   const [creating, setCreating] = useState(false)
@@ -349,6 +525,14 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
   const [starting, setStarting] = useState(false)
   const [startOpen, setStartOpen] = useState(false)
   const [startCwd, setStartCwd] = useState('')
+  const [recentStartPaths, setRecentStartPaths] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('pi-dashboard:live-session-start-paths') || '[]')
+      return Array.isArray(saved) ? saved.filter((path): path is string => typeof path === 'string').slice(0, START_PATH_HISTORY_KEEP) : []
+    } catch { return [] }
+  })
+  const [startGroupId, setStartGroupId] = useState('')
+  const [startTags, setStartTags] = useState('')
   const [startCwdMenuOpen, setStartCwdMenuOpen] = useState(false)
   const [startCwdCursor, setStartCwdCursor] = useState(0)
   const startCwdRef = useRef<HTMLInputElement>(null)
@@ -364,6 +548,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
   /** A bulk `/reload` of every main session is in flight. */
   const [reloadingAll, setReloadingAll] = useState(false)
   const [reloadNotice, setReloadNotice] = useState<{ text: string; danger: boolean } | null>(null)
+  const [sessionActionNotice, setSessionActionNotice] = useState<{ text: string; danger: boolean } | null>(null)
   /** processInstanceId of the session whose "从此分叉" launch is in flight. */
   const [forkingId, setForkingId] = useState<string | null>(null)
   const [forkError, setForkError] = useState<string>()
@@ -422,6 +607,12 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     const timer = window.setTimeout(() => setReloadNotice(null), 8_000)
     return () => window.clearTimeout(timer)
   }, [reloadNotice])
+
+  useEffect(() => {
+    if (!sessionActionNotice) return
+    const timer = window.setTimeout(() => setSessionActionNotice(null), 8_000)
+    return () => window.clearTimeout(timer)
+  }, [sessionActionNotice])
 
   /**
    * Follow an in-process session switch (`/clear`, `/ls-fork`).
@@ -484,21 +675,51 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     if (!startCwd.trim()) return
     setStarting(true)
     setStartError(undefined)
+    let result: Awaited<ReturnType<typeof liveSessionApi.start>>
     try {
-      await liveSessionApi.start({ cwd: startCwd.trim(), ...(startModel.trim() ? { model: startModel.trim() } : {}), thinkingLevel: startThinking, ...(startTitle.trim() ? { title: startTitle.trim() } : {}) })
-      setStartCwd('')
-      setStartModel('')
-      setStartTitle('')
-      setStarting(false)
-      setStartOpen(false)
-      window.setTimeout(() => { void onRefresh?.() }, 1_000)
+      result = await liveSessionApi.start({ cwd: startCwd.trim(), ...(startModel.trim() ? { model: startModel.trim() } : {}), thinkingLevel: startThinking, ...(startTitle.trim() ? { title: startTitle.trim() } : {}) })
     } catch (reason) {
       setStartError(formatStartError(reason instanceof Error ? reason.message : String(reason)))
       setStarting(false)
+      return
     }
+
+    const cwd = startCwd.trim()
+    const paths = [cwd, ...recentStartPaths.filter(path => path !== cwd)].slice(0, START_PATH_HISTORY_KEEP)
+    setRecentStartPaths(paths)
+    try { localStorage.setItem('pi-dashboard:live-session-start-paths', JSON.stringify(paths)) } catch { /* session storage is a convenience only */ }
+    try {
+      if (result.processInstanceId && result.sessionId) {
+        if (startGroupId) setGroups(await liveSessionApi.addGroupMember(startGroupId, result.processInstanceId))
+        const tags = [...new Set(startTags.split(',').map(tag => tag.trim()).filter(Boolean))]
+        if (tags.length) await patch(result.processInstanceId, result.sessionId, { tags })
+      }
+    } catch (reason) {
+      setStartError(`Pi 已启动，但分组或标签未能保存：${reason instanceof Error ? reason.message : String(reason)}`)
+    }
+    setStartCwd('')
+    setStartModel('')
+    setStartTitle('')
+    setStartTags('')
+    setStartGroupId('')
+    setStarting(false)
+    setStartOpen(false)
+    window.setTimeout(() => { void onRefresh?.() }, 1_000)
   }
 
   const groupOf = useCallback((session: LiveSessionSummary): LiveSessionGroup | undefined => groupOfSession(session, groups), [groups])
+
+  /** Directories this browser started a Live Pi in, most recent first. */
+  const startPathHistory = useMemo(
+    () => mergeStartPathHistory(recentStartPaths, sessions.map(session => session.canonicalCwd)),
+    [recentStartPaths, sessions],
+  )
+
+  /** What the field typed so far matches: keyword hits first, recency when empty. */
+  const startPathSuggestions = useMemo(
+    () => matchStartPaths(startPathHistory, startCwd.trim()),
+    [startPathHistory, startCwd],
+  )
 
   const childrenByParent = useMemo(() => {
     const map = new Map<string, number>()
@@ -729,15 +950,26 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     },
     onExitSession: async () => {
       try {
-        await liveSessionApi.command(session.processInstanceId, { type: 'input', text: '/exit', channel: 'web' })
+        await liveSessionApi.command(session.processInstanceId, { type: 'shutdown' })
+        setSessionActionNotice({ text: `已发送退出指令：${sessionTitle(session, sessionTitles)}`, danger: false })
         if (onRefresh) void onRefresh().catch(() => {})
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : String(reason))
+        setSessionActionNotice({ text: `退出失败：${reason instanceof Error ? reason.message : String(reason)}`, danger: true })
         throw reason
       }
     },
     // tmux-first live sessions are closed by killing their tmux session; the Pi
     // inside it exits with the pane and the sidebar row disappears on its own.
+    onRestartSession: async () => {
+      try {
+        const result = await liveSessionApi.restart(session.processInstanceId)
+        setSessionActionNotice({ text: `已重启「${sessionTitle(session, sessionTitles)}」，正在恢复原 session`, danger: false })
+        if (activeId === session.processInstanceId && result.processInstanceId) onSelect(result.processInstanceId)
+        if (onRefresh) window.setTimeout(() => { void onRefresh().catch(() => {}) }, 250)
+      } catch (reason) {
+        setSessionActionNotice({ text: `重启失败：${reason instanceof Error ? reason.message : String(reason)}`, danger: true })
+      }
+    },
     onCloseSession: () => {
       const tmux = meta[session.sessionId]?.tmux
       if (!tmux) return
@@ -754,6 +986,27 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     return items.map((session, index) => {
       const group = groupOf(session)
       const subagent = isSubagent(session)
+      const childCount = childrenByParent.get(session.sessionId) || 0
+      const shutdownDisabledReason = session.mode !== 'tui'
+        ? '目前只支持 TUI session'
+        : !session.capabilities?.includes('session_shutdown')
+          ? '当前 Pi bridge 不支持安全关闭，请手动重启一次后再试'
+          : undefined
+      const restartDisabledReason = subagent
+        ? '子 Agent 不支持单独重启'
+        : session.mode !== 'tui'
+          ? '目前只支持 TUI session'
+          : session.status === 'running'
+            ? '请等 Pi 空闲后再重启'
+          : !meta[session.sessionId]?.tmux
+            ? '仅支持 dashboard 管理的 tmux session'
+            : !session.sessionFile
+              ? '没有可恢复的 session 文件'
+              : session.status === 'reconnecting'
+                ? 'session 正在重连，请稍后再试'
+                : childCount > 0
+                  ? '请先完成该 session 的子 Agent'
+                  : undefined
       return (
         <SessionRow
           key={session.processInstanceId}
@@ -770,9 +1023,12 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
           moveCount={items.length}
           active={activeId === session.processInstanceId}
           groupName={group?.name}
-          childCount={childrenByParent.get(session.sessionId) || 0}
+          groupId={group?.id}
+          childCount={childCount}
           subagent={subagent}
-        taskStatus={subagent && session.subagentWorkId ? subagentStatuses[session.subagentWorkId] : undefined}
+          restartDisabledReason={restartDisabledReason}
+          shutdownDisabledReason={shutdownDisabledReason}
+          taskStatus={subagent && session.subagentWorkId ? subagentStatuses[session.subagentWorkId] : undefined}
           tags={meta[session.sessionId]?.tags || []}
           pinned={!!meta[session.sessionId]?.pinned}
           pendingUiCount={pendingUiCounts[session.processInstanceId]}
@@ -800,8 +1056,8 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
               {visible.length === sessions.length ? sessions.length : `${visible.length}/${sessions.length}`}
             </span>
           </div>
-          <button type="button" disabled={busy || starting} onClick={() => setStartOpen(value => !value)} className="flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-2 py-0.5 text-2xs text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="启动一个新的 Live Pi"><MaterialIcon name="add" className="h-3.5 w-3.5" />启动</button>
-          <button type="button" disabled={busy || starting} onClick={() => setCreating(value => !value)} className="flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-2 py-0.5 text-2xs text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="新建任务分组"><MaterialIcon name="add" className="h-3.5 w-3.5" />任务</button>
+          <button type="button" disabled={busy || starting} onClick={() => { setStartError(undefined); setStartOpen(value => !value) }} className="flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-2 py-0.5 text-2xs text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="启动一个新的 Live Pi"><MaterialIcon name="add" className="h-3.5 w-3.5" />启动</button>
+          <button type="button" disabled={busy || starting} onClick={() => setCreating(value => !value)} className="flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-2 py-0.5 text-2xs text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="新建 / 管理任务分组"><MaterialIcon name="add" className="h-3.5 w-3.5" />任务</button>
         </div>
 
         <div className="mt-2 flex items-center gap-1.5">
@@ -816,6 +1072,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
         </div>
 
         {reloadNotice && <div role="status" aria-label="重载结果" className={`mt-1.5 text-2xs ${reloadNotice.danger ? 'text-danger' : 'text-muted-strong'}`}>{reloadNotice.text}</div>}
+        {sessionActionNotice && <div role="status" aria-label="会话操作结果" className={`mt-1.5 text-2xs ${sessionActionNotice.danger ? 'text-danger' : 'text-muted-strong'}`}>{sessionActionNotice.text}</div>}
 
         {tagCounts.length > 0 && (
           <div className="mt-1.5 flex items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -841,6 +1098,18 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
                 // most common start failure, so make the valid choices visible.
                 if (event.key === 'Tab' && !event.shiftKey) {
                   event.preventDefault()
+                  // A keyword (not a path) that matches exactly one directory we
+                  // started before is filled in directly — that is the whole point
+                  // of remembering history. Anything else opens the menu.
+                  const typed = startCwd.trim()
+                  const keywordHits = isPathLikeQuery(typed) ? [] : matchStartPaths(startPathHistory, typed, 2)
+                  if (keywordHits.length === 1 && keywordHits[0] !== typed) {
+                    const filled = `${keywordHits[0]}/`
+                    setStartCwd(filled)
+                    setStartCwdCursor(filled.length)
+                    setStartCwdMenuOpen(false)
+                    return
+                  }
                   setStartCwdCursor(startCwdRef.current?.selectionStart ?? 0)
                   setStartCwdMenuOpen(true)
                 } else if (event.key === 'Escape') setStartCwdMenuOpen(false)
@@ -848,13 +1117,17 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
               placeholder="工作目录，例如 ~/repos/...（Tab 补全）"
               className="w-full rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none focus:border-accent"
             />
+            {startPathSuggestions.length > 0 && <div className="flex flex-wrap gap-1" aria-label="常用工作目录">
+              {startPathSuggestions.map(path => <button key={path} type="button" onClick={() => setStartCwd(path)} title={path} className="max-w-full truncate rounded-full border border-border px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-text">{path}</button>)}
+            </div>}
             <div className="text-2xs leading-[15px] text-muted-strong">
-              必须是<b>已存在</b>的绝对目录（或 <span className="font-mono">~/…</span>），且在白名单根目录内；按 Tab 可补全目录。
+              必须是<b>已存在</b>的绝对目录（或 <span className="font-mono">~/…</span>），且在白名单根目录内。输入关键词（如 <span className="font-mono">toolkit</span>）会从用过的目录里匹配，按 Tab 可直接补全。
             </div>
             {startCwdMenuOpen && <PathCompleteMenu
               input={startCwd}
               cursorPos={startCwdCursor}
               anchorRef={startCwdRef}
+              history={startPathHistory}
               onComplete={(before, completed, after) => {
                 setStartCwd(before + completed + after)
                 setStartCwdMenuOpen(true)
@@ -873,6 +1146,11 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
               {startModels.map(model => <option key={modelFullId(model)} value={modelFullId(model)}>{modelLabel(model)} · {modelFullId(model)}</option>)}
             </select>
             {startModelsError && <div className="text-2xs text-warn">模型列表读取失败，将使用默认模型</div>}
+            <select aria-label="启动后加入分组" value={startGroupId} onChange={event => setStartGroupId(event.target.value)} className="w-full rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none">
+              <option value="">不加入分组</option>
+              {groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+            </select>
+            <input value={startTags} onChange={event => setStartTags(event.target.value)} placeholder="标签（可选，逗号分隔）" className="w-full rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none focus:border-accent" />
             <div className="flex gap-1.5">
               <select value={startThinking} onChange={event => setStartThinking(event.target.value)} className="min-w-0 flex-1 rounded border border-border bg-card px-1.5 py-1 text-2xs text-text outline-none">
                 {THINKING_LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
@@ -884,12 +1162,35 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
               <button type="button" disabled={starting} onClick={() => setStartOpen(false)} className="rounded border border-border px-2 py-1 text-2xs text-muted">取消</button>
             </div>
             {starting && <div className="text-2xs text-muted">冷启动通常 5–20 秒；机器繁忙时可能超过 1 分钟，请勿重复点击。</div>}
-            {startError && <div className="whitespace-pre-wrap break-words text-2xs text-danger">启动失败：{startError}</div>}
+            {startError && <div className="whitespace-pre-wrap break-words text-2xs text-danger">{startError.startsWith('Pi 已启动') ? '' : '启动失败：'}{startError}</div>}
           </form>}
-          {creating && <form onSubmit={event => { void createGroup(event) }} className="flex gap-1 border-t border-border pt-2">
-            <input value={newGroupName} onChange={event => setNewGroupName(event.target.value)} placeholder="任务分组名称" className="min-w-0 flex-1 rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none focus:border-accent" />
-            <button type="submit" disabled={busy || !newGroupName.trim()} className="rounded border border-border px-2 py-1 text-2xs text-muted disabled:opacity-50">创建</button>
-          </form>}
+          {creating && <div className="space-y-1.5 border-t border-border pt-2">
+            <form onSubmit={event => { void createGroup(event) }} className="flex gap-1">
+              <input value={newGroupName} onChange={event => setNewGroupName(event.target.value)} placeholder="新建任务分组名称" className="min-w-0 flex-1 rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none focus:border-accent" />
+              <button type="submit" disabled={busy || !newGroupName.trim()} className="rounded border border-border px-2 py-1 text-2xs text-muted disabled:opacity-50">创建</button>
+            </form>
+            {groups.length > 0 && (
+              <div>
+                <div className="flex items-baseline justify-between gap-1 text-2xs">
+                  <span className="font-semibold text-muted">已有分组 <span className="font-normal text-muted-strong">（含没有 session 的空分组）</span></span>
+                  <span className="shrink-0 text-muted-strong">不会动到 session</span>
+                </div>
+                <div className="mt-1 space-y-1">
+                  {groups.map(group => (
+                    <GroupAdminRow
+                      key={group.id}
+                      group={group}
+                      groups={groups}
+                      busy={busy}
+                      onRename={name => void mutateGroups(() => liveSessionApi.renameGroup(group.id, name))}
+                      onMerge={targetId => void mutateGroups(() => liveSessionApi.mergeGroup(group.id, targetId))}
+                      onDelete={() => void mutateGroups(() => liveSessionApi.deleteGroup(group.id))}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>}
         </div>}
 
         {error && <div className="mt-2 text-2xs text-danger">分组同步失败：{error}</div>}

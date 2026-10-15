@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import type { SessionTreeGraph, SessionTreeNode, SessionTreeSessionEntry } from '@shared/session-tree'
+import { goalProgressOf, type GoalAnchor } from '@shared/goal-anchor'
+import { liveSessionApi } from '../api'
+import GoalAnchorDialog from '../goal/GoalAnchorDialog'
 import { NODE_H } from './layout'
 
 const ROLE_ICONS: Record<string, string> = {
@@ -39,6 +42,16 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
    * or end entry right here instead of expanding and hunting in the canvas.
    */
   const [foldTarget, setFoldTarget] = useState<'from' | 'to'>('to')
+  /**
+   * The anchor is fetched on demand, not on every node selection: one click in
+   * the graph should not fan out into a file read per node.
+   */
+  const [goalOpen, setGoalOpen] = useState(false)
+  const [goal, setGoal] = useState<GoalAnchor | null>(null)
+  const [goalLoading, setGoalLoading] = useState(false)
+  const [goalError, setGoalError] = useState<string>()
+  const [goalPartial, setGoalPartial] = useState(false)
+  const goalProgress = goalProgressOf(goal)
   if (!node) {
     return (
       <aside className="flex h-full w-72 shrink-0 flex-col border-l border-border bg-panel p-4">
@@ -60,6 +73,16 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
   }
 
   const session = graph.sessions.find(candidate => candidate.key === node.sessionKey) ?? null
+  const openGoal = () => {
+    if (!session) return
+    setGoalOpen(true)
+    setGoalLoading(true)
+    setGoalError(undefined)
+    void liveSessionApi.sessionGoal(session.file)
+      .then(result => { setGoal(result.goal); setGoalPartial(result.partial) })
+      .catch((error: unknown) => setGoalError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setGoalLoading(false))
+  }
   const isCurrentSession = session?.isFocus === true
   const forkParentPresent = session?.forkOf ? graph.sessions.some(candidate => candidate.key === session.forkOf) : false
   const isFolded = node.kind === 'collapsed'
@@ -155,6 +178,28 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
             <div className="flex justify-between gap-2"><span className="text-muted">HEAD</span><span className="text-accent">该会话的活动叶子</span></div>
           ) : null}
         </div>
+
+        {session ? (
+          <div>
+            <div className="text-2xs font-medium uppercase tracking-wide text-muted">任务锚点</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={goalLoading}
+                onClick={openGoal}
+                className="cursor-pointer rounded border border-border bg-card px-2.5 py-1 text-2xs text-text transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+              >{goalLoading ? '读取中…' : goal ? '查看目标与清单' : '查看该会话的目标与清单'}</button>
+              {goalProgress && goalProgress.total > 0 ? (
+                <span className="text-2xs text-muted">
+                  {`${goalProgress.done}/${goalProgress.total} 完成`}
+                  {goalProgress.needsUser > 0 ? ` · ${goalProgress.needsUser} 项需要你处理` : ''}
+                  {goalProgress.stale ? ' · 清单可能过期' : ''}
+                </span>
+              ) : null}
+            </div>
+            {goalError ? <div role="alert" className="mt-1 text-2xs text-danger">{goalError}</div> : null}
+          </div>
+        ) : null}
 
         {action.blockedReason ? (
           <div className="rounded-md bg-warn-subtle px-3 py-2 text-2xs leading-relaxed text-text">{action.blockedReason}</div>
@@ -255,6 +300,13 @@ export default function BranchDetailPanel({ node, graph, action, onNavigate, onF
       <div className="mt-auto px-4 pb-4 text-2xs text-muted">
         节点高度 {NODE_H}px · 拖拽平移 · 滚轮缩放
       </div>
+      {goalOpen && <GoalAnchorDialog
+        goal={goal}
+        loaded={!goalLoading}
+        mode="snapshot"
+        partial={goalPartial}
+        onClose={() => setGoalOpen(false)}
+      />}
     </aside>
   )
 }

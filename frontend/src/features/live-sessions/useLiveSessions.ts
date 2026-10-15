@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import type { LiveSessionBrowserEvent, LiveSessionDetail, LiveSessionEventMessage, LiveSessionSummary } from '@shared/live-sessions'
+import type { LiveSessionBrowserEvent, LiveSessionDetail, LiveSessionEventMessage, LiveSessionGoalChangedFrame, LiveSessionSummary } from '@shared/live-sessions'
 import { useAppDispatch, useAppSelector } from '../../store'
 import {
   authRequired,
@@ -8,6 +8,7 @@ import {
   liveSessionClaimChanged,
   liveSessionDetached,
   liveSessionEvent,
+  liveSessionGoalChanged,
   liveSessionReconnecting,
   liveSessionSnapshot,
   sessionsLoaded,
@@ -72,6 +73,9 @@ export function useLiveSessionsRuntime(): { refresh: () => Promise<void> } {
           break
         case 'live_session_claim_changed':
           dispatch(liveSessionClaimChanged(frame.data as LiveSessionSummary))
+          break
+        case 'live_session_goal_changed':
+          dispatch(liveSessionGoalChanged(frame.data as LiveSessionGoalChangedFrame))
           break
         case 'live_session_reconnecting':
           dispatch(liveSessionReconnecting(frame.data as LiveSessionSummary))
