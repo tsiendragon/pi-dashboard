@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>事件流水账 · 竖轴时间线改造 mock</title>
+<style>
+  :root{
+    --bg:#fafafa;--bg-elevated:#fff;--card:#fff;--panel:#f5f5f5;
+    --text:#3f3f46;--text-strong:#18181b;--muted:#71717a;--muted-strong:#52525b;
+    --border:#e4e4e7;--border-strong:#d4d4d8;
+    --accent:#1d5aaf;--accent-subtle:rgba(29,90,175,.12);
+    --ok:#11695e;--warn:#935b06;--danger:#c8196a;--info:#2563eb;--aim:#7c3aed;
+    --radius-md:8px;--radius-lg:12px;--radius-xl:16px;
+    --shadow-sm:0.5px 1px 1px rgba(20,20,30,.10);
+    --shadow-md:1px 2px 2px rgba(20,20,30,.06),2px 4px 6px rgba(20,20,30,.05),0 0 0 1px rgba(0,0,0,.03);
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent)}
+  h1,h2,h3{margin:0;color:var(--text-strong)}
+  .wrap{max-width:1120px;margin:0 auto;padding:20px 20px 80px}
+  .mockbar{position:sticky;top:0;z-index:20;background:rgba(250,250,250,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--border);margin:-20px -20px 16px;padding:10px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .mockbar .tag{font-size:11px;color:var(--muted);border:1px dashed var(--border-strong);border-radius:999px;padding:2px 8px}
+  .tabs{display:flex;gap:8px}
+  .tab{cursor:pointer;border:1px solid var(--border);background:var(--bg-elevated);color:var(--text);border-radius:999px;padding:5px 12px;font-size:13px}
+  .tab[aria-selected="true"]{background:var(--accent-subtle);border-color:var(--accent);color:var(--accent);font-weight:600}
+  .page{display:none}
+  .page.on{display:block}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)}
+  .pad{padding:14px 16px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .between{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  .muted{color:var(--muted)}
+  .small{font-size:12px}
+  .btn{border:1px solid var(--border);background:var(--bg-elevated);border-radius:var(--radius-md);padding:6px 10px;cursor:pointer;font-size:13px}
+  .btn:hover{border-color:var(--border-strong)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;border-radius:999px;padding:2px 8px;border:1px solid var(--border);color:var(--muted-strong);background:var(--bg-elevated)}
+  .chip.pick{cursor:pointer}
+  .chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-subtle)}
+  .badge{font-size:11px;border-radius:999px;padding:2px 8px;font-weight:600}
+  .b-decision{background:rgba(37,99,235,.12);color:#0550ae}
+  .b-progress{background:var(--accent-subtle);color:var(--accent)}
+  .b-blocked{background:rgba(147,91,6,.12);color:var(--warn)}
+  .b-result{background:rgba(17,105,94,.12);color:var(--ok)}
+  .b-reply{background:rgba(124,58,237,.12);color:var(--aim)}
+  select,input[type=date]{border:1px solid var(--border);background:var(--bg-elevated);border-radius:var(--radius-md);padding:6px 8px;font-size:13px;color:var(--text)}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 14px}
+
+  /* ---------- 竖轴时间线 ---------- */
+  .tl{position:relative;margin:6px 0 0;padding:0 0 8px;list-style:none}
+  .tl-day{position:relative;display:grid;grid-template-columns:100px 26px 1fr;align-items:start}
+  .tl-day + .tl-day{margin-top:6px}
+  .tl-date{grid-column:1;text-align:right;padding:12px 10px 0 0;font-weight:700;color:var(--text-strong);font-size:13px;white-space:nowrap}
+  .tl-date .wd{display:block;font-weight:400;color:var(--muted);font-size:11px}
+  .tl-axis{grid-column:2;position:relative;align-self:stretch}
+  .tl-axis::before{content:"";position:absolute;left:12px;top:0;bottom:-6px;width:2px;background:var(--border-strong);opacity:.55}
+  .tl-day:last-child .tl-axis::before{bottom:auto;height:26px}
+  .tl-daynode{position:absolute;left:7px;top:14px;width:12px;height:12px;border-radius:50%;background:var(--bg);border:2px solid var(--accent);z-index:1}
+  .tl-items{grid-column:3;display:flex;flex-direction:column;gap:10px;padding:6px 0 14px}
+  .tl-item{position:relative}
+  .tl-item::before{content:"";position:absolute;left:-18px;top:19px;width:8px;height:8px;border-radius:50%;background:var(--border-strong)}
+  .tl-item.ty-decision::before{background:#2563eb}
+  .tl-item.ty-progress::before{background:var(--accent)}
+  .tl-item.ty-blocked::before{background:var(--warn)}
+  .tl-item.ty-result::before{background:var(--ok)}
+  .tl-item.ty-reply::before{background:var(--aim)}
+
+  .ev{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden}
+  .ev:hover{border-color:var(--border-strong)}
+  .ev-head{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;cursor:pointer}
+  .ev-time{flex:0 0 42px;font-family:var(--mono);font-size:11.5px;color:var(--muted);padding-top:2px}
+  .ev-head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .ev-chev{margin-left:auto;color:var(--muted);transition:transform .15s ease;user-select:none;font-size:12px}
+  .ev[data-open="true"] .ev-chev{transform:rotate(180deg)}
+  .ev-title{font-weight:600;color:var(--text-strong)}
+  .ev-sum{margin:4px 0 0;color:var(--muted-strong);font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ev[data-open="true"] .ev-sum{display:none}
+  .ev-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:7px}
+  .thumbs{display:flex;gap:6px;margin-top:9px}
+  .thumbs img{width:74px;height:50px;object-fit:cover;border:1px solid var(--border);border-radius:6px;cursor:zoom-in;background:#fff}
+  .ev-body{display:none;border-top:1px dashed var(--border);padding:12px 14px 16px;gap:10px;flex-direction:column}
+  .ev[data-open="true"] .ev-body{display:flex}
+  .kv{display:grid;grid-template-columns:88px 1fr;gap:2px 10px;font-size:12.5px}
+  .kv dt{color:var(--muted)}
+  .kv dd{margin:0}
+  .body-block{border-left:3px solid var(--accent-subtle);padding-left:10px}
+  .body-block h4{margin:0 0 4px;font-size:12.5px;color:var(--muted-strong)}
+  .body-block p{margin:4px 0}
+  details{border-top:1px dashed var(--border);padding-top:8px}
+  details summary{cursor:pointer;color:var(--muted-strong);font-size:12.5px}
+  details .inner{padding-top:8px}
+  ol.q{margin:6px 0 0 18px;padding:0}
+  ul.b{margin:6px 0 0 18px;padding:0}
+  .lightbox{position:fixed;inset:0;background:rgba(15,15,20,.72);display:none;align-items:center;justify-content:center;z-index:50;padding:24px}
+  .lightbox.on{display:flex}
+  .lightbox img{max-width:min(900px,92vw);max-height:86vh;border-radius:8px;border:1px solid rgba(255,255,255,.3);background:#fff}
+  .lightbox .close{position:absolute;top:16px;right:20px;color:#fff;font-size:22px;cursor:pointer}
+
+  /* Task 详情 */
+  .task-head{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:start}
+  .task-title{font-size:17px;font-weight:700}
+  .sec{margin-top:14px}
+  .sec-head{display:flex;gap:10px;align-items:center;cursor:pointer;padding:11px 14px;border-bottom:1px solid var(--border)}
+  .sec-head h3{font-size:13.5px}
+  .sec-head .count{font-size:11px;color:var(--muted)}
+  .sec-body{padding:14px}
+  .sec[data-collapsed="true"] .sec-body{display:none}
+  .sec[data-collapsed="true"] .sec-head{border-bottom:none}
+  .desc{border:1px solid var(--border);border-radius:var(--radius-md);padding:10px;background:var(--bg);font-size:13px}
+  .note{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mockbar">
+    <strong>改造预览 mock</strong>
+    <span class="tag">非真实数据 · 仅看结构</span>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-page="ledger">① 事件流水账 · 时间线</button>
+      <button class="tab" role="tab" aria-selected="false" data-page="task">② Task 详情 · 时间线优先</button>
+    </div>
+  </div>
+
+  <!-- ============ ① 事件流水账 ============ -->
+  <section class="page on" id="page-ledger">
+    <div class="between">
+      <div>
+        <h1 style="font-size:19px">事件流水账</h1>
+        <p class="muted small" style="margin:4px 0 0">按稳定对象 UID 查事实、来源、修订和分析。</p>
+      </div>
+      <div class="row"><button class="btn">刷新</button><button class="btn primary">询问主管</button></div>
+    </div>
+
+    <div class="card pad" style="margin-top:14px">
+      <div class="small" style="font-weight:600;color:var(--text-strong)">项目 / Epic / Task 选择</div>
+      <p class="muted small" style="margin:4px 0 8px">对象（以 UID 区分同名任务）</p>
+      <select style="width:100%">
+        <option>US risktag GPU 部署 · item · Local · local:t-383e4c55</option>
+      </select>
+      <label class="row small" style="margin-top:10px"><input type="checkbox" id="children" checked /> 包含子对象事件 <span class="muted">US risktag GPU 部署 <code class="small">local:t-383e4c55</code></span></label>
+    </div>
+
+    <div class="tabs" style="margin-top:14px">
+      <button class="tab" role="tab" aria-selected="true">时间线</button>
+      <button class="tab" role="tab" aria-selected="false">时间分析</button>
+      <button class="tab" role="tab" aria-selected="false">报告</button>
+    </div>
+
+    <div class="toolbar card pad" style="margin-top:12px">
+      <span class="small muted">类型</span>
+      <span class="chip pick on">全部</span>
+      <span class="chip pick">decision</span>
+      <span class="chip pick">progress</span>
+      <span class="chip pick">blocked</span>
+      <span class="chip pick">result</span>
+      <span style="flex:1"></span>
+      <span class="small muted">范围</span>
+      <input type="date" value="2026-10-01" /> <span class="muted">→</span> <input type="date" value="2026-10-31" />
+      <span class="chip pick">只看有图片</span>
+      <span class="chip pick on">新 → 旧</span>
+    </div>
+
+    <!-- 时间线 -->
+    <ol class="tl" aria-label="事件时间线">
+      <!-- 2026/10/13 -->
+      <li class="tl-day">
+        <div class="tl-date">2026/10/13<span class="wd">周一 · 2 条</span></div>
+        <div class="tl-axis"><span class="tl-daynode"></span></div>
+        <div class="tl-items">
+
+          <article class="tl-item ty-decision">
+            <div class="ev" data-open="false">
+              <div class="ev-head" tabindex="0" role="button" aria-expanded="false">
+                <span class="ev-time">14:51</span>
+              <div style="flex:1">
+                  <div class="row" style="gap:8px">
+                    <span class="ev-title">US risktag endpoint 换 GPU 机型 / PRE 停机口径确认（Lark 对话）</span>
+                    <span class="badge b-decision">decision</span>
+                  </div>
+                  <p class="ev-sum">换 GPU 服务可行：deploy endpoint 后可指定机型（如 ml.g4dn.xlarge）；UI 可选 Update weights / Update instance count / Configure autoscaling，CLI 也可改；PRE 无业务请求时可改机器数为 0 暂停。两项均未执行。</p>
+                  <div class="ev-meta">
+                    <span class="chip">参与人：Liling Qian 钱立龙、马薪 Echo Ma</span>
+                    <span class="chip">记录人：主 Agent</span>
+                    <span class="chip">来源：用户转述合作方（未独立核实）</span>
+                    <span class="chip">版本 1</span>
+                  </div>
+                  <div class="thumbs">
+                    <img src="__IMG_LARK__" alt="Lark 对话截图" />
+                  </div>
+                </div>
+                <span class="ev-chev">▼</span>
+              </div>
+              <div class="ev-body">
+                <dl class="kv">
+                  <dt>发生时间</dt><dd>2026/10/13 14:51:00</dd>
+                  <dt>记录时间</dt><dd>2026/10/13 20:47:22</dd>
+                  <dt>参与人</dt><dd>Liling Qian 钱立龙、马薪 Echo Ma</dd>
+                  <dt>记录人</dt><dd>主 Agent</dd>
+                  <dt>来源</dt><dd>用户转述合作方（未独立核实）</dd>
+                  <dt>来源会话</dt><dd><a href="#">01a134c1-a4fd-76fb-bd65-8a98701ea791</a>（进程映射未知）</dd>
+                </dl>
+                <div class="body-block">
+                  <h4>来源</h4>
+                  <p>用户提供的 Lark 对话截图（线程根消息标注「Yesterday 2:51 PM」；日期按截图的相对时间推定为 2026-10-13，非精确时间戳）。截图里没有逐条标注发送者，参与者按对话内容推定，未独立核实。</p>
+                </div>
+                <div class="body-block">
+                  <h4>提问方诉求（用户一侧）</h4>
+                  <ol class="q">
+                    <li><code>us-cefi-risk-ml3-sagemaker-identity-risktag-pro</code> 能不能换 GPU 服务？和 EU 那个服务一样就行。</li>
+                    <li>是 UI 上操作，还是命令可以直接操作？</li>
+                    <li>PRE 平时不需要的话，可以先关掉 PRE 的机器吗？</li>
+                  </ol>
+                </div>
+                <div class="body-block">
+                  <h4>对方答复要点</h4>
+                  <ol class="q">
+                    <li>deploy endpoint 之后可以指定机型，可选跟 EU 一样的机型（示例 <code>ml.g4dn.xlarge</code>）。</li>
+                    <li>UI 上还能改三处：Update weights / Update instance count / Configure autoscaling；CLI 也可以改。截图当时状态：Variant Production / AllTraffic、模型 <code>us-cefi-risk-ml3-sagemaker-identity-risktag-pro-0902040616</code>、机型 <code>ml.m5.large</code>、Current weight 1 → Desired weight 1。</li>
+                    <li>PRE 没有业务请求时，可以通过 console 改机器数量、改为 0 暂时停掉。</li>
+                  </ol>
+                </div>
+                <div class="body-block">
+                  <h4>结论 / 待执行</h4>
+                  <ul class="b">
+                    <li>US PRO endpoint 换 GPU 机型（候选 <code>ml.g4dn.xlarge</code>，与 EU 对齐）——未执行。</li>
+                    <li>US PRE 机器数改为 0 暂停——未执行。</li>
+                  </ul>
+                </div>
+                <div class="row" style="gap:8px">
+                  <span class="chip">图片 1</span>
+                  <img src="__IMG_LARK__" alt="Lark 对话截图" style="width:120px;height:80px;object-fit:cover;border:1px solid var(--border);border-radius:6px;cursor:zoom-in" />
+                  <img src="__IMG_CONSOLE__" alt="SageMaker console 截图" style="width:120px;height:80px;object-fit:cover;border:1px solid var(--border);border-radius:6px;cursor:zoom-in" />
+                </div>
+                <details>
+                  <summary>原始回复</summary>
+                  <div class="inner">你在 deploy endpoint 之后应该可以指定机型的，可以选择跟 EU 一样的机型。比如 ml.g4dn.xlarge 我看 UI 上还能改这三个：（Update weights / Update instance count / Configure autoscaling）CLI 是可以改的，没有业务请求的话，你可以通过 console 改机器数量、改为 0 暂时。</div>
+                </details>
+                <div class="body-block">
+                  <h4>下一步</h4>
+                  <p>待执行：1）US PRO endpoint 换 GPU 机型（候选 ml.g4dn.xlarge，与 EU 对齐）；2）US PRE 机器数改为 0 暂停（通常不需要时）。两者均未执行。</p>
+                </div>
+                <p class="note">事件 9d26a1c0-… · 请求 6f0c…</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="tl-item ty-progress">
+            <div class="ev" data-open="false">
+              <div class="ev-head" tabindex="0" role="button" aria-expanded="false">
+                <span class="ev-time">10:20</span>
+              <div style="flex:1">
+                  <div class="row" style="gap:8px"><span class="ev-title">核对了 EU 侧机型与 autoscaling 现状，作为对齐基准</span><span class="badge b-progress">progress</span></div>
+                  <p class="ev-sum">查 EU endpoint 现役机型与 autoscaling 配置，确认「和 EU 一样」的具体含义；未做任何变更。</p>
+                  <div class="ev-meta"><span class="chip">记录人：主 Agent</span><span class="chip">来源：主 Agent 观察或建议</span></div>
+                </div>
+                <span class="ev-chev">▼</span>
+              </div>
+              <div class="ev-body">
+                <dl class="kv"><dt>发生时间</dt><dd>2026/10/13 10:20</dd><dt>记录人</dt><dd>主 Agent</dd><dt>来源</dt><dd>主 Agent 观察或建议</dd></dl>
+                <div class="body-block"><h4>描述</h4><p>记录 EU 侧现状与本任务的对齐口径，供后续换机型时引用。</p></div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </li>
+
+      <!-- 2026/10/08 -->
+      <li class="tl-day">
+        <div class="tl-date">2026/10/08<span class="wd">周四 · 1 条</span></div>
+        <div class="tl-axis"><span class="tl-daynode"></span></div>
+        <div class="tl-items">
+          <article class="tl-item ty-blocked">
+            <div class="ev" data-open="false">
+              <div class="ev-head" tabindex="0" role="button" aria-expanded="false">
+                <span class="ev-time">16:32</span>
+              <div style="flex:1">
+                  <div class="row" style="gap:8px"><span class="ev-title">等合作方确认 PRE 停机窗口</span><span class="badge b-blocked">blocked</span></div>
+                  <p class="ev-sum">等马薪 Echo Ma 回 PRE 侧是否有在用请求；确认前不动 PRO。等待时长未计入工时。</p>
+                  <div class="ev-meta"><span class="chip">参与人：马薪 Echo Ma</span><span class="chip">记录人：主 Agent</span></div>
+                </div>
+                <span class="ev-chev">▼</span>
+              </div>
+              <div class="ev-body">
+                <dl class="kv"><dt>发生时间</dt><dd>2026/10/08 16:32</dd><dt>等谁</dt><dd>马薪 Echo Ma（合作方）</dd></dl>
+                <div class="body-block"><h4>描述</h4><p>等待对方确认 PRE 是否有在用请求；等待时长不等同工时。</p></div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </li>
+
+      <!-- 2026/09/28 -->
+      <li class="tl-day">
+        <div class="tl-date">2026/09/28<span class="wd">周一 · 1 条</span></div>
+        <div class="tl-axis"><span class="tl-daynode"></span></div>
+        <div class="tl-items">
+          <article class="tl-item ty-result">
+            <div class="ev" data-open="false">
+              <div class="ev-head" tabindex="0" role="button" aria-expanded="false">
+                <span class="ev-time">11:05</span>
+              <div style="flex:1">
+                  <div class="row" style="gap:8px"><span class="ev-title">US risktag endpoint 首次部署完成</span><span class="badge b-result">result</span></div>
+                  <p class="ev-sum">PRO endpoint 上线（ml.m5.large），线程根消息即本次部署；截图 2 张已存档。</p>
+                  <div class="ev-meta"><span class="chip">记录人：用户本人</span><span class="chip">来源：用户本人提供</span></div>
+                  <div class="thumbs"><img src="__IMG_CONSOLE__" alt="部署截图" /></div>
+                </div>
+                <span class="ev-chev">▼</span>
+              </div>
+              <div class="ev-body">
+                <dl class="kv"><dt>发生时间</dt><dd>2026/09/28 11:05</dd><dt>记录人</dt><dd>用户本人</dd><dt>来源</dt><dd>用户本人提供</dd></dl>
+                <div class="body-block"><h4>描述</h4><p>部署完成，机型 ml.m5.large；后续换 GPU 的讨论由此展开。</p></div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </li>
+    </ol>
+    <p class="note">该对象共 4 条事件，全部显示；没有时间的记录不会被当作没发生。</p>
+  </section>
+
+  <!-- ============ ② Task 详情 ============ -->
+  <section class="page" id="page-task">
+    <div class="card pad">
+      <div class="task-head">
+        <div>
+          <div class="task-title">US risktag GPU 部署</div>
+          <div class="row small muted" style="margin-top:6px">
+            <code>local:t-383e4c55</code>
+            <span class="chip">provider：Local（可写）</span>
+            <span class="chip">状态：doing</span>
+            <span class="chip">父级：US risktag 部署（Epic）</span>
+          </div>
+        </div>
+        <div class="row"><button class="btn">在流水账中查看</button><button class="btn primary">交给主 Agent</button></div>
+      </div>
+    </div>
+
+    <!-- 时间线优先：默认展开，排在最前 -->
+    <div class="card sec" data-collapsed="false" style="margin-top:14px">
+      <div class="sec-head" role="button" aria-expanded="true">
+        <h3>时间线</h3>
+        <span class="count">4 条 · 最近 2026/10/13 14:51</span>
+        <span style="flex:1"></span>
+        <span class="chip on pick">包含子对象</span>
+        <span class="chip pick">新 → 旧</span>
+        <span class="muted small">收起</span>
+      </div>
+      <div class="sec-body" style="padding:10px 14px 4px">
+        <div class="toolbar" style="margin:0 0 6px">
+          <span class="chip pick on">全部</span><span class="chip pick">decision</span><span class="chip pick">progress</span><span class="chip pick">blocked</span><span class="chip pick">result</span>
+          <span style="flex:1"></span><span class="chip pick">只看有图片</span>
+        </div>
+        <ol class="tl">
+          <li class="tl-day">
+            <div class="tl-date">2026/10/13<span class="wd">周一 · 2 条</span></div>
+            <div class="tl-axis"><span class="tl-daynode"></span></div>
+            <div class="tl-items">
+              <article class="tl-item ty-decision">
+                <div class="ev" data-open="true">
+                  <div class="ev-head" tabindex="0" role="button" aria-expanded="true">
+                    <span class="ev-time">14:51</span>
+                  <div style="flex:1">
+                      <div class="row" style="gap:8px"><span class="ev-title">US risktag endpoint 换 GPU 机型 / PRE 停机口径确认（Lark 对话）</span><span class="badge b-decision">decision</span></div>
+                      <p class="ev-sum">换 GPU 服务可行：deploy endpoint 后可指定机型…</p>
+                      <div class="ev-meta"><span class="chip">参与人：Liling Qian 钱立龙、马薪 Echo Ma</span><span class="chip">版本 1</span></div>
+                    </div>
+                    <span class="ev-chev">▼</span>
+                  </div>
+                  <div class="ev-body">
+                    <div class="row" style="gap:8px">
+                      <img src="__IMG_LARK__" alt="Lark 对话截图" style="width:150px;height:100px;object-fit:cover;border:1px solid var(--border);border-radius:6px;cursor:zoom-in" />
+                      <img src="__IMG_CONSOLE__" alt="SageMaker console 截图" style="width:150px;height:100px;object-fit:cover;border:1px solid var(--border);border-radius:6px;cursor:zoom-in" />
+                    </div>
+                    <div class="body-block"><h4>结论 / 待执行</h4><ul class="b"><li>US PRO endpoint 换 GPU 机型（候选 ml.g4dn.xlarge，与 EU 对齐）——未执行。</li><li>US PRE 机器数改为 0 暂停——未执行。</li></ul></div>
+                    <details><summary>展开完整记录（来源、提问方诉求、对方答复、原始回复、下一步）</summary><div class="inner muted small">与左侧「事件流水账」里展开后相同的内容，此处省略。</div></details>
+                  </div>
+                </div>
+              </article>
+              <article class="tl-item ty-progress">
+                <div class="ev" data-open="false">
+                  <div class="ev-head" tabindex="0" role="button" aria-expanded="false">
+                    <span class="ev-time">10:20</span>
+                  <div style="flex:1"><div class="row" style="gap:8px"><span class="ev-title">核对了 EU 侧机型与 autoscaling 现状</span><span class="badge b-progress">progress</span></div><p class="ev-sum">确认「和 EU 一样」的具体含义；未做任何变更。</p></div>
+                    <span class="ev-chev">▼</span>
+                  </div>
+                  <div class="ev-body"><div class="body-block"><h4>描述</h4><p>记录 EU 侧现状与本任务的对齐口径。</p></div></div>
+                </div>
+              </article>
+            </div>
+          </li>
+          <li class="tl-day">
+            <div class="tl-date">2026/10/08<span class="wd">周四 · 1 条</span></div>
+            <div class="tl-axis"><span class="tl-daynode"></span></div>
+            <div class="tl-items">
+              <article class="tl-item ty-blocked">
+                <div class="ev" data-open="false">
+                  <div class="ev-head" tabindex="0" role="button" aria-expanded="false">
+                    <span class="ev-time">16:32</span>
+                  <div style="flex:1"><div class="row" style="gap:8px"><span class="ev-title">等合作方确认 PRE 停机窗口</span><span class="badge b-blocked">blocked</span></div><p class="ev-sum">等马薪 Echo Ma 回 PRE 侧是否有在用请求。</p></div>
+                    <span class="ev-chev">▼</span>
+                  </div>
+                  <div class="ev-body"><div class="body-block"><h4>等谁</h4><p>马薪 Echo Ma（合作方）</p></div></div>
+                </div>
+              </article>
+            </div>
+          </li>
+          <li class="tl-day">
+            <div class="tl-date">2026/09/28<span class="wd">周一 · 1 条</span></div>
+            <div class="tl-axis"><span class="tl-daynode"></span></div>
+            <div class="tl-items">
+              <article class="tl-item ty-result">
+                <div class="ev" data-open="false">
+                  <div class="ev-head" tabindex="0" role="button" aria-expanded="false">
+                    <span class="ev-time">11:05</span>
+                  <div style="flex:1"><div class="row" style="gap:8px"><span class="ev-title">US risktag endpoint 首次部署完成</span><span class="badge b-result">result</span></div><p class="ev-sum">PRO endpoint 上线（ml.m5.large），截图 2 张已存档。</p>
+                      <div class="thumbs"><img src="__IMG_CONSOLE__" alt="部署截图" /></div>
+                    </div>
+                    <span class="ev-chev">▼</span>
+                  </div>
+                  <div class="ev-body"><div class="body-block"><h4>描述</h4><p>部署完成，机型 ml.m5.large。</p></div></div>
+                </div>
+              </article>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- 其余信息排在时间线之后，默认折叠 -->
+    <div class="card sec" data-collapsed="true" style="margin-top:12px">
+      <div class="sec-head" role="button" aria-expanded="false"><h3>任务信息</h3><span class="count">状态、阶段、观察状态、tags</span><span style="flex:1"></span><span class="muted small">展开</span></div>
+      <div class="sec-body">
+        <dl class="kv">
+          <dt>状态</dt><dd>doing</dd>
+          <dt>观察状态</dt><dd>等待外部（马薪 Echo Ma）</dd>
+          <dt>下一步</dt><dd>确认 PRE 停机窗口后执行换机型</dd>
+          <dt>tags</dt><dd>project、gpu</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="card sec" data-collapsed="true" style="margin-top:12px">
+      <div class="sec-head" role="button" aria-expanded="false"><h3>任务描述</h3><span class="count">改这里属于用户可见变更</span><span style="flex:1"></span><span class="muted small">展开</span></div>
+      <div class="sec-body"><div class="desc">2026-10-13 时间线：换机型 ml.g4dn.xlarge / UI 三处可改 / CLI 可改 / ml.m5.large 当前机型 / PRE 可改 0 暂停 …（编辑框）</div></div>
+    </div>
+    <div class="card sec" data-collapsed="true" style="margin-top:12px">
+      <div class="sec-head" role="button" aria-expanded="false"><h3>待办与建议</h3><span class="count">1 条待确认</span><span style="flex:1"></span><span class="muted small">展开</span></div>
+      <div class="sec-body"><p class="small">· 建议确认「EU 对齐机型」后再执行换 GPU（未确认）</p></div>
+    </div>
+  </section>
+</div>
+
+<div class="lightbox" id="lightbox"><span class="close">×</span><img alt="放大查看" /></div>
+
+<script>
+  // 假截图（内联 SVG，避免外部依赖）
+  const lark = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="420" height="280"><rect width="420" height="280" fill="#f2f4f7"/><rect x="0" y="0" width="420" height="38" fill="#e8ecf3"/><text x="14" y="25" font-family="sans-serif" font-size="14" fill="#556">Lark · 私聊</text><rect x="14" y="58" width="250" height="52" rx="10" fill="#fff" stroke="#dde2ea"/><text x="26" y="80" font-family="sans-serif" font-size="12" fill="#445">能不能换 GPU 服务？和 EU 一样就行</text><text x="26" y="98" font-family="sans-serif" font-size="12" fill="#445">是 UI 上操作还是命令可以直接操作？</text><rect x="150" y="126" width="256" height="72" rx="10" fill="#dbeafe" stroke="#c7dcfb"/><text x="162" y="148" font-family="sans-serif" font-size="12" fill="#1e3a8a">deploy endpoint 之后可以指定机型</text><text x="162" y="166" font-family="sans-serif" font-size="12" fill="#1e3a8a">UI 上还能改三处：Update weights /</text><text x="162" y="184" font-family="sans-serif" font-size="12" fill="#1e3a8a">Update instance count / Configure autoscaling</text><rect x="14" y="212" width="220" height="40" rx="10" fill="#fff" stroke="#dde2ea"/><text x="26" y="237" font-family="sans-serif" font-size="12" fill="#445">PRE 可以先关掉机器吗？</text></svg>`);
+  const console_ = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="420" height="280"><rect width="420" height="280" fill="#fff"/><rect x="0" y="0" width="420" height="34" fill="#232f3e"/><text x="12" y="22" font-family="sans-serif" font-size="13" fill="#fff">SageMaker · Endpoints</text><text x="16" y="64" font-family="sans-serif" font-size="12" fill="#333">Endpoint: us-cefi-risk-ml3-sagemaker-identity-risktag-pro</text><text x="16" y="88" font-family="sans-serif" font-size="12" fill="#333">Variant: Production | AllTraffic | ml.m5.large</text><text x="16" y="112" font-family="sans-serif" font-size="12" fill="#333">Current weight 1 → Desired weight 1</text><rect x="16" y="134" width="120" height="26" rx="4" fill="#f0f2f5" stroke="#d5d9e0"/><text x="30" y="152" font-family="sans-serif" font-size="11" fill="#445">Update weights</text><rect x="146" y="134" width="160" height="26" rx="4" fill="#f0f2f5" stroke="#d5d9e0"/><text x="160" y="152" font-family="sans-serif" font-size="11" fill="#445">Update instance count</text><rect x="16" y="170" width="170" height="26" rx="4" fill="#f0f2f5" stroke="#d5d9e0"/><text x="30" y="188" font-family="sans-serif" font-size="11" fill="#445">Configure autoscaling</text><text x="16" y="226" font-family="sans-serif" font-size="11" fill="#888">机型候选：ml.g4dn.xlarge（与 EU 对齐）</text></svg>`);
+  document.querySelectorAll('img[src="__IMG_LARK__"]').forEach(i => i.src = lark);
+  document.querySelectorAll('img[src="__IMG_CONSOLE__"]').forEach(i => i.src = console_);
+
+  // 顶部切换
+  document.querySelectorAll('.mockbar .tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.mockbar .tab').forEach(x => x.setAttribute('aria-selected', String(x === t)));
+    document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'page-' + t.dataset.page));
+  }));
+
+  // hash 直达：#task 打开 Task 详情
+  function applyHash(){ const page = location.hash === '#task' ? 'task' : 'ledger'; document.querySelectorAll('.mockbar .tab').forEach(x => x.setAttribute('aria-selected', String(x.dataset.page === page))); document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'page-' + page)); }
+  window.addEventListener('hashchange', applyHash);
+  if (location.hash) applyHash();
+
+  // 事件展开/收起
+  document.querySelectorAll('.ev-head').forEach(h => {
+    const toggle = () => { const ev = h.closest('.ev'); const open = ev.dataset.open !== 'true'; ev.dataset.open = String(open); h.setAttribute('aria-expanded', String(open)); };
+    h.addEventListener('click', e => { if (e.target.tagName === 'IMG' || e.target.tagName === 'A') return; toggle(); });
+    h.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  });
+
+  // 区块折叠（Task 页）
+  document.querySelectorAll('.sec .sec-head').forEach(h => h.addEventListener('click', () => {
+    const sec = h.closest('.sec'); const collapsed = sec.dataset.collapsed !== 'true';
+    sec.dataset.collapsed = String(collapsed); h.setAttribute('aria-expanded', String(!collapsed));
+    const hint = h.querySelector('.muted.small'); if (hint) hint.textContent = collapsed ? '展开' : '收起';
+  }));
+
+  // 图片放大
+  const lb = document.getElementById('lightbox'), lbImg = lb.querySelector('img');
+  document.addEventListener('click', e => {
+    if (e.target.tagName === 'IMG' && e.target.closest('.wrap')) { lbImg.src = e.target.src; lb.classList.add('on'); }
+    if (e.target === lb || e.target.classList.contains('close')) lb.classList.remove('on');
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') lb.classList.remove('on'); });
+</script>
+</body>
+</html>

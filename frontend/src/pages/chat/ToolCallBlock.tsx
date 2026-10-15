@@ -8,6 +8,7 @@ import { forToolName } from '../../plugins/slot-registry'
 import { ToolRendererSlot } from '../../plugins/slot-consumers'
 import { generateEditDiff, parseEditArgs, parseWriteArgs, langFromPath } from './toolUtils'
 import { ToolSummaryLine, type ToolSummaryStatus } from '../../components/ToolSummary'
+import { normalizeToolOutputText } from '../../utils/toolOutputText'
 
 function truncateSummary(value: string, max = 96): string {
   const compact = value.replace(/\s+/g, ' ').trim()
@@ -29,7 +30,8 @@ function summarizeToolArgs(args?: string): string {
 }
 
 function summarizeToolResult(result?: string): string {
-  return result ? truncateSummary(result.split('\n')[0]) : ''
+  if (!result) return ''
+  return truncateSummary(normalizeToolOutputText(result).split('\n')[0])
 }
 
 function diffStats(diff: string): { additions: number; deletions: number } {
@@ -116,6 +118,10 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey, defa
   const [editExpanded, setEditExpanded] = useState(false)
   const [writeExpanded, setWriteExpanded] = useState(false)
   const [readExpanded, setReadExpanded] = useState(false)
+
+  // Tool results often arrive as a serialized envelope (escaped line breaks,
+  // wrapped text parts). The body is shown normalized so it reads as output.
+  const normalizedResult = useMemo(() => (result ? normalizeToolOutputText(result) : ''), [result])
 
   // Check if a plugin claims this tool
   const registry = useSlotRegistryOrNull()
@@ -294,7 +300,7 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey, defa
                   })}
                 </div>
               ) : (
-                <pre className={`bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${isError ? 'text-danger' : 'text-muted'}`}>{result}</pre>
+                <pre className={`bg-bg-hover rounded-md px-3 py-2 text-body-s font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto ${isError ? 'text-danger' : 'text-muted'}`}>{normalizedResult}</pre>
               )}
             </div>
           )}

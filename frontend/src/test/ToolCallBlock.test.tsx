@@ -12,14 +12,33 @@ describe('ToolCallBlock compact display', () => {
       />,
     )
 
-    expect(screen.getByText('npm test')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /npm test/ })).toBeInTheDocument()
     expect(screen.queryByText('Arguments')).not.toBeInTheDocument()
     expect(screen.queryByText('tests passed')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /bash/i }))
+    fireEvent.click(screen.getByRole('button', { name: /npm test/ }))
 
     expect(screen.getByText('Arguments')).toBeInTheDocument()
     expect(screen.getByText('tests passed')).toBeInTheDocument()
+  })
+
+  it('unwraps a serialized tool result into readable text', () => {
+    renderWithProviders(
+      <ToolCallBlock
+        content="🔧 webfetch"
+        meta={{
+          toolName: 'webfetch',
+          args: JSON.stringify({ url: 'https://example.com' }),
+          result: JSON.stringify([{ url: 'https://example.com', result: '第一行\n第二行' }]),
+        }}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /webfetch/i }))
+
+    // Envelope unwrapped and escaped line breaks restored: one readable page,
+    // not the `\n`-riddled JSON the tool emitted.
+    expect(screen.getByText(/第一行/).textContent).toBe('第一行\n第二行')
   })
 
   it('shows TUI-like edit stats and opens the diff in split view', () => {
