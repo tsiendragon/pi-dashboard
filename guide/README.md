@@ -114,6 +114,7 @@ npm install --no-audit --no-fund && npm run build-frontend
 | 用哪个 pi | `PI_SCRIPT`（安装脚本自动写入 `dashboard.env`） |
 | 端口 / 监听地址 | `PI_DASH_PORT` / `PI_DASH_HOST` |
 | dashboard 自身（live session） | `~/.pi/dashboard.json` |
+| 可选主 Agent 工作监督与事件档案 | `dashboard.json` 的 `supervisor`；Skill 在 pi-dashboard、Extension 在 pi-tsien-extension，详见 [config.md](config.md) §4 |
 | 可选机器出站会话索引与受限控制 | `<agent dir>/machine-connector.json`（私有 0600 文件，缺失即禁用；见 [config.md](config.md)） |
 | 机器远程输入防重放 | 启用控制时自动维护 `<agent dir>/machine-input-replay.json`（0600，勿删除；见 [config.md](config.md)） |
 

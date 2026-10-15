@@ -137,8 +137,10 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `PI_TIMING_DIR` | `trajectory-recorder` 计时账本 | `<agent dir>/pi-timing`（可移植） |
 | `PI_OBSERVATION_DIR` | `observation-pack` 大结果归档 | `<agent dir>/archiv`（可移植） |
 | `DASHSCOPE_API_KEY` / `ANTHROPIC_API_KEY` 等 | 模型 provider 凭证 | 无 |
-| `DASHSCOPE_BASE_URL` / `DASHSCOPE_TTS_BASE_URL` | DashScope 端点覆盖（TTS 等） | 官方端点 |
+| `DASHSCOPE_BASE_URL` / `DASHSCOPE_TTS_BASE_URL` | DashScope 端点覆盖（ASR/TTS） | 官方端点 |
 | `PI_BEDROCK_PROFILE` / `AWS_PROFILE` | Bedrock profile（未设 `AWS_PROFILE` 时回退） | 无 |
+
+> 语音输入使用 `DASHSCOPE_API_KEY` 和上述 DashScope 端点：浏览器通过同源 WebSocket 将 16 kHz 音频流交给 dashboard 后端，再调用 `qwen3-asr-flash-realtime`；录音停止后接收最终文本。它不需要新增环境变量。批量识别接口 `/api/asr/transcribe` 仍保留给非实时调用方。
 
 > Token Cost 的额度卡片可选读取本机 Codex / Claude Code 账户：Codex CLI 需可从 dashboard 进程的 `PATH` 启动；Claude Code 使用 `${CLAUDE_CONFIG_DIR:-~/.claude}/.credentials.json` 中的 OAuth 凭证。凭证只在后端读取，不会返回给浏览器。该查询只显示账户接口实际提供的百分比与重置时间；Claude Code 目前只支持 OAuth 订阅用量，API key、Bedrock/Vertex、仅 keychain 存储等情况可能没有数据。没有对应 CLI 登录时页面会显示未提供，不影响 Token Cost 原有统计。
 >
@@ -207,11 +209,64 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | `roots` | live session 可发现的目录范围（默认写死开发机 worktree，新机器要改） |
 | `launch.command` | live session 用哪个 pi（可指向自己的包装脚本） |
 | `unsetEnv` | 启动前从环境剔除的变量 |
+| `launch.approve` | `true` 给 pane 追加 `--approve`（信任工程内的 `.pi` 扩展/skills/settings），`false` 追加 `--no-approve`；不写则保留 pi 自己的行为——会弹「是否信任该目录」的交互提问，而 pane 里没人能回答，启动就会卡住 |
 | `disconnectGraceMs` | 断连宽限时间 |
+
+**启动卡在「Trust project folder?」**：工程目录里出现 `.pi/settings.json`、`.pi/extensions`、`.pi/skills`、`.pi/prompts`、`.pi/themes`、`.pi/SYSTEM.md` 等资源，而 `~/.pi/agent/trust.json` 里没有该目录（或某个父目录）的决定时，pi 会先问一次。dashboard 的 pane 没有键盘，于是永不注册；旧版本会等满超时，浏览器侧先被网关掐断，只显示 `HTTP 504`。三种改法任选：在终端里对该目录跑一次 `pi` 并选 Trust（写进 `trust.json`）；手工把该目录或其父目录写进 `~/.pi/agent/trust.json`；或直接在该机器的 `dashboard.json` 里设 `"launch": { "approve": true }`（启动即自动信任，仅在 `liveSessions.roots` 内的目录生效，第三方克隆仓库慎用）。
 
 改法：Settings 页（`PUT /api/dash/config`），或直接编辑该文件。
 
 ---
+
+### 主 Agent 工作监督（可选，默认关闭）
+
+`dashboard.json` 的 `supervisor` 段控制专用主会话。它不是全局 Pi 扩展安装配置；普通会话不会加载这些资源。保留已有配置，只合并此段：
+
+```json
+{
+  "supervisor": {
+    "enabled": true,
+    "cwd": "~/repos/pi-dashboard",
+    "pollIntervalMs": 120000,
+    "staleAfterMs": 900000,
+    "allowedObjects": ["*"],
+    "allowedSessionIds": ["*"],
+    "allowedRoots": ["~/repos/pi-dashboard"],
+    "eventTypes": ["progress", "reply", "blocked", "resumed", "decision", "result"],
+    "agentResources": {
+      "rolePath": "~/repos/pi-dashboard/agent/supervisor/role.md",
+      "skillPaths": ["~/repos/pi-dashboard/agent/supervisor/skills/dashboard-supervisor"],
+      "extensionPaths": [
+        "~/repos/pi-tsien-extension/extensions/supervisor/index.ts",
+        "~/repos/pi-tsien-extension/packages/pi-tsien-live-session/src/index.ts",
+        "~/repos/pi-tsien-extension/packages/pi-tsien-goal/src/index.ts"
+      ],
+      "mode": "observe"
+    }
+  }
+}
+```
+
+路径是当前开发机示例，其他机器填写各仓库的真实绝对路径。`cwd` 必须位于 `liveSessions.roots` 内，LiveSession broker 必须启用，并使用支持 `--no-context-files` 等隔离参数的当前 Pi fork。
+
+- `allowedObjects`：空数组不授权任何任务；`*` 才显式授权全部可用任务，可限制为具体 UID 或 `local:*`。限制范围时创建本地任务需包含允许本地创建的范围。
+- **截图怎么进档案**：用户在弹窗里上传的截图由页面存档并把 `attachmentIds` 写进消息；用户在会话面板里直接粘贴的截图由扩展在回合开始时自动存档（`attachment_put`，仅用户轮允许），随后把 id 作为本轮提示交给主 Agent，记录时带进 `attachmentIds`。日志只记录真实 id；正文不落 base64。
+- **写入授权按回合来源判定**：自动巡查轮由服务在提示前加机器标签 `[supervisor-auto-patrol]`，扩展据此把该轮标为 `userTurn: false`，其中的创建/修改一律拒绝；其余提示（用户在弹窗、会话页或面板里直接说的话）都算真实用户轮，主 Agent 可以直接记录，不需要用户可见的授权标记。弹窗消息额外带 `[supervisor-user-grant:…]`，只用于把用户原话写成事件的审计引用。用户轮会把自己的原话随请求发给服务，服务据此解析**这一轮要做什么**：「帮我把这个记录到…」「帮我记一下…」可直接授权记录；「不要创建任务」这类否定或提问不会因此获得授权，只会退化为针对该动作的一次界面确认。`task_update done`、破坏性 `event_correct`、`action done` 仍需针对该操作的界面确认。
+- `allowedSessionIds`：空数组不授权任何会话；`*` 才显式授权全部已接入会话（仅观察）。协调仍必须逐个列出目标 sessionId，不能用 `*` 代替。不会以 processInstanceId 作为长期授权身份。
+- `allowedRoots`：仅这些目录可读文本/单层目录检查；空数组禁止文件检查。不得把凭证、档案目录放入检查范围。
+- `pollIntervalMs`：最短 60 秒，默认 120 秒；只在主 Agent 空闲且目标状态/最后回复发生变化时发起检查，不自动启动未运行的主会话。
+- `staleAfterMs`：默认 15 分钟，只是无活动提示，不证明失败或真实工时。
+- `eventTypes`：事件类别词表，默认 `progress`、`reply`、`blocked`、`resumed`、`decision`、`result`。写入不在词表内的事件 `type` 会被拒绝（`invalid_event_type`），避免自由文本导致年末按类别汇总漏项；`working_state`、`suggestion` 是系统专用类型，始终可用且不必（也不能）写进词表。留空或省略即用默认词表；自定义类别在此列出，最多 32 个、小写标识符（字母开头，可含数字、`_`、`-`，最长 32 字符）。这是给主 Agent 记录用的，不影响已有历史事件。
+- `agentResources.allowedTools`：省略时使用专用监督工具白名单；不支持任意 Bash、编辑工具。Skill 的判断规则不替代后端权限。
+- 主会话启动固定使用 `--no-extensions` + 显式 `--extension`，并且用 **`--no-builtin-tools`**（不要用 `--tools` 清空工具，那会连扩展工具一起禁用，监督扩展会直接报“可用工具缺失”而退出）。
+- **资源指纹决定通道是否暂停**：主会话启动时把当时的指纹写进凭据，之后每条工具调用都会比对。指纹包含**监督配置**（含工具白名单、模式、路径列表）和**角色文件/Skill 内容**；这些变了 → 读写通道一起 403，必须结束旧主会话重新启动。**扩展源码内容不在指纹里**：改了扩展代码不会中断正在跑的主会话，只会在监督台显示「扩展代码已更新，建议重启主会话生效」，并在 `supervisor_context` 返回 `resourceNotice`，由主 Agent 自己说明版本落后。
+- **启动命令追加的 flag 必须由已加载扩展提供**：因为主会话关闭了扩展自动发现，launcher 脚本（如 `pi-clean`）硬编码的 `--goal-continuation` 需要把 `packages/pi-tsien-goal/src/index.ts` 加进 `extensionPaths`，否则 pi 会以“Unknown option”直接退出，表现为 `live_pi_registration_timeout`（且启动输出为空）。换 launcher 或加自定义 flag 时同理。- `mode`：默认 `observe`；`coordinate` 允许向明确授权且空闲、未被用户占用的会话发送有证据的协调建议。不会自动回答敏感确认、重启会话或执行发布操作。
+
+先在 LiveSession 认证面板完成浏览器认证。若尚无任何范围，监督台提供明确标注“授权全部已接入任务和会话”的启用按钮；已有范围则沿用配置，不隐式扩大。启用不会自动启动模型，需再从全局“主 Agent”弹窗启动专用会话。启动参数关闭普通资源/上下文自动发现，显式加载本段指定资源和必需的 LiveSession 桥。新增资源不写入全局 `~/.pi/agent`。
+
+配置经受保护的 `/api/supervisor/config` 更新；手动编辑文件后需要用户按自己的启动方式重启服务，避免内存缓存仍使用旧配置。运行中配置/内容指纹改变会标记待加载并拒绝旧授权；首版需用户先手动结束旧主会话，再恢复，Dashboard 不自动中断它。
+
+档案保存在 `~/.pi/dashboard/supervisor/`，目录 0700、文件 0600；Unix 工具通道和凭证也在此目录，不分享凭证。截图持久保存而非临时目录，JPEG/PNG/WebP 每张最多 3 MiB，事件关联最多 4 张/共 6 MiB。第一版不自动删除历史；启用前确认备份/保留和敏感信息处理要求，不上传未经脱敏的凭证或私人截图。
 
 ### 私有机器连接（可选，实验性）
 

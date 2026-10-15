@@ -346,6 +346,14 @@ export interface LiveSessionSummary {
     triggerTokens: number
     candidates: { source: string; tokens: number }[]
   }
+  /**
+   * 正在跑的压缩；结束时补丁里用 null 清除。旧 bridge 不带该字段。
+   */
+  compacting?: {
+    since: number
+    reason: "manual" | "threshold" | "overflow"
+    willRetry: boolean
+  }
   git?: {
     root?: string
     branch?: string
@@ -378,6 +386,16 @@ export interface LiveSessionSummary {
 - 同一个 `summary_update` 补丁携带 `status`，除了 `agent_start` / `agent_settled` 这类事件点外，还有一条**慢心跳**（默认 20s）重算一遍，只在变化时发一条补丁（空闲零流量，且不更新 `lastActivityAt`，免得空闲会话的“最近活动”被心跳刷成刚刚）。
 
 `status` 是会话属性而不是页面属性，所以前端在校验后**即使该会话没有打开页面也要应用补丁**（侧栏读同一份 summary）；打开页面时快照会覆盖全部字段。
+
+### 压缩：状态要显示，输入要排队
+
+pi 不给扩展任何“压缩开始 / 结束”事件（`compaction_start` / `compaction_end` 只发在它的内部 session bus 上），而压缩期间 `isIdle()` 为 false——和“正在跑一轮”完全一样。于是 dashboard 只能把自动压缩（`auto-compact-target` 调 `ctx.compact()`）显示成「工作中」，并且用户在这段时间发出的消息会被 pi 直接拒绝（`Cannot submit a prompt while compaction is in progress`）；这个拒绝经 pi 运行时变成一条 TUI 里的 extension error 后被吞掉，消息从 dashboard 视角悄悄消失（bridge 的 `sendUserMessage` 返回 void，无法 catch）。
+
+bridge 因此以 `session_before_compact` →（`session_compact` | `session_compact_failed`）这对事件为唯一信号：
+
+- 开始时置 `compacting: { since, reason, willRetry }` 并随 `summary_update` 补丁下发；结束时发 `compacting: null`。补丁里 `null` 是唯一的清除方式——字段缺省永远表示“未变化”，这样一个残缺帧不会把仍在扣住队列的压缩状态误清掉。快照同样携带该字段，所以中途刷新页面也能看到「⇅ 压缩中」。
+- 压缩进行中 `drainInputQueue` **不放行**任何输入；结束时不能在 `session_compact` handler 里立即放行——此时 pi 用来拒绝 prompt 的 compaction abort controller 还没清（要等它的下一个同步步骤），`compaction_end` 又不到扩展层，所以状态清除与放行都要等一个宏任务；`willRetry` 的恢复轮也一样，那时 `agent.continue()` 已经开始，`followUp` 会安全地排进那一轮。
+- 前端：`summary.compacting` 一出现就显示「压缩中」（会话头 + 输入框上方状态条，agent 活动标签也从「工作中」改说「压缩上下文」）；`queuedDeliveryFor` 把压缩也当作“忙”，消息气泡写「排队中 · 等压缩完成」，桥侧真正扣住队列，所以消息不再丢。
 
 ### 「清空」= `/clear`，以及它为什么会「点了没作用」
 
