@@ -1,16 +1,28 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../api/client'
+import { matchStartPaths } from '../features/live-sessions/startPathHistory'
 
-interface Entry { name: string; path: string; isDir: boolean }
+interface Entry {
+  /** `history` entries replace the whole field; `fs` entries complete one path token. */
+  kind: 'history' | 'fs'
+  name: string
+  path: string
+  isDir: boolean
+}
 
 interface Props {
   input: string
   cursorPos: number
   anchorRef: React.RefObject<HTMLElement | null>
+  /** Directories used before, matched by keyword — see `startPathHistory`. */
+  history?: readonly string[]
   onComplete: (before: string, completed: string, after: string) => void
   onClose: () => void
 }
+
+/** History rows shown above the filesystem listing. */
+const HISTORY_ROWS = 5
 
 /** Extract the path token around the cursor position. */
 function getPathToken(input: string, cursor: number): { token: string; start: number; end: number } | null {
@@ -26,10 +38,9 @@ function getPathToken(input: string, cursor: number): { token: string; start: nu
   return null
 }
 
-export default function PathCompleteMenu({ input, cursorPos, anchorRef, onComplete, onClose }: Props) {
-  const [entries, setEntries] = useState<Entry[]>([])
+export default function PathCompleteMenu({ input, cursorPos, anchorRef, history = [], onComplete, onClose }: Props) {
+  const [fsEntries, setFsEntries] = useState<{ name: string; path: string; isDir: boolean }[]>([])
   const [selected, setSelected] = useState(0)
-  const [visible, setVisible] = useState(false)
   const [tokenInfo, setTokenInfo] = useState<{ token: string; start: number; end: number } | null>(null)
   const fetchRef = useRef(0)
 
@@ -37,43 +48,51 @@ export default function PathCompleteMenu({ input, cursorPos, anchorRef, onComple
   useEffect(() => {
     const info = getPathToken(input, cursorPos)
     setTokenInfo(info)
-    if (!info) { setVisible(false); setEntries([]); return }
+    if (!info) {
+      // A bare keyword has no directory to list: only history can answer it.
+      fetchRef.current += 1
+      setFsEntries([])
+      return
+    }
 
     const id = ++fetchRef.current
     api.pathComplete(info.token).then(data => {
       if (id !== fetchRef.current) return
-      if (data.entries.length > 0) {
-        setEntries(data.entries)
-        setSelected(0)
-        setVisible(true)
-      } else {
-        setVisible(false)
-        setEntries([])
-      }
-    }).catch(() => { setVisible(false) })
+      setFsEntries(Array.isArray(data.entries) ? data.entries : [])
+    }).catch(() => { if (id === fetchRef.current) setFsEntries([]) })
   }, [input, cursorPos])
 
+  // The same text drives both halves: the path token when one is being typed,
+  // otherwise the whole field as a keyword.
+  const query = tokenInfo ? tokenInfo.token : input.trim()
+  const entries = useMemo<Entry[]>(() => [
+    ...matchStartPaths(history, query, HISTORY_ROWS).map(path => ({ kind: 'history' as const, name: path, path, isDir: true })),
+    ...fsEntries.map(entry => ({ kind: 'fs' as const, ...entry })),
+  ], [history, query, fsEntries])
+  const active = entries.length ? Math.min(selected, entries.length - 1) : 0
+
   const applyCompletion = useCallback((entry: Entry) => {
+    if (entry.kind === 'history') {
+      // History answers a keyword, not a path prefix, so it replaces the field.
+      onComplete('', entry.path + '/', '')
+      return
+    }
     if (!tokenInfo) return
-    const completed = entry.path + (entry.isDir ? '/' : ' ')
     onComplete(
       input.slice(0, tokenInfo.start),
-      completed,
+      entry.path + (entry.isDir ? '/' : ' '),
       input.slice(tokenInfo.end),
     )
-    if (entry.isDir) {
-      // Keep menu open for further drilling
-    } else {
-      setVisible(false)
-    }
-  }, [tokenInfo, input, onComplete])
+    // A directory keeps the menu open for further drilling; a file ends it.
+    if (!entry.isDir) onClose()
+  }, [tokenInfo, input, onComplete, onClose])
 
   const onKey = useCallback((e: KeyboardEvent) => {
-    if (!visible || entries.length === 0) return
+    if (entries.length === 0) return
     if (e.key === 'Tab') {
       e.preventDefault()
       e.stopPropagation()
-      applyCompletion(entries[selected])
+      applyCompletion(entries[active])
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       e.stopPropagation()
@@ -84,18 +103,16 @@ export default function PathCompleteMenu({ input, cursorPos, anchorRef, onComple
       setSelected(i => (i - 1 + entries.length) % entries.length)
     } else if (e.key === 'Escape') {
       e.preventDefault()
-      setVisible(false)
       onClose()
     }
-  }, [visible, entries, selected, applyCompletion, onClose])
+  }, [entries, active, applyCompletion, onClose])
 
   useEffect(() => {
-    if (!visible) return
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
-  }, [visible, onKey])
+  }, [onKey])
 
-  if (!visible || entries.length === 0 || !anchorRef.current) return null
+  if (entries.length === 0 || !anchorRef.current) return null
 
   const rect = anchorRef.current.getBoundingClientRect()
   const menuH = Math.min(entries.length * 32 + 8, 320)
@@ -104,19 +121,23 @@ export default function PathCompleteMenu({ input, cursorPos, anchorRef, onComple
 
   return createPortal(
     <div
+      role="listbox"
+      aria-label="目录补全"
       className="fixed z-[9999] bg-card border border-border rounded-lg shadow-lg overflow-y-auto py-1 animate-slide-up"
       style={{ top, left: rect.left, width: Math.min(rect.width, 480), maxHeight: 320 }}
     >
       {entries.map((entry, i) => (
         <button
-          key={entry.path}
-          className={`w-full text-left px-3 py-1.5 flex items-center gap-2 cursor-pointer transition-colors text-body-s font-mono ${i === selected ? 'bg-accent-subtle text-text' : 'text-muted hover:bg-bg-hover hover:text-text'}`}
+          key={`${entry.kind}:${entry.path}`}
+          role="option"
+          aria-selected={i === active}
+          className={`w-full text-left px-3 py-1.5 flex items-center gap-2 cursor-pointer transition-colors text-body-s font-mono ${i === active ? 'bg-accent-subtle text-text' : 'text-muted hover:bg-bg-hover hover:text-text'}`}
           onMouseEnter={() => setSelected(i)}
           onMouseDown={e => { e.preventDefault(); applyCompletion(entry) }}
         >
-          <span className="shrink-0 w-4 text-center">{entry.isDir ? '📁' : '📄'}</span>
-          <span className="truncate flex-1">{entry.name}{entry.isDir ? '/' : ''}</span>
-          <span className="text-2xs text-muted opacity-50 shrink-0 ml-auto">{entry.isDir ? 'dir' : 'file'}</span>
+          <span className="shrink-0 w-4 text-center">{entry.kind === 'history' ? '🕘' : entry.isDir ? '📁' : '📄'}</span>
+          <span className="truncate flex-1">{entry.kind === 'history' ? entry.path : `${entry.name}${entry.isDir ? '/' : ''}`}</span>
+          <span className="text-2xs text-muted opacity-50 shrink-0 ml-auto">{entry.kind === 'history' ? '用过的目录' : entry.isDir ? 'dir' : 'file'}</span>
         </button>
       ))}
       <div className="px-3 py-1 border-t border-border text-2xs text-muted opacity-40 flex gap-3">
