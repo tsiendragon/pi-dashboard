@@ -294,10 +294,17 @@ describe('GET /api/chat/slots/:key', () => {
   })
 
   it('passes limit query param to getSlotDetail', async () => {
-    mockManager.getSlotDetail.mockReturnValue({ messages: [], running: false, stopping: false, pending_approval: false, has_more: false, total: 0, model: null, cwd: null, contextUsage: null })
+    mockManager.getSlotDetail.mockReturnValue({ messages: [], running: false, stopping: false, pending_approval: false, has_more: false, total: 0, next_cursor: null, model: null, cwd: null, contextUsage: null })
     mockManager.getSlotDetail.mockClear()
     await get(port, '/api/chat/slots/chat-1-1000?limit=50')
-    expect(mockManager.getSlotDetail).toHaveBeenCalledWith('chat-1-1000', 50)
+    expect(mockManager.getSlotDetail).toHaveBeenCalledWith('chat-1-1000', 50, undefined)
+  })
+
+  it('passes the history cursor query param to getSlotDetail', async () => {
+    mockManager.getSlotDetail.mockReturnValue({ messages: [], running: false, stopping: false, pending_approval: false, has_more: false, total: 0, next_cursor: null, model: null, cwd: null, contextUsage: null })
+    mockManager.getSlotDetail.mockClear()
+    await get(port, '/api/chat/slots/chat-1-1000?limit=100&cursor=b:123:456')
+    expect(mockManager.getSlotDetail).toHaveBeenCalledWith('chat-1-1000', 100, 'b:123:456')
   })
 })
 

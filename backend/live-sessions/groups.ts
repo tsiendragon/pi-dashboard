@@ -92,6 +92,28 @@ export class LiveSessionGroupStore {
     return this.list()
   }
 
+  /**
+   * Move every member of `groupId` into `targetId` and drop the source group.
+   *
+   * Duplicate task groups (same name created twice, or an empty leftover) can
+   * only be cleaned up from the admin panel, where empty groups are visible;
+   * merging keeps every session's group membership without touching the
+   * session itself.
+   */
+  async merge(groupId: string, targetId: string): Promise<LiveSessionGroup[]> {
+    await this.start()
+    if (!targetId || groupId === targetId) throw new Error('invalid_group_merge')
+    const source = this.find(groupId)
+    const target = this.find(targetId)
+    for (const sessionId of source.sessionIds) {
+      if (!target.sessionIds.includes(sessionId)) target.sessionIds.push(sessionId)
+    }
+    target.updatedAt = new Date().toISOString()
+    this.groups = this.groups.filter(group => group.id !== groupId)
+    await this.persist()
+    return this.list()
+  }
+
   async addMember(groupId: string, sessionId: string): Promise<LiveSessionGroup[]> {
     await this.start()
     const group = this.find(groupId)

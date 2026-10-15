@@ -34,6 +34,8 @@ export interface LiveSessionMeta {
   updatedAt: string
 }
 
+import type { GoalAnchor, GoalProgress } from './goal-anchor.js'
+
 export interface LiveSessionSummary {
   processInstanceId: string
   sessionId: string
@@ -79,6 +81,24 @@ export interface LiveSessionSummary {
     candidates: { source: string; tokens: number }[]
   }
   /**
+   * Compaction running in this session right now, or absent when none is.
+   *
+   * pi gives extensions no “compaction started” event — only
+   * `session_before_compact` before and `session_compact` /
+   * `session_compact_failed` after — and its `isIdle()` is false for the whole
+   * run, so without this a dashboard could only say “工作中” while the
+   * summarization model was busy. The bridge holds inputs sent in that window
+   * and flushes them when this clears. Additive: absent = older bridge.
+   */
+  compacting?: {
+    /** When the compaction started (epoch ms). */
+    since: number
+    /** What triggered it: /compact, the context threshold, or overflow recovery. */
+    reason: 'manual' | 'threshold' | 'overflow'
+    /** True when the aborted turn is retried after this compaction. */
+    willRetry: boolean
+  }
+  /**
    * Additive, optional capability list advertised by the bridge. Absent = older
    * bridge. Adding values is backward compatible in both directions and does NOT
    * change {@link LIVE_SESSION_PROTOCOL_VERSION}.
@@ -87,12 +107,22 @@ export interface LiveSessionSummary {
    * extension commands. The dashboard must NOT send those commands without it:
    * pi falls back to submitting an unrecognized `/command` text as a normal model
    * prompt, which would pollute the conversation.
+   * `session_shutdown` = the bridge accepts a dedicated `ctx.shutdown()` command;
+   * never simulate shutdown by sending `/exit` through the prompt input channel.
    */
   capabilities?: string[]
   git?: {
     root?: string
     branch?: string
   }
+  /**
+   * Checklist state of this session's goal anchor, derived from its own entries.
+   * Additive: absent = no goal was ever set (or an older server) and a consumer
+   * that ignores it simply draws no badge. Computed server-side so every row of
+   * the session list can show progress without shipping every session's timeline
+   * to the browser.
+   */
+  goal?: GoalProgress
 }
 
 export interface LiveSessionHello {
@@ -193,6 +223,7 @@ export type LiveSessionCommand =
   | { type: 'set_model'; provider: string; modelId: string }
   | { type: 'compact'; leaseId: string }
   | { type: 'reload' }
+  | { type: 'shutdown' }
   | { type: 'feature_command'; leaseId: string; feature: 'btw'; command: BtwFeatureCommand }
   | { type: 'feature_command'; leaseId: string; feature: 'background-commands'; command: { type: 'background'; toolCallId: string } }
   | { type: 'answer_ui'; id: string; value?: string; cancelled?: boolean }
@@ -223,6 +254,12 @@ export type LiveSessionServerMessage =
 export interface LiveSessionDetail {
   summary: LiveSessionSummary
   entries: unknown[]
+  /**
+   * Parsed goal anchor, cached server-side so it survives long sessions whose
+   * `goal-state` entry has already scrolled out of `entries`. Absent = the
+   * session never set a goal (or an older server that only ships entries).
+   */
+  goal?: GoalAnchor
   /**
    * Unanswered extension UI requests for this session, mirrored by the registry
    * so a browser that reconnects or switches pages can restore its dialog.
@@ -259,6 +296,7 @@ export type LiveSessionBrowserEventType =
   | 'live_session_snapshot'
   | 'live_session_event'
   | 'live_session_claim_changed'
+  | 'live_session_goal_changed'
   | 'live_session_reconnecting'
   | 'live_session_detached'
   | 'live_session_error'
@@ -266,6 +304,20 @@ export type LiveSessionBrowserEventType =
 export interface LiveSessionBrowserEvent {
   type: LiveSessionBrowserEventType
   data: unknown
+}
+
+/**
+ * Payload of `live_session_goal_changed`.
+ *
+ * The server watches session files directly, so goal changes reach the browser
+ * even when the session process does not project them into snapshots (older
+ * bridge code, no reload since the goal was created). `null` means the session
+ * has no goal — cleared, or never set one.
+ */
+export interface LiveSessionGoalChangedFrame {
+  processInstanceId: string
+  goal: GoalProgress | null
+  anchor: GoalAnchor | null
 }
 
 /**
@@ -318,6 +370,24 @@ export function parseLiveSessionStatus(value: unknown): LiveSessionStatus | unde
 }
 
 /**
+ * Parse the live compaction marker: an object while one runs, `null` when the
+ * bridge says none is (a patch must be able to clear the field), `undefined`
+ * when the value is unknown/invalid and must be left alone.
+ */
+export function parseLiveSessionCompacting(
+  value: unknown,
+): LiveSessionSummary['compacting'] | null | undefined {
+  if (value === null) return null
+  const record = asRecord(value)
+  if (!record) return undefined
+  const { since, reason, willRetry } = record
+  if (typeof since !== 'number' || !Number.isFinite(since)) return undefined
+  if (reason !== 'manual' && reason !== 'threshold' && reason !== 'overflow') return undefined
+  if (typeof willRetry !== 'boolean') return undefined
+  return { since, reason, willRetry }
+}
+
+/**
  * Fields of a summary a `summary_update` event may patch.
  *
  * Snapshots carry the whole summary but are only rebuilt at connect / resync /
@@ -329,6 +399,12 @@ export interface LiveSessionSummaryPatch {
   status?: LiveSessionStatus
   contextUsage?: LiveSessionSummary['contextUsage']
   compact?: LiveSessionSummary['compact']
+  /**
+   * Running compaction, or `null` when the one that was running ended.
+   * Absent = unchanged — never “cleared”, so a partial patch cannot hide a
+   * compaction that is still holding the input queue.
+   */
+  compacting?: LiveSessionSummary['compacting'] | null
 }
 
 /**
@@ -347,6 +423,8 @@ export function parseLiveSessionSummaryPatch(value: unknown): LiveSessionSummary
   if (contextUsage) patch.contextUsage = contextUsage
   const compact = parseLiveSessionCompact(record.compact)
   if (compact) patch.compact = compact
+  const compacting = parseLiveSessionCompacting(record.compacting)
+  if (compacting !== undefined) patch.compacting = compacting
   return Object.keys(patch).length > 0 ? patch : undefined
 }
 
@@ -361,6 +439,8 @@ export function applyLiveSessionSummaryPatch(
   if (patch.status !== undefined) summary.status = patch.status
   if (patch.contextUsage !== undefined) summary.contextUsage = patch.contextUsage
   if (patch.compact !== undefined) summary.compact = patch.compact
+  if (patch.compacting === null) delete summary.compacting
+  else if (patch.compacting !== undefined) summary.compacting = patch.compacting
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

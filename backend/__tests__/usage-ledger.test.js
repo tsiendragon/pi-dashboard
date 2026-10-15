@@ -14,6 +14,29 @@ const usage = (input, output, cost) => ({
 })
 
 describe('UsageLedger', () => {
+  it('groups historical effort changes and preserves totals after replay and reload', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'pi-effort-'))
+    const sessionFile = path.join(dir, 'session.jsonl')
+    const ledgerDir = path.join(dir, 'ledger')
+    const entries = [
+      { type: 'message', id: 'unknown', message: { role: 'assistant', provider: 'test', model: 'model', timestamp: '2026-09-03T00:00:00Z', usage: usage(100, 10, 0.01) } },
+      { type: 'thinking_level_change', thinkingLevel: 'high' },
+      { type: 'message', id: 'high', message: { role: 'assistant', provider: 'test', model: 'model', timestamp: '2026-09-03T00:00:00Z', usage: usage(100, 10, 0.03) } },
+      { type: 'thinking_level_change', thinkingLevel: 'low' },
+      { type: 'message', id: 'low', message: { role: 'assistant', provider: 'test', model: 'model', timestamp: '2026-09-03T00:00:00Z', usage: usage(100, 10, 0.02) } },
+    ]
+    const ledger = new UsageLedger(ledgerDir)
+    await ledger.recordLiveEvent({ type: 'event', processInstanceId: 'p', sequence: 1, event: { type: 'message_end', data: { entryId: 'high', message: entries[2].message } } }, { sessionFile, sessionId: 's' })
+    await writeFile(sessionFile, entries.map(entry => JSON.stringify(entry)).join('\n') + '\n')
+    await ledger.ingestSessionFile(sessionFile, { sessionFile, sessionId: 's' })
+    expect(await ledger.ingestSessionFile(sessionFile, { sessionFile, sessionId: 's' })).toBe(0)
+    const report = await new UsageLedger(ledgerDir).getReport('2026-09', 'UTC')
+    expect(report.recordCount).toBe(3)
+    expect(report.total.costUsd).toBeCloseTo(0.06)
+    expect(report.models[0].efforts.map(item => [item.key, item.costUsd])).toEqual([['high', 0.03], ['low', 0.02], ['unknown', 0.01]])
+    expect(report.models[0].efforts[0].effectiveUsdPerMillionTokens).toBeCloseTo(0.03 / 110 * 1e6)
+  })
+
   it('persists session usage and aggregates daily, model, and session totals', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'pi-usage-'))
     const ledgerDirectory = path.join(dir, 'token-usage')
@@ -66,6 +89,21 @@ describe('UsageLedger', () => {
     await ledger.ingestSessionFile(sessionFile, { sessionFile, label: 'Self-hosted', cwd: '/tmp/self-hosted' })
     const report = await ledger.getReport('2026-09', 'UTC')
     expect(report.models.map(item => item.key)).toEqual(['dsw/deepseek_v41_flash'])
+  })
+
+  it('keeps the requested model when a gateway reports an internal deployment name', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'pi-usage-gateway-'))
+    const ledgerDirectory = path.join(dir, 'token-usage')
+    const sessionFile = path.join(dir, 'session.jsonl')
+    await writeFile(sessionFile, [
+      JSON.stringify({ type: 'session', version: 3, id: 'session-g', timestamp: '2026-09-01T00:00:00.000Z', cwd: '/tmp/gateway' }),
+      JSON.stringify({ type: 'message', id: 'entry-g1', timestamp: '2026-09-03T10:00:00.000Z', message: { role: 'assistant', provider: 'llm-gateway', model: 'glm-5.3-flash', responseModel: 'MaaS_GLM_5.3_flash_20260826', timestamp: Date.parse('2026-09-03T10:00:00.000Z'), usage: usage(12000, 300, 0.0183) } }),
+    ].join('\n') + '\n')
+
+    const ledger = new UsageLedger(ledgerDirectory)
+    await ledger.ingestSessionFile(sessionFile, { sessionFile, label: 'Gateway', cwd: '/tmp/gateway' })
+    const report = await ledger.getReport('2026-09', 'UTC')
+    expect(report.models.map(item => item.key)).toEqual(['llm-gateway/glm-5.3-flash'])
   })
 
   it('records terminal live events with an entry id once', async () => {

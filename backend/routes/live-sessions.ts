@@ -9,10 +9,13 @@ import { LiveSessionMetaStore } from '../live-sessions/meta.js'
 import { LiveSessionOrderStore } from '../live-sessions/order.js'
 import { LivePiLauncher } from '../live-sessions/launcher.js'
 import { LiveSessionProtocolError } from '../live-sessions/protocol.js'
+import { LiveSessionRestarter, LiveSessionRestartError } from '../live-sessions/session-restart.js'
 import { LiveSessionRegistry, LiveSessionRegistryError } from '../live-sessions/registry.js'
 import { LiveSessionCloseError, closeLiveSession } from '../live-sessions/session-close.js'
 import { SessionForkError, createBranchedSessionFile } from '../live-sessions/session-fork.js'
+import { SessionDiscardError, cleanupSessionDiscard, commitSessionDiscard, prepareSessionDiscard, prepareSessionWithdrawal } from '../live-sessions/session-discard.js'
 import { SessionTreeError, buildSessionFamilyGraph, readSessionCompactions } from '../live-sessions/session-tree.js'
+import { readSessionGoalAnchor } from '../live-sessions/session-goal.js'
 
 export interface LiveSessionRouteOptions {
   app: Express
@@ -30,7 +33,14 @@ export interface LiveSessionRouteOptions {
 type AuthenticatedRequest = Request & { liveSessionIdentity?: LiveSessionBrowserIdentity }
 
 function errorStatus(error: unknown): number {
-  const code = error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError || error instanceof SessionForkError || error instanceof LiveSessionCloseError ? error.code : ''
+  if (error instanceof LiveSessionRestartError) {
+    if (error.code === 'restart_exit_timeout') return 504
+    if (error.code === 'live_session_not_found') return 404
+    if (error.code === 'session_file_unavailable') return 404
+    if (error.code === 'live_launcher_unavailable') return 503
+    return 409
+  }
+  const code = error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError || error instanceof SessionForkError || error instanceof SessionDiscardError || error instanceof LiveSessionCloseError ? error.code : ''
   if (code === 'live_session_not_found') return 404
   if (code === 'not_a_subagent') return 403
   if (code === 'live_session_pid_invalid') return 400
@@ -40,12 +50,13 @@ function errorStatus(error: unknown): number {
   if (code === 'out_of_scope') return 403
   if (code === 'invalid_lease' || code === 'deliver_as_required' || code === 'live_session_unavailable') return 409
   if (code === 'session_file_out_of_scope') return 403
-  if (code === 'session_file_not_found') return 404
-  if (code === 'session_entry_not_found') return 400
-  if (code === 'session_file_unavailable') return 400
+  if (code === 'session_file_not_found' || code === 'session_file_unavailable') return 404
+  if (code === 'session_entry_not_found' || code === 'entry_not_user_message' || code === 'invalid_entry_id') return 400
+  if (code === 'discard_restart_failed' || code === 'withdraw_restart_failed') return 503
+  if (code === 'session_operation_in_progress' || code === 'session_changed' || code === 'entry_not_on_active_branch' || code === 'not_latest_user_message' || code === 'rewind_root_has_other_branches' || code === 'nothing_to_discard' || code === 'discard_failed' || code === 'withdraw_failed') return 409
   if (code.startsWith('invalid_') || code === 'unsupported_command' || code === 'command_too_large') return 400
   if (error instanceof Error && error.message === 'group_not_found') return 404
-  if (error instanceof Error && (error.message === 'group_name_required' || error.message === 'invalid_thinking_level' || error.message === 'model_id_required' || error.message === 'model_provider_required' || error.message === 'invalid_fork_from')) return 400
+  if (error instanceof Error && (error.message === 'group_name_required' || error.message === 'invalid_group_merge' || error.message === 'invalid_thinking_level' || error.message === 'model_id_required' || error.message === 'model_provider_required' || error.message === 'invalid_fork_from')) return 400
   if (error instanceof Error && error.message === 'live_pi_start_failed') return 500
   if (error instanceof Error && error.message.includes('outside configured live session roots')) return 403
   return 500
@@ -53,7 +64,7 @@ function errorStatus(error: unknown): number {
 
 function errorBody(error: unknown): { error: string; message: string } {
   return {
-    error: error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError || error instanceof SessionForkError || error instanceof LiveSessionCloseError ? error.code : 'live_session_error',
+    error: error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError || error instanceof SessionForkError || error instanceof SessionDiscardError || error instanceof LiveSessionCloseError || error instanceof LiveSessionRestartError ? error.code : 'live_session_error',
     message: error instanceof Error ? error.message : String(error),
   }
 }
@@ -81,6 +92,7 @@ export class LiveSessionRoutes {
   private readonly metaStore: LiveSessionMetaStore
   private readonly orderStore: LiveSessionOrderStore
   private readonly launcher?: LivePiLauncher
+  private readonly restarter: LiveSessionRestarter
   private readonly closeSession: typeof closeLiveSession
   private readonly wss = new WebSocketServer({ noServer: true })
   private readonly clients = new Map<WebSocket, LiveSessionBrowserIdentity>()
@@ -101,6 +113,7 @@ export class LiveSessionRoutes {
     this.metaStore = options.metaStore ?? new LiveSessionMetaStore()
     this.orderStore = options.orderStore ?? new LiveSessionOrderStore()
     this.launcher = options.launcher
+    this.restarter = new LiveSessionRestarter({ registry: this.registry, metaStore: this.metaStore, launcher: this.launcher })
     this.closeSession = options.closeSession ?? closeLiveSession
   }
 
@@ -248,6 +261,120 @@ export class LiveSessionRoutes {
       })
     })
 
+    this.app.post('/api/live-sessions/:processInstanceId/discard-after', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => {
+        const processInstanceId = req.params.processInstanceId as string
+        const entryId = typeof req.body?.entryId === 'string' ? req.body.entryId.trim() : ''
+        if (!entryId) throw new SessionDiscardError('invalid_entry_id', 'entryId is required')
+        return this.registry.withExclusiveSession(processInstanceId, async () => {
+          const detail = this.registry.get(processInstanceId)
+          if (!detail) throw new LiveSessionRestartError('live_session_not_found', 'live session is not available')
+          const { summary } = detail
+          if (!summary.sessionFile) throw new SessionDiscardError('session_file_unavailable', 'the session has no session file yet')
+          const plan = prepareSessionDiscard(summary.sessionFile, entryId)
+          let historyChanged = false
+          try {
+            const restartPromise = this.restarter.restart(processInstanceId, summary.sessionId, stoppedFile => {
+              if (stoppedFile !== summary.sessionFile) throw new SessionDiscardError('session_changed', 'the session file changed before restart')
+              commitSessionDiscard(plan)
+              historyChanged = true
+            })
+            let result: Awaited<typeof restartPromise>
+            try {
+              result = await restartPromise
+            } catch (error) {
+              if (historyChanged) {
+                throw new SessionDiscardError('discard_restart_failed', `history was truncated, but Pi failed to resume; restart it manually: ${error instanceof Error ? error.message : String(error)}`)
+              }
+              throw error
+            }
+            if (!result.sessionId) throw new LiveSessionRestartError('restart_registration_failed', 'the resumed Pi did not register with the dashboard')
+            if (summary.sessionId !== result.sessionId) {
+              await Promise.all([
+                this.groupStore.rekey(summary.sessionId, result.sessionId),
+                this.metaStore.rekey(summary.sessionId, result.sessionId),
+                this.orderStore.rekey(summary.sessionId, result.sessionId),
+              ])
+            }
+            await this.metaStore.update(result.sessionId, { tmux: result.tmuxSession })
+            if ('afterPiStoppedError' in result && result.afterPiStoppedError) {
+              throw new SessionDiscardError('discard_failed', `history was not changed; Pi resumed with the original session: ${result.afterPiStoppedError.message}`)
+            }
+            return { ok: true, result: { ...result, entryId, deletedEntries: plan.deletedEntries } }
+          } finally {
+            cleanupSessionDiscard(plan)
+          }
+        })
+      })
+    })
+
+    this.app.post('/api/live-sessions/:processInstanceId/withdraw-message', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => {
+        const processInstanceId = req.params.processInstanceId as string
+        const entryId = typeof req.body?.entryId === 'string' ? req.body.entryId.trim() : ''
+        if (!entryId) throw new SessionDiscardError('invalid_entry_id', 'entryId is required')
+        return this.registry.withExclusiveSession(processInstanceId, async () => {
+          const detail = this.registry.get(processInstanceId)
+          if (!detail) throw new LiveSessionRestartError('live_session_not_found', 'live session is not available')
+          const { summary } = detail
+          if (!summary.sessionFile) throw new SessionDiscardError('session_file_unavailable', 'the session has no session file yet')
+          const plan = prepareSessionWithdrawal(summary.sessionFile, entryId)
+          let historyChanged = false
+          try {
+            const restartPromise = this.restarter.restart(processInstanceId, summary.sessionId, stoppedFile => {
+              if (stoppedFile !== summary.sessionFile) throw new SessionDiscardError('session_changed', 'the session file changed before restart')
+              commitSessionDiscard(plan)
+              historyChanged = true
+            })
+            let result: Awaited<typeof restartPromise>
+            try {
+              result = await restartPromise
+            } catch (error) {
+              if (historyChanged) {
+                throw new SessionDiscardError('withdraw_restart_failed', `the message was withdrawn, but Pi failed to resume; restart it manually: ${error instanceof Error ? error.message : String(error)}`)
+              }
+              throw error
+            }
+            if (!result.sessionId) throw new LiveSessionRestartError('restart_registration_failed', 'the resumed Pi did not register with the dashboard')
+            if (summary.sessionId !== result.sessionId) {
+              await Promise.all([
+                this.groupStore.rekey(summary.sessionId, result.sessionId),
+                this.metaStore.rekey(summary.sessionId, result.sessionId),
+                this.orderStore.rekey(summary.sessionId, result.sessionId),
+              ])
+            }
+            await this.metaStore.update(result.sessionId, { tmux: result.tmuxSession })
+            if ('afterPiStoppedError' in result && result.afterPiStoppedError) {
+              throw new SessionDiscardError('withdraw_failed', `history was not changed; Pi resumed with the original session: ${result.afterPiStoppedError.message}`)
+            }
+            return { ok: true, result: { ...result, entryId, removedEntries: plan.removedEntries } }
+          } finally {
+            cleanupSessionDiscard(plan)
+          }
+        })
+      })
+    })
+
+    this.app.post('/api/live-sessions/:processInstanceId/restart', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => {
+        const processInstanceId = req.params.processInstanceId as string
+        const previous = this.registry.get(processInstanceId)
+        if (!previous) throw new LiveSessionRestartError('live_session_not_found', 'live session is not available')
+        const result = await this.restarter.restart(processInstanceId, previous.summary.sessionId)
+        if (!result.sessionId) throw new LiveSessionRestartError('restart_registration_failed', 'the resumed Pi did not register with the dashboard')
+        const previousSessionId = previous.summary.sessionId
+        if (previousSessionId !== result.sessionId) {
+          await Promise.all([
+            this.groupStore.rekey(previousSessionId, result.sessionId),
+            this.metaStore.rekey(previousSessionId, result.sessionId),
+            this.orderStore.rekey(previousSessionId, result.sessionId),
+          ])
+        }
+        await this.metaStore.update(result.sessionId, { tmux: result.tmuxSession })
+        return { ok: true, result }
+      })
+    })
+
     this.app.get('/api/live-sessions', requireAuth, (req: AuthenticatedRequest, res: Response) => {
       res.json({ sessions: this.registry.list(), browserClientId: req.liveSessionIdentity!.browserClientId })
     })
@@ -279,6 +406,16 @@ export class LiveSessionRoutes {
 
     this.app.delete('/api/live-session-groups/:groupId', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
       await this.respond(res, async () => ({ ok: true, groups: await this.groupStore.remove(req.params.groupId as string) }))
+    })
+
+    // Fold a duplicate group into another one: members move over, the source
+    // group is deleted. The only server-side cleanup for empty groups, which
+    // never show up as a sidebar section.
+    this.app.post('/api/live-session-groups/:groupId/merge', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => ({
+        ok: true,
+        groups: await this.groupStore.merge(req.params.groupId as string, typeof req.body?.targetId === 'string' ? req.body.targetId : ''),
+      }))
     })
 
     this.app.post('/api/live-session-groups/:groupId/members', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
@@ -350,6 +487,21 @@ export class LiveSessionRoutes {
           ...(stepsParam !== undefined && Number.isFinite(stepsParam) ? { expandStepLimit: stepsParam } : {}),
         })
         return { ok: true, result: graph }
+      })
+    })
+
+    /**
+     * Task anchor of a finished session, read from its own file.
+     *
+     * The registry only knows sessions pi is still running, but a closed session
+     * keeps its `goal-state` entries on disk. Same file semantics as
+     * `/api/session-tree`: the file must live under the sessions directory.
+     */
+    this.app.get('/api/session-goal', requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => {
+        const file = typeof req.query.file === 'string' ? req.query.file.trim() : ''
+        if (!file) throw new SessionTreeError('session_file_unavailable', 'file query parameter is required')
+        return { ok: true, result: await readSessionGoalAnchor(file) }
       })
     })
 
@@ -434,6 +586,7 @@ export class LiveSessionRoutes {
       ['snapshot', 'live_session_snapshot'],
       ['event', 'live_session_event'],
       ['claim_changed', 'live_session_claim_changed'],
+      ['goal_changed', 'live_session_goal_changed'],
       ['reconnecting', 'live_session_reconnecting'],
       ['detached', 'live_session_detached'],
       ['session_error', 'live_session_error'],

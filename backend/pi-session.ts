@@ -73,6 +73,13 @@ export interface PiSession extends EventEmitter {
   /** Set by PiManager.ensureRunning when a process/session is (re)started for an
    *  existing conversation, so the first prompt injects a resume hint. */
   _wasRestarted?: boolean
+  /** True when `messages` only holds the recent tail of the transcript (the
+   *  slot was resumed from disk with a bounded window). Older history is then
+   *  paged from `sessionFile` via session-history.ts. */
+  _historyTruncated?: boolean
+  /** Opaque cursor (session-history.ts) pointing at the next older page for
+   *  this slot; null when the transcript head was reached. */
+  _historyCursor?: string | null
 
   // ── lifecycle ──
   start(): void
