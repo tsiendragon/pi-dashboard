@@ -66,12 +66,12 @@ describe('api client methods', () => {
   })
 
   it('chatSlotDetail builds query string correctly', async () => {
-    await api.chatSlotDetail('slot-1', 100, 50)
+    await api.chatSlotDetail('slot-1', 100, 'b:50:60')
     const call = vi.mocked(fetch).mock.calls[0]
     const url = call[0] as string
     expect(url).toContain('/api/chat/slots/slot-1')
     expect(url).toContain('limit=100')
-    expect(url).toContain('before=50')
+    expect(url).toContain('cursor=b%3A50%3A60')
   })
 
   it('chatSlotDetail without optional params', async () => {

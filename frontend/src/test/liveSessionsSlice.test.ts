@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { LiveSessionDetail, LiveSessionEventMessage, LiveSessionSummary } from '@shared/live-sessions'
 import reducer, {
   liveSessionEvent,
+  liveSessionGoalChanged,
   liveSessionOwned,
   liveSessionReleased,
   liveSessionSnapshot,
@@ -36,6 +37,39 @@ function uiEvent(processInstanceId: string, sequence: number, type: 'extension_u
 }
 
 describe('liveSessionsSlice', () => {
+  it('applies goal changes read from the session file without a revision bump', () => {
+    let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a')] }))
+    state = reducer(state, liveSessionSnapshot(detail(summary('a', 2))))
+    expect(state.sessions.a.goal).toBeUndefined()
+
+    const progress = { done: 1, total: 3, needsUser: 0, status: 'active' as const, stale: false }
+    const anchor = {
+      objective: 'Ship it',
+      status: 'active' as const,
+      progress: {},
+      blockers: [],
+      acceptanceCriteria: ['it works'],
+      constraints: [],
+      workItems: [],
+      sourceDocs: [],
+      messagesSinceUpdate: 0,
+    }
+    state = reducer(state, liveSessionGoalChanged({ processInstanceId: 'a', goal: progress, anchor }))
+    expect(state.sessions.a.goal).toEqual(progress)
+    expect(state.details.a.summary.goal).toEqual(progress)
+    expect(state.details.a.goal).toEqual(anchor)
+
+    // A later snapshot must not drop a file-derived anchor its entries lack.
+    state = reducer(state, liveSessionSnapshot(detail(summary('a', 3, 1))))
+    expect(state.details.a.goal).toEqual(anchor)
+
+    // A cleared goal removes the anchor and the row badge again.
+    state = reducer(state, liveSessionGoalChanged({ processInstanceId: 'a', goal: null, anchor: null }))
+    expect(state.sessions.a.goal).toBeUndefined()
+    expect(state.details.a.goal).toBeUndefined()
+    expect(state.details.a.summary.goal).toBeUndefined()
+  })
+
   it('restores an unanswered dialog from a snapshot (page switch / reconnect)', () => {
     const request = { id: 'ui-1', method: 'select' as const, title: '选择目标', options: ['x', 'y'] }
     let state = reducer(undefined, sessionsLoaded({ sessions: [summary('a')] }))
@@ -209,6 +243,27 @@ describe('liveSessionsSlice', () => {
     expect(state.details.a.summary.compact?.candidates).toHaveLength(2)
     // Telemetry is a summary patch, never a transcript bubble.
     expect(state.details.a.entries).toHaveLength(0)
+
+    // A running compaction rides the same patch channel: the page shows “压缩中”
+    // and the queued bubbles say they wait for the compaction, not for a turn.
+    state = reducer(state, liveSessionEvent({
+      type: 'event', processInstanceId: 'a', sequence: 2,
+      event: {
+        type: 'summary_update',
+        data: { compacting: { since: 1_700_000_000_000, reason: 'threshold', willRetry: false }, status: 'running' },
+      },
+    }))
+    expect(state.sessions.a.compacting).toEqual({ since: 1_700_000_000_000, reason: 'threshold', willRetry: false })
+    expect(state.details.a.summary.compacting).toEqual(state.sessions.a.compacting)
+
+    // `null` is the one way to clear it; a patch that just omits the field leaves it set.
+    state = reducer(state, liveSessionEvent({
+      type: 'event', processInstanceId: 'a', sequence: 3,
+      event: { type: 'summary_update', data: { compacting: null, status: 'idle' } },
+    }))
+    expect(state.sessions.a.compacting).toBeUndefined()
+    expect(state.details.a.summary.compacting).toBeUndefined()
+    expect(state.details.a.entries).toHaveLength(0)
   })
 
   it('keeps the sidebar status honest for a session with no open page', () => {
@@ -244,10 +299,11 @@ describe('liveSessionsSlice', () => {
     state = reducer(state, liveSessionSnapshot(detail(summary('a', 2))))
     state = reducer(state, liveSessionEvent({
       type: 'event', processInstanceId: 'a', sequence: 1,
-      event: { type: 'summary_update', data: { contextUsage: { tokens: 'lots', contextWindow: 0, percent: null } } },
+      event: { type: 'summary_update', data: { contextUsage: { tokens: 'lots', contextWindow: 0, percent: null }, compacting: { since: 'soon', reason: 'threshold', willRetry: false } } },
     }))
     expect(state.sessions.a.contextUsage).toBeUndefined()
     expect(state.sessions.a.compact).toBeUndefined()
+    expect(state.sessions.a.compacting).toBeUndefined()
   })
 
   it('tracks only leases acquired by this browser and clears them on release', () => {

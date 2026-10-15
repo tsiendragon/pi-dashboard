@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import type { LiveSessionStatus } from '@shared/live-sessions'
+import type { SessionGoalSummary } from './sessionGoal'
+import { goalProgressOf } from './sessionGoal'
+import GoalAnchorDialog from './goal/GoalAnchorDialog'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import FileBrowser from '../../components/FileBrowser'
+import { SupervisorNotificationsSidebarButton } from '../supervisor/SupervisorAgentProvider'
 
 type RecordValue = Record<string, unknown>
 
@@ -66,14 +70,22 @@ function Feature({ title, icon, count, children }: { title: string; icon: 'btw' 
   </details>
 }
 
-function SessionAction({ label, icon, disabled, danger, onClick, title }: { label: string; icon: 'interrupt' | 'goal' | 'compact' | 'reload' | 'clear'; disabled?: boolean; danger?: boolean; onClick: () => void; title?: string }) {
-  return <button type="button" onClick={onClick} disabled={disabled} title={title || label} aria-label={title || label} className={`${RAIL_BUTTON} ${danger ? RAIL_DANGER : RAIL_IDLE}`}>
+/** Same dot language as the live-session status dots. */
+const ACTION_DOT_CLASS: Record<'ok' | 'accent' | 'warn', string> = { ok: 'bg-ok', accent: 'bg-accent', warn: 'bg-warn' }
+
+function SessionAction({ label, icon, disabled, danger, onClick, title, badge, dot, goalState }: { label: string; icon: 'interrupt' | 'goal' | 'compact' | 'reload' | 'clear'; disabled?: boolean; danger?: boolean; onClick: () => void; title?: string; badge?: { text: string; tone: 'ok' | 'accent' | 'warn' }; dot?: { tone: 'ok' | 'accent' | 'warn'; pulse?: boolean; hint: string }; goalState?: 'active' | 'paused' | 'complete' }) {
+  const badgeClass = badge?.tone === 'ok' ? 'bg-ok-subtle text-ok' : badge?.tone === 'warn' ? 'bg-warn-subtle text-warn' : 'bg-accent-subtle text-accent'
+  return <button type="button" onClick={onClick} disabled={disabled} title={title || label} aria-label={title || label} data-goal-state={goalState} className={`relative ${RAIL_BUTTON} ${danger ? RAIL_DANGER : RAIL_IDLE}`}>
     <ActionIcon kind={icon} />
     <span className="truncate">{label}</span>
+    {(badge || dot) && <span className="absolute -right-0.5 -top-0.5 flex items-center gap-1">
+      {dot && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ACTION_DOT_CLASS[dot.tone]} ${dot.pulse ? 'animate-pulse' : ''}`} title={dot.hint} aria-hidden="true" />}
+      {badge && <span className={`rounded-full px-1 text-[9px] font-semibold leading-[15px] ${badgeClass}`}>{badge.text}</span>}
+    </span>}
   </button>
 }
 
-export default function LiveSessionFeatures({ features, busy, cwd, status, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, onGoal, onCompact, onClear, onReload, onAbort }: {
+export default function LiveSessionFeatures({ features, busy, cwd, status, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, goal, goalLoaded = true, onGoalSync, goalBusy = false, onCompact, onClear, onReload, onAbort }: {
   features: Record<string, unknown>
   busy?: boolean
   cwd?: string
@@ -88,7 +100,13 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
   /** Re-snapshot the parent session's context into the side chat. */
   onBtwRefreshParent: () => void
   onOpenWorkflow: (workflow: Record<string, unknown>) => void
-  onGoal: () => void
+  /** Current goal anchor for this session, reactive from its own timeline. */
+  goal?: SessionGoalSummary | null
+  /** False while the session timeline has not loaded yet. */
+  goalLoaded?: boolean
+  /** Ask the agent to refresh the checklist (live sessions only). */
+  onGoalSync?: () => void
+  goalBusy?: boolean
   /** True while a requested compaction has not landed on disk yet. */
   compacting?: boolean
   onCompact: () => void
@@ -119,8 +137,42 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
     onBtwSubmit(text)
   }
   const [filesOpen, setFilesOpen] = useState(false)
+  const [goalOpen, setGoalOpen] = useState(false)
+  const goalProgress = goalProgressOf(goal)
+  /* The goal keeps working in the background (the extension re-queues it on an
+     interval), so its rail button carries the state: an active goal pulses,
+     paused/complete hold still. A goal without checklist items still shows up —
+     otherwise the button looks dead while the loop is actually driving the session. */
+  const goalStatusLabel = goalProgress?.status === 'active' ? '进行中' : goalProgress?.status === 'paused' ? '已暂停' : goalProgress?.status === 'complete' ? '已完成' : undefined
+  const goalTitle = goalProgress
+    ? [
+      `任务锚点：${goalStatusLabel ?? (goalProgress.total > 0 ? `${goalProgress.done}/${goalProgress.total} 完成` : '已设置')}`,
+      goalStatusLabel && goalProgress.total > 0 ? `${goalProgress.done}/${goalProgress.total} 完成` : undefined,
+      goalProgress.needsUser > 0 ? `${goalProgress.needsUser} 项需要你处理` : undefined,
+      goalProgress.stale ? '清单可能过期' : undefined,
+    ].filter((part): part is string => !!part).join('｜')
+    : '查看当前 session 的目标、工作项和阻塞项'
+  const goalDot = goalProgress?.status === 'active'
+    ? { tone: 'accent' as const, pulse: true, hint: '目标进行中：会话运行时会按间隔自动继续推进' }
+    : goalProgress?.status === 'paused'
+      ? { tone: 'warn' as const, pulse: false, hint: '目标已暂停：不会自动继续推进' }
+      : goalProgress?.status === 'complete'
+        ? { tone: 'ok' as const, pulse: false, hint: '目标已完成' }
+        : undefined
+  const goalBadge = goalProgress && goalProgress.total > 0
+    ? {
+      text: `${goalProgress.done}/${goalProgress.total}`,
+      tone: goalProgress.needsUser > 0 || goalProgress.stale || goalProgress.status === 'paused'
+        ? 'warn' as const
+        : goalProgress.done === goalProgress.total ? 'ok' as const : 'accent' as const,
+    }
+    : goalProgress?.status === 'active' || goalProgress?.status === 'paused' || goalProgress?.status === 'complete'
+      ? { text: goalStatusLabel as string, tone: goalProgress.status === 'paused' ? 'warn' as const : goalProgress.status === 'complete' ? 'ok' as const : 'accent' as const }
+      : undefined
 
   return <aside className="relative z-30 flex w-[84px] shrink-0 flex-col items-stretch gap-1.5 overflow-visible border-l border-border bg-card px-1.5 py-2.5">
+    {/* The main Agent entry already lives in the navigation sidebar; do not repeat it in this rail. */}
+    <SupervisorNotificationsSidebarButton className={`${RAIL_BUTTON} ${RAIL_IDLE}`} />
     <button type="button" onClick={() => setFilesOpen(value => !value)} className={`${RAIL_BUTTON} ${filesOpen ? RAIL_ACTIVE : RAIL_IDLE}`} title="浏览当前工作目录" aria-label="浏览当前工作目录">
       <FeatureIcon kind="files" />
       <span>文件</span>
@@ -134,7 +186,16 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
 
     <div className="flex w-full flex-col items-stretch gap-0.5">
       {status === 'running' && <SessionAction label="中止" icon="interrupt" danger disabled={busy} onClick={onAbort} title="中止当前回合：Pi 会停下来，已完成的步骤保留（不是可恢复的暂停）" />}
-      <SessionAction label="目标" icon="goal" disabled={busy || status !== 'idle'} onClick={onGoal} title="查看/管理当前 session 的 /goal 状态" />
+      <SessionAction
+        label="目标"
+        icon="goal"
+        disabled={busy || status === 'reconnecting'}
+        onClick={() => setGoalOpen(true)}
+        title={goalTitle}
+        badge={goalBadge}
+        dot={goalDot}
+        goalState={goalProgress?.status}
+      />
       <SessionAction label={compacting ? '压缩中…' : '压缩'} icon="compact" disabled={busy || compacting || status !== 'idle'} onClick={onCompact} title={compacting ? '压缩仍在后台进行，等完成后再试' : '压缩当前会话上下文，释放 token'} />
       <SessionAction label="重载" icon="reload" disabled={busy} onClick={onReload} title="重载扩展 / 技能 / 提示词 / 主题" />
       {/* Enabled while the session works: `/clear` waits for idle itself, and the old
@@ -212,5 +273,14 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
         {conversations.map(item => <div key={String(item.id)} className="rounded border border-border bg-card p-2 text-xs"><span className="font-mono text-accent">subagent</span> · {String(item.label || item.id)}<span className="float-right text-muted">{String(item.status || '')}</span></div>)}
       </div>}
     </Feature>
+
+    {goalOpen && <GoalAnchorDialog
+      goal={goal ?? null}
+      loaded={goalLoaded}
+      mode="live"
+      busy={goalBusy}
+      onClose={() => setGoalOpen(false)}
+      {...(onGoalSync ? { onSync: onGoalSync } : {})}
+    />}
   </aside>
 }

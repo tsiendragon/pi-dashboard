@@ -13,6 +13,7 @@ function session(processInstanceId: string, pid: number, over: Partial<LiveSessi
     cwd: `~/repos/app-${pid}`,
     canonicalCwd: `~/repos/app-${pid}`,
     mode: 'tui',
+    capabilities: ['session_shutdown'],
     status: 'idle',
     claim: { state: 'unclaimed' },
     startedAt: pid,
@@ -55,6 +56,9 @@ function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string,
     if (url === '/api/live-sessions/start' && method === 'POST') {
       return ok({ ok: true, result: { slotKey: 'fork', cwd: String(body?.cwd), title: String(body?.title), processInstanceId: 'pi-fork', sessionId: 'session-pi-fork', tmuxSession: 'pi-dash-live-xxxxxxxx' } })
     }
+    if (url.startsWith('/api/live-sessions/') && url.endsWith('/restart') && method === 'POST') {
+      return ok({ ok: true, result: { processInstanceId: 'pid-a-restarted', sessionId: 'session-pid-a', tmuxSession: 'pi-dash-live-restarted' } })
+    }
     if (url.endsWith('/members') && method === 'POST') {
       const sessionId = `session-${body?.processInstanceId}`
       groups = groups.map(g => (g.id === url.split('/')[3] ? { ...g, sessionIds: [...new Set([...g.sessionIds, sessionId])] } : g))
@@ -67,6 +71,14 @@ function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string,
     }
     if (url.startsWith('/api/live-session-groups/') && method === 'DELETE') {
       groups = groups.filter(g => g.id !== url.split('/')[3])
+      return ok({ ok: true, groups })
+    }
+    if (url.startsWith('/api/live-session-groups/') && url.endsWith('/merge') && method === 'POST') {
+      const sourceId = url.split('/')[3]
+      const source = groups.find(g => g.id === sourceId)
+      groups = groups
+        .filter(g => g.id !== sourceId)
+        .map(g => (g.id === body?.targetId ? { ...g, sessionIds: [...new Set([...g.sessionIds, ...(source?.sessionIds || [])])] } : g))
       return ok({ ok: true, groups })
     }
     if (url.startsWith('/api/pty/sessions/') && method === 'DELETE') return ok({ ok: true })
@@ -87,26 +99,48 @@ const menuFor = (title: string) => {
 }
 
 describe('LiveSessionsList sidebar', () => {
-  beforeEach(() => { vi.restoreAllMocks() })
+  beforeEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
 
-  it('shows the animated working hammer plus the text label and relative time', () => {
+  it('restarts one eligible session after two-click confirmation and selects its replacement', async () => {
+    const { calls } = mockFetch({ meta: { 'session-pid-a': { tags: [], pinned: false, tmux: 'pi-dash-live-abc12345', updatedAt: '' } } })
+    const onSelect = vi.fn()
+    render(<LiveSessionsList sessions={[session('pid-a', 101, { sessionFile: '/tmp/session-a.jsonl', capabilities: [] })]} activeId="pid-a" onSelect={onSelect} />)
+
+    const restart = screen.getByLabelText('重启 session pi 101')
+    await waitFor(() => expect(restart).toBeEnabled())
+    fireEvent.click(restart)
+    expect(calls.some(call => call.url === '/api/live-sessions/pid-a/restart')).toBe(false)
+    fireEvent.click(restart)
+
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith('pid-a-restarted'))
+    expect(calls.some(call => call.url === '/api/live-sessions/pid-a/restart' && call.method === 'POST')).toBe(true)
+    await waitFor(() => expect(screen.getByLabelText('会话操作结果')).toHaveTextContent('已重启'))
+  })
+
+  it('disables restart for sessions not managed by the dashboard', () => {
+    mockFetch()
+    render(<LiveSessionsList sessions={[session('pid-a', 101, { sessionFile: '/tmp/session-a.jsonl', capabilities: ['session_shutdown'] })]} onSelect={() => {}} />)
+    expect(screen.getByLabelText('重启 session pi 101')).toBeDisabled()
+  })
+
+  it('shows the animated working hammer without a redundant status label', () => {
     mockFetch()
     render(<LiveSessionsList sessions={[session('pid-a', 101, { status: 'running' })]} onSelect={() => {}} />)
     expect(screen.getByText('pi 101')).toBeInTheDocument()
     expect(within(screen.getByRole('status', { name: 'Session 状态：工作中' })).getByTestId('working-hammer')).toBeInTheDocument()
-    expect(screen.getByText('工作中')).toBeInTheDocument()
-    expect(screen.getByText('2h')).toBeInTheDocument()   // lastActivityAt = now - 101min
+    expect(screen.queryByText('工作中')).not.toBeInTheDocument()
+    expect(screen.getByText('2h')).toBeInTheDocument()// lastActivityAt = now - 101min
   })
 
   it.each([['idle', '等待输入'], ['reconnecting', '重连中']] as const)(
-    'maps status %s to its own glyph and the %s label', (status, label) => {
+    'maps status %s to its own glyph without the redundant %s label', (status, label) => {
       mockFetch()
       render(<LiveSessionsList sessions={[session('pid-a', 101, { status })]} onSelect={() => {}} />)
       const glyph = screen.getByRole('status', { name: `Session 状态：${label}` })
       expect(glyph).toHaveAttribute('data-session-status', status)
       // idle renders a quiet dot, reconnecting a spinner; neither is a text glyph
       expect(glyph.querySelector('svg') ? true : glyph.querySelector('span[aria-hidden]')).toBeTruthy()
-      expect(screen.getByText(label)).toBeInTheDocument()
+      expect(screen.queryByText(label)).not.toBeInTheDocument()
     })
 
   it('hoists pinned sessions into a leading 置顶 section', async () => {
@@ -167,12 +201,16 @@ describe('LiveSessionsList sidebar', () => {
     expect(screen.queryByText('pi 102')).not.toBeInTheDocument()
   })
 
-  it('joins a task group from the row menu', async () => {
-    const groups: LiveSessionGroup[] = [{ id: 'g1', name: '任务A', sessionIds: [], createdAt: '', updatedAt: '' }]
+  it('moves a session through the group submenu and includes groups beyond the first six', async () => {
+    const groups: LiveSessionGroup[] = Array.from({ length: 8 }, (_, i) => ({
+      id: `g${i + 1}`, name: `任务${String.fromCharCode(65 + i)}`, sessionIds: [], createdAt: '', updatedAt: '',
+    }))
     const { calls } = mockFetch({ groups })
     render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
     menuFor('pi 101')
-    fireEvent.click(await screen.findByText('→ 加入「任务A」'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '移动到分组' }))
+    expect(screen.getByRole('menuitem', { name: '→ 加入「任务H」' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: '→ 加入「任务A」' }))
     await waitFor(() => expect(calls.some(c => c.url === '/api/live-session-groups/g1/members' && c.method === 'POST')).toBe(true))
   })
 
@@ -208,6 +246,27 @@ describe('LiveSessionsList sidebar', () => {
     await waitFor(() => expect(current()).toHaveLength(0))
   })
 
+  it('lists empty duplicate groups and merges one into the other from the admin panel', async () => {
+    const groups: LiveSessionGroup[] = [
+      { id: 'g1', name: 'hold', sessionIds: ['session-pid-a'], createdAt: '', updatedAt: '' },
+      { id: 'g2', name: 'hold', sessionIds: [], createdAt: '', updatedAt: '' },
+    ]
+    const { calls, groups: current } = mockFetch({ groups })
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+
+    fireEvent.click(screen.getByTitle('新建 / 管理任务分组'))
+    // The empty duplicate has no sidebar section, so this panel is the only place it shows up.
+    expect(await screen.findByTitle('0 个 session')).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByLabelText('合并分组 hold')[1])
+    fireEvent.change(screen.getByLabelText('合并 hold 到'), { target: { value: 'g1' } })
+    fireEvent.click(screen.getByText('确认合并'))
+
+    await waitFor(() => expect(calls.some(c => c.url === '/api/live-session-groups/g2/merge' && c.method === 'POST' && (c.body as { targetId?: string }).targetId === 'g1')).toBe(true))
+    await waitFor(() => expect(current()).toHaveLength(1))
+    expect(current()[0].sessionIds).toEqual(['session-pid-a'])
+  })
+
   it('renames through the ⋯ menu via set_session_name', async () => {
     const { calls } = mockFetch()
     render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
@@ -241,7 +300,7 @@ describe('LiveSessionsList sidebar', () => {
     const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-b', 102)]} onSelect={() => {}} />)
     await waitFor(() => expect(screen.getByText('pi 102')).toBeInTheDocument())
     menuFor('pi 102')
-    fireEvent.click(await screen.findByText('↑ 上移'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '↑ 上移' }))
     await waitFor(() => expect(order()).toEqual(['session-pid-b', 'session-pid-a']))
     expect(renderedOrder(container)).toEqual(['session-pid-b', 'session-pid-a'])
     expect(calls.some(c => c.url === '/api/live-session-order' && c.method === 'PUT')).toBe(true)
@@ -254,11 +313,11 @@ describe('LiveSessionsList sidebar', () => {
 
     // the first row cannot move up
     menuFor('pi 101')
-    expect(screen.queryByText('↑ 上移')).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '↑ 上移' })).not.toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
 
     menuFor('pi 102')
-    fireEvent.click(await screen.findByText(/移到本组顶部/))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '⤒ 移到本组顶部' }))
     await waitFor(() => expect(order()).toEqual(['session-pid-b', 'session-pid-a']))
   })
 
@@ -280,7 +339,8 @@ describe('LiveSessionsList sidebar', () => {
     await waitFor(() => expect(renderedOrder(container)).toEqual(['session-pid-b', 'session-pid-a']))
 
     menuFor('pi 102')
-    fireEvent.click(await screen.findByText(/\u21e4 移出「任务A」/))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '移动到分组' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /移出「任务A」/ }))
     await waitFor(() => expect(currentGroups()[0].sessionIds).toEqual([]))
   })
 
@@ -299,6 +359,23 @@ describe('LiveSessionsList sidebar', () => {
 
   // ---- start form (cwd input) ---------------------------------------------
 
+  it('starts in a selected group with tags and remembers the working directory', async () => {
+    const group: LiveSessionGroup = { id: 'g1', name: 'ai-tools', sessionIds: [], createdAt: '', updatedAt: '' }
+    const { calls } = mockFetch({ groups: [group] })
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTitle('启动一个新的 Live Pi'))
+    fireEvent.click(screen.getByRole('button', { name: '~/repos/app-101' }))
+    fireEvent.change(screen.getByRole('combobox', { name: '启动后加入分组' }), { target: { value: 'g1' } })
+    fireEvent.change(screen.getByPlaceholderText('标签（可选，逗号分隔）'), { target: { value: 'review, urgent' } })
+    fireEvent.click(within(screen.getByText('启动 Live Pi').closest('form')!).getByRole('button', { name: '启动' }))
+
+    await waitFor(() => expect(calls.some(call => call.url === '/api/live-session-groups/g1/members' && call.method === 'POST')).toBe(true))
+    expect(calls.some(call => call.url === '/api/live-sessions/pi-fork/meta' && call.method === 'PATCH' && JSON.stringify(call.body) === JSON.stringify({ tags: ['review', 'urgent'] }))).toBe(true)
+    expect(window.localStorage.getItem('pi-dashboard:live-session-start-paths')).toBe(JSON.stringify(['~/repos/app-101']))
+  })
+
   it('opens the start form with a hint about valid cwds, and completes directories on Tab', async () => {
     mockFetch()
     render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
@@ -314,6 +391,43 @@ describe('LiveSessionsList sidebar', () => {
     await waitFor(() => expect(screen.getByText(/pi-dashboard\//)).toBeInTheDocument())
   })
 
+  it('matches a remembered directory by keyword, and Tab fills the only hit in', async () => {
+    window.localStorage.setItem('pi-dashboard:live-session-start-paths', JSON.stringify(['~/repos/toolkit', '~/repos/task-journal']))
+    mockFetch()
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTitle('启动一个新的 Live Pi'))
+    const input = screen.getByPlaceholderText(/工作目录/) as HTMLInputElement
+
+    fireEvent.change(input, { target: { value: 'toolkit' } })
+    // The suggestion row follows the keyword instead of the newest paths.
+    expect(screen.getByRole('button', { name: '~/repos/toolkit' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '~/repos/task-journal' })).not.toBeInTheDocument()
+
+    fireEvent.keyDown(input, { key: 'Tab' })
+    expect(input.value).toBe('~/repos/toolkit/')
+  })
+
+  it('lists every keyword hit in the Tab menu and replaces the field with the picked one', async () => {
+    window.localStorage.setItem('pi-dashboard:live-session-start-paths', JSON.stringify(['~/repos/toolkit', '~/repos/toolkit-wt']))
+    mockFetch()
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTitle('启动一个新的 Live Pi'))
+    const input = screen.getByPlaceholderText(/工作目录/) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'toolkit' } })
+    fireEvent.keyDown(input, { key: 'Tab' })
+
+    // Two hits: nothing is filled in silently, the menu offers both.
+    expect(input.value).toBe('toolkit')
+    const menu = await screen.findByRole('listbox', { name: '目录补全' })
+    const row = within(menu).getByText('~/repos/toolkit-wt')
+    fireEvent.mouseDown(row.closest('button')!)
+    expect(input.value).toBe('~/repos/toolkit-wt/')
+  })
+
   // ---- tmux-first live sessions -------------------------------------------
 
   it('marks a tmux-hosted session as terminal-reachable and copies the attach command', async () => {
@@ -323,9 +437,18 @@ describe('LiveSessionsList sidebar', () => {
 
     render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
     await waitFor(() => expect(screen.getByTitle('终端可访问：tmux attach -t pi-dash-live-abcd1234')).toBeInTheDocument())
+    // The tmux name lives in the ⋯ menu, not on the row.
+    expect(screen.queryByText('pi-dash-live-abcd1234')).not.toBeInTheDocument()
 
     menuFor('pi 101')
-    fireEvent.click(await screen.findByText('⧉ 复制终端命令'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '⧉ 复制终端命令' }))
+    expect(writeText).toHaveBeenCalledWith('tmux attach -t pi-dash-live-abcd1234')
+
+    // The read-only tmux block shows the session name and copies from its own row too.
+    menuFor('pi 101')
+    const tmuxRow = await screen.findByRole('menuitem', { name: /pi-dash-live-abcd1234/ })
+    expect(tmuxRow).toHaveTextContent('⧉ 复制 attach 命令')
+    fireEvent.click(tmuxRow)
     expect(writeText).toHaveBeenCalledWith('tmux attach -t pi-dash-live-abcd1234')
   })
 
@@ -335,11 +458,11 @@ describe('LiveSessionsList sidebar', () => {
     await waitFor(() => expect(screen.getByTitle('终端可访问：tmux attach -t pi-dash-live-abcd1234')).toBeInTheDocument())
 
     menuFor('pi 101')
-    fireEvent.click(await screen.findByText('⏻ 关闭 session（kill tmux）'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '⏻ 关闭 session（kill tmux）' }))
     // first click only arms the destructive action
     expect(calls.some(c => c.method === 'DELETE')).toBe(false)
 
-    fireEvent.click(await screen.findByText('再点一次确认关闭'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '确认关闭' }))
     await waitFor(() => expect(calls.some(c => c.url === '/api/pty/sessions/pi-dash-live-abcd1234' && c.method === 'DELETE')).toBe(true))
   })
 
@@ -348,11 +471,12 @@ describe('LiveSessionsList sidebar', () => {
     render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
     await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
     menuFor('pi 101')
-    expect(screen.queryByText(/复制终端命令/)).not.toBeInTheDocument()
-    expect(screen.queryByText('⏻ 关闭 session（kill tmux）')).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '⧉ 复制终端命令' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '⏻ 关闭 session（kill tmux）' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/tmux 会话/)).not.toBeInTheDocument()
   })
 
-  it('sends the registered /exit command from any session row after confirmation', async () => {
+  it('uses the dedicated shutdown command from any session row after confirmation', async () => {
     const { calls } = mockFetch()
     render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
     const exitButton = screen.getByRole('button', { name: '退出 session pi 101' })
@@ -364,8 +488,9 @@ describe('LiveSessionsList sidebar', () => {
     await waitFor(() => expect(calls.some(call =>
       call.url === '/api/live-sessions/pid-a/commands'
       && call.method === 'POST'
-      && JSON.stringify(call.body) === JSON.stringify({ command: { type: 'input', text: '/exit', channel: 'web' } }),
+      && JSON.stringify(call.body) === JSON.stringify({ command: { type: 'shutdown' } }),
     )).toBe(true))
+    await waitFor(() => expect(screen.getByLabelText('会话操作结果')).toHaveTextContent('已发送退出指令'))
     expect(calls.some(call => call.url.startsWith('/api/pty/sessions/'))).toBe(false)
   })
 

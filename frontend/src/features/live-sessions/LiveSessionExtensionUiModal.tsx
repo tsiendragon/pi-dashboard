@@ -74,13 +74,19 @@ function UiDialog({ processInstanceId, request, sessionLabel }: { processInstanc
 
   return (
     <>
-      <div className="fixed inset-0 z-50 bg-black/50" onClick={cancel} />
+      {/* The dim layer deliberately swallows clicks but never answers the request: a stray click
+          used to be read as "No", so a blocking confirmation vanished within seconds and the agent
+          reported it as "cancelled by user" while the user never chose anything. */}
+      <div className="fixed inset-0 z-50 bg-black/50" />
       <div
         role="dialog"
         aria-modal="true"
+        autoFocus
+        tabIndex={-1}
         onKeyDown={onKeyDown}
         className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,460px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-bg-elevated p-5 shadow-2xl"
       >
+        <div className="mb-1 text-body-s font-medium text-warn">需要你回答，否则这项操作不会执行</div>
         <div className="mb-3 text-sm font-semibold text-text-strong">{request.title || 'Extension request'}</div>
         {sessionLabel && <div className="mb-2 text-2xs text-muted">来自会话：{sessionLabel}</div>}
         {request.message && (
@@ -93,12 +99,12 @@ function UiDialog({ processInstanceId, request, sessionLabel }: { processInstanc
               className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:bg-bg disabled:opacity-40"
               onClick={cancel}
               disabled={submitting}
-            >No</button>
+            >不允许</button>
             <button
               className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-40"
               onClick={() => respond({ value: 'true' })}
               disabled={submitting}
-            >Yes</button>
+            >允许这次操作</button>
           </div>
         )}
 

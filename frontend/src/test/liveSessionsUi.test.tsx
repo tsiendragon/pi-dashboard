@@ -54,6 +54,21 @@ describe('Live Session UI', () => {
     expect(input.value).toBe('draft-a')
   })
 
+  it('restores an edited message into the composer without sending it automatically', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    const onRestoreDraftApplied = vi.fn()
+    render(<LiveSessionComposer
+      status="idle"
+      restoreDraft={{ id: 'rewind-1', text: 'edited prompt' }}
+      onRestoreDraftApplied={onRestoreDraftApplied}
+      onSubmit={onSubmit}
+    />)
+    const input = screen.getByPlaceholderText('发送到运行中的 Pi…') as HTMLTextAreaElement
+    await waitFor(() => expect(input.value).toBe('edited prompt'))
+    expect(onRestoreDraftApplied).toHaveBeenCalledWith('rewind-1')
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
   it('offers effort (thinking level) inside the model picker', async () => {
     const onSelectThinkingLevel = vi.fn().mockResolvedValue(undefined)
     const onSubmit = vi.fn().mockResolvedValue(undefined)
@@ -201,6 +216,28 @@ describe('Live Session UI', () => {
     fireEvent.paste(input, { clipboardData: { items: [{ kind: 'string', type: 'text/plain' }], getData: (type: string) => (type === 'text/plain' ? 'design.md' : '') } })
     await waitFor(() => expect(screen.getByLabelText('待发送文件')).toHaveTextContent('design.md'))
     expect(input.value).toBe('')
+  })
+
+  it('shows the goal state on the session row even without checklist items', () => {
+    render(<LiveSessionsList sessions={[
+      { ...session('goal-active', 303), goal: { done: 0, total: 0, needsUser: 0, status: 'active', stale: false } },
+    ]} onSelect={vi.fn()} />)
+
+    const chip = document.querySelector('[data-session-goal="active"]')
+    expect(chip).not.toBeNull()
+    expect(chip).toHaveTextContent('进行中')
+    expect(chip?.querySelector('.animate-pulse')).not.toBeNull()
+  })
+
+  it('marks a paused goal on the row and keeps the checklist count', () => {
+    render(<LiveSessionsList sessions={[
+      { ...session('goal-paused', 404), goal: { done: 1, total: 4, needsUser: 0, status: 'paused', stale: false } },
+    ]} onSelect={vi.fn()} />)
+
+    const chip = document.querySelector('[data-session-goal="paused"]')
+    expect(chip).not.toBeNull()
+    expect(chip).toHaveTextContent('1/4')
+    expect(chip?.querySelector('.animate-pulse')).toBeNull()
   })
 
   it('explains why a pasted name that exists only off-host cannot be attached', async () => {

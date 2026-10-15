@@ -1,5 +1,8 @@
 import { useEffect, useState, useCallback, useMemo, createContext } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import SupervisorPage from './pages/SupervisorPage'
+import EventLedgerPage from './pages/EventLedgerPage'
+import { SupervisorAgentProvider, SupervisorAgentSidebarButton } from './features/supervisor/SupervisorAgentProvider'
 import { setWorktreeRoot } from './utils/displayPath'
 import { useAppSelector, useAppDispatch } from './store'
 import { fetchSlots, sseStatus } from './store/dashboardSlice'
@@ -22,9 +25,8 @@ import LiveSessionPage from './features/live-sessions/LiveSessionPage'
 import LiveSessionExtensionUiModal from './features/live-sessions/LiveSessionExtensionUiModal'
 import LiveSessionGalleryPage from './features/live-sessions/LiveSessionGalleryPage'
 import SessionGraphPage from './features/live-sessions/graph/SessionGraphPage'
-import UsagePage from './pages/UsagePage'
+import InsightsPage from './pages/InsightsPage'
 import ExtensionsPage from './pages/ExtensionsPage'
-import TimePage from './pages/TimePage'
 import CommandPalette from './components/CommandPalette'
 import SessionPicker from './components/SessionPicker'
 import { PluginContextProvider, CommandRouteSlot } from './plugins'
@@ -46,8 +48,8 @@ const NAV_ITEMS = [
   { path: '/live-sessions/gallery', id: 'live-gallery', label: 'Session Gallery', group: 'Main', icon: <><rect x="3" y="4" width="7" height="7" rx="1" /><rect x="14" y="4" width="7" height="7" rx="1" /><rect x="3" y="13" width="7" height="7" rx="1" /><rect x="14" y="13" width="7" height="7" rx="1" /></> },
   { path: '/live-sessions/graph', id: 'live-graph', label: 'Session Graph', group: 'Main', icon: <><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="12" cy="18" r="2.5" /><path d="M6 8.5v2a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2" /><path d="M12 12.5v3" /></> },
   { path: '/tasks', id: 'tasks', label: 'Tasks', group: 'Main', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="m3 6 1.5 1.5L7 5" /><path d="m3 12 1.5 1.5L7 11" /><path d="m3 18 1.5 1.5L7 17" /></> },
-  { path: '/usage', id: 'usage', label: 'Token Cost', group: 'Main', icon: <><path d="M4 19V5" /><path d="M4 19h17" /><path d="m7 15 3-4 3 2 5-7" /></> },
-  { path: '/time', id: 'time', label: 'Time Analysis', group: 'Main', icon: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /><path d="M3.5 5.5 6 3" /></> },
+  { path: '/supervisor', id: 'supervisor', label: '工作监督台', group: 'Main', icon: <><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></> },
+  { path: '/insights', id: 'insights', label: 'Cost · Time', group: 'Main', icon: <><path d="M4 19V5" /><path d="M4 19h17" /><path d="m7 15 3-4 3 2 5-7" /></> },
   { path: '/system', id: 'system', label: 'System', group: 'Main', icon: <><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></> },
   { path: '/extensions', id: 'extensions', label: 'Extensions', group: 'Tools', icon: <><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h10" /><circle cx="18" cy="17" r="2" /></> },
   { path: '/logs', id: 'logs', label: 'Logs', group: 'Tools', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></> },
@@ -55,6 +57,12 @@ const NAV_ITEMS = [
 
   { path: '/settings', id: 'settings', label: 'Settings', group: 'Tools', icon: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></> },
 ] as const
+
+/** The ledger moved under Tasks; keep old links and bookmarks working. */
+function EventsRedirect({ enabled }: { enabled: boolean }) {
+  const { search } = useLocation()
+  return <Navigate to={enabled ? '/tasks/events' + search : '/chat'} replace />
+}
 
 function PluginCommandPage() {
   const { command } = useParams<{ command: string }>()
@@ -182,7 +190,9 @@ export default function App() {
 
   const activePath = location.pathname
   const isChat = activePath === '/chat' || activePath === '/' || activePath.startsWith('/live-sessions')
-  const isNavActive = (path: string) => activePath === path || (path === '/live-sessions' && activePath.startsWith('/live-sessions/')) || (path === '/tasks' && activePath.startsWith('/tasks/'))
+  const isNavActive = (path: string) => activePath === path
+    || (path === '/live-sessions' && activePath.startsWith('/live-sessions/'))
+    || (path === '/tasks' && activePath.startsWith('/tasks/') && !activePath.startsWith('/tasks/events'))
   const visibleNav = tasksEnabled ? NAV_ITEMS : NAV_ITEMS.filter(n => n.id !== 'tasks')
   const groups = [...new Set(visibleNav.map(n => n.group))]
   const pluginRegistry = useMemo(() => {
@@ -198,6 +208,7 @@ export default function App() {
   return (
     <PluginContextProvider registry={pluginRegistry}>
     <WsContext.Provider value={{ subscribeLogs, subscribeFileChange, wsRef }}>
+    <SupervisorAgentProvider>
     <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} onToggleSidebar={toggleNav} />
     <SessionPicker open={sessionPickerOpen} onOpenChange={setSessionPickerOpen} />
     <ConnectionOverlay />
@@ -302,7 +313,7 @@ export default function App() {
 
         <div className={`nav-brand-glow relative flex flex-col items-center text-center overflow-hidden transition duration-[350ms] ease-in-out ${navCollapsed ? 'h-0 p-0 m-0 opacity-0 pointer-events-none' : 'pt-7 px-3 pb-[22px] mb-3'}`}>
           <div className="relative z-[1] w-20 h-20 grid place-items-center mb-3.5 hover:scale-[1.12] hover:rotate-[-4deg] transition-transform duration-300 drop-shadow-[0_4px_24px_rgba(122,162,247,.35)]">
-            <img src="/logo.png" alt="Pi" className="w-20 h-20 drop-shadow-[0_0_20px_rgba(122,162,247,.4)]" />
+            <img src="/logo.png?v=user-pi-2" alt="Pi Dashboard" className="w-20 h-20 rounded-2xl drop-shadow-[0_0_20px_rgba(59,130,246,.2)]" />
           </div>
           <div className="text-sm font-bold tracking-[.08em] text-text-strong">Pi Dashboard</div>
           <div className="text-meta font-medium text-muted tracking-[.06em] mt-0.5">Powered by pi coding agent</div>
@@ -328,6 +339,7 @@ export default function App() {
           </div>
         ))}
 
+        <SupervisorAgentSidebarButton className={`mt-2 flex items-center rounded-md p-2 text-body-s text-accent hover:bg-bg-hover ${navCollapsed ? 'justify-center' : ''}`} />
         {/* Watermark */}
         <div className={`mt-auto pt-4 pb-2 border-t border-border transition duration-[350ms] ${navCollapsed ? 'opacity-0 h-0 overflow-hidden p-0 m-0' : ''}`}>
           <div className="px-1">
@@ -336,22 +348,26 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Content */}
+      {/* Content — the supervisor entry belongs in navigation, not a full-width header. */}
       <main className={`pidash-main flex flex-col min-h-0 overflow-x-hidden min-w-0 ${isChat ? 'overflow-hidden p-0' : 'overflow-y-auto'}`}>
         <ErrorBoundary>
           <Routes>
+            <Route path="/supervisor" element={<SupervisorPage />} />
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/live-sessions" element={<LiveSessionPage />} />
             <Route path="/live-sessions/gallery" element={<LiveSessionGalleryPage />} />
             <Route path="/live-sessions/graph" element={<SessionGraphPage />} />
             <Route path="/live-sessions/:processInstanceId" element={<LiveSessionPage />} />
-            <Route path="/usage" element={<UsagePage />} />
-            <Route path="/time" element={<TimePage />} />
+            <Route path="/insights" element={<InsightsPage />} />
+            <Route path="/usage" element={<Navigate to="/insights?tab=cost" replace />} />
+            <Route path="/time" element={<Navigate to="/insights?tab=time" replace />} />
             <Route path="/extensions" element={<ExtensionsPage />} />
             <Route path="/system" element={<SystemPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
+            <Route path="/events" element={<EventsRedirect enabled={tasksEnabled} />} />
             {tasksEnabled && <Route path="/tasks" element={<TasksPage />} />}
+            {tasksEnabled && <Route path="/tasks/events" element={<EventLedgerPage />} />}
             {tasksEnabled && <Route path="/tasks/:uid" element={<TasksPage />} />}
             <Route path="/plugin/:command" element={<PluginCommandPage />} />
             <Route path="/settings" element={<SettingsPage />} />
@@ -362,6 +378,7 @@ export default function App() {
 
       {/* Mobile bottom tab bar — hidden when virtual keyboard is open */}
       <nav className={`md:hidden flex justify-around items-center bg-bg border-t border-border px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0.5rem))] ${keyboardOpen || isNativeApp ? 'hidden' : ''}`}>
+        <SupervisorAgentSidebarButton className="px-2 py-1 text-2xs text-accent" />
         {visibleNav.map(n => (
           <button
             key={n.id}
@@ -380,6 +397,7 @@ export default function App() {
           be answerable from any page, and must survive leaving Live Pi. */}
       <LiveSessionExtensionUiModal />
     </div>
+    </SupervisorAgentProvider>
     </WsContext.Provider>
     </PluginContextProvider>
   )

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { truncate, parseToolArgs } from './cardHelpers'
+import { normalizeToolOutputText } from '../../utils/toolOutputText'
 
 interface Props {
   meta?: Record<string, unknown>
@@ -21,6 +22,7 @@ export default function SubagentCard({ meta }: Props) {
   const [expanded, setExpanded] = useState(false)
   const running = !result
   const liveOutput = running ? partialResult : result
+  const displayOutput = liveOutput ? normalizeToolOutputText(liveOutput) : undefined
   const scrollRef = useRef<HTMLPreElement>(null)
 
   useEffect(() => {
@@ -40,7 +42,7 @@ export default function SubagentCard({ meta }: Props) {
 
   // Show last few lines of live output as a preview in the header
   const livePreview = running && partialResult
-    ? partialResult.trim().split('\n').filter(Boolean).slice(-1)[0]
+    ? normalizeToolOutputText(partialResult).trim().split('\n').filter(Boolean).slice(-1)[0]
     : undefined
 
   const canExpand = !!(liveOutput)
@@ -96,7 +98,7 @@ export default function SubagentCard({ meta }: Props) {
               isError ? 'text-danger' : running ? 'text-text opacity-80' : 'text-muted'
             }`}
           >
-            {liveOutput}
+            {displayOutput}
           </pre>
         </div>
       )}

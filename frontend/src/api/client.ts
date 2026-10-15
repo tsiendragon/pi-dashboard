@@ -155,10 +155,10 @@ export const api = {
   setDefaultAgent: (agent: string) => put('/api/config/default-agent', { agent }).then(j),
   // Chat
   chatSlots: () => get('/api/chat/slots').then(j),
-  chatSlotDetail: (slot: string, limit?: number, before?: number) => {
+  chatSlotDetail: (slot: string, limit?: number, cursor?: string) => {
     const p = new URLSearchParams()
     if (limit) p.set('limit', String(limit))
-    if (before !== undefined) p.set('before', String(before))
+    if (cursor) p.set('cursor', cursor)
     return afetch('/api/chat/slots/' + encodeURIComponent(slot) + '?' + p).then(j)
   },
   createChatSlot: (name?: string, agent?: string, model?: string, cwd?: string) => post('/api/chat/slots', { ...(name ? { name } : {}), ...(agent ? { agent } : {}), ...(model ? { model } : {}), ...(cwd ? { cwd } : {}) }).then(j),

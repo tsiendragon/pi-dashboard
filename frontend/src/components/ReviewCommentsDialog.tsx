@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { buildReviewMessage, type ReviewItem } from '../utils/reviewComments'
+import { appendVoiceTranscript, useVoiceInput } from '../features/voice/useVoiceInput'
 
 export interface ReviewCommentsDialogProps {
   /** What the comments point at — a file path, or a label for the conversation. */
@@ -7,6 +8,8 @@ export interface ReviewCommentsDialogProps {
   items: ReviewItem[]
   /** Overrides the generated opening line of the message. */
   intro?: string
+  /** Voice transcription language; omitted or empty lets ASR detect it. */
+  language?: string
   onCancel: () => void
   /** `sentIds` lets the caller clear exactly the items that left the dashboard. */
   onSend: (message: string, sentIds: string[]) => void
@@ -18,12 +21,19 @@ export interface ReviewCommentsDialogProps {
  * exact message that will be sent. Used for document review and for comments
  * collected on the conversation itself.
  */
-export default function ReviewCommentsDialog({ target, items, intro, onCancel, onSend }: ReviewCommentsDialogProps) {
+export default function ReviewCommentsDialog({ target, items, intro, language, onCancel, onSend }: ReviewCommentsDialogProps) {
   const [pending, setPending] = useState<ReviewItem[]>(items)
   const [message, setMessage] = useState(() => buildReviewMessage(target, items, intro))
   const [edited, setEdited] = useState(false)
 
   const canSend = pending.length > 0 && message.trim().length > 0
+  const voiceInput = useVoiceInput({
+    language,
+    onTranscript: text => {
+      setMessage(current => appendVoiceTranscript(current, text))
+      setEdited(true)
+    },
+  })
 
   const removeItem = (id: string) => {
     const next = pending.filter(item => item.id !== id)
@@ -93,6 +103,19 @@ export default function ReviewCommentsDialog({ target, items, intro, onCancel, o
             onChange={event => { setMessage(event.target.value); setEdited(true) }}
             onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); submit() } }}
           />
+          <div className="mt-1 flex items-start gap-2">
+            <button
+              type="button"
+              aria-label={voiceInput.listening ? '结束录音并识别' : voiceInput.connecting ? '正在连接语音识别' : voiceInput.transcribing ? '正在完成识别' : '开始语音输入'}
+              aria-pressed={voiceInput.listening}
+              title={voiceInput.supported ? '点击开始实时录音，再点一次结束并确认文字' : '当前浏览器不支持实时录音'}
+              className="shrink-0 cursor-pointer rounded border border-border px-2 py-1 text-2xs text-muted disabled:cursor-default disabled:opacity-40"
+              disabled={!voiceInput.supported || voiceInput.connecting || voiceInput.transcribing}
+              onClick={voiceInput.toggle}
+            >{voiceInput.listening ? '⏹ 结束录音' : voiceInput.connecting ? '连接中…' : voiceInput.transcribing ? '整理文字…' : '🎙 语音输入'}</button>
+            {voiceInput.interimTranscript && <span role="status" aria-live="polite" className="text-2xs text-muted">正在识别：{voiceInput.interimTranscript}</span>}
+            {voiceInput.error && <span role="alert" className="text-2xs text-danger">{voiceInput.error}</span>}
+          </div>
         </div>
 
         <footer className="flex items-center gap-2 border-t border-border bg-chrome px-3 py-2 text-2xs text-muted">

@@ -4,6 +4,7 @@ import {
   parseLiveSessionSummaryPatch,
   type LiveSessionDetail,
   type LiveSessionEventMessage,
+  type LiveSessionGoalChangedFrame,
   type LiveSessionImage,
   type LiveSessionSummary,
   type LiveSessionUiRequest,
@@ -251,6 +252,7 @@ const liveSessionsSlice = createSlice({
       state.details[action.payload.summary.processInstanceId] = {
         summary: { ...action.payload.summary, claim: { ...action.payload.summary.claim } },
         entries: normalizeEntries(action.payload.summary, action.payload.entries),
+        ...(action.payload.goal ? { goal: action.payload.goal } : {}),
       }
       // The registry is authoritative for unanswered dialogs, so a fresh attach
       // restores them (a reconnected browser would otherwise never see them).
@@ -276,10 +278,38 @@ const liveSessionsSlice = createSlice({
       state.details[incoming.summary.processInstanceId] = {
         summary: { ...incoming.summary, claim: { ...incoming.summary.claim } },
         entries: normalizeEntries(incoming.summary, incoming.entries),
+        // A snapshot replaces timeline + summary, but the goal anchor may come
+        // from the server's file scan (`live_session_goal_changed`) rather than
+        // its entries — keep the newest one unless the snapshot carries its own.
+        ...(incoming.goal ? { goal: incoming.goal } : current?.goal ? { goal: current.goal } : {}),
       }
       // Snapshot replaces the pending-dialog mirror too: it is what makes a
       // page switch (WS reconnect) bring an unanswered dialog back.
       state.pendingUi[incoming.summary.processInstanceId] = pendingUiBucket(incoming.pendingUi)
+    },
+    /**
+     * Goal changes the server read straight from the session file.
+     *
+     * Deliberately not revision-gated: the snapshot revision only moves when the
+     * session itself pushes a snapshot, and this frame exists precisely for
+     * sessions that never push one (older bridge code, no reload since the goal
+     * was created). The server only emits it when the file data is newer than
+     * whatever the snapshot stream provided.
+     */
+    liveSessionGoalChanged(state, action: PayloadAction<LiveSessionGoalChangedFrame>) {
+      const { processInstanceId, goal, anchor } = action.payload
+      const summary = state.sessions[processInstanceId]
+      if (summary) {
+        if (goal) summary.goal = goal
+        else delete summary.goal
+      }
+      const detail = state.details[processInstanceId]
+      if (detail) {
+        if (goal) detail.summary.goal = goal
+        else delete detail.summary.goal
+        if (anchor) detail.goal = anchor
+        else delete detail.goal
+      }
     },
     liveSessionEvent(state, action: PayloadAction<LiveSessionEventMessage>) {
       const message = action.payload
@@ -456,7 +486,7 @@ const liveSessionsSlice = createSlice({
 
 export const {
   authRequired, authenticated, authChecking, setLiveSessionError, setLiveWebSocketConnected,
-  sessionsLoaded, liveSessionAttached, liveSessionSnapshot, liveSessionEvent,
+  sessionsLoaded, liveSessionAttached, liveSessionSnapshot, liveSessionEvent, liveSessionGoalChanged,
   liveSessionClaimChanged, liveSessionReconnecting, liveSessionDetached,
   liveSessionOwned, liveSessionReleased, liveSessionUserMessageAdded,
   liveSessionUserMessageRemoved, liveSessionUserMessageAcknowledged, selectLiveSession, clearLiveSessions, uiAnswered,
