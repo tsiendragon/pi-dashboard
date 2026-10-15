@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会话任务锚点 · 弹窗版原型</title>
+<style>
+  /* 颜色、圆角、阴影取自 frontend/src/themes/light.css 与 dark.css，尽量贴近真实 Dashboard */
+  :root{
+    --bg:#fafafa;--bg-elevated:#ffffff;--bg-hover:#f0f0f0;--bg-accent:#f5f5f5;
+    --card:#ffffff;--panel:#fafafa;--chrome:rgba(250,250,250,.95);
+    --text:#3f3f46;--text-strong:#18181b;--muted:#71717a;--muted-strong:#52525b;
+    --border:#e4e4e7;--border-strong:#d4d4d8;--border-hover:#a1a1aa;
+    --accent:#1d5aaf;--accent-subtle:rgba(29,90,175,.12);--accent-fg:#fff;
+    --ok:#11695e;--ok-subtle:rgba(17,105,94,.1);
+    --warn:#935b06;--warn-subtle:rgba(147,91,6,.1);
+    --danger:#c8196a;--danger-subtle:rgba(200,25,106,.1);
+    --aim:#7c3aed;--aim-subtle:rgba(124,58,237,.12);
+    --radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-xl:16px;
+    --font-body:'Space Grotesk',-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  html[data-theme="dark"]{
+    --bg:#12141a;--bg-elevated:#1a1d25;--bg-hover:#262a35;--bg-accent:#14161d;
+    --card:#181b22;--panel:#12141a;--chrome:rgba(18,20,26,.95);
+    --text:#e4e4e7;--text-strong:#fafafa;--muted:#a1a1aa;--muted-strong:#8b8b96;
+    --border:#27272a;--border-strong:#3f3f46;--border-hover:#52525b;
+    --accent:#7aa2f7;--accent-subtle:rgba(122,162,247,.15);--accent-fg:#0f1115;
+    --ok:#2dd4bf;--ok-subtle:rgba(45,212,191,.14);
+    --warn:#e8c547;--warn-subtle:rgba(232,197,71,.14);
+    --danger:#f07178;--danger-subtle:rgba(240,113,120,.14);
+    --aim:#a78bfa;--aim-subtle:rgba(167,139,250,.15);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:13px/20px var(--font-body)}
+  code,.mono{font-family:var(--mono)}
+
+  /* ---------- 原型工具条（不是产品的一部分） ---------- */
+  .proto-bar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    border-bottom:1px solid var(--border);background:var(--chrome);padding:8px 14px;backdrop-filter:blur(8px)}
+  .proto-bar .title{font-weight:600;color:var(--text-strong)}
+  .proto-bar .sub{font-size:11px;color:var(--muted)}
+  .spacer{margin-left:auto}
+  .btn{border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--text);
+    padding:3px 11px;font:inherit;font-size:11px;cursor:pointer}
+  .btn:hover{border-color:var(--border-hover)}
+  .btn.active{border-color:var(--accent);background:var(--accent-subtle);color:var(--accent);font-weight:600}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .divider{width:1px;height:18px;background:var(--border)}
+
+  /* ---------- 应用骨架（与现状一致：聊天区占满，没有右侧常驻面板） ---------- */
+  .app{display:grid;grid-template-columns:186px 1fr;min-height:calc(100vh - 45px)}
+  .nav{border-right:1px solid var(--border);background:var(--bg-accent);padding:10px 8px;display:flex;flex-direction:column;gap:2px}
+  .nav .brand{font-size:11px;font-weight:600;color:var(--muted);padding:6px 8px 10px;letter-spacing:.04em}
+  .nav-item{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:var(--radius-sm);font-size:12px;color:var(--text)}
+  .nav-item.active{background:var(--accent-subtle);color:var(--accent);font-weight:600}
+  .nav-item .ic{width:14px;height:14px;flex:0 0 14px;opacity:.8}
+  .nav-item .badge{margin-left:auto;font-size:10px;border-radius:999px;padding:1px 6px;background:var(--bg-hover);color:var(--muted)}
+  .nav-item .badge.ok{background:var(--ok-subtle);color:var(--ok);font-weight:600}
+  .nav-item .badge.doing{background:var(--accent-subtle);color:var(--accent);font-weight:600}
+  .nav-item .badge.warn{background:var(--warn-subtle);color:var(--warn);font-weight:600}
+  .nav-sep{height:1px;background:var(--border);margin:8px 6px}
+  .nav .group{font-size:10px;color:var(--muted);padding:8px 9px 4px;letter-spacing:.02em;line-height:15px}
+
+  .page{display:flex;flex-direction:column;min-width:0}
+  .session-head{border-bottom:1px solid var(--border);background:var(--bg-elevated);padding:10px 14px}
+  .head-top{display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:999px;background:var(--ok);flex:0 0 8px}
+  .dot.idle{background:var(--muted)}
+  .session-head h1{margin:0;font-size:13px;font-weight:600;color:var(--text-strong)}
+  .meta{font-size:11px;color:var(--muted);margin-top:3px}
+  .path{font-size:11px;color:var(--muted);margin-top:2px;word-break:break-all}
+  .rail{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+  .action{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--card);
+    border-radius:var(--radius-sm);padding:4px 9px;font:inherit;font-size:11px;color:var(--text);cursor:pointer}
+  .action:hover{border-color:var(--accent);color:var(--accent)}
+  .action.primary{border-color:var(--accent);color:var(--accent);background:var(--accent-subtle);font-weight:600}
+  .action[disabled]{opacity:.45;cursor:not-allowed}
+  .action svg{width:13px;height:13px}
+  .chip{font-size:10px;border-radius:999px;padding:2px 8px;background:var(--bg-hover);color:var(--muted);white-space:nowrap;display:inline-block}
+  .chip.ok{background:var(--ok-subtle);color:var(--ok);font-weight:600}
+  .chip.doing{background:var(--accent-subtle);color:var(--accent);font-weight:600}
+  .chip.warn{background:var(--warn-subtle);color:var(--warn);font-weight:600}
+
+  .chat{padding:12px 14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+  .msg{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--card);padding:9px 11px}
+  .msg .who{font-size:10px;color:var(--muted);margin-bottom:5px;display:flex;gap:6px;align-items:center}
+  .msg .who .tag{font-size:10px;border-radius:999px;padding:0 6px;background:var(--bg-hover);color:var(--muted)}
+  .msg p{margin:0 0 6px}
+  .msg p:last-child{margin-bottom:0}
+  .msg.user{background:var(--bg-accent)}
+  .toolrow{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);border:1px dashed var(--border);
+    border-radius:var(--radius-sm);padding:5px 8px;background:var(--bg-elevated)}
+  .toolrow .ok{color:var(--ok);font-weight:600}
+  .stream-note{font-size:11px;color:var(--muted);text-align:center;padding:6px 0 2px}
+
+  /* ---------- 弹窗（复刻现有实现的结构与尺寸） ---------- */
+  .overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);padding:16px}
+  .overlay.hidden{display:none}
+  .dialog{display:flex;flex-direction:column;max-height:80vh;overflow:hidden;border:1px solid var(--border);
+    border-radius:var(--radius-xl);background:var(--card);width:100%;box-shadow:0 24px 60px rgba(0,0,0,.34)}
+  .dialog.before{max-width:512px}   /* 现状：max-w-lg */
+  .dialog.after{max-width:672px}    /* 建议：max-w-2xl，因为工作项要露出来 */
+  .dlg-head{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);padding:11px 16px;flex-wrap:wrap}
+  .dlg-head h2{margin:0;font-size:13px;font-weight:600;color:var(--text-strong)}
+  .dlg-head .close{margin-left:auto;border:none;background:transparent;color:var(--muted);cursor:pointer;
+    font:inherit;font-size:11px;padding:3px 7px;border-radius:var(--radius-sm)}
+  .dlg-head .close:hover{background:var(--bg-hover);color:var(--text)}
+  .dlg-body{padding:14px 16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
+  .dlg-foot{border-top:1px solid var(--border);padding:9px 16px;display:flex;align-items:center;gap:8px;
+    font-size:10px;color:var(--muted);background:var(--bg-elevated)}
+  section h3{margin:0 0 5px;font-size:11px;font-weight:600;color:var(--muted)}
+  section .body-text{margin:0;font-size:13px;line-height:19px;white-space:pre-wrap;word-break:break-word}
+
+  .banner{border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;line-height:17px;display:flex;gap:8px;align-items:flex-start}
+  .banner.warn{background:var(--warn-subtle);color:var(--warn);border:1px solid var(--warn)}
+  .banner.info{background:var(--accent-subtle);color:var(--accent);border:1px solid var(--accent)}
+  .banner .ico{font-weight:700}
+  .banner b{font-weight:700}
+  .banner .spacer{margin-left:auto;white-space:nowrap}
+
+  ul.items{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+  ul.items li{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 9px;font-size:12px;line-height:17px}
+  ul.items li.plain{border:none;padding:0;gap:0}
+  .st{flex:0 0 16px;width:16px;height:16px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-top:1px}
+  .st-done{background:var(--ok-subtle);color:var(--ok)}
+  .st-doing{background:var(--accent-subtle);color:var(--accent)}
+  .st-todo{background:var(--bg-hover);color:var(--muted)}
+  .item-main{min-width:0;flex:1}
+  .item-title{color:var(--text)}
+  .item-title.done{text-decoration:line-through;color:var(--muted)}
+  .item-sub{font-size:10px;color:var(--muted);margin-top:3px}
+  .state-label{font-size:10px;border-radius:999px;padding:1px 7px;white-space:nowrap;background:var(--bg-hover);color:var(--muted)}
+  .state-label.done{background:var(--ok-subtle);color:var(--ok)}
+  .state-label.doing{background:var(--accent-subtle);color:var(--accent)}
+
+  ul.blockers{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  ul.blockers li{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-hover);padding:9px 11px;font-size:12px}
+  ul.blockers li.needs-user{border-left:3px solid var(--warn);background:var(--warn-subtle)}
+  ul.blockers .bhead{font-weight:600;color:var(--text)}
+  ul.blockers .breason{margin-top:4px;font-size:11px;line-height:17px;color:var(--muted-strong)}
+  ul.blockers .bmeta{margin-top:5px;font-size:10px;color:var(--muted)}
+  ul.blockers .bres{margin-top:5px;font-size:11px;line-height:17px}
+
+  details.more{border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 11px}
+  details.more summary{cursor:pointer;font-size:11px;font-weight:600;color:var(--text)}
+  details.more .inner{margin-top:10px;display:flex;flex-direction:column;gap:12px}
+  ol.ac{margin:0;padding-left:18px;font-size:11px;line-height:17px;color:var(--muted-strong);display:flex;flex-direction:column;gap:4px}
+  ul.docs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:11px}
+  ul.docs .p{font-family:var(--mono);font-size:10px;color:var(--muted-strong);word-break:break-all}
+  ul.docs .k{font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:0 6px;margin-right:6px}
+
+  .empty{border:1px dashed var(--border-strong);border-radius:var(--radius-md);padding:14px;background:var(--bg-elevated)}
+  .empty h4{margin:0 0 6px;font-size:13px;color:var(--text-strong)}
+  .empty p{margin:0 0 6px;font-size:11px;line-height:18px;color:var(--muted-strong)}
+  .empty ul{margin:0 0 8px;padding-left:16px;font-size:11px;line-height:18px;color:var(--muted-strong)}
+
+  /* ---------- 评审说明区 ---------- */
+  .review{margin:16px auto 40px;width:min(1180px,calc(100% - 32px));display:flex;flex-direction:column;gap:14px}
+  .card{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--card);padding:12px 14px}
+  .card h3{margin:0 0 8px;font-size:12px;color:var(--text-strong);font-weight:600}
+  .notes{font-size:12px;line-height:19px;color:var(--muted-strong)}
+  .notes b{color:var(--text-strong)}
+  .notes ul{margin:0;padding-left:18px}
+  .notes li{margin-bottom:4px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:1000px){.cols{grid-template-columns:1fr}}
+  table.diff{width:100%;border-collapse:collapse;font-size:12px}
+  table.diff th,table.diff td{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;vertical-align:top}
+  table.diff th{color:var(--muted);font-weight:600;font-size:11px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text-strong);color:var(--bg);
+    font-size:12px;padding:8px 14px;border-radius:999px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:90}
+  .toast.show{opacity:.95}
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <div>
+    <div class="title">会话任务锚点 · 弹窗版原型</div>
+    <div class="sub">静态原型。右侧常驻面板方案已放弃，改为复用现有「目标」弹窗，不改动会话页布局。</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="tabs">
+    <button class="btn active" data-scene="s1">① 进行中 · 有阻塞</button>
+    <button class="btn" data-scene="s2">② 清单过期</button>
+    <button class="btn" data-scene="s3">③ 历史会话</button>
+    <button class="btn" data-scene="s4">④ 没有设目标</button>
+  </div>
+  <div class="divider"></div>
+  <div class="tabs">
+    <button class="btn" data-mode="before">现状弹窗</button>
+    <button class="btn active" data-mode="after">建议增强</button>
+  </div>
+  <button class="btn" id="openBtn">打开弹窗</button>
+  <button class="btn" id="themeBtn">切换深色</button>
+</div>
+
+<div class="app">
+  <aside class="nav">
+    <div class="brand">PI DASH</div>
+    <div class="nav-item"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat</div>
+    <div class="nav-item active"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h2l2-5 4 10 2-5h4"/><circle cx="12" cy="12" r="10"/></svg>Live Pi</div>
+    <div class="nav-item"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="3" y="13" width="7" height="7" rx="1"/><rect x="14" y="13" width="7" height="7" rx="1"/></svg>Session Gallery</div>
+    <div class="nav-item"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/></svg>Session Graph</div>
+    <div class="nav-item"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m3 6 1.5 1.5L7 5"/><path d="M9 6h11"/><path d="m3 12 1.5 1.5L7 11"/><path d="M9 12h11"/></svg>Tasks</div>
+    <div class="nav-item"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>工作监督台</div>
+    <div class="nav-sep"></div>
+    <div class="group" id="navGroup">会话列表</div>
+    <div id="navList" style="display:flex;flex-direction:column;gap:2px"></div>
+  </aside>
+
+  <div class="page" id="page"></div>
+</div>
+
+<div class="overlay hidden" id="overlay">
+  <section class="dialog" id="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"></section>
+</div>
+
+<div class="review">
+  <div class="card">
+    <h3>结论先说：只需要改一个已经存在的弹窗，不动页面布局</h3>
+    <div class="notes">
+      会话页右侧本来就有一个「目标」按钮（在“中断 / 压缩 / 重载”旁边），点开是一个居中弹窗，点空白处或按 Esc 关闭。
+      <b>所以弹窗形态已经存在，不需要新增页面元素</b>；这次要做的只是把弹窗里面的内容补齐。
+      <ul style="margin-top:6px">
+        <li>弹窗打开时页面被半透明遮罩盖住，关闭后完全恢复原样 —— 会话页布局一行都不用改。</li>
+        <li>唯一动到列表的地方：左侧会话列表加一个小角标（下图第 6 条），不占布局，只是文字后面加个「2/5」。</li>
+        <li>弹窗宽度从 512px 放宽到 672px，因为工作项要露出来、内容变多；如果嫌宽可以保持 512px 但会滚动更多。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>现状弹窗 vs 建议增强 · 逐条差异</h3>
+    <table class="diff">
+      <tr><th style="width:150px">项目</th><th>现状（点「目标」看到的）</th><th>建议增强</th></tr>
+      <tr><td><b>工作项（完成度）</b></td><td><b>藏在「更多详情」折叠里，默认看不见</b>，要手动展开两层</td><td><b>提到外面、默认可见</b>，带状态和依赖 —— 这是本次的核心改动</td></tr>
+      <tr><td>进度角标</td><td>没有。要自己数</td><td>标题栏显示「2/5 完成」</td></tr>
+      <tr><td>需要你处理的事</td><td>阻塞项里混在一起，要自己读处置字段</td><td>标题栏显示「1 项需要你处理」，并把这类阻塞项置顶标黄</td></tr>
+      <tr><td>清单过期提醒</td><td>没有。目标已完成、工作项还全是「待做」也照常显示</td><td>黄色提醒 + 一个「让 agent 同步清单」按钮</td></tr>
+      <tr><td>历史会话</td><td>会话关掉后，按钮不可点，什么都看不到</td><td>能打开，标注「只读快照」，按钮换成「在新会话里继续」</td></tr>
+      <tr><td>没有设目标时</td><td>弹窗里一片「—」，等于没说</td><td>空状态说明 + 「让 agent 起草目标 + 清单」</td></tr>
+      <tr><td>会话列表</td><td>没有任何进度提示</td><td>文字后加角标：4/4、2/5、<code>!</code> 需核对、<code>—</code> 没目标</td></tr>
+      <tr><td>进度摘要 / 当前工作</td><td>分成两个独立区块，内容有重复</td><td>合并成「当前在哪一步」（上一轮小结收进去）</td></tr>
+      <tr><td>目标原文</td><td>已在，保持原样</td><td>保持原样（不摘要、不改写）</td></tr>
+      <tr><td>验收标准 / 约束 / 来源文档</td><td>已在「更多详情」里</td><td>保持原样，仍在「更多详情」里</td></tr>
+    </table>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3>数据从哪来（什么都没新增）</h3>
+      <div class="notes">
+        <ul>
+          <li>全部来自会话记录里已经存在的目标状态：目标原文、工作项、验收标准、阻塞项、来源文档。</li>
+          <li>「2/5 完成」= 工作项里状态为「已完成」的条数 / 总条数，是算出来的，不需要 agent 额外维护。</li>
+          <li>「需要你处理」= 阻塞项里处置为「需要用户协助」的条数，也是算出来的。</li>
+          <li>过期提醒靠两条现成信息推断：目标状态 + 工作项状态是否为空。不猜内容。</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card">
+      <h3>请你确认三件事</h3>
+      <div class="notes">
+        <ul>
+          <li><b>弹窗宽度</b>：512px（现状）还是 672px（本原型）？放宽是因为工作项要直接看到。</li>
+          <li><b>验收标准要不要能逐条打勾</b>：现在的数据里没有单条状态，本原型老实标注了「未逐条核对」。要打勾就得让 agent 每次额外维护，属于加负担。</li>
+          <li><b>清单过期后做什么</b>：只提醒（本原型）／提醒并让 agent 自动重排／提醒并允许你手工勾选。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SCENES = {
+  s1: {
+    nav: '九国 OCR benchmark', navBadge: { cls:'doing', text:'2/5' },
+    status: 'running', statusText: '运行中',
+    session: 'TASK-0000 · ocr-benchmark',
+    model: 'dashscope/qwen3.8-max',
+    cwd: '~/repos/worktree/task-journal/…-ocr-benchmark-v1',
+    goalStatus: 'active', goalStatusLabel: '进行中',
+    objective: '继续完成新增九国的 Global OCR benchmark：基于已冻结的九国权威 benchmark 范围，按现有 ocr-benchmark-v1 合同完成所需模型评测、指标和可审计交付。',
+    progressCurrent: '九国 14/15 实体交付已完成；等待兼容的 GPU 运行环境，或由你确认接受该环境暂不可用。',
+    progressLast: '14 实体指标与最终交付均完成；剩余阻塞已由症状定位到 GPU 驱动与运行时版本不兼容，当前没有可安全自动推进的路径。',
+    items: [
+      { state:'done', title:'冻结并审计九国 benchmark 范围', deps:'' },
+      { state:'done', title:'绑定 official CardDesc 并完成严格复用审计', deps:'范围冻结' },
+      { state:'in_progress', title:'完成 15 实体九国推理与原子 checkpoint', deps:'CardDesc 绑定' },
+      { state:'in_progress', title:'计算九国及合并范围正式指标', deps:'推理' },
+      { state:'todo', title:'更新报告、状态和最终审计交付', deps:'指标' },
+    ],
+    criteria: [
+      '九国 benchmark 范围与已冻结的权威范围一致，样本、card_type、GT、图片与来源证据可追溯。',
+      '为九国目标绑定当前 official CardDesc prompt/schema，并按实体、revision、prompt/schema、request_id 和输入图片 MD5 执行严格复用审计。',
+      '按 Benchmark Center 指标定义计算九国及合并范围指标，报告 coverage、失败项和国家/card_type 分层结果。',
+      '更新报告、任务状态与审计证据，明确完成结果、保留风险以及仍需外部配置或用户决策的阻塞。',
+    ],
+    constraints: ['结果以 request 级原子 checkpoint 保存，成功项不重复调用。'],
+    blockers: [
+      { needsUser:true, title:'GPU 运行环境版本不兼容', reason:'注册环境要求的 CUDA 运行时高于所有可调度机器的驱动版本，基础卷积在模型推理前就无法初始化。', meta:'负责人：用户 · 类型：等待外部 · 处置：需要用户协助', res:'提供驱动兼容的机器，或批准改用兼容版本的环境；否则按 14/15 收口。' },
+    ],
+    docs: [ { kind:'需求文档', path:'tasks/ocr/TASK-0000-…/PLAN.md', brief:'九国 benchmark 范围与合同' },
+            { kind:'文档', path:'tasks/ocr/TASK-0000-…/STATUS.md', brief:'阶段状态与证据索引' } ],
+    banner: null,
+    updated: '3 分钟前（第 41 轮）',
+    live: true,
+  },
+
+  s2: {
+    nav: '监督台 PRD', navBadge: { cls:'warn', text:'!' },
+    status: 'idle', statusText: '空闲',
+    session: '监督台 PRD 规划',
+    model: 'dashscope/deepseek-v4.1-flash',
+    cwd: '~/repos/pi-dashboard',
+    goalStatus: 'complete', goalStatusLabel: '已完成',
+    objective: '在 Dashboard 中规划一个主 Agent 工作监督台，用于观察多个 session 的工作状态、抽查交付质量、汇总任务进展与人工待办，并追踪短期和长期任务。',
+    progressCurrent: '',
+    progressLast: 'PRD 草案已产出并评审通过。',
+    items: [
+      { state:'todo', title:'形成一份可评审的 PRD 草案，明确用户问题、目标用户与产品目标', deps:'' },
+      { state:'todo', title:'PRD 覆盖多 session 状态汇总、质量抽查、任务总结、人工待办、长期与短期追踪', deps:'PRD 草案' },
+      { state:'todo', title:'明确数据来源、权限与隐私边界、人工确认机制、异常与信息不足时的处理方式', deps:'PRD 草案' },
+      { state:'todo', title:'列出 MVP 范围、非目标、待讨论问题及可验证的成功指标', deps:'PRD 草案' },
+    ],
+    criteria: [
+      '形成一份可评审的 PRD 草案，明确用户问题、目标用户与产品目标。',
+      'PRD 覆盖多 session 状态汇总、质量抽查、任务总结、人工待办、长期与短期追踪等核心能力。',
+      '明确数据来源、权限与隐私边界、人工确认机制、异常与信息不足时的处理方式。',
+      '列出 MVP 范围、非目标、待讨论问题及可验证的成功指标。',
+    ],
+    constraints: [],
+    blockers: [],
+    docs: [ { kind:'手动提供', path:'（会话内提出）', brief:'规划工作监督台' } ],
+    banner: { type:'warn', text:'<b>这份清单可能过期</b>：目标已标记「已完成」，但 4 个工作项一条都没勾选。', action:'让 agent 同步清单' },
+    updated: '第 12 轮后未再更新',
+    live: true,
+  },
+
+  s3: {
+    nav: 'carddesc 标注（历史）', navBadge: { cls:'ok', text:'3/4' },
+    status: 'idle', statusText: '已结束',
+    session: 'TASK-0000 · carddesc OCR 标注（历史）',
+    model: 'azure-proxy/gpt-6-sol',
+    cwd: '~/repos/worktree/task-journal/…-eu27-carddesc-ocr-labeling-v1',
+    goalStatus: 'complete', goalStatusLabel: '已完成',
+    objective: '完成「声誉国家」的 CardDesc，具体国家范围待用户在草案中确认。',
+    progressCurrent: '',
+    progressLast: 'CardDesc 草案产出，范围经用户确认后收口。',
+    items: [
+      { state:'done', title:'盘点现有 CardDesc 覆盖与缺口', deps:'' },
+      { state:'done', title:'产出声誉国家 CardDesc 草案', deps:'盘点' },
+      { state:'done', title:'按用户确认的国家范围收敛清单', deps:'草案' },
+      { state:'in_progress', title:'登记到 CardLib 并核对', deps:'清单' },
+    ],
+    criteria: ['CardDesc 覆盖用户确认的国家范围。', '每条 CardDesc 与 official 字段 key 对齐。'],
+    constraints: [],
+    blockers: [],
+    docs: [ { kind:'文档', path:'tasks/card-router/TASK-0000-…/FINAL.md', brief:'收口记录与遗留项' } ],
+    banner: { type:'info', text:'<b>会话已结束，这里是结束时的快照，只读。</b>', action:null },
+    updated: '2026-09-18 21:04（会话结束时快照）',
+    live: false,
+  },
+
+  s4: {
+    nav: '临时排查', navBadge: { cls:'', text:'—' },
+    status: 'running', statusText: '运行中',
+    session: '临时排查 · 路由精度异常',
+    model: 'dashscope/qwen3-coder-plus',
+    cwd: '~/repos/task-journal',
+    goalStatus: null, goalStatusLabel: null,
+    objective: null, progressCurrent:'', progressLast:'',
+    items: [], criteria: [], constraints: [], blockers: [], docs: [],
+    banner: null,
+    updated: '——',
+    live: true,
+    empty: true,
+  },
+};
+
+const WORK = {
+  done:{ label:'已完成', icon:'✓', st:'st-done', sl:'done' },
+  in_progress:{ label:'进行中', icon:'◐', st:'st-doing', sl:'doing' },
+  todo:{ label:'待做', icon:'○', st:'st-todo', sl:'' },
+};
+
+let scene = 's1';
+let mode = 'after';
+let modalOpen = true;
+
+function chip(cls, text) { return '<span class="chip ' + cls + '">' + text + '</span>'; }
+
+function objectiveSection(s, note) {
+  if (!s.objective) return [];
+  return ['<section><div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">目标</h3>'
+    + (s.goalStatusLabel ? chip('', s.goalStatusLabel) : '') + '</div>'
+    + '<p class="body-text" style="margin-top:5px">' + s.objective + '</p>'
+    + (note ? '<div style="margin-top:4px;font-size:10px;color:var(--muted)">' + note + '</div>' : '')
+    + '</section>'];
+}
+
+function itemsSection(s) {
+  if (!s.items.length) return [];
+  const done = s.items.filter(i => i.state === 'done').length;
+  const lis = s.items.map(it => {
+    const w = WORK[it.state] || WORK.todo;
+    return '<li><span class="st ' + w.st + '">' + w.icon + '</span>'
+      + '<div class="item-main"><div class="item-title' + (it.state === 'done' ? ' done' : '') + '">' + it.title + '</div>'
+      + (it.deps ? '<div class="item-sub">依赖：' + it.deps + '</div>' : '')
+      + '</div><span class="state-label ' + w.sl + '">' + w.label + '</span></li>';
+  }).join('');
+  return ['<section><h3>工作项（' + done + '/' + s.items.length + ' 完成）</h3><ul class="items">' + lis + '</ul></section>'];
+}
+
+function blockersSection(s, variant) {
+  const after = variant === 'after';
+  if (!s.blockers.length) return ['<section><h3>' + (after ? '阻塞项' : '阻塞项（Blockers）') + '</h3><p class="body-text" style="font-size:11px;color:var(--muted)">暂无未解决 blocker</p></section>'];
+  const list = after ? s.blockers.slice().sort((a, b) => (b.needsUser ? 1 : 0) - (a.needsUser ? 1 : 0)) : s.blockers;
+  const lis = list.map(b => '<li class="' + (after && b.needsUser ? 'needs-user' : '') + '">'
+    + '<div class="bhead">' + b.title + '</div>'
+    + '<div class="breason">' + b.reason + '</div>'
+    + (b.meta ? '<div class="bmeta">' + b.meta + '</div>' : '')
+    + (b.res ? '<div class="bres"><span style="color:var(--muted)">建议处理：</span>' + b.res + '</div>' : '')
+    + '</li>').join('');
+  const n = s.blockers.filter(b => b.needsUser).length;
+  const title = after ? '阻塞项' + (n ? '（' + n + ' 项需要你处理）' : '') : '阻塞项（Blockers）';
+  return ['<section><h3>' + title + '</h3><ul class="blockers">' + lis + '</ul></section>'];
+}
+
+function moreSection(s) {
+  const ac = s.criteria.length
+    ? '<ol class="ac">' + s.criteria.map(c => '<li>' + c + '</li>').join('') + '</ol>'
+    : '<p class="body-text" style="font-size:11px;color:var(--muted)">暂无验收标准</p>';
+  const cons = s.constraints.length
+    ? '<ul class="ac">' + s.constraints.map(c => '<li>' + c + '</li>').join('') + '</ul>'
+    : '<p class="body-text" style="font-size:11px;color:var(--muted)">暂无约束</p>';
+  const docs = s.docs.length
+    ? '<ul class="docs">' + s.docs.map(d => '<li><span class="k">' + d.kind + '</span><span class="p">' + d.path + '</span>'
+      + '<div style="font-size:11px">' + d.brief + '</div></li>').join('') + '</ul>'
+    : '<p class="body-text" style="font-size:11px;color:var(--muted)">暂无来源文档</p>';
+  return '<details class="more"><summary>更多详情（验收标准 / 约束 / 来源文档）</summary>'
+    + '<div class="inner"><section><h3>验收标准</h3>' + ac
+    + '<div style="margin-top:5px;font-size:10px;color:var(--muted)">现状：验收标准没有单条勾选状态，这里只读展示，不伪造完成度。</div></section>'
+    + '<section><h3>约束</h3>' + cons + '</section>'
+    + '<section><h3>来源文档</h3>' + docs + '</section></div></details>';
+}
+
+/* ---------- 现状弹窗：完全按现有实现的结构与文案 ---------- */
+function renderBefore(s) {
+  const body = [];
+  if (s.empty) {
+    body.push('<div class="empty"><h4>当前目标</h4><p>—</p></div>');
+  } else {
+    body.push('<section><div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">目标</h3>'
+      + chip('', s.goalStatusLabel) + '</div><p class="body-text" style="margin-top:5px">' + s.objective + '</p></section>');
+    body.push('<section><h3>进度摘要</h3><p class="body-text">' + s.progressLast + '</p></section>');
+    body.push('<section><h3>当前工作</h3><p class="body-text">' + (s.progressCurrent || '—') + '</p></section>');
+    body.push(blockersSection(s, 'before')[0]);
+    const workList = s.items.length
+      ? '<ul class="items">' + s.items.map(it => {
+          const w = WORK[it.state] || WORK.todo;
+          return '<li class="plain"><div class="item-main"><div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:500">'
+            + '<span>' + it.title + '</span><span class="state-label ' + w.sl + '">' + w.label + '</span></div>'
+            + (it.deps ? '<div class="item-sub">依赖：' + it.deps + '</div>' : '') + '</div></li>';
+        }).join('') + '</ul>'
+      : '<p class="body-text" style="font-size:11px;color:var(--muted)">暂无工作项</p>';
+    const ac = s.criteria.length
+      ? '<ol class="ac">' + s.criteria.map(c => '<li>' + c + '</li>').join('') + '</ol>'
+      : '<p class="body-text" style="font-size:11px;color:var(--muted)">暂无验收标准</p>';
+    body.push('<details class="more"><summary>更多详情</summary><div class="inner">'
+      + '<section><h3>验收标准</h3>' + ac + '</section>'
+      + '<section><h3>工作项</h3>' + workList + '</section>'
+      + '<section><h3>约束</h3><p class="body-text" style="font-size:11px;color:var(--muted)">'
+      + (s.constraints.length ? s.constraints.join('；') : '暂无约束') + '</p></section>'
+      + '</div></details>');
+  }
+  return '<header class="dlg-head"><h2 id="dlgTitle">当前目标</h2>'
+    + '<button class="close" data-act="close">关闭</button></header>'
+    + '<div class="dlg-body">' + body.join('') + '</div>';
+}
+
+/* ---------- 建议增强：只加内容，不加页面元素 ---------- */
+function renderAfter(s) {
+  if (s.empty) {
+    return '<header class="dlg-head"><h2 id="dlgTitle">任务锚点</h2>' + chip('', '没有目标')
+      + '<button class="close" data-act="close">关闭</button></header>'
+      + '<div class="dlg-body"><div class="empty">'
+      + '<h4>这条会话还没有设目标</h4>'
+      + '<p>没有目标，就没有能扛住长时间对话的锚。会话跑长之后，容易忘记还剩哪些事、你最初提的要求是什么。</p>'
+      + '<ul><li>设了目标后，目标原文和工作项清单会在每轮对话前重新放进上下文，压缩上下文之后也不会丢。</li>'
+      + '<li>你可以自己敲 <code>/goal</code>，也可以让 agent 从这条会话开头的需求里草拟一份。</li></ul>'
+      + '<button class="btn active" data-act="draft">让 agent 起草目标 + 清单</button>'
+      + '</div></div>';
+  }
+
+  const done = s.items.filter(i => i.state === 'done').length;
+  const total = s.items.length;
+  const needsUser = s.blockers.filter(b => b.needsUser).length;
+
+  const head = '<header class="dlg-head"><h2 id="dlgTitle">任务锚点</h2>'
+    + (s.goalStatusLabel ? chip(s.goalStatus === 'complete' ? 'ok' : 'doing', '目标：' + s.goalStatusLabel) : '')
+    + (total ? chip(done === total ? 'ok' : 'doing', done + '/' + total + ' 完成') : '')
+    + (needsUser ? chip('warn', needsUser + ' 项需要你处理') : '')
+    + '<button class="close" data-act="close">关闭</button></header>';
+
+  const body = [];
+  if (s.banner) {
+    body.push('<div class="banner ' + s.banner.type + '"><span class="ico">' + (s.banner.type === 'warn' ? '⚠' : 'ℹ') + '</span>'
+      + '<div>' + s.banner.text + '</div>'
+      + (s.banner.action ? '<span class="spacer"><button class="btn" data-act="sync">' + s.banner.action + '</button></span>' : '')
+      + '</div>');
+  }
+  body.push.apply(body, objectiveSection(s, '原文保留，不做摘要、不改写。'));
+  body.push.apply(body, itemsSection(s));
+  if (s.progressCurrent || s.progressLast) {
+    body.push('<section><h3>当前在哪一步</h3><p class="body-text">' + (s.progressCurrent || '—') + '</p>'
+      + (s.progressLast ? '<p class="body-text" style="margin-top:5px;font-size:11px;color:var(--muted)">上一轮小结：' + s.progressLast + '</p>' : '')
+      + '</section>');
+  }
+  body.push.apply(body, blockersSection(s, 'after'));
+  body.push(moreSection(s));
+
+  const foot = '<div class="dlg-foot"><span>更新于 ' + s.updated + '</span>'
+    + '<span style="margin-left:auto;display:flex;gap:6px">'
+    + (s.live
+        ? '<button class="btn" data-act="sync">让 agent 同步清单</button>'
+        : '<button class="btn" data-act="resume">在新会话里继续</button>')
+    + '</span></div>';
+
+  return head + '<div class="dlg-body">' + body.join('') + '</div>' + foot;
+}
+
+function render() {
+  const s = SCENES[scene];
+
+  // 左侧会话列表：现状无角标，建议才有
+  const rows = [
+    { name:'CHN OCR GT 标注', badge:{ cls:'ok', text:'4/4' }, on:false },
+    { name:'九国 OCR benchmark', badge:{ cls:'doing', text:'2/5' }, on:true },
+    { name:'监督台 PRD', badge:{ cls:'warn', text:'!' }, on:false },
+    { name:'carddesc 标注（历史）', badge:{ cls:'ok', text:'3/4' }, on:false },
+    { name:'临时排查', badge:{ cls:'', text:'—' }, on:false },
+  ];
+  document.getElementById('navGroup').textContent = mode === 'after'
+    ? '会话列表（建议：加进度角标）'
+    : '会话列表（现状：没有进度提示）';
+  const activeName = s.nav;
+  document.getElementById('navList').innerHTML = rows.map(r => {
+    const isActive = r.name === activeName;
+    const badge = (mode === 'after' && r.badge) ? '<span class="badge ' + r.badge.cls + '">' + r.badge.text + '</span>' : '';
+    return '<div class="nav-item' + (isActive ? ' active' : '') + '">' + r.name + badge + '</div>';
+  }).join('');
+
+  // 会话页：与现状一致，聊天区占满，没有右侧常驻面板
+  const dotCls = s.status === 'running' ? '' : 'idle';
+  document.getElementById('page').innerHTML
+    = '<div class="session-head">'
+    + '<div class="head-top"><span class="dot ' + dotCls + '"></span><h1>' + s.session + '</h1>'
+    + chip('', s.statusText) + (s.live ? '' : chip('', '只读快照')) + '</div>'
+    + '<div class="meta">' + s.model + '</div><div class="path">' + s.cwd + '</div>'
+    + '<div class="rail">'
+    + '<button class="action primary" data-act="open">'
+    + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>'
+    + '目标</button>'
+    + '<button class="action" ' + (s.live ? '' : 'disabled') + '>中断</button>'
+    + '<button class="action" ' + (s.live ? '' : 'disabled') + '>压缩</button>'
+    + '<button class="action" ' + (s.live ? '' : 'disabled') + '>重载</button>'
+    + '<button class="action" ' + (s.live ? '' : 'disabled') + '>清空</button>'
+    + '</div></div>'
+    + '<div class="chat">'
+    + '<div class="msg user"><div class="who">你 · <span class="tag">原始需求</span></div><p>'
+    + (s.objective || '看一下路由精度掉在哪个子类型上，找到原因。') + '</p></div>'
+    + '<div class="msg"><div class="who">Pi · <span class="tag">助手</span></div><p>'
+    + (s.empty ? '我先把精度按子类型拆开看了，现在在核对是数据侧还是模型侧的问题。'
+               : '我把这次要做的事拆成了工作项，当前的卡点也记在阻塞项里，随时可以核对。') + '</p></div>'
+    + '<div class="toolrow"><span class="ok">✓</span><span class="mono">bash</span><span>python eval_by_subtype.py --split bench</span><span style="margin-left:auto">2 分钟前</span></div>'
+    + '<div class="toolrow"><span class="ok">✓</span><span class="mono">read</span><span>STATUS.md</span><span style="margin-left:auto">1 分钟前</span></div>'
+    + '<div class="stream-note">…… 中间省略 —— 会话页本身与现状完全一致，本次不改动它的布局</div>'
+    + '</div>';
+
+  // 弹窗
+  const overlay = document.getElementById('overlay');
+  overlay.classList.toggle('hidden', !modalOpen);
+  const dlg = document.getElementById('dialog');
+  dlg.className = 'dialog ' + (mode === 'after' ? 'after' : 'before');
+  dlg.innerHTML = mode === 'after' ? renderAfter(s) : renderBefore(s);
+
+  document.getElementById('openBtn').textContent = modalOpen ? '关闭弹窗' : '打开弹窗';
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-scene]');
+  if (b) {
+    scene = b.dataset.scene;
+    modalOpen = true;
+    document.querySelectorAll('[data-scene]').forEach(x => x.classList.toggle('active', x === b));
+    render(); return;
+  }
+  const m = e.target.closest('[data-mode]');
+  if (m) {
+    mode = m.dataset.mode;
+    modalOpen = true;
+    document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('active', x === m));
+    render(); return;
+  }
+  if (e.target.id === 'openBtn') { modalOpen = !modalOpen; render(); return; }
+
+  const act = e.target.closest('[data-act]');
+  if (act) {
+    const a = act.dataset.act;
+    if (a === 'close') { modalOpen = false; render(); return; }
+    if (a === 'sync') { toast('原型演示：真实实现里会往会话里发一条「请同步工作项状态」的指令'); return; }
+    if (a === 'draft') { toast('原型演示：真实实现里会让 agent 从会话开头的需求草拟目标，等你确认'); return; }
+    if (a === 'resume') { toast('原型演示：真实实现里会以这条会话的目录新开一个会话'); return; }
+  }
+
+  // 点遮罩关闭（弹窗内部点击不关闭）
+  if (e.target.id === 'overlay') { modalOpen = false; render(); }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modalOpen) { modalOpen = false; render(); }
+});
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+document.getElementById('themeBtn').addEventListener('click', (e) => {
+  const root = document.documentElement;
+  const dark = root.getAttribute('data-theme') === 'dark';
+  root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  e.target.textContent = dark ? '切换深色' : '切换浅色';
+});
+
+render();
+</script>
+</body>
+</html>
