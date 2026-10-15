@@ -9,7 +9,7 @@ import {
   type TtsConfigResponse,
 } from '../../shared/src/tts.js'
 import {
-  ASR_DEFAULT_MODEL,
+  ASR_REALTIME_MODEL,
   ASR_LANGUAGES,
   ASR_MAX_AUDIO_BYTES,
   normalizeAsrLanguage,
@@ -82,7 +82,7 @@ export function registerVoiceRoutes({ app }: VoiceRouteOptions): void {
     const body: AsrConfigResponse = {
       ...availability,
       endpoint: resolveDashscopeBaseUrl(),
-      defaultModel: ASR_DEFAULT_MODEL,
+      defaultModel: ASR_REALTIME_MODEL,
       maxAudioBytes: ASR_MAX_AUDIO_BYTES,
       languages: ASR_LANGUAGES,
     }
