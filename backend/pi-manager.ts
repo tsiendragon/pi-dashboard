@@ -9,6 +9,7 @@ import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
 import { extractText, summarizeProviderError, ChatMessage } from './session-store.js'
+import { readSessionHistoryPage } from './session-history.js'
 import type { PiSession, PiTransport, ImagePayload, ToolApprovalDecision } from './pi-session.js'
 import { PiSdkSession } from './pi-sdk-session.js'
 import { resolveDefaultThinkingLevel } from './thinking-level.js'
@@ -124,11 +125,26 @@ interface SlotDetail {
   pending_approval: boolean
   has_more: boolean
   total: number
+  /** Opaque cursor for the next older page (null at the transcript head). */
+  next_cursor: string | null
   model: string | null
   thinkingLevel: string | null
   cwd: string | null
   contextUsage: any | null
   tokenStats: any | null
+}
+
+/**
+ * Merge the newest in-memory messages onto a disk-tail window: a running
+ * turn's last messages may not be flushed to the transcript file yet, and
+ * the disk window is preferred for cursor alignment.
+ */
+function mergeMemoryTail(diskMessages: ChatMessage[], memoryMessages: ChatMessage[]): ChatMessage[] {
+  if (memoryMessages.length === 0) return diskMessages
+  const key = (m: ChatMessage) => `${m.role}|${m.ts ?? ''}|${(m.content || '').slice(0, 200)}`
+  const seen = new Set(diskMessages.map(key))
+  const extra = memoryMessages.slice(-40).filter(m => !seen.has(key(m)))
+  return extra.length > 0 ? [...diskMessages, ...extra] : diskMessages
 }
 
 function saveImagesToTemp(images: ImagePayload[]): string[] {
@@ -1227,22 +1243,79 @@ export class PiManager {
     })
   }
 
-  getSlotDetail(key: string, limit: number = 200): SlotDetail | null {
+  getSlotDetail(key: string, limit: number = 200, cursor?: string | null): SlotDetail | null {
     const pi = this.slots.get(key)
     if (!pi) return null
-    const msgs = pi.messages.slice(-limit)
-    return {
-      messages: msgs,
+    const base = {
       running: pi.running,
       stopping: pi._stopping || false,
       pending_approval: pi._pendingApproval || false,
-      has_more: pi.messages.length > limit,
-      total: pi.messages.length,
       model: pi.modelId ? `${pi.modelProvider}/${pi.modelId}` : null,
       thinkingLevel: pi.thinkingLevel,
       cwd: pi.cwd || null,
       contextUsage: pi._contextUsage || null,
       tokenStats: pi._tokenStats || null,
+    }
+
+    // An explicit cursor pages older history. Two coordinate spaces exist:
+    //  - `m:<index>`  — absolute index into the in-memory message list (slots
+    //    whose memory holds the full conversation since they were created).
+    //  - `b:<offset>:<size>` — byte cursor into the transcript file, used when
+    //    the slot was resumed with only a bounded tail in memory.
+    if (cursor) {
+      const memMatch = /^m:(\d+)$/.exec(cursor)
+      if (memMatch) {
+        const end = Math.max(0, Math.min(Number(memMatch[1]), pi.messages.length))
+        const start = Math.max(0, end - limit)
+        const nextCursor = start > 0 ? `m:${start}` : null
+        return {
+          ...base,
+          messages: pi.messages.slice(start, end),
+          has_more: nextCursor !== null,
+          next_cursor: nextCursor,
+          total: pi.messages.length,
+        }
+      }
+      if (/^b:\d+:\d+$/.test(cursor) && pi.sessionFile) {
+        const page = readSessionHistoryPage(pi.sessionFile, { cursor, rows: limit })
+        if (page) {
+          return {
+            ...base,
+            messages: page.messages,
+            has_more: page.hasMore,
+            next_cursor: page.nextCursor,
+            total: pi.messages.length,
+          }
+        }
+      }
+      // Unknown or stale cursor: report exhaustion instead of guessing.
+      return { ...base, messages: [], has_more: false, next_cursor: null, total: pi.messages.length }
+    }
+
+    // No cursor: newest page. Resumed slots hold only a bounded tail in
+    // memory, so read the tail window from the transcript file instead; this
+    // keeps the returned messages aligned with the file cursor handed back.
+    if (pi._historyTruncated && pi.sessionFile) {
+      const page = readSessionHistoryPage(pi.sessionFile, { rows: limit })
+      if (page) {
+        return {
+          ...base,
+          messages: mergeMemoryTail(page.messages, pi.messages),
+          has_more: page.hasMore,
+          next_cursor: page.nextCursor,
+          total: pi.messages.length,
+        }
+      }
+    }
+    const msgs = pi.messages.slice(-limit)
+    const start = Math.max(0, pi.messages.length - msgs.length)
+    const nextCursor = start > 0 ? `m:${start}` : null
+    return {
+      ...base,
+      messages: msgs,
+      has_more: nextCursor !== null,
+      next_cursor: nextCursor,
+      total: pi.messages.length,
     }
   }
 

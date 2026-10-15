@@ -9,6 +9,9 @@
  * namespaced sessions.
  */
 import { execFileSync, execSync } from 'child_process'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { agentDir } from './env-file.js'
 
 export const PTY_SESSION_PREFIX = 'pi-dash-'
 
@@ -225,6 +228,36 @@ export function captureTmuxPane(fullName: string, lines = 200): string {
   } catch {
     return ''
   }
+}
+
+/** Resolve supported Pi keybindings to tmux keys before sending any input. */
+function piTmuxKey(bindings: Record<string, unknown>, action: string, defaultKey: string): string {
+  const configured = bindings[action] ?? defaultKey
+  const keys = Array.isArray(configured) ? configured : [configured]
+  for (const key of keys) {
+    if (typeof key !== 'string') continue
+    if (/^ctrl\+[a-z]$/.test(key)) return `C-${key.slice(-1)}`
+    if (/^f(?:[1-9]|1[0-2])$/.test(key)) return key.toUpperCase()
+    if (key === 'enter' || key === 'return') return 'Enter'
+  }
+  throw new Error(`Pi keybinding ${action} has no supported tmux key`)
+}
+
+/** Submit Pi's built-in quit command using its configured submit key. */
+export function quitTmuxPi(name: string, configPath = join(agentDir(), 'keybindings.json')): void {
+  const target = `${sanitizeTmuxSession(name)}:0.0`
+  let bindings: Record<string, unknown> = {}
+  try {
+    bindings = JSON.parse(readFileSync(configPath, 'utf8'))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  const clearKey = piTmuxKey(bindings, 'app.clear', 'ctrl+c')
+  const submitKey = piTmuxKey(bindings, 'tui.input.submit', 'enter')
+  // Pi's clear action clears the whole editor, including multiline drafts.
+  execFileSync('tmux', ['send-keys', '-t', target, clearKey], { stdio: 'ignore' })
+  execFileSync('tmux', ['send-keys', '-t', target, '-l', '/quit'], { stdio: 'ignore' })
+  execFileSync('tmux', ['send-keys', '-t', target, submitKey], { stdio: 'ignore' })
 }
 
 export function killTmuxSession(name: string): void {

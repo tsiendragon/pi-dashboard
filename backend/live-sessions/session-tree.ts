@@ -42,7 +42,7 @@ const IO_CONCURRENCY = 16
  * (and for agents whose data dir is not the default); unset means the standard
  * `~/.pi/agent/sessions`.
  */
-function sessionsDir(): string {
+export function sessionsDir(): string {
   const override = process.env.PI_DASH_SESSIONS_DIR
   return override && override.trim() ? override : join(homedir(), '.pi', 'agent', 'sessions')
 }

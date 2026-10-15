@@ -32,6 +32,33 @@ const REGISTRATION_POLL_MS = 400
 /** Pane rows attached to a timeout error so a slow/crashed Pi is diagnosable. */
 const PANE_TAIL_LINES = 12
 
+/**
+ * Startup prompts that need a human keypress.
+ *
+ * A dashboard-launched pane has no keyboard, so a Pi sitting on one of these
+ * never registers. Without this check the launch burned the whole registration
+ * budget and then surfaced as a gateway timeout (HTTP 504) in the browser, which
+ * said nothing about the real reason.
+ */
+const BLOCKING_PROMPTS: readonly { marker: string; hint: string }[] = [
+  {
+    marker: 'Trust project folder?',
+    hint: 'Pi is waiting for an answer to its "trust this project folder" prompt, which a pane without a keyboard cannot give',
+  },
+]
+
+/** How the user gets out of a blocking prompt; the UI turns this into Chinese. */
+const BLOCKED_PROMPT_REMEDY = 'trust the folder once in a terminal (run pi there), or record it in ~/.pi/agent/trust.json, or set liveSessions.launch.approve=true in ~/.pi/dashboard.json'
+
+/** Pane text is read at most every this many ms while waiting (one tmux exec per read). */
+const BLOCKED_PROMPT_CHECK_INTERVAL_MS = 1_500
+
+/** Result of the wait: a registered Pi, a blocking prompt, or neither (timeout). */
+interface RegistrationOutcome {
+  match?: Pick<LiveSessionSummary, 'processInstanceId' | 'sessionId' | 'pid'>
+  blocked?: { marker: string; hint: string; tail: string }
+}
+
 function registrationTimeoutFromEnv(): number | undefined {
   const raw = Number.parseInt(process.env[REGISTRATION_TIMEOUT_ENV] ?? '', 10)
   return Number.isFinite(raw) && raw >= 1_000 ? raw : undefined
@@ -56,6 +83,11 @@ export interface LivePiStartOptions {
    * `forkFrom` (pi rejects both flags together).
    */
   sessionFile?: string
+  /**
+   * tmux name segment (`pi-dash-<prefix>-xxxxxxxx`). The supervisor passes `supervisor`
+   * so its main session is recognisable in `tmux ls` instead of looking like any other pane.
+   */
+  tmuxPrefix?: string
 }
 
 export interface LivePiStartResult {
@@ -93,6 +125,8 @@ export interface LivePiLauncherOptions {
   registrationTimeoutMs?: number
   pollIntervalMs?: number
   sleep?: (ms: number) => Promise<void>
+  /** Injected clock: the registration matcher compares session start times against the launch time. */
+  now?: () => number
 }
 
 /**
@@ -146,11 +180,12 @@ export class LivePiLauncher {
 
     const cwd = decision.canonicalCwd
     const title = options.title?.trim().slice(0, 120) || `Live · ${path.basename(cwd)}`
-    const startedAt = Date.now()
+    const startedAt = (this.options.now ?? Date.now)()
     const before = new Set(this.registry.list().map(session => session.processInstanceId))
     const tmuxSession = this.createFreshSession(cwd, title, options)
 
-    const registered = await this.awaitRegistration(before, cwd, tmuxSession)
+    const outcome = await this.awaitRegistration(before, cwd, tmuxSession, startedAt)
+    const registered = outcome.match
     const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1)
 
     if (!registered) {
@@ -158,8 +193,12 @@ export class LivePiLauncher {
       // cannot reach it, and an orphan Pi would keep burning tokens. The pane
       // tail is attached because a start failure is otherwise undiagnosable
       // ("did not register" says nothing about why).
-      const detail = this.paneTail(tmuxSession)
+      const detail = outcome.blocked?.tail ?? this.paneTail(tmuxSession)
       try { this.killSession(tmuxSession) } catch { /* best effort */ }
+      if (outcome.blocked) {
+        console.error(`[live-launcher] start blocked on "${outcome.blocked.marker}" after ${elapsed}s cwd=${cwd} tmux=${tmuxSession}`)
+        throw new Error(`live_pi_blocked_on_prompt: ${outcome.blocked.hint}; ${BLOCKED_PROMPT_REMEDY} (waited ${elapsed}s, tmux session ${tmuxSession} removed)${detail}`)
+      }
       console.error(`[live-launcher] start failed after ${elapsed}s cwd=${cwd} tmux=${tmuxSession}`)
       throw new Error(`live_pi_registration_timeout: tmux session ${tmuxSession} was killed after ${this.registrationTimeoutMs}ms without registering${detail}`)
     }
@@ -191,6 +230,10 @@ export class LivePiLauncher {
   private createFreshSession(cwd: string, title: string, options: LivePiStartOptions): string {
     const args = [
       ...(this.options.launch?.args ?? []),
+      // Project trust is a per-run decision pi otherwise asks about interactively
+      // (see BLOCKING_PROMPTS). Left unset the pane keeps pi's own behaviour.
+      ...(this.options.launch?.approve === true ? ['--approve'] : []),
+      ...(this.options.launch?.approve === false ? ['--no-approve'] : []),
       ...(options.forkFrom ? ['--fork', options.forkFrom] : []),
       ...(options.sessionFile ? ['--session', options.sessionFile] : []),
       ...(options.modelProvider && options.modelId ? ['--model', `${options.modelProvider}/${options.modelId}`] : []),
@@ -202,8 +245,9 @@ export class LivePiLauncher {
     const unset = this.options.launch?.unsetEnv ?? []
     const launch = paneLaunchArgv({ command, args, unsetEnv: unset })
     let lastError: unknown
+    const prefix = /^[a-z0-9][a-z0-9-]{0,20}$/.test(options.tmuxPrefix || '') ? String(options.tmuxPrefix) : 'live'
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const name = `live-${randomUUID().slice(0, 8)}`
+      const name = `${prefix}-${randomUUID().slice(0, 8)}`
       const fullName = `pi-dash-${name}`
       if (this.sessionExists(fullName)) continue
       try {
@@ -226,29 +270,54 @@ export class LivePiLauncher {
     before: ReadonlySet<string>,
     cwd: string,
     tmuxSession: string,
-  ): Promise<Pick<LiveSessionSummary, 'processInstanceId' | 'sessionId' | 'pid'> | undefined> {
+    startedAt: number,
+  ): Promise<RegistrationOutcome> {
     const deadline = Date.now() + this.registrationTimeoutMs
     /** A pane can read as gone for one poll while tmux settles; require two. */
     let missingPolls = 0
+    // Checked on the first poll too: a pane can already be blocked when it is
+    // handed over (for example a remembered decision that never landed).
+    let nextPromptCheck = Date.now()
     for (;;) {
       const panePid = this.panePid(tmuxSession)
       const candidates = this.registry.list()
         .filter(session => !before.has(session.processInstanceId) && session.canonicalCwd === cwd)
+        // A session that merely re-registered keeps its original process start time, so requiring the
+        // candidate to have started after this launch keeps long-running neighbours out of the match.
+        .filter(session => session.startedAt >= startedAt)
         .sort((left, right) => right.startedAt - left.startedAt)
-      const match = (panePid === undefined ? undefined : candidates.find(session => session.pid === panePid)) ?? candidates[0]
-      if (match) return match
+      // With a known pane pid, only an exact pid match counts: falling back to "newest new session in this
+      // cwd" once bound a supervisor launch to an unrelated session that re-registered in the same repo,
+      // which then made the dashboard drive the wrong conversation.
+      const match = panePid === undefined ? candidates[0] : candidates.find(session => session.pid === panePid)
+      if (match) return { match }
+      // A headless pane can never answer an interactive startup prompt (project
+      // trust above all), so recognise it and fail now with something the user
+      // can act on instead of waiting out the whole registration budget.
+      if (Date.now() >= nextPromptCheck) {
+        nextPromptCheck = Date.now() + BLOCKED_PROMPT_CHECK_INTERVAL_MS
+        const prompt = this.blockingPrompt(tmuxSession)
+        if (prompt) return { blocked: { ...prompt, tail: this.paneTail(tmuxSession) } }
+      }
       // The pane is gone: the Pi exited (bad flags, crash, missing provider) and
       // no amount of waiting will register it. Fail now instead of burning the
       // whole timeout, and let the caller report the pane output.
       if (panePid === undefined) {
         missingPolls += 1
-        if (missingPolls >= 2) return undefined
+        if (missingPolls >= 2) return {}
       } else {
         missingPolls = 0
       }
-      if (Date.now() >= deadline) return undefined
+      if (Date.now() >= deadline) return {}
       await this.sleep(this.pollIntervalMs)
     }
+  }
+
+  /** The blocking startup prompt the pane is sitting on, if any. */
+  private blockingPrompt(tmuxSession: string): { marker: string; hint: string } | undefined {
+    const text = this.capturePane(tmuxSession)
+    if (!text) return undefined
+    return BLOCKING_PROMPTS.find(prompt => text.includes(prompt.marker))
   }
 
   /** Last visible pane rows, for the timeout error message. */

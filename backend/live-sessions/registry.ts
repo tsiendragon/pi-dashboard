@@ -16,6 +16,18 @@ import {
 } from '../../shared/src/live-sessions.js'
 import { PI_SUBAGENT_CHILD_ENV, readProcessEnviron } from './process-env.js'
 import { validateLiveSessionCommand } from './protocol.js'
+import { SessionGoalFileTracker, type GoalFileScan } from './session-goal-tracker.js'
+import { goalAnchorFromEntries, goalProgressOf, type GoalAnchor } from '../../shared/src/goal-anchor.js'
+
+/**
+ * Session rows must show goal progress without shipping whole timelines to the
+ * browser, so the counts are derived here from the anchor the registry caches.
+ * Absent key = this session never set a goal.
+ */
+function goalProgressField(goal: GoalAnchor | null | undefined): { goal?: LiveSessionSummary['goal'] } {
+  const progress = goalProgressOf(goal)
+  return progress ? { goal: progress } : {}
+}
 
 export interface LiveSessionTransport {
   send(message: LiveSessionCommandEnvelope | { type: 'welcome'; protocolVersion: 2; heartbeatMs: number }): void
@@ -53,15 +65,53 @@ type Entry = {
   pendingUi: Map<string, LiveSessionUiRequest>
   dispatchTail: Promise<unknown>
   generation: number
+  /**
+   * True while the cursor (`revision`/`sequence`) belongs to an older
+   * connection, so the next snapshot may re-anchor it.
+   *
+   * A bridge that reconnects after rebuilding its projector (e.g. a `/reload`
+   * inside pi) restarts at revision 1 / sequence 0 while this entry still holds
+   * the previous, much larger numbering. Rejecting that first snapshot as
+   * "not newer" used to strand the entry in `awaitingResync` forever: every
+   * later event was dropped and every command failed with
+   * `live_session_unavailable`, leaving the browser on a frozen transcript.
+   */
+  cursorStale: boolean
   reconnectTimer?: ReturnType<typeof setTimeout>
   leaseTimer?: ReturnType<typeof setTimeout>
   leaseOwner?: string
+  /**
+   * Parsed goal anchor, cached across snapshots.
+   *
+   * Recomputing it from the entries window alone is not enough: a long session
+   * pushes its own `goal-state` entry out of the tail (registry cap + the
+   * bridge's byte budget), and losing it would make the dashboard claim the
+   * session never had a goal — exactly the long-session case the anchor exists
+   * for. `null` means "no goal in any snapshot so far".
+   */
+  goal?: GoalAnchor | null
+  /**
+   * Timestamp of the newest `goal-state` entry already applied — from a snapshot
+   * or from the session-file scan. Older data never overwrites newer data, which
+   * is what keeps a file-scanned goal from flipping back on a stale snapshot.
+   */
+  goalUpdatedAt?: number
 }
 
 export interface LiveSessionRegistryOptions {
   commandTimeoutMs?: number
   disconnectGraceMs?: number
   maxTimelineEntries?: number
+  /**
+   * How often live session files are scanned for `goal-state` entries the
+   * snapshot stream did not carry. `0` disables the background scan (tests).
+   */
+  goalFileSyncIntervalMs?: number
+  /**
+   * How often a session stuck in `awaitingResync` re-asks the bridge for a
+   * fresh snapshot. `0` disables the retry (tests).
+   */
+  resyncRetryIntervalMs?: number
   now?: () => number
 }
 
@@ -108,6 +158,10 @@ export class LiveSessionRegistry extends EventEmitter {
   private readonly disconnectGraceMs: number
   private readonly maxTimelineEntries: number
   private readonly now: () => number
+  private readonly exclusiveSessionIds = new Set<string>()
+  private readonly goalTracker = new SessionGoalFileTracker()
+  private readonly goalFileSyncTimer?: ReturnType<typeof setInterval>
+  private readonly resyncRetryTimer?: ReturnType<typeof setInterval>
 
   constructor(options: LiveSessionRegistryOptions = {}) {
     super()
@@ -115,6 +169,18 @@ export class LiveSessionRegistry extends EventEmitter {
     this.disconnectGraceMs = options.disconnectGraceMs ?? 15_000
     this.maxTimelineEntries = options.maxTimelineEntries ?? 1_000
     this.now = options.now || Date.now
+    const goalFileSyncIntervalMs = options.goalFileSyncIntervalMs ?? 5_000
+    if (goalFileSyncIntervalMs > 0) {
+      this.goalFileSyncTimer = setInterval(() => {
+        void this.refreshGoalsFromFiles()
+      }, goalFileSyncIntervalMs)
+      this.goalFileSyncTimer.unref?.()
+    }
+    const resyncRetryIntervalMs = options.resyncRetryIntervalMs ?? 10_000
+    if (resyncRetryIntervalMs > 0) {
+      this.resyncRetryTimer = setInterval(() => this.retryResync(), resyncRetryIntervalMs)
+      this.resyncRetryTimer.unref?.()
+    }
   }
 
   connect(hello: LiveSessionHello, canonicalCwd: string, transport: LiveSessionTransport): void {
@@ -128,6 +194,7 @@ export class LiveSessionRegistry extends EventEmitter {
       existing.lineage = inferProcessLineage(hello.pid)
       existing.canonicalCwd = canonicalCwd
       existing.awaitingResync = true
+      existing.cursorStale = true
       existing.generation++
       existing.dispatchTail = Promise.resolve()
       return
@@ -141,6 +208,7 @@ export class LiveSessionRegistry extends EventEmitter {
       revision: -1,
       sequence: -1,
       awaitingResync: true,
+      cursorStale: true,
       attached: false,
       pending: new Map(),
       pendingUi: new Map(),
@@ -161,7 +229,10 @@ export class LiveSessionRegistry extends EventEmitter {
     // still holds the finished numbering of the previous session. Applying that
     // cursor would reject every snapshot of the new session until it happened to
     // count past the old position — i.e. the row would sit on “重连中” for ages.
-    if (!sessionChanged && snapshot.revision <= entry.revision) return false
+    // A reconnect without a session switch hits the same numbering restart when a
+    // reload rebuilt the bridge: the first snapshot on a new connection is
+    // authoritative, so accept it and re-anchor the cursor via `cursorStale`.
+    if (!sessionChanged && !entry.cursorStale && snapshot.revision <= entry.revision) return false
     if (sessionChanged) {
       entry.generation++
       this.clearLease(entry)
@@ -172,7 +243,20 @@ export class LiveSessionRegistry extends EventEmitter {
     entry.revision = snapshot.revision
     entry.sequence = snapshot.sequence
     entry.awaitingResync = false
+    entry.cursorStale = false
     entry.entries = snapshot.entries.slice(-this.maxTimelineEntries)
+    // A session switch (`/clear`, `/ls-fork`) starts a new goal, or none at all.
+    if (sessionChanged) {
+      entry.goal = null
+      entry.goalUpdatedAt = undefined
+    }
+    const parsedGoal = goalAnchorFromEntries(snapshot.entries)
+    // Keep the last known anchor when this window no longer carries it, and keep
+    // a newer file-scanned anchor when the snapshot trails a `goal_changed` push.
+    if (parsedGoal && (parsedGoal.updatedAt ?? 0) >= (entry.goalUpdatedAt ?? 0)) {
+      entry.goal = parsedGoal
+      entry.goalUpdatedAt = parsedGoal.updatedAt ?? entry.goalUpdatedAt
+    }
     entry.summary = {
       ...snapshot.summary,
       ...(!snapshot.summary.role && entry.lineage ? entry.lineage : {}),
@@ -183,6 +267,7 @@ export class LiveSessionRegistry extends EventEmitter {
       mode: entry.hello.mode,
       revision: snapshot.revision,
       eventSequence: snapshot.sequence,
+      ...goalProgressField(entry.goal),
     }
     const orphanedLeaseId = !entry.leaseOwner && entry.summary.claim.state === 'claimed'
       ? entry.summary.claim.leaseId
@@ -213,6 +298,7 @@ export class LiveSessionRegistry extends EventEmitter {
       return false
     }
     entry.sequence = message.sequence
+    entry.cursorStale = false
     entry.summary.eventSequence = message.sequence
     entry.summary.lastActivityAt = this.now()
     this.projectEvent(entry, message)
@@ -222,9 +308,19 @@ export class LiveSessionRegistry extends EventEmitter {
     return true
   }
 
-  heartbeat(processInstanceId: string, transport: LiveSessionTransport, at: number): void {
-    const entry = this.requireConnection(processInstanceId, transport)
-    if (entry.summary) entry.summary.lastActivityAt = Math.max(entry.summary.lastActivityAt, at)
+  /**
+   * A WebSocket ping proves the socket is alive, not that the session did
+   * anything.
+   *
+   * Bumping `lastActivityAt` here made every sidebar row read a few seconds old:
+   * the browser client pings every 10 s while an idle bridge sends nothing, so the
+   * “最近活动” column could never show the hours/days an idle session had really
+   * been silent. The bridge keeps its own status heartbeat off `lastActivityAt`
+   * for the same reason, and liveness already has its own clock in the broker
+   * (`ConnectionState.lastSeenAt`), so the summary is left untouched.
+   */
+  heartbeat(processInstanceId: string, transport: LiveSessionTransport, _at: number): void {
+    this.requireConnection(processInstanceId, transport)
   }
 
   handleCommandResult(result: LiveSessionCommandResult, transport: LiveSessionTransport): void {
@@ -258,6 +354,7 @@ export class LiveSessionRegistry extends EventEmitter {
     const entry = this.entries.get(processInstanceId)
     if (!entry || (transport && entry.transport !== transport)) return
     this.entries.delete(processInstanceId)
+    if (entry.summary?.sessionFile) this.goalTracker.forget(entry.summary.sessionFile)
     if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer)
     this.clearLease(entry)
     this.rejectPending(entry, 'live_session_detached', 'live session detached')
@@ -282,10 +379,76 @@ export class LiveSessionRegistry extends EventEmitter {
     return entry?.summary ? { ...entry.summary, claim: { ...entry.summary.claim } } : undefined
   }
 
+  /**
+   * Sync goal anchors from the live session files.
+   *
+   * The snapshot stream is authoritative only for sessions whose process projects
+   * `goal-state` entries; a session started with older bridge code (or simply not
+   * reloaded since the goal was created) would show a stale or missing anchor.
+   * The file is append-only and cheap to tail, so one incremental pass per tick
+   * keeps every connected session in sync regardless of its process age — and a
+   * freshly created goal shows up without a reconnect.
+   */
+  async refreshGoalsFromFiles(): Promise<void> {
+    const active = new Set<string>()
+    for (const entry of [...this.entries.values()]) {
+      const file = entry.summary?.sessionFile
+      if (!file || !entry.attached || !entry.summary) continue
+      active.add(file)
+      let scan: GoalFileScan | undefined
+      try {
+        scan = await this.goalTracker.refresh(file)
+      } catch {
+        continue
+      }
+      if (!scan) continue
+      if (scan.updatedAt !== undefined && scan.updatedAt < (entry.goalUpdatedAt ?? 0)) continue
+      this.applyGoalFromFile(entry, scan)
+    }
+    this.goalTracker.retain(active)
+  }
+
+  private applyGoalFromFile(entry: Entry, scan: GoalFileScan): void {
+    if (!entry.summary) return
+    const nextProgress = goalProgressOf(scan.goal) ?? null
+    const changed =
+      JSON.stringify({ goal: entry.goal ?? null, progress: entry.summary.goal ?? null }) !==
+      JSON.stringify({ goal: scan.goal, progress: nextProgress })
+    entry.goal = scan.goal
+    if (scan.updatedAt !== undefined) entry.goalUpdatedAt = scan.updatedAt
+    if (nextProgress) entry.summary.goal = nextProgress
+    else delete entry.summary.goal
+    if (!changed) return
+    this.emit('goal_changed', {
+      processInstanceId: entry.hello.processInstanceId,
+      goal: nextProgress,
+      anchor: scan.goal,
+    })
+  }
+
+  async withExclusiveSession<T>(processInstanceId: string, operation: () => Promise<T>): Promise<T> {
+    const entry = this.entries.get(processInstanceId)
+    if (!entry?.attached || !entry.summary) throw new LiveSessionRegistryError('live_session_unavailable', 'live session is unavailable')
+    const sessionId = entry.summary.sessionId
+    if (this.exclusiveSessionIds.has(sessionId)) throw new LiveSessionRegistryError('session_operation_in_progress', 'a session operation is already in progress')
+    this.exclusiveSessionIds.add(sessionId)
+    try {
+      await entry.dispatchTail
+      const current = this.entries.get(processInstanceId)
+      if (current !== entry || !current.attached || current.summary?.sessionId !== sessionId) {
+        throw new LiveSessionRegistryError('session_changed', 'the live session changed before the operation began')
+      }
+      return await operation()
+    } finally {
+      this.exclusiveSessionIds.delete(sessionId)
+    }
+  }
+
   async dispatch(processInstanceId: string, command: LiveSessionCommand): Promise<unknown> {
     const validated = validateLiveSessionCommand(command)
     const entry = this.entries.get(processInstanceId)
     if (!entry?.attached || !entry.summary || entry.awaitingResync) throw new LiveSessionRegistryError('live_session_unavailable', 'live session is unavailable')
+    if (this.exclusiveSessionIds.has(entry.summary.sessionId)) throw new LiveSessionRegistryError('session_operation_in_progress', 'a session operation is in progress; retry after it completes')
     const run = () => this.dispatchNow(entry, validated)
     const result = entry.dispatchTail.then(run, run)
     entry.dispatchTail = result.catch(() => undefined)
@@ -296,7 +459,7 @@ export class LiveSessionRegistry extends EventEmitter {
   hasRemoteLease(processInstanceId: string, sessionId: string, remoteClientId: string, leaseId: string): boolean {
     const entry = this.entries.get(processInstanceId)
     const claim = entry?.summary?.claim
-    return !!entry?.attached && !entry.awaitingResync && entry.summary?.sessionId === sessionId &&
+    return !!entry?.attached && !entry.awaitingResync && !this.exclusiveSessionIds.has(sessionId) && entry.summary?.sessionId === sessionId &&
       entry.leaseOwner === remoteClientId && claim?.state === 'claimed' && claim.leaseId === leaseId &&
       typeof claim.expiresAt === 'number' && Number.isFinite(claim.expiresAt) && claim.expiresAt > this.now()
   }
@@ -311,7 +474,7 @@ export class LiveSessionRegistry extends EventEmitter {
     const generation = entry?.generation
     const check = (): void => {
       if (!entry || this.entries.get(processInstanceId) !== entry || !entry.attached || !entry.summary || entry.awaitingResync ||
-        entry.generation !== generation || entry.summary.sessionId !== sessionId) {
+        this.exclusiveSessionIds.has(sessionId) || entry.generation !== generation || entry.summary.sessionId !== sessionId) {
         throw new LiveSessionRegistryError('live_session_unavailable', 'remote input target is unavailable')
       }
       const expiresAt = entry.summary.claim.expiresAt
@@ -385,12 +548,12 @@ export class LiveSessionRegistry extends EventEmitter {
 
   async sendBrowserCommand(processInstanceId: string, browserClientId: string, command: unknown): Promise<unknown> {
     const validated = validateLiveSessionCommand(command, true)
-    if (validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'feature_command' && validated.type !== 'answer_ui') {
+    if (validated.type !== 'resync' && validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'shutdown' && validated.type !== 'feature_command' && validated.type !== 'answer_ui') {
       throw new LiveSessionRegistryError('unsupported_command', 'browser command is not allowed')
     }
     // answer_ui settles a pending extension UI request (first answer wins), so it
     // is deliberately dispatchable without holding the lease.
-    if (validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'set_model' || validated.type === 'reload' || validated.type === 'answer_ui') return this.dispatch(processInstanceId, validated)
+    if (validated.type === 'resync' || validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'set_model' || validated.type === 'reload' || validated.type === 'shutdown' || validated.type === 'answer_ui') return this.dispatch(processInstanceId, validated)
     this.requireLease(processInstanceId, browserClientId, validated.leaseId)
     return this.dispatch(processInstanceId, validated)
   }
@@ -446,6 +609,8 @@ export class LiveSessionRegistry extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    if (this.goalFileSyncTimer) clearInterval(this.goalFileSyncTimer)
+    if (this.resyncRetryTimer) clearInterval(this.resyncRetryTimer)
     const entries = [...this.entries.values()]
     this.entries.clear()
     for (const entry of entries) {
@@ -644,11 +809,27 @@ export class LiveSessionRegistry extends EventEmitter {
     try { entry.transport.send(envelope) } catch {}
   }
 
+  /**
+   * Re-ask for a snapshot while an entry is waiting for one.
+   *
+   * `sendResync` fires once, at the moment a sequence gap is seen; if that
+   * request (or the snapshot it triggers) is lost, nothing asks again and the
+   * entry silently drops every following event until the dashboard restarts.
+   * One cheap retry per sweep makes that state self-healing.
+   */
+  private retryResync(): void {
+    for (const entry of this.entries.values()) {
+      if (!entry.summary || !entry.awaitingResync) continue
+      this.sendResync(entry)
+    }
+  }
+
   private detailOf(entry: Entry): LiveSessionDetail {
     return {
       summary: { ...entry.summary!, claim: { ...entry.summary!.claim } },
       entries: [...entry.entries],
       pendingUi: [...entry.pendingUi.values()],
+      ...(entry.goal ? { goal: entry.goal } : {}),
     }
   }
 

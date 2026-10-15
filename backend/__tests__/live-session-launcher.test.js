@@ -14,12 +14,15 @@ import { LivePiLauncher, paneEnvironment, paneLaunchArgv } from '../live-session
 import { sanitizeTmuxSession } from '../tmux-sessions.js'
 import { parseLiveSessionConfig } from '../live-sessions/config.js'
 
+/** The launcher's clock is injected, so session start times are expressed against this. */
+const NOW = 1_700_000_000_000
+
 function summary(over = {}) {
   return {
     processInstanceId: 'pi-1',
     sessionId: 'session-1',
     canonicalCwd: '/tmp/root/app',
-    startedAt: 1,
+    startedAt: NOW,
     pid: 1001,
     ...over,
   }
@@ -50,6 +53,7 @@ function makeLauncher({ roots, registry, over = {} } = {}) {
     createSession: (name, options) => { created.push({ name, options }); return sanitizeTmuxSession(name) },
     killSession: name => { killed.push(name) },
     panePid: () => undefined,
+    now: () => NOW,
     piCommand: '/usr/bin/pi',
     registrationTimeoutMs: 200,
     pollIntervalMs: 0,
@@ -105,12 +109,12 @@ describe('LivePiLauncher.start', () => {
   })
 
   it('returns the session that registers after the launch, ignoring pre-existing sessions', async () => {
-    const existing = summary({ processInstanceId: 'pi-old', sessionId: 'session-old', canonicalCwd: app, startedAt: 1 })
+    const existing = summary({ processInstanceId: 'pi-old', sessionId: 'session-old', canonicalCwd: app, startedAt: NOW - 60_000 })
     let next = 0
     const registry = {
       list: () => {
         next += 1
-        return next > 2 ? [existing, summary({ processInstanceId: 'pi-new', sessionId: 'session-new', canonicalCwd: app, startedAt: 9 })] : [existing]
+        return next > 2 ? [existing, summary({ processInstanceId: 'pi-new', sessionId: 'session-new', canonicalCwd: app, startedAt: NOW + 1 })] : [existing]
       },
     }
     const { launcher } = makeLauncher({ roots: [dir], registry })
@@ -120,13 +124,45 @@ describe('LivePiLauncher.start', () => {
 
   it('prefers the pane pid when several new sessions share the cwd', async () => {
     const registry = registeringRegistry([], [
-      summary({ processInstanceId: 'pi-a', sessionId: 'session-a', canonicalCwd: app, startedAt: 5, pid: 111 }),
-      summary({ processInstanceId: 'pi-b', sessionId: 'session-b', canonicalCwd: app, startedAt: 9, pid: 222 }),
+      summary({ processInstanceId: 'pi-a', sessionId: 'session-a', canonicalCwd: app, startedAt: NOW, pid: 111 }),
+      summary({ processInstanceId: 'pi-b', sessionId: 'session-b', canonicalCwd: app, startedAt: NOW + 1, pid: 222 }),
     ])
     const { launcher } = makeLauncher({ roots: [dir], registry, over: { panePid: () => 111 } })
     expect(await launcher.start({ cwd: app })).toMatchObject({ sessionId: 'session-a' })
   })
 
+  it('never binds a different session in the same cwd while the pane pid is known', async () => {
+    const app = join(dir, 'app')
+    const decoy = summary({ processInstanceId: 'pi-decoy', sessionId: 'session-decoy', canonicalCwd: app, startedAt: NOW + 1, pid: 999 })
+    const ours = summary({ processInstanceId: 'pi-ours', sessionId: 'session-ours', canonicalCwd: app, startedAt: NOW + 2, pid: 777 })
+    let calls = 0
+    const registry = { list: () => { calls += 1; return calls === 1 ? [] : calls === 2 ? [decoy] : [decoy, ours] } }
+    const { launcher, killed } = makeLauncher({ roots: [dir], registry, over: { panePid: () => 777 } })
+    const result = await launcher.start({ cwd: app })
+    expect(result.sessionId).toBe('session-ours')
+    expect(result.processInstanceId).toBe('pi-ours')
+    expect(killed).toEqual([])
+  })
+  it('ignores a re-registered older session when the pane pid is unavailable', async () => {
+    const app = join(dir, 'app')
+    const oldNeighbour = summary({ processInstanceId: 'pi-neighbour', sessionId: 'session-neighbour', canonicalCwd: app, startedAt: NOW - 86_400_000, pid: 555 })
+    const ours = summary({ processInstanceId: 'pi-ours', sessionId: 'session-ours', canonicalCwd: app, startedAt: NOW + 1, pid: 777 })
+    let calls = 0
+    const registry = { list: () => { calls += 1; return calls === 1 ? [oldNeighbour] : [oldNeighbour, ours] } }
+    const { launcher } = makeLauncher({ roots: [dir], registry })
+    const result = await launcher.start({ cwd: app })
+    expect(result.sessionId).toBe('session-ours')
+  })
+  it('names the main session after an explicit tmux prefix', async () => {
+    const app = join(dir, 'app')
+    const registry = registeringRegistry([], [summary({ processInstanceId: 'pi-new', sessionId: 'session-new', canonicalCwd: app, startedAt: NOW + 1 })])
+    const { launcher, created } = makeLauncher({ roots: [dir], registry })
+    const result = await launcher.start({ cwd: app, tmuxPrefix: 'supervisor' })
+    expect(result.tmuxSession).toMatch(/^pi-dash-supervisor-[0-9a-f]{8}$/)
+    expect(created[0].name).toMatch(/^supervisor-[0-9a-f]{8}$/)
+    const { launcher: unsafe } = makeLauncher({ roots: [dir], registry: registeringRegistry([], [summary({ canonicalCwd: app, startedAt: NOW + 1 })]) })
+    expect((await unsafe.start({ cwd: app, tmuxPrefix: 'Bad Prefix;touch x' })).tmuxSession).toMatch(/^pi-dash-live-[0-9a-f]{8}$/)
+  })
   it('kills the tmux session and fails when nothing registers in time', async () => {
     const registry = { list: () => [] }
     const { launcher, killed } = makeLauncher({ roots: [dir], registry })
@@ -162,6 +198,53 @@ describe('LivePiLauncher.start', () => {
     await expect(alive.launcher.start({ cwd: app })).rejects.toThrow(/live_pi_registration_timeout/)
     // A live pane keeps the full budget: it may still be a slow cold start.
     expect(aliveSleeps).toBeGreaterThan(2)
+  })
+
+  it('fails on the project-trust prompt instead of waiting for a keypress nobody can give', async () => {
+    const registry = { list: () => [] }
+    const pane = [
+      '──────────────────────────────',
+      ' Trust project folder?',
+      ' /tmp/root/app',
+      ' This allows pi to load .pi settings and resources, install missing project packages, and execute project extensions.',
+      ' → Trust',
+      '──────────────────────────────',
+    ].join('\n')
+    let sleeps = 0
+    const { launcher, killed } = makeLauncher({
+      roots: [dir], registry,
+      over: { panePid: () => 4242, capturePane: () => pane, sleep: () => { sleeps += 1; return Promise.resolve() } },
+    })
+
+    await expect(launcher.start({ cwd: app })).rejects.toThrow(/live_pi_blocked_on_prompt/)
+    // A recognised prompt ends the wait immediately, and the half-started tmux
+    // session does not survive it.
+    expect(sleeps).toBe(0)
+    expect(killed).toEqual([expect.stringMatching(/^pi-dash-live-/)])
+  })
+
+  it('keeps waiting while the pane shows anything else', async () => {
+    const registry = { list: () => [] }
+    const { launcher } = makeLauncher({
+      roots: [dir], registry,
+      over: { panePid: () => 4242, capturePane: () => 'pi v0.85.1\nloading extensions…\n' },
+    })
+    await expect(launcher.start({ cwd: app })).rejects.toThrow(/live_pi_registration_timeout/)
+  })
+
+  it('passes --approve / --no-approve only when the launch config asks for it', async () => {
+    const freshRegistry = () => registeringRegistry([], [summary({ processInstanceId: 'pi-new', sessionId: 'session-new', canonicalCwd: app, startedAt: NOW + 1 })])
+    const trusted = makeLauncher({ roots: [dir], registry: freshRegistry(), over: { launch: { args: [], unsetEnv: [], approve: true } } })
+    await trusted.launcher.start({ cwd: app, title: 'T' })
+    expect(trusted.created[0].options.args).toEqual(['--approve', '--name', 'T'])
+
+    const ignored = makeLauncher({ roots: [dir], registry: freshRegistry(), over: { launch: { args: [], unsetEnv: [], approve: false } } })
+    await ignored.launcher.start({ cwd: app, title: 'T' })
+    expect(ignored.created[0].options.args).toEqual(['--no-approve', '--name', 'T'])
+
+    const untouched = makeLauncher({ roots: [dir], registry: freshRegistry() })
+    await untouched.launcher.start({ cwd: app, title: 'T' })
+    expect(untouched.created[0].options.args).toEqual(['--name', 'T'])
   })
 
   it('lets a slow machine stretch the registration timeout via env', async () => {
@@ -339,6 +422,12 @@ describe('parseLiveSessionConfig launch section', () => {
   it('ignores a blank command and a non-object launch block', () => {
     expect(parseLiveSessionConfig({ roots: ['/tmp'], launch: { command: '   ' } }).launch.command).toBeUndefined()
     expect(parseLiveSessionConfig({ roots: ['/tmp'], launch: 'pi-clean' }).launch).toEqual({ args: [], unsetEnv: [] })
+  })
+
+  it('reads the project-trust override, and leaves it unset when it is not a boolean', () => {
+    expect(parseLiveSessionConfig({ roots: ['/tmp'], launch: { approve: true } }).launch.approve).toBe(true)
+    expect(parseLiveSessionConfig({ roots: ['/tmp'], launch: { approve: false } }).launch.approve).toBe(false)
+    expect(parseLiveSessionConfig({ roots: ['/tmp'], launch: { approve: 'yes' } }).launch).toEqual({ args: [], unsetEnv: [] })
   })
 })
 

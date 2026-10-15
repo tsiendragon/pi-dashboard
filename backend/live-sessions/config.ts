@@ -18,6 +18,12 @@ export interface LivePiLaunchConfig {
   args: string[]
   /** Variables really removed from the pane env (`env -u`), not merely blanked. */
   unsetEnv: string[]
+  /**
+   * Project trust for the pane's run: `true` passes `--approve` (load project
+   * `.pi` extensions/skills/settings), `false` passes `--no-approve`, unset keeps
+   * pi's own behaviour — which asks interactively and so blocks a headless pane.
+   */
+  approve?: boolean
 }
 
 export interface LiveSessionConfig {
@@ -61,7 +67,7 @@ function parseLaunch(value: unknown): LivePiLaunchConfig {
   const unsetEnv = Array.isArray(input.unsetEnv)
     ? [...new Set(input.unsetEnv.filter((name): name is string => typeof name === 'string' && ENV_NAME_RE.test(name)))]
     : []
-  return { ...(command ? { command } : {}), args, unsetEnv }
+  return { ...(command ? { command } : {}), args, unsetEnv, ...(typeof input.approve === 'boolean' ? { approve: input.approve } : {}) }
 }
 
 export function parseLiveSessionConfig(value: unknown): LiveSessionConfig {
