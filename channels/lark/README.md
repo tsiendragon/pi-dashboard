@@ -95,7 +95,7 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 
 - **断线重连**：mock dashboard 断开 → `[dashboard] reconnecting in 1s/2s` → 恢复后 `[dashboard] ws connected`，自动重新订阅
 - **启动容错**：dashboard 未就绪时 `subscribe()` 不抛异常，后台退避重试（指数退避，上限 30s）
-- **Cookie 刷新**：票据请求遇 401/403 时自动重新认证（dashboard 重启后仍能重连）
+- **Cookie 刷新**：入站命令等受保护请求遇 401、或 WebSocket 票据遇 401/403 时，会重新认证并重试一次；重试仍失败时向 Lark 用户提示消息未送达
 - **去重**：出站按 `(processInstanceId, sequence)` 单调去重；入站按 `message_id` 去重
 
 环境变量：

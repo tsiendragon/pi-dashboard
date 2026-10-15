@@ -19,7 +19,7 @@ export class Gateway {
   private allowedUserIds: readonly string[]
   /** Last applied event sequence per process instance (outbound dedup). */
   private readonly lastSequence = new Map<string, number>()
-  /** Recently handled inbound message ids (dropped if redelivered). */
+  /** Handled/in-flight message ids; failed handling releases the id for redelivery. */
   private readonly seenMessageIds = new Set<string>()
 
   constructor(
@@ -152,6 +152,16 @@ export class Gateway {
       console.log(`[in] duplicate ignored: ${message.messageId}`)
       return
     }
+
+    try {
+      await this.handleMessage(message)
+    } catch (error) {
+      if (message.messageId) this.seenMessageIds.delete(message.messageId)
+      throw error
+    }
+  }
+
+  private async handleMessage(message: ImMessage): Promise<void> {
     const text = message.text.trim()
     if (!text) return
     console.log(`[in] ${message.chatId} ${message.userId}: ${text.slice(0, 80)}`)
@@ -183,7 +193,12 @@ export class Gateway {
       )
       return
     }
-    await this.dashboard.sendInput(summary.processInstanceId, text, 'chatapp')
+    try {
+      await this.dashboard.sendInput(summary.processInstanceId, text, 'chatapp')
+    } catch (error) {
+      console.error(`[in] dashboard forwarding failed: ${errorText(error)}`)
+      await this.reply(message.chatId, message.threadId, '消息暂时未能送达 Agent，请稍后重试。')
+    }
   }
 }
 
