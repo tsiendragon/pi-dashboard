@@ -2,13 +2,14 @@
  * Voice input (speech-to-text) catalog shared by the backend ASR adapter and
  * the dashboard UI.
  *
- * The dashboard transcribes on the backend via DashScope's non-realtime
- * Qwen-ASR HTTP API, so voice input no longer depends on the browser's cloud
- * speech service (which is Chromium-only and blocked on many networks).
+ * Batch transcription uses DashScope's non-realtime Qwen-ASR HTTP API; live
+ * voice input uses the separate realtime Qwen3-ASR WebSocket model. Both run
+ * through the backend, so credentials are not exposed to browser speech services.
  */
 
 export const ASR_DEFAULT_MODEL = 'qwen3-asr-flash'
-/** Browser recordings are uploaded base64-inline; keep well under the JSON body limit. */
+export const ASR_REALTIME_MODEL = 'qwen3-asr-flash-realtime'
+/** Batch endpoint browser recordings are uploaded base64-inline; keep under the JSON body limit. */
 export const ASR_MAX_AUDIO_BYTES = 10 * 1024 * 1024
 
 export interface AsrLanguageOption {
@@ -67,6 +68,7 @@ export interface AsrConfigResponse {
   available: boolean
   reason?: string
   endpoint: string
+  /** Realtime ASR model used by the voice-input UI. */
   defaultModel: string
   maxAudioBytes: number
   languages: AsrLanguageOption[]

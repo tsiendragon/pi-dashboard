@@ -1,180 +1,249 @@
-/**
- * Voice input (speech-to-text) tests: the record → upload → transcript flow, the
- * settings-driven language, error mapping, and the Live Session composer wiring —
- * with fake MediaRecorder / getUserMedia / fetch, i.e. no microphone and no backend.
- */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { act, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useVoiceInput } from '../features/voice/useVoiceInput'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { appendVoiceTranscript, floatAudioToPcm16, useVoiceInput } from '../features/voice/useVoiceInput'
 import LiveSessionComposer from '../features/live-sessions/LiveSessionComposer'
 
-class FakeMediaRecorder {
-  static instances: FakeMediaRecorder[] = []
-  static isTypeSupported = vi.fn(() => true)
-  static clipBytes = 4096
-  ondataavailable: ((event: { data: Blob }) => void) | null = null
-  onstop: (() => void) | null = null
-  state: 'inactive' | 'recording' = 'inactive'
-  readonly mimeType: string
+class FakeProcessor {
+  onaudioprocess: ((event: AudioProcessingEvent) => void) | null = null
+  connect = vi.fn()
+  disconnect = vi.fn()
 
-  constructor(readonly stream: unknown, options?: { mimeType?: string }) {
-    this.mimeType = options?.mimeType ?? 'audio/webm'
-    FakeMediaRecorder.instances.push(this)
+  process(samples = new Float32Array([0, 0.25, -0.25, 1])): void {
+    const inputBuffer = { getChannelData: () => samples } as unknown as AudioBuffer
+    const outputBuffer = { getChannelData: () => new Float32Array(samples.length) } as unknown as AudioBuffer
+    this.onaudioprocess?.({ inputBuffer, outputBuffer } as AudioProcessingEvent)
+  }
+}
+
+class FakeAudioContext {
+  static instances: FakeAudioContext[] = []
+  readonly sampleRate = 16_000
+  readonly destination = {} as AudioDestinationNode
+  state: AudioContextState = 'running'
+  processor?: FakeProcessor
+  readonly source = { connect: vi.fn(), disconnect: vi.fn() } as unknown as MediaStreamAudioSourceNode
+
+  constructor() { FakeAudioContext.instances.push(this) }
+  createMediaStreamSource(): MediaStreamAudioSourceNode { return this.source }
+  createScriptProcessor(): ScriptProcessorNode {
+    this.processor = new FakeProcessor()
+    return this.processor as unknown as ScriptProcessorNode
+  }
+  resume = vi.fn(async () => {})
+  close = vi.fn(async () => { this.state = 'closed' })
+}
+
+class FakeWebSocket {
+  static readonly CONNECTING = 0
+  static readonly OPEN = 1
+  static readonly CLOSING = 2
+  static readonly CLOSED = 3
+  static instances: FakeWebSocket[] = []
+
+  readyState = FakeWebSocket.CONNECTING
+  onopen: ((event: Event) => void) | null = null
+  onmessage: ((event: MessageEvent) => void) | null = null
+  onerror: ((event: Event) => void) | null = null
+  onclose: ((event: CloseEvent) => void) | null = null
+  readonly sent: string[] = []
+
+  constructor(readonly url: string) {
+    FakeWebSocket.instances.push(this)
+    queueMicrotask(() => {
+      if (this.readyState !== FakeWebSocket.CONNECTING) return
+      this.readyState = FakeWebSocket.OPEN
+      this.onopen?.(new Event('open'))
+      this.receive({ type: 'ready' })
+    })
   }
 
-  start(): void { this.state = 'recording' }
-  stop(): void {
-    this.state = 'inactive'
-    this.ondataavailable?.({ data: new Blob([new Uint8Array(FakeMediaRecorder.clipBytes)], { type: this.mimeType }) })
-    this.onstop?.()
+  send(message: string): void {
+    if (this.readyState !== FakeWebSocket.OPEN) throw new Error('socket is not open')
+    this.sent.push(message)
+  }
+
+  receive(message: Record<string, unknown>): void {
+    this.onmessage?.({ data: JSON.stringify(message) } as MessageEvent)
+  }
+
+  close(): void {
+    if (this.readyState >= FakeWebSocket.CLOSING) return
+    this.readyState = FakeWebSocket.CLOSED
+    this.onclose?.({} as CloseEvent)
   }
 }
 
 const stopTrack = vi.fn()
-const getUserMedia = vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] }))
+const getUserMedia = vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream))
 
-function stubBrowserEnvironment(options: { recording?: boolean } = {}): void {
-  if (options.recording !== false) vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
+function stubBrowserEnvironment(options: { audioContext?: boolean } = {}): void {
+  if (options.audioContext !== false) {
+    Object.defineProperty(window, 'AudioContext', { value: FakeAudioContext, configurable: true })
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+  } else {
+    Reflect.deleteProperty(window, 'AudioContext')
+  }
+  vi.stubGlobal('WebSocket', FakeWebSocket)
   Object.defineProperty(navigator, 'mediaDevices', {
     value: { getUserMedia },
     configurable: true,
   })
 }
 
-const okTranscription = (text = '帮我看下这个报错') => ({ ok: true, status: 200, json: async () => ({ text }) })
+function latestSocket(): FakeWebSocket {
+  const socket = FakeWebSocket.instances.at(-1)
+  if (!socket) throw new Error('No realtime ASR socket was created')
+  return socket
+}
 
 beforeEach(() => {
-  FakeMediaRecorder.instances = []
-  FakeMediaRecorder.clipBytes = 4096
-  FakeMediaRecorder.isTypeSupported.mockClear()
+  FakeAudioContext.instances = []
+  FakeWebSocket.instances = []
   stopTrack.mockClear()
-  getUserMedia.mockClear()
-  localStorage.clear()
+  getUserMedia.mockReset()
+  getUserMedia.mockImplementation(async () => ({ getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream))
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  Reflect.deleteProperty(window, 'AudioContext')
   Reflect.deleteProperty(navigator, 'mediaDevices')
 })
 
-describe('useVoiceInput', () => {
-  it('reports browsers that cannot record', () => {
-    stubBrowserEnvironment({ recording: false })
+describe('voice text helpers', () => {
+  it('preserves existing draft text and separates successive transcripts', () => {
+    expect(appendVoiceTranscript('', 'first')).toBe('first')
+    expect(appendVoiceTranscript('typed text', 'first')).toBe('typed text first')
+    expect(appendVoiceTranscript('typed text ', 'first')).toBe('typed text first')
+  })
+
+  it('resamples mono audio to signed little-endian PCM16', () => {
+    const bytes = floatAudioToPcm16(new Float32Array([-1, -0.5, 0, 0.5, 1]), 16_000)
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    expect(Array.from({ length: 5 }, (_, index) => view.getInt16(index * 2, true)))
+      .toEqual([-32768, -16384, 0, 16384, 32767])
+  })
+})
+
+describe('useVoiceInput realtime streaming', () => {
+  it('streams PCM chunks and exposes interim and final text separately', async () => {
+    stubBrowserEnvironment()
+    const onTranscript = vi.fn()
+    const { result } = renderHook(() => useVoiceInput({ language: 'zh', onTranscript }))
+
+    act(() => result.current.toggle())
+    await waitFor(() => expect(result.current.listening).toBe(true))
+    expect(result.current.connecting).toBe(false)
+    expect(latestSocket().url).toContain('/api/asr/realtime?language=zh')
+
+    act(() => FakeAudioContext.instances[0].processor?.process())
+    const audioMessage = latestSocket().sent.map(raw => JSON.parse(raw) as Record<string, unknown>)
+      .find(message => message.type === 'audio')
+    expect(audioMessage?.audio).toEqual(expect.any(String))
+
+    act(() => latestSocket().receive({
+      type: 'conversation.item.input_audio_transcription.text',
+      text: '今天天气',
+      stash: '不错',
+    }))
+    expect(result.current.interimTranscript).toBe('今天天气不错')
+
+    act(() => latestSocket().receive({
+      type: 'conversation.item.input_audio_transcription.completed',
+      transcript: '今天天气不错',
+    }))
+    expect(onTranscript).toHaveBeenCalledWith('今天天气不错')
+    expect(result.current.interimTranscript).toBe('')
+
+    act(() => result.current.stop())
+    expect(result.current.transcribing).toBe(true)
+    expect(latestSocket().sent.map(raw => JSON.parse(raw).type)).toContain('finish')
+    act(() => latestSocket().receive({ type: 'finished' }))
+    expect(result.current.listening).toBe(false)
+    expect(result.current.transcribing).toBe(false)
+    expect(result.current.error).toBeUndefined()
+    expect(stopTrack).toHaveBeenCalled()
+  })
+
+  it('cancels microphone setup when sending before the realtime connection is ready', async () => {
+    stubBrowserEnvironment()
+    let resolveStream: ((stream: MediaStream) => void) | undefined
+    getUserMedia.mockImplementationOnce(() => new Promise(resolve => { resolveStream = resolve }))
+    const { result } = renderHook(() => useVoiceInput())
+
+    act(() => result.current.toggle())
+    expect(result.current.connecting).toBe(true)
+    act(() => result.current.stop())
+    expect(result.current.connecting).toBe(false)
+
+    await act(async () => {
+      resolveStream?.({ getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream)
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(stopTrack).toHaveBeenCalled())
+    expect(FakeWebSocket.instances).toHaveLength(0)
+    expect(result.current.error).toBeUndefined()
+  })
+
+  it('explains when the browser cannot capture streaming audio', () => {
+    stubBrowserEnvironment({ audioContext: false })
     const { result } = renderHook(() => useVoiceInput())
     expect(result.current.supported).toBe(false)
 
     act(() => result.current.toggle())
-    expect(result.current.error).toContain('不支持录音')
-    expect(FakeMediaRecorder.instances).toHaveLength(0)
+    expect(result.current.error).toContain('不支持实时录音')
   })
 
-  it('records a clip, uploads it, and returns the transcript', async () => {
+  it('surfaces realtime service errors', async () => {
     stubBrowserEnvironment()
-    const fetchMock = vi.fn(async () => okTranscription())
-    vi.stubGlobal('fetch', fetchMock)
-    const onTranscript = vi.fn()
-
-    const { result } = renderHook(() => useVoiceInput({ language: 'zh', onTranscript }))
-    expect(result.current.supported).toBe(true)
-
-    await act(async () => { result.current.toggle() })
-    expect(result.current.listening).toBe(true)
-    expect(FakeMediaRecorder.instances[0].state).toBe('recording')
-
-    act(() => result.current.toggle())
-    await waitFor(() => expect(onTranscript).toHaveBeenCalledWith('帮我看下这个报错'))
-
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('/api/asr/transcribe')
-    const body = JSON.parse(String(init.body))
-    expect(body.language).toBe('zh')
-    expect(body.mime_type).toContain('audio/webm')
-    expect(body.audio_base64.length).toBeGreaterThan(0)
-    expect(result.current.listening).toBe(false)
-    expect(result.current.transcribing).toBe(false)
-    // The microphone must be released once the clip is captured.
-    expect(stopTrack).toHaveBeenCalled()
-  })
-
-  it('drops legacy/unverified language codes instead of letting the provider 400', async () => {
-    stubBrowserEnvironment()
-    const fetchMock = vi.fn(async () => okTranscription())
-    vi.stubGlobal('fetch', fetchMock)
-
-    const { result } = renderHook(() => useVoiceInput({ language: 'zh-CN' }))
-    await act(async () => { result.current.toggle() })
-    act(() => result.current.toggle())
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-
-    const body = JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body))
-    expect(body.language).toBeUndefined()
-  })
-
-  it('explains microphone permission and capture failures', async () => {
-    stubBrowserEnvironment()
-    getUserMedia.mockRejectedValueOnce(Object.assign(new Error('denied'), { name: 'NotAllowedError' }))
     const { result } = renderHook(() => useVoiceInput())
+    act(() => result.current.toggle())
+    await waitFor(() => expect(result.current.listening).toBe(true))
 
-    await act(async () => { result.current.toggle() })
-    expect(result.current.error).toContain('麦克风权限被拒绝')
+    act(() => latestSocket().receive({ type: 'error', message: 'Realtime model unavailable' }))
+    expect(result.current.error).toBe('Realtime model unavailable')
     expect(result.current.listening).toBe(false)
-
-    getUserMedia.mockRejectedValueOnce(Object.assign(new Error('missing'), { name: 'NotFoundError' }))
-    await act(async () => { result.current.toggle() })
-    expect(result.current.error).toContain('没有检测到麦克风设备')
-  })
-
-  it('rejects clips that are too short and surfaces backend errors', async () => {
-    stubBrowserEnvironment()
-    const fetchMock = vi.fn(async () => ({ ok: false, status: 422, json: async () => ({ message: '没有识别到语音内容，请靠近麦克风再说一次。' }) }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    const { result } = renderHook(() => useVoiceInput())
-    FakeMediaRecorder.clipBytes = 10
-    await act(async () => { result.current.toggle() })
-    act(() => result.current.toggle())
-    expect(result.current.error).toContain('录音太短')
-    expect(fetchMock).not.toHaveBeenCalled()
-
-    FakeMediaRecorder.clipBytes = 4096
-    await act(async () => { result.current.toggle() })
-    act(() => result.current.toggle())
-    await waitFor(() => expect(result.current.error).toContain('没有识别到语音内容'))
-
-    act(() => result.current.clearError())
-    expect(result.current.error).toBeUndefined()
   })
 })
 
-describe('LiveSessionComposer voice input', () => {
-  it('records on the first tap and fills the composer on the second', async () => {
+describe('LiveSessionComposer realtime voice input', () => {
+  it('appends successive dictated segments to the existing composer draft', async () => {
     stubBrowserEnvironment()
-    const fetchMock = vi.fn(async () => okTranscription('帮我看下这个报错'))
-    vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
     render(<LiveSessionComposer status="idle" onSubmit={async () => {}} />)
+    const input = screen.getByRole('textbox')
+    await user.type(input, '已有草稿')
 
+    const dictate = async (text: string): Promise<void> => {
+      await user.click(screen.getByRole('button', { name: '开始语音输入' }))
+      await waitFor(() => expect(screen.getByRole('button', { name: '停止录音并识别' })).toHaveAttribute('aria-pressed', 'true'))
+      const socket = latestSocket()
+      await user.click(screen.getByRole('button', { name: '停止录音并识别' }))
+      act(() => {
+        socket.receive({ type: 'conversation.item.input_audio_transcription.completed', transcript: text })
+        socket.receive({ type: 'finished' })
+      })
+    }
+
+    await dictate('第一段语音')
+    await waitFor(() => expect(input).toHaveValue('已有草稿 第一段语音'))
+    await dictate('第二段语音')
+    await waitFor(() => expect(input).toHaveValue('已有草稿 第一段语音 第二段语音'))
+  })
+
+  it('shows interim text while recording', async () => {
+    stubBrowserEnvironment()
+    const user = userEvent.setup()
+    render(<LiveSessionComposer status="idle" onSubmit={async () => {}} />)
     await user.click(screen.getByRole('button', { name: '开始语音输入' }))
     await waitFor(() => expect(screen.getByRole('button', { name: '停止录音并识别' })).toHaveAttribute('aria-pressed', 'true'))
 
-    await user.click(screen.getByRole('button', { name: '停止录音并识别' }))
-    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('帮我看下这个报错'))
-
-    // Default settings (Settings → Voice) mean Mandarin.
-    const body = JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body))
-    expect(body.language).toBe('zh')
-  })
-
-  it('tells the user when the browser cannot record', async () => {
-    stubBrowserEnvironment({ recording: false })
-    const user = userEvent.setup()
-    render(<LiveSessionComposer status="idle" onSubmit={async () => {}} />)
-
-    const mic = screen.getByRole('button', { name: '开始语音输入' })
-    expect(mic).toHaveAttribute('title', expect.stringContaining('不支持录音'))
-
-    await user.click(mic)
-    expect(await screen.findByRole('alert')).toHaveTextContent('当前浏览器不支持录音')
+    act(() => latestSocket().receive({
+      type: 'conversation.item.input_audio_transcription.text',
+      text: '正在说',
+      stash: '话',
+    }))
+    expect(screen.getByRole('status')).toHaveTextContent('正在识别：正在说话')
   })
 })
