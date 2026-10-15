@@ -80,11 +80,30 @@ export class DashboardClient {
     return this.cookie
   }
 
+  private async requestWithCookie(
+    url: string,
+    options: { method: string; headers?: Record<string, string>; body?: string },
+    refreshStatuses: readonly number[] = [401],
+  ): Promise<HttpResult> {
+    const request = (cookie: string) =>
+      httpRequest(url, {
+        ...options,
+        headers: this.headers({ ...options.headers, cookie }),
+      })
+
+    let cookie = await this.ensureCookie()
+    let res = await request(cookie)
+    if (refreshStatuses.includes(res.status)) {
+      if (this.cookie === cookie) this.cookie = undefined
+      cookie = await this.ensureCookie()
+      res = await request(cookie)
+    }
+    return res
+  }
+
   async listSessions(): Promise<LiveSessionSummary[]> {
-    const cookie = await this.ensureCookie()
-    const res = await httpRequest(`${this.cfg.dashboardBaseUrl}/api/live-sessions`, {
+    const res = await this.requestWithCookie(`${this.cfg.dashboardBaseUrl}/api/live-sessions`, {
       method: 'GET',
-      headers: this.headers({ cookie }),
     })
     if (res.status !== 200) throw new Error(`list_failed: ${res.status} ${res.body}`)
     return (JSON.parse(res.body) as { sessions: LiveSessionSummary[] }).sessions
@@ -96,12 +115,11 @@ export class DashboardClient {
     text: string,
     channel: LiveSessionInputChannel = 'chatapp',
   ): Promise<void> {
-    const cookie = await this.ensureCookie()
-    const res = await httpRequest(
+    const res = await this.requestWithCookie(
       `${this.cfg.dashboardBaseUrl}/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`,
       {
         method: 'POST',
-        headers: this.headers({ cookie, 'content-type': 'application/json' }),
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ command: { type: 'input', text, channel } }),
       },
     )
@@ -110,10 +128,9 @@ export class DashboardClient {
 
   /** Start a new live session (pi in a fresh tmux session). Returns the raw start result. */
   async startSession(cwd: string, title?: string): Promise<{ sessionId?: string; tmuxSession?: string }> {
-    const cookie = await this.ensureCookie()
-    const res = await httpRequest(`${this.cfg.dashboardBaseUrl}/api/live-sessions/start`, {
+    const res = await this.requestWithCookie(`${this.cfg.dashboardBaseUrl}/api/live-sessions/start`, {
       method: 'POST',
-      headers: this.headers({ cookie, 'content-type': 'application/json' }),
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ cwd, ...(title ? { title } : {}) }),
     })
     if (res.status !== 200) throw new Error(`start_failed: ${res.status} ${res.body}`)
@@ -125,7 +142,7 @@ export class DashboardClient {
    * Open the live event stream (the output port) and invoke `onEvent` per
    * frame. The connection is self-healing: on close it reconnects with
    * exponential backoff, refreshing the auth cookie when the dashboard has
-   * restarted. Never throws — the dashboard may still be starting up.
+   * restarted or the session has expired. Never throws — the dashboard may still be starting up.
    */
   async subscribe(onEvent: (frame: LiveSessionBrowserEvent) => void): Promise<void> {
     this.onFrame = onEvent
@@ -136,8 +153,9 @@ export class DashboardClient {
   private async openSocket(): Promise<void> {
     if (this.stopped) return
     try {
+      await this.ensureCookie()
+      const ticket = await this.fetchTicket()
       const cookie = await this.ensureCookie()
-      const ticket = await this.fetchTicket(cookie)
       const wsUrl = `${this.cfg.dashboardBaseUrl.replace(/^http/, 'ws')}/api/live-sessions/ws?ticket=${encodeURIComponent(ticket)}`
       const ws = new WebSocket(wsUrl, { headers: this.headers({ cookie }) })
       ws.on('message', raw => {
@@ -175,20 +193,12 @@ export class DashboardClient {
     }, delay)
   }
 
-  private async fetchTicket(cookie: string): Promise<string> {
-    const url = `${this.cfg.dashboardBaseUrl}/api/live-sessions/ws-ticket`
-    const request = (value: string) =>
-      httpRequest(url, {
-        method: 'POST',
-        headers: this.headers({ cookie: value, 'content-type': 'application/json' }),
-        body: '{}',
-      })
-    let res = await request(cookie)
-    if (res.status === 401 || res.status === 403) {
-      // Stale cookie (e.g. dashboard restarted) — re-authenticate once.
-      this.cookie = undefined
-      res = await request(await this.ensureCookie())
-    }
+  private async fetchTicket(): Promise<string> {
+    const res = await this.requestWithCookie(
+      `${this.cfg.dashboardBaseUrl}/api/live-sessions/ws-ticket`,
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+      [401, 403],
+    )
     if (res.status !== 200) throw new Error(`ws_ticket_failed: ${res.status} ${res.body}`)
     return (JSON.parse(res.body) as { result: { ticket: string } }).result.ticket
   }
