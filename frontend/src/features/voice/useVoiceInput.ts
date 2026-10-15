@@ -1,35 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { normalizeAsrLanguage } from '@shared/asr.js'
 
-/**
- * Voice input (speech-to-text) for the dashboard.
- *
- * The browser only *records*; transcription happens on the backend via DashScope
- * (`/api/asr/transcribe`). The browser's own `SpeechRecognition` is deliberately
- * not used: it uploads audio to Google, exists only in Chromium, and fails with
- * `network` on restricted networks.
- */
+const REALTIME_PATH = '/api/asr/realtime'
+const REALTIME_SAMPLE_RATE = 16_000
+const CONNECT_TIMEOUT_MS = 15_000
 
-/** Clips shorter than this almost always mean "nothing was said". */
-const MIN_CLIP_BYTES = 1200
-const PREFERRED_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
-
-function pickMimeType(): string | undefined {
-  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return undefined
-  return PREFERRED_MIME_TYPES.find(type => MediaRecorder.isTypeSupported(type))
-}
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(new Error('录音读取失败'))
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : ''
-      const comma = dataUrl.indexOf(',')
-      resolve(comma >= 0 ? dataUrl.slice(comma + 1) : '')
-    }
-    reader.readAsDataURL(blob)
-  })
+interface RealtimeCapture {
+  socket?: WebSocket
+  stream?: MediaStream
+  context?: AudioContext
+  source?: MediaStreamAudioSourceNode
+  processor?: ScriptProcessorNode
+  ready: boolean
+  finishRequested: boolean
+  finished: boolean
+  cancelled: boolean
+  hasTranscript: boolean
+  hasError: boolean
+  resolveReady?: () => void
+  rejectReady?: (error: Error) => void
 }
 
 function micErrorMessage(caught: unknown): string {
@@ -37,36 +26,83 @@ function micErrorMessage(caught: unknown): string {
   if (name === 'NotAllowedError' || name === 'SecurityError') return '麦克风权限被拒绝：请在浏览器地址栏的站点权限里允许麦克风。'
   if (name === 'NotFoundError' || name === 'OverconstrainedError') return '没有检测到麦克风设备。'
   if (name === 'NotReadableError') return '麦克风被其它程序占用，请关闭后重试。'
-  return caught instanceof Error ? caught.message : '无法开始录音。'
+  return caught instanceof Error ? caught.message : '无法开始实时录音。'
 }
 
-async function errorMessage(response: Response): Promise<string> {
-  const fallback = `语音识别失败（HTTP ${response.status}）`
-  try {
-    const payload = await response.json() as { message?: unknown; error?: unknown }
-    if (typeof payload.message === 'string' && payload.message) return payload.message
-    if (typeof payload.error === 'string' && payload.error) return payload.error
-  } catch {
-    // Non-JSON error body: keep the status-based message.
+function errorText(payload: Record<string, unknown>): string {
+  if (typeof payload.message === 'string' && payload.message) return payload.message
+  const error = payload.error
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message) return message
   }
-  return fallback
+  return '实时语音识别失败，请重试。'
+}
+
+function appendBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let index = 0; index < bytes.length; index++) binary += String.fromCharCode(bytes[index])
+  return btoa(binary)
+}
+
+/** Resample mono Float32 audio and encode signed little-endian PCM16 for DashScope. */
+export function floatAudioToPcm16(samples: Float32Array, inputRate: number, outputRate = REALTIME_SAMPLE_RATE): Uint8Array {
+  if (inputRate <= 0 || outputRate <= 0) throw new Error('音频采样率无效。')
+  const ratio = inputRate / outputRate
+  const outputLength = Math.floor(samples.length / ratio)
+  const buffer = new ArrayBuffer(outputLength * 2)
+  const view = new DataView(buffer)
+
+  for (let index = 0; index < outputLength; index++) {
+    const start = Math.floor(index * ratio)
+    const end = Math.min(samples.length, Math.max(start + 1, Math.floor((index + 1) * ratio)))
+    let sum = 0
+    for (let sourceIndex = start; sourceIndex < end; sourceIndex++) sum += samples[sourceIndex]
+    const value = Math.max(-1, Math.min(1, sum / (end - start)))
+    view.setInt16(index * 2, Math.round(value < 0 ? value * 0x8000 : value * 0x7fff), true)
+  }
+  return new Uint8Array(buffer)
+}
+
+function releaseAudio(capture: RealtimeCapture): void {
+  if (capture.processor) {
+    capture.processor.onaudioprocess = null
+    capture.processor.disconnect()
+    capture.processor = undefined
+  }
+  capture.source?.disconnect()
+  capture.source = undefined
+  capture.stream?.getTracks().forEach(track => track.stop())
+  capture.stream = undefined
+  if (capture.context && capture.context.state !== 'closed') {
+    void capture.context.close().catch(() => {})
+  }
+  capture.context = undefined
+}
+
+/** Append a completed speech transcript without replacing the user's existing draft. */
+export function appendVoiceTranscript(current: string, transcript: string): string {
+  if (!current || !/\S/.test(current)) return `${current}${transcript}`
+  return `${current}${/\s$/.test(current) ? '' : ' '}${transcript}`
 }
 
 export interface VoiceInputOptions {
   /** Short language code (see shared ASR_LANGUAGES); '' = auto-detect. */
   language?: string
-  /** Override the backend ASR model. */
-  model?: string
-  /** Called once with the finished transcript. */
+  /** Called once with each completed speech segment. */
   onTranscript?: (text: string) => void
 }
 
 export interface VoiceInput {
   /** Microphone is recording right now. */
   listening: boolean
-  /** A recorded clip is being transcribed. */
+  /** The realtime connection is being established. */
+  connecting: boolean
+  /** Waiting for the final transcription after recording stopped. */
   transcribing: boolean
-  /** False when the browser cannot record audio at all. */
+  /** Current provisional words; final text is delivered through onTranscript. */
+  interimTranscript: string
+  /** False when the browser cannot capture and stream audio. */
   supported: boolean
   error: string | undefined
   /** Start recording, or finish + transcribe when already recording. */
@@ -75,123 +111,227 @@ export interface VoiceInput {
   clearError: () => void
 }
 
-export function useVoiceInput({ language, model, onTranscript }: VoiceInputOptions = {}): VoiceInput {
+export function useVoiceInput({ language, onTranscript }: VoiceInputOptions = {}): VoiceInput {
   const [supported] = useState(() => (
-    typeof MediaRecorder !== 'undefined'
+    typeof window !== 'undefined'
+    && typeof window.AudioContext === 'function'
+    && typeof WebSocket !== 'undefined'
     && typeof navigator !== 'undefined'
     && typeof navigator.mediaDevices?.getUserMedia === 'function'
   ))
   const [listening, setListening] = useState(false)
+  const [connecting, setConnecting] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
+  const [interimTranscript, setInterimTranscript] = useState('')
   const [error, setError] = useState<string>()
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const abortRef = useRef<AbortController | null>(null)
+  const captureRef = useRef<RealtimeCapture | null>(null)
+  const startingRef = useRef(false)
   const callbacksRef = useRef(onTranscript)
   callbacksRef.current = onTranscript
-  const settingsRef = useRef({ language, model })
-  settingsRef.current = { language, model }
+  const languageRef = useRef(language)
+  languageRef.current = language
 
-  const releaseStream = useCallback(() => {
-    streamRef.current?.getTracks().forEach(track => track.stop())
-    streamRef.current = null
-    recorderRef.current = null
-  }, [])
-
-  const upload = useCallback(async (blob: Blob, mimeType: string) => {
-    setTranscribing(true)
-    const controller = new AbortController()
-    abortRef.current = controller
-    try {
-      const audioBase64 = await blobToBase64(blob)
-      const response = await fetch('/api/asr/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audio_base64: audioBase64,
-          mime_type: mimeType,
-          language: normalizeAsrLanguage(settingsRef.current.language) || undefined,
-          model: settingsRef.current.model || undefined,
-        }),
-        signal: controller.signal,
-      })
-      if (!response.ok) throw new Error(await errorMessage(response))
-      const payload = await response.json() as { text?: unknown }
-      const text = typeof payload.text === 'string' ? payload.text.trim() : ''
-      if (!text) throw new Error('没有识别到语音内容，请靠近麦克风再说一次。')
-      callbacksRef.current?.(text)
-    } catch (caught) {
-      if (controller.signal.aborted) return
-      setError(caught instanceof Error ? caught.message : '语音识别失败。')
-    } finally {
-      if (abortRef.current === controller) abortRef.current = null
-      if (!controller.signal.aborted) setTranscribing(false)
+  const finishCapture = useCallback((capture: RealtimeCapture, closeSocket: boolean) => {
+    releaseAudio(capture)
+    if (captureRef.current === capture) captureRef.current = null
+    if (closeSocket && capture.socket && capture.socket.readyState < WebSocket.CLOSING) {
+      capture.socket.close(1000, 'voice input finished')
     }
   }, [])
 
-  const finish = useCallback(() => {
-    const recorder = recorderRef.current
-    if (!recorder) return
-    setListening(false)
+  const receiveServerMessage = useCallback((capture: RealtimeCapture, data: unknown) => {
+    if (typeof data !== 'string') return
+    let payload: Record<string, unknown>
     try {
-      recorder.stop()
+      const parsed: unknown = JSON.parse(data)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
+      payload = parsed as Record<string, unknown>
     } catch {
-      // Already stopped — onstop has run (or will) and cleans up.
-    }
-  }, [])
-
-  const start = useCallback(async () => {
-    if (typeof MediaRecorder === 'undefined' || typeof navigator.mediaDevices?.getUserMedia !== 'function') {
-      setError('当前浏览器不支持录音（需要支持 MediaRecorder 的浏览器）。')
       return
     }
-    setError(undefined)
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      const mimeType = pickMimeType()
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-      chunksRef.current = []
-      recorder.ondataavailable = event => { if (event.data?.size) chunksRef.current.push(event.data) }
-      recorder.onstop = () => {
-        const type = recorder.mimeType || mimeType || 'audio/webm'
-        const blob = new Blob(chunksRef.current, { type })
-        chunksRef.current = []
-        releaseStream()
-        if (blob.size < MIN_CLIP_BYTES) {
-          setError('录音太短或没有声音，请按住多说一会儿。')
-          return
-        }
-        void upload(blob, type)
+
+    if (payload.type === 'ready') {
+      capture.ready = true
+      capture.resolveReady?.()
+      return
+    }
+    if (payload.type === 'error' || payload.type === 'conversation.item.input_audio_transcription.failed') {
+      capture.hasError = true
+      const message = errorText(payload)
+      setError(message)
+      setInterimTranscript('')
+      if (!capture.ready) capture.rejectReady?.(new Error(message))
+      else {
+        capture.finished = true
+        setListening(false)
+        setConnecting(false)
+        setTranscribing(false)
+        finishCapture(capture, true)
       }
-      recorderRef.current = recorder
-      recorder.start()
+      return
+    }
+    if (payload.type === 'conversation.item.input_audio_transcription.text') {
+      const text = typeof payload.text === 'string' ? payload.text : ''
+      const stash = typeof payload.stash === 'string' ? payload.stash : ''
+      setInterimTranscript(`${text}${stash}`)
+      return
+    }
+    if (payload.type === 'conversation.item.input_audio_transcription.completed') {
+      const transcript = typeof payload.transcript === 'string' ? payload.transcript.trim() : ''
+      setInterimTranscript('')
+      if (transcript) {
+        capture.hasTranscript = true
+        callbacksRef.current?.(transcript)
+      }
+      return
+    }
+    if (payload.type === 'finished') {
+      capture.finished = true
+      setInterimTranscript('')
+      if (!capture.hasTranscript && !capture.hasError) setError('没有识别到语音内容，请靠近麦克风再说一次。')
+      setListening(false)
+      setConnecting(false)
+      setTranscribing(false)
+      finishCapture(capture, true)
+    }
+  }, [finishCapture])
+
+  const start = useCallback(async () => {
+    if (!supported || startingRef.current || captureRef.current) {
+      if (!supported) setError('当前浏览器不支持实时录音（需要麦克风、AudioContext 和 WebSocket）。')
+      return
+    }
+    startingRef.current = true
+    setError(undefined)
+    setInterimTranscript('')
+    setConnecting(true)
+    setTranscribing(false)
+
+    const capture: RealtimeCapture = {
+      ready: false,
+      finishRequested: false,
+      finished: false,
+      cancelled: false,
+      hasTranscript: false,
+      hasError: false,
+    }
+    captureRef.current = capture
+
+    try {
+      const AudioContextConstructor = window.AudioContext
+      if (!AudioContextConstructor) throw new Error('当前浏览器不支持 AudioContext。')
+      capture.context = new AudioContextConstructor()
+      const streamPromise = navigator.mediaDevices.getUserMedia({ audio: true })
+      const resumePromise = capture.context.resume()
+      capture.stream = await streamPromise
+      await resumePromise
+      if (captureRef.current !== capture) {
+        releaseAudio(capture)
+        return
+      }
+
+      const url = new URL(REALTIME_PATH, window.location.href)
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      const normalizedLanguage = normalizeAsrLanguage(languageRef.current)
+      if (normalizedLanguage) url.searchParams.set('language', normalizedLanguage)
+      capture.socket = new WebSocket(url.toString())
+
+      const ready = new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('连接实时语音识别服务超时。')), CONNECT_TIMEOUT_MS)
+        capture.resolveReady = () => { clearTimeout(timeout); resolve() }
+        capture.rejectReady = reason => { clearTimeout(timeout); reject(reason) }
+      })
+      capture.socket.onmessage = event => receiveServerMessage(capture, event.data)
+      capture.socket.onerror = () => {
+        if (!capture.ready) capture.rejectReady?.(new Error('实时语音连接失败，请检查网络后重试。'))
+      }
+      capture.socket.onclose = () => {
+        if (capture.finished || captureRef.current !== capture) return
+        if (!capture.ready) capture.rejectReady?.(new Error('实时语音连接已中断，请重试。'))
+        if (!capture.hasError) setError('实时语音连接已中断，请重试。')
+        setInterimTranscript('')
+        setListening(false)
+        setConnecting(false)
+        setTranscribing(false)
+        capture.finished = true
+        finishCapture(capture, false)
+      }
+
+      await ready
+      if (captureRef.current !== capture || !capture.context || !capture.stream) return
+
+      capture.source = capture.context.createMediaStreamSource(capture.stream)
+      capture.processor = capture.context.createScriptProcessor(2048, 1, 1)
+      capture.processor.onaudioprocess = event => {
+        const output = event.outputBuffer.getChannelData(0)
+        output.fill(0)
+        if (!capture.ready || capture.finishRequested || capture.socket?.readyState !== WebSocket.OPEN) return
+        const pcm = floatAudioToPcm16(event.inputBuffer.getChannelData(0), capture.context!.sampleRate)
+        if (pcm.length === 0) return
+        capture.socket.send(JSON.stringify({ type: 'audio', audio: appendBase64(pcm) }))
+      }
+      capture.source.connect(capture.processor)
+      capture.processor.connect(capture.context.destination)
+      setConnecting(false)
       setListening(true)
     } catch (caught) {
-      releaseStream()
+      capture.finished = true
+      setConnecting(false)
       setListening(false)
-      setError(micErrorMessage(caught))
+      setTranscribing(false)
+      if (!capture.cancelled) setError(micErrorMessage(caught))
+      finishCapture(capture, true)
+    } finally {
+      startingRef.current = false
     }
-  }, [releaseStream, upload])
+  }, [finishCapture, receiveServerMessage, supported])
 
-  const stop = useCallback(() => finish(), [finish])
+  const stop = useCallback(() => {
+    const capture = captureRef.current
+    if (!capture || capture.finishRequested || capture.finished) return
+    if (!capture.ready) {
+      capture.cancelled = true
+      capture.finished = true
+      capture.rejectReady?.(new Error('Realtime capture cancelled.'))
+      setInterimTranscript('')
+      setConnecting(false)
+      setListening(false)
+      setTranscribing(false)
+      finishCapture(capture, true)
+      return
+    }
+    capture.finishRequested = true
+    setListening(false)
+    setTranscribing(true)
+    releaseAudio(capture)
+    if (capture.socket?.readyState === WebSocket.OPEN) {
+      capture.socket.send(JSON.stringify({ type: 'finish' }))
+    } else {
+      capture.hasError = true
+      capture.finished = true
+      setError('实时语音连接已断开，请重新录音。')
+      setTranscribing(false)
+      finishCapture(capture, true)
+    }
+  }, [finishCapture])
+
   const toggle = useCallback(() => {
-    if (recorderRef.current) finish()
-    else void start()
-  }, [finish, start])
+    const capture = captureRef.current
+    if (capture) {
+      if (capture.ready && !capture.finishRequested) stop()
+      return
+    }
+    void start()
+  }, [start, stop])
 
   useEffect(() => () => {
-    abortRef.current?.abort()
-    try {
-      recorderRef.current?.stop()
-    } catch {
-      // Nothing recording.
-    }
-    releaseStream()
-  }, [releaseStream])
+    const capture = captureRef.current
+    if (!capture) return
+    capture.finished = true
+    finishCapture(capture, true)
+  }, [finishCapture])
 
   const clearError = useCallback(() => setError(undefined), [])
 
-  return { listening, transcribing, supported, error, toggle, stop, clearError }
+  return { listening, connecting, transcribing, interimTranscript, supported, error, toggle, stop, clearError }
 }
