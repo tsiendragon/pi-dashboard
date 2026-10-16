@@ -33,8 +33,9 @@ describe('UsageLedger', () => {
     const report = await new UsageLedger(ledgerDir).getReport('2026-09', 'UTC')
     expect(report.recordCount).toBe(3)
     expect(report.total.costUsd).toBeCloseTo(0.06)
-    expect(report.models[0].efforts.map(item => [item.key, item.costUsd])).toEqual([['high', 0.03], ['low', 0.02], ['unknown', 0.01]])
-    expect(report.models[0].efforts[0].effectiveUsdPerMillionTokens).toBeCloseTo(0.03 / 110 * 1e6)
+    expect(report.models).toHaveLength(1)
+    expect(report.models[0].costUsd).toBeCloseTo(0.06)
+    expect(report.models[0].efforts).toBeUndefined()
   })
 
   it('persists session usage and aggregates daily, model, and session totals', async () => {
@@ -123,5 +124,22 @@ describe('UsageLedger', () => {
     expect(await ledger.recordLiveEvent(event, summary)).toBe(true)
     expect(await ledger.recordLiveEvent(event, summary)).toBe(false)
     expect((await ledger.getReport('2026-09', 'UTC')).sessions[0]).toMatchObject({ key: 'session-a', costUsd: 0.02 })
+  })
+
+  it('memoizes reports but never serves stale data after a new record', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'pi-memo-'))
+    const ledger = new UsageLedger(dir)
+    const live = (id, cost) => ({
+      type: 'event', processInstanceId: 'p', sequence: 1,
+      event: { type: 'message_end', data: { entryId: id, message: { role: 'assistant', provider: 'test', model: 'm', timestamp: '2026-09-03T00:00:00Z', usage: usage(10, 1, cost) } } },
+    })
+    await ledger.recordLiveEvent(live('a', 0.01), { sessionId: 's' })
+    const first = await ledger.getReport('2026-09', 'UTC')
+    expect(await ledger.getReport('2026-09', 'UTC')).toBe(first)
+    await ledger.recordLiveEvent(live('b', 0.02), { sessionId: 's' })
+    const second = await ledger.getReport('2026-09', 'UTC')
+    expect(second).not.toBe(first)
+    expect(second.total.costUsd).toBeCloseTo(0.03)
+    await expect(ledger.getReport('bad')).rejects.toThrow('YYYY-MM')
   })
 })

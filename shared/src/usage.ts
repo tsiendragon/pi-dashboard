@@ -18,7 +18,6 @@ export interface UsageDailyPoint extends UsageTotals {
 
 export interface UsageModelSummary extends UsageTotals {
   key: string
-  efforts?: UsageModelSummary[]
   /** Actual weighted cost per million recorded tokens for this period. */
   effectiveUsdPerMillionTokens: number
 }
