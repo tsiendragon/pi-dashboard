@@ -84,9 +84,19 @@ describe('LiveSession path/config policy', () => {
     expect(parseLiveSessionConfig(undefined)).toMatchObject({
       enabled: true,
       roots: [],
+      repoRoots: [],
       claimMode: 'on-first-input',
     })
     expect(parseLiveSessionConfig({ roots: ['relative/path'] })).toMatchObject({ enabled: false, roots: [] })
+  })
+
+  it('keeps only absolute, de-duplicated repo roots', () => {
+    const config = parseLiveSessionConfig({
+      roots: ['/srv/repos'],
+      repoRoots: ['/srv/repos', 'relative/path', 42, '/srv/repos'],
+    })
+    expect(config.repoRoots).toEqual(['/srv/repos'])
+    expect(parseLiveSessionConfig({ roots: ['/srv/repos'] }).repoRoots).toEqual([])
   })
 })
 
@@ -303,6 +313,10 @@ describe('LiveSessionRegistry', () => {
     expect(commands.at(-1)).toEqual({ type: 'compact', leaseId: 'lease-a' })
     await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'input', text: '/clear', channel: 'web' })
     expect(commands.at(-1)).toEqual({ type: 'input', text: '/clear', channel: 'web' })
+    // Read-only context inspection: another browser may hold the lease, and asking
+    // for the context must not steal or require control.
+    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'get_context' })
+    expect(commands.at(-1)).toEqual({ type: 'get_context' })
     await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'shutdown' })
     expect(commands.at(-1)).toEqual({ type: 'shutdown' })
 
@@ -827,6 +841,47 @@ describe('LiveSessionBroker', () => {
     await expect(ok.json()).resolves.toMatchObject({
       ok: true,
       result: { focusKey: 'child', sessions: [{ key: 'child', isFocus: true }], nodes: [{ id: 'u1', isHead: true }] },
+    })
+  })
+
+  it('serves repo candidates for the start field only to an authenticated browser, and only inside the configured repo roots', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pi-live-repo-routes-'))
+    const repoRoot = path.join(base, 'repos')
+    await mkdir(path.join(repoRoot, 'demo-toolkit', '.git'), { recursive: true })
+    await mkdir(path.join(repoRoot, 'pi-dashboard'))
+
+    const registry = new LiveSessionRegistry()
+    const auth = new LiveSessionBrowserAuth({ tokenPath: path.join(base, 'live-control-token') })
+    const app = express()
+    app.use(express.json())
+    const routes = createLiveSessionRoutes({ app, registry, auth, repoRoots: [repoRoot] })
+    await routes.start()
+    const server = app.listen(0, '127.0.0.1')
+    cleanups.push(async () => {
+      await routes.stop(); await auth.stop(); await registry.stop()
+      await new Promise(resolve => server.close(resolve))
+      await rm(base, { recursive: true, force: true })
+    })
+    await new Promise(resolve => server.once('listening', resolve))
+    const origin = `http://127.0.0.1:${server.address().port}`
+
+    expect((await fetch(`${origin}/api/live-sessions/repo-candidates`)).status).toBe(401)
+
+    const token = (await readFile(auth.tokenPath, 'utf8')).trim()
+    const login = await fetch(`${origin}/api/live-sessions/auth`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ token }),
+    })
+    expect(login.status).toBe(200)
+    const cookie = login.headers.get('set-cookie')?.split(';')[0]
+
+    const response = await fetch(`${origin}/api/live-sessions/repo-candidates`, { headers: { cookie } })
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      repos: [
+        { name: 'demo-toolkit', path: path.join(repoRoot, 'demo-toolkit'), git: true },
+        { name: 'pi-dashboard', path: path.join(repoRoot, 'pi-dashboard'), git: false },
+      ],
     })
   })
 })

@@ -9,6 +9,17 @@ import { describe, expect, it } from 'vitest'
 import { validateLiveSessionCommand } from '../live-sessions/protocol.js'
 
 describe('live-session command validation', () => {
+  it('accepts the read-only context view request as a browser command', () => {
+    expect(validateLiveSessionCommand({ type: 'get_context' }, true)).toEqual({ type: 'get_context' })
+    // Read-only, so it must not require a lease — the dashboard asks for it while
+    // another browser may hold control.
+    expect(validateLiveSessionCommand({ type: 'get_context' }, false)).toEqual({ type: 'get_context' })
+  })
+
+  it('rejects a context view request with extra fields', () => {
+    expect(() => validateLiveSessionCommand({ type: 'get_context', full: true }, true)).toThrow(/invalid or unsupported/)
+  })
+
   it('accepts the dedicated shutdown control as a browser command', () => {
     expect(validateLiveSessionCommand({ type: 'shutdown' }, true)).toEqual({ type: 'shutdown' })
   })

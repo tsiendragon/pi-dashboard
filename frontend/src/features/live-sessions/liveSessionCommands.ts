@@ -57,3 +57,14 @@ export const LIVE_SESSION_TUI_ONLY: LiveSessionSlashItem[] = [
 export function clearCommandAvailable(capabilities: readonly string[] | undefined): boolean {
   return capabilities?.includes('session_clear') === true
 }
+
+/**
+ * Whether this session can be asked what it sends to the model.
+ *
+ * The bridge advertises `context_view` only when it implements the read-only
+ * `get_context` command. An older bridge would answer `unsupported_command`, so the
+ * button stays hidden instead of opening a window that can only fail.
+ */
+export function contextViewAvailable(capabilities: readonly string[] | undefined): boolean {
+  return capabilities?.includes('context_view') === true
+}

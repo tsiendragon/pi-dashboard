@@ -1,4 +1,4 @@
-import type { LiveSessionCommand, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionModelOption, LiveSessionReloadResult, LiveSessionSummary } from '@shared/live-sessions'
+import type { LiveSessionCommand, LiveSessionContextView, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionModelOption, LiveSessionReloadResult, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
 import type { SessionTreeGraph } from '@shared/session-tree'
 import type { CompactionMark } from './compactionWatch'
 
@@ -65,11 +65,21 @@ export const liveSessionApi = {
     .then(result => result.result),
   list: () => fetch('/api/live-sessions', { credentials: 'same-origin' })
     .then(json<{ sessions: LiveSessionSummary[]; browserClientId?: string }>),
+  /** Directories under `liveSessions.repoRoots` the start field may suggest by keyword. */
+  repoCandidates: () => fetch('/api/live-sessions/repo-candidates', { credentials: 'same-origin' })
+    .then(json<{ repos?: RepoCandidate[] }>)
+    .then(result => Array.isArray(result.repos) ? result.repos : []),
   listMeta: () => fetch('/api/live-session-meta', { credentials: 'same-origin' })
     .then(json<{ meta: Record<string, LiveSessionMeta> }>).then(result => result.meta),
   patchMeta: (processInstanceId: string, patch: { tags?: string[]; pinned?: boolean }) => fetch(`/api/live-sessions/${encodeURIComponent(processInstanceId)}/meta`, {
     method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
   }).then(json<{ ok: true; meta: LiveSessionMeta; all: Record<string, LiveSessionMeta> }>).then(result => result.all),
+  listOrderState: () => fetch('/api/live-session-order', { credentials: 'same-origin' })
+    .then(json<{ order: string[]; sectionOrder?: string[] }>)
+    .then(result => ({ order: result.order, sectionOrder: result.sectionOrder ?? [] })),
+  saveSectionOrder: (sectionOrder: string[]) => fetch('/api/live-session-order', {
+    method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sectionOrder }),
+  }).then(json<{ ok: true; sectionOrder: string[] }>).then(result => result.sectionOrder),
   listOrder: () => fetch('/api/live-session-order', { credentials: 'same-origin' })
     .then(json<{ order?: string[] }>).then(result => Array.isArray(result.order) ? result.order : []),
   saveOrder: (order: string[]) => fetch('/api/live-session-order', {
@@ -110,7 +120,16 @@ export const liveSessionApi = {
   models: (processInstanceId: string) => post<{ ok: true; result: { models: LiveSessionModelOption[] } }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'get_models' } },
   ).then(result => result.result.models),
-  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'resync' | 'input' | 'abort' | 'set_session_name' | 'get_models' | 'set_model' | 'compact' | 'reload' | 'shutdown' | 'feature_command' | 'answer_ui' }>) => post<{ ok: true; result: unknown }>(
+  /**
+   * What this session sends to the model, as the bridge reconstructed it from the
+   * last real provider request (or an approximation when none has gone out yet).
+   * Requires the `context_view` capability — an older bridge answers
+   * `unsupported_command`.
+   */
+  contextView: (processInstanceId: string) => post<{ ok: true; result: LiveSessionContextView }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'get_context' } },
+  ).then(result => result.result),
+  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'resync' | 'input' | 'abort' | 'set_session_name' | 'get_models' | 'get_context' | 'set_model' | 'compact' | 'reload' | 'shutdown' | 'feature_command' | 'answer_ui' }>) => post<{ ok: true; result: unknown }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command },
   ),
   /** Close a tmux-first live session: kills the tmux session hosting its Pi. */
