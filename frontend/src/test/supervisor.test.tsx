@@ -53,6 +53,37 @@ function installFetch(override?: (url: string, init?: RequestInit) => Response |
 function renderAgent() {
   return renderWithProviders(<SupervisorAgentProvider><SupervisorAgentButton>入口一</SupervisorAgentButton><SupervisorAgentProvider><SupervisorAgentButton>入口二</SupervisorAgentButton></SupervisorAgentProvider></SupervisorAgentProvider>)
 }
+it('清空后重新加载主会话，保留任务和事件', async () => {
+  let cleared = false
+  installFetch(url => {
+    if (url.endsWith('/agent/clear')) { cleared = true; return response({ processInstanceId: 'process-empty', sessionId: 'session-empty' }) }
+    if (cleared && url.endsWith('/state')) return response({ ...state, agent: { ...state.agent, processInstanceId: 'process-empty', sessionId: 'session-empty' } })
+    if (cleared && url.endsWith('/agent/detail')) return response({ ...detail, summary: { ...detail.summary, processInstanceId: 'process-empty', sessionId: 'session-empty' }, entries: [] })
+    return undefined
+  })
+  renderAgent()
+  fireEvent.click(screen.getByRole('button', { name: '入口一' }))
+  const button = await screen.findByRole('button', { name: '清空并重新加载' })
+  await waitFor(() => expect(button).toBeEnabled())
+  fireEvent.click(button)
+  expect(await screen.findByText(/聊天上下文已清空，主助手已自动重新加载/)).toBeInTheDocument()
+  expect(fetchMock.mock.calls.filter(call => String(call[0]).endsWith('/agent/clear'))).toHaveLength(1)
+  await waitFor(() => expect(screen.getByRole('link', { name: '打开主会话' })).toHaveAttribute('href', '/live-sessions/process-empty'))
+  await waitFor(() => expect(screen.queryByText('真实主管回复')).not.toBeInTheDocument())
+  expect(fetchMock.mock.calls.some(call => String(call[0]).endsWith('/execute'))).toBe(false)
+})
+it('清空失败保留草稿并显示真实错误', async () => {
+  installFetch(url => url.endsWith('/agent/clear') ? response({ error: '会话正在工作' }, 409) : undefined)
+  renderAgent()
+  fireEvent.click(screen.getByRole('button', { name: '入口一' }))
+  const button = await screen.findByRole('button', { name: '清空并重新加载' })
+  await waitFor(() => expect(button).toBeEnabled())
+  const input = screen.getByRole('textbox', { name: '给主管的消息' })
+  fireEvent.change(input, { target: { value: '保留草稿' } })
+  fireEvent.click(button)
+  expect(await screen.findByText(/会话正在工作/)).toBeInTheDocument()
+  expect(input).toHaveValue('保留草稿')
+})
 it('明确启用观察模式但不自动启动或协调会话', async () => {
   let current = { ...config, enabled: false }
   installFetch((url, init) => {

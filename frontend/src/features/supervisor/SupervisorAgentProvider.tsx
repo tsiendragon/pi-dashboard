@@ -56,7 +56,7 @@ function AgentRoot({ children }: { children: ReactNode }) {
   const [objectRef, setObjectRef] = useState<string>()
   const [draft, setDraft] = useState('')
   const [uploads, setUploads] = useState<Upload[]>([])
-  const [pending, setPending] = useState<'starting' | 'sending'>()
+  const [pending, setPending] = useState<'starting' | 'sending' | 'clearing'>()
   const [error, setError] = useState<unknown>()
   const [notice, setNotice] = useState('')
   const [startedPid, setStartedPid] = useState<string>()
@@ -155,6 +155,18 @@ function AgentRoot({ children }: { children: ReactNode }) {
     } catch (failure) { setError(failure) }
     finally { operationLock.current = false; setPending(undefined) }
   }
+  const clear = async () => {
+    if (operationLock.current || !ready || agentBusy) return
+    operationLock.current = true; setPending('clearing'); setError(undefined); setNotice('')
+    try {
+      const result = await supervisorApi.clear()
+      setStartedPid(result.processInstanceId)
+      setDraft(''); setUploads([])
+      setNotice('聊天上下文已清空，主助手已自动重新加载；任务、事件和截图均已保留。')
+      state.refresh(); detail.refresh()
+    } catch (failure) { setError(failure); state.refresh(); detail.refresh() }
+    finally { operationLock.current = false; setPending(undefined) }
+  }
   const send = async () => {
     if (operationLock.current || !ready || agentBusy || !draft.trim() || uploads.some(upload => !upload.attachment || upload.uploading)) return
     operationLock.current = true; setPending('sending'); setError(undefined); setNotice('')
@@ -175,7 +187,7 @@ function AgentRoot({ children }: { children: ReactNode }) {
           <button className={buttonClass} onClick={close} aria-label="关闭主管弹窗">关闭</button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
-          <p role="status" className="text-body-s">{pending === 'starting' ? '正在启动主管…' : pending === 'sending' ? '正在发送…' : state.loading && !state.data ? '正在获取主管状态…' : state.data ? '资源状态：' + state.data.agent.resourceState + (state.data.agent.connected ? ' · 已连接' : ' · 未连接') : '状态未知'}</p>
+          <p role="status" className="text-body-s">{pending === 'clearing' ? '正在清空并重新加载主助手…' : pending === 'starting' ? '正在启动主管…' : pending === 'sending' ? '正在发送…' : state.loading && !state.data ? '正在获取主管状态…' : state.data ? '资源状态：' + state.data.agent.resourceState + (state.data.agent.connected ? ' · 已连接' : ' · 未连接') : '状态未知'}</p>
           {notice && <p role="status" className="text-muted">{notice}</p>}
           {agentBusy && <p role="status" className="text-muted">{waitingConfirmation ? '主管正在等待全局确认弹窗回答；确认前不能发送新消息。' : currentDetail?.summary.claim.state === 'claimed' ? '主会话正在被用户控制，不抢占控制权。' : '主管正在执行，草稿可以保留，完成后再发送。'}</p>}
           {staleResources && (oldSessionRunning
@@ -188,6 +200,8 @@ function AgentRoot({ children }: { children: ReactNode }) {
           {liveError && <p className="text-danger">会话桥：{liveError}</p>}
           <div className="flex flex-wrap gap-2 items-center">
             <button className={buttonClass} disabled={!canStart || ready} onClick={() => void start()}>{pending === 'starting' ? '启动中…' : '启动 / 重试启动'}</button>
+            <button className={buttonClass} disabled={!ready || agentBusy || !!pending || !!state.data?.agent.extensionsStale} onClick={() => void clear()}>{pending === 'clearing' ? '清空并重新加载中…' : '清空并重新加载'}</button>
+            <span className="text-muted text-body-s">仅清空聊天上下文，保留任务、事件和截图；旧会话仍保留。</span>
             {pid && <Link className="text-accent hover:underline" to={'/live-sessions/' + encodeURIComponent(pid)} onClick={close}>打开主会话</Link>}
           </div>
           <details><summary className="cursor-pointer text-body-s">启动资源与配置（只读）</summary><div className="mt-3"><ConfigSummary config={config.data} /></div></details>
