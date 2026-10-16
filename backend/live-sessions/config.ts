@@ -29,6 +29,13 @@ export interface LivePiLaunchConfig {
 export interface LiveSessionConfig {
   enabled: boolean
   roots: string[]
+  /**
+   * Folders whose direct children are repos (for example `~/repos`). The live
+   * start field keyword-searches them so a repo that has never been opened can
+   * still be picked by name. Not a scope change: only `roots` decides what may
+   * actually be started.
+   */
+  repoRoots: string[]
   includeOutsideRoots: boolean
   claimMode: LiveSessionClaimMode
   leaseMs: number
@@ -41,6 +48,8 @@ export const DEFAULT_LIVE_SESSION_CONFIG: LiveSessionConfig = {
   enabled: true,
   /** No hard-coded roots: configure `liveSessions.roots` to the directories worth scanning. */
   roots: [],
+  /** Same rule as `roots`: nothing is searched until `liveSessions.repoRoots` names a folder. */
+  repoRoots: [],
   includeOutsideRoots: false,
   claimMode: 'on-first-input',
   leaseMs: 30_000,
@@ -71,13 +80,17 @@ function parseLaunch(value: unknown): LivePiLaunchConfig {
 }
 
 export function parseLiveSessionConfig(value: unknown): LiveSessionConfig {
-  if (value === undefined) return { ...DEFAULT_LIVE_SESSION_CONFIG, roots: [...DEFAULT_LIVE_SESSION_CONFIG.roots] }
+  if (value === undefined) return { ...DEFAULT_LIVE_SESSION_CONFIG, roots: [...DEFAULT_LIVE_SESSION_CONFIG.roots], repoRoots: [...DEFAULT_LIVE_SESSION_CONFIG.repoRoots] }
   const input = record(value)
-  if (!input) return { ...DEFAULT_LIVE_SESSION_CONFIG, enabled: false, roots: [] }
+  if (!input) return { ...DEFAULT_LIVE_SESSION_CONFIG, enabled: false, roots: [], repoRoots: [] }
   const enabled = input.enabled === undefined ? true : input.enabled === true
   const rootsValue = input.roots === undefined ? DEFAULT_LIVE_SESSION_CONFIG.roots : input.roots
   const roots = Array.isArray(rootsValue)
     ? [...new Set(rootsValue.filter((root): root is string => typeof root === 'string' && path.isAbsolute(root)))]
+    : []
+  const repoRootsValue = input.repoRoots === undefined ? [] : input.repoRoots
+  const repoRoots = Array.isArray(repoRootsValue)
+    ? [...new Set(repoRootsValue.filter((root): root is string => typeof root === 'string' && path.isAbsolute(root)))]
     : []
   const includeOutsideRoots = input.includeOutsideRoots === true
   // includeOutsideRoots is reserved for a future explicit all-local mode. It
@@ -86,6 +99,7 @@ export function parseLiveSessionConfig(value: unknown): LiveSessionConfig {
   return {
     enabled: enabled && roots.length > 0,
     roots,
+    repoRoots,
     includeOutsideRoots,
     claimMode,
     leaseMs: boundedInteger(input.leaseMs, DEFAULT_LIVE_SESSION_CONFIG.leaseMs, 10_000, 120_000),

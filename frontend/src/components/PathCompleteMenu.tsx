@@ -4,8 +4,8 @@ import { api } from '../api/client'
 import { matchStartPaths } from '../features/live-sessions/startPathHistory'
 
 interface Entry {
-  /** `history` entries replace the whole field; `fs` entries complete one path token. */
-  kind: 'history' | 'fs'
+  /** `history`/`repo` entries replace the whole field; `fs` entries complete one path token. */
+  kind: 'history' | 'repo' | 'fs'
   name: string
   path: string
   isDir: boolean
@@ -17,11 +17,13 @@ interface Props {
   anchorRef: React.RefObject<HTMLElement | null>
   /** Directories used before, matched by keyword — see `startPathHistory`. */
   history?: readonly string[]
+  /** Repos found under `liveSessions.repoRoots`, matched the same way. */
+  repos?: readonly string[]
   onComplete: (before: string, completed: string, after: string) => void
   onClose: () => void
 }
 
-/** History rows shown above the filesystem listing. */
+/** History rows shown above the repo and filesystem listings. */
 const HISTORY_ROWS = 5
 
 /** Extract the path token around the cursor position. */
@@ -38,7 +40,7 @@ function getPathToken(input: string, cursor: number): { token: string; start: nu
   return null
 }
 
-export default function PathCompleteMenu({ input, cursorPos, anchorRef, history = [], onComplete, onClose }: Props) {
+export default function PathCompleteMenu({ input, cursorPos, anchorRef, history = [], repos = [], onComplete, onClose }: Props) {
   const [fsEntries, setFsEntries] = useState<{ name: string; path: string; isDir: boolean }[]>([])
   const [selected, setSelected] = useState(0)
   const [tokenInfo, setTokenInfo] = useState<{ token: string; start: number; end: number } | null>(null)
@@ -65,15 +67,20 @@ export default function PathCompleteMenu({ input, cursorPos, anchorRef, history 
   // The same text drives both halves: the path token when one is being typed,
   // otherwise the whole field as a keyword.
   const query = tokenInfo ? tokenInfo.token : input.trim()
-  const entries = useMemo<Entry[]>(() => [
-    ...matchStartPaths(history, query, HISTORY_ROWS).map(path => ({ kind: 'history' as const, name: path, path, isDir: true })),
-    ...fsEntries.map(entry => ({ kind: 'fs' as const, ...entry })),
-  ], [history, query, fsEntries])
+  const entries = useMemo<Entry[]>(() => {
+    const known = new Set(history)
+    return [
+      ...matchStartPaths(history, query, HISTORY_ROWS).map(path => ({ kind: 'history' as const, name: path, path, isDir: true })),
+      ...matchStartPaths(repos.filter(path => !known.has(path)), query, HISTORY_ROWS)
+        .map(path => ({ kind: 'repo' as const, name: path, path, isDir: true })),
+      ...fsEntries.map(entry => ({ kind: 'fs' as const, ...entry })),
+    ]
+  }, [history, repos, query, fsEntries])
   const active = entries.length ? Math.min(selected, entries.length - 1) : 0
 
   const applyCompletion = useCallback((entry: Entry) => {
-    if (entry.kind === 'history') {
-      // History answers a keyword, not a path prefix, so it replaces the field.
+    if (entry.kind === 'history' || entry.kind === 'repo') {
+      // Both answer a keyword, not a path prefix, so they replace the field.
       onComplete('', entry.path + '/', '')
       return
     }
@@ -135,9 +142,9 @@ export default function PathCompleteMenu({ input, cursorPos, anchorRef, history 
           onMouseEnter={() => setSelected(i)}
           onMouseDown={e => { e.preventDefault(); applyCompletion(entry) }}
         >
-          <span className="shrink-0 w-4 text-center">{entry.kind === 'history' ? '🕘' : entry.isDir ? '📁' : '📄'}</span>
-          <span className="truncate flex-1">{entry.kind === 'history' ? entry.path : `${entry.name}${entry.isDir ? '/' : ''}`}</span>
-          <span className="text-2xs text-muted opacity-50 shrink-0 ml-auto">{entry.kind === 'history' ? '用过的目录' : entry.isDir ? 'dir' : 'file'}</span>
+          <span className="shrink-0 w-4 text-center">{entry.kind === 'history' ? '🕘' : entry.kind === 'repo' ? '📦' : entry.isDir ? '📁' : '📄'}</span>
+          <span className="truncate flex-1">{entry.kind === 'fs' ? `${entry.name}${entry.isDir ? '/' : ''}` : entry.path}</span>
+          <span className="text-2xs text-muted opacity-50 shrink-0 ml-auto">{entry.kind === 'history' ? '用过的目录' : entry.kind === 'repo' ? '仓库目录' : entry.isDir ? 'dir' : 'file'}</span>
         </button>
       ))}
       <div className="px-3 py-1 border-t border-border text-2xs text-muted opacity-40 flex gap-3">
