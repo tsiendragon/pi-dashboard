@@ -37,7 +37,7 @@ export interface ActivityPlan {
   items: ActivityStep[]
 }
 
-/** 引用 / 批注是对已经做完那件事的追问：并入所属活动，不另开一个活动。 */
+/** 引用 / 批注并入所属活动：执行中补充当前要求，空闲后追问引用的旧活动。 */
 export interface ActivityFollowUp {
   id: string
   kind: 'quote' | 'comment'

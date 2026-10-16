@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { LiveSessionGroup, LiveSessionReloadResult, LiveSessionSummary } from '@shared/live-sessions'
+import type { LiveSessionGroup, LiveSessionReloadResult, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
 import { displayWorktreePath } from '../../utils/displayPath'
 import { api } from '../../api/client'
 import type { ModelLike } from '../../utils/modelUtils'
@@ -8,11 +8,11 @@ import { SearchInput } from '../../components/ui'
 import PathCompleteMenu from '../../components/PathCompleteMenu'
 import { TagChip, TagEditor, RowMenu, type RowMenuAction, type RowMenuItem } from '../../components/sessionMetaUi'
 import MaterialIcon, { type MaterialIconName } from '../../components/MaterialIcon'
-import WorkingHammerIcon from '../../components/WorkingHammerIcon'
+import MuyuIcon from '../../components/MuyuIcon'
 import { relTime, projectName } from '../../pages/chat/sessionMeta'
 import { liveSessionApi } from './api'
 import type { SubagentTaskStatus } from './sessionTitle'
-import { moveInOrder, materializeOrder, resolveDropTarget, buildSessionSections, groupOfSession, isSubagent, type DropTarget, type SessionSection } from './sessionOrder'
+import { moveInOrder, materializeOrder, resolveDropTarget, buildSessionSections, sectionOrderIds, isHoldGroup, groupOfSession, isSubagent, type DropTarget, type SessionSection } from './sessionOrder'
 import { START_PATH_HISTORY_KEEP, isPathLikeQuery, matchStartPaths, mergeStartPathHistory } from './startPathHistory'
 import { useLiveSessionMeta } from './useLiveSessionMeta'
 import { useLiveSessionOrder } from './useLiveSessionOrder'
@@ -130,7 +130,6 @@ interface RowProps {
   title: string
   depth: number
   active: boolean
-  groupName?: string
   groupId?: string
   childCount: number
   subagent: boolean
@@ -300,7 +299,7 @@ function SessionRow(p: RowProps) {
         onPointerDown={p.onDragStart}
         onClick={p.onSelect}
         onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onSelect() } }}
-        className={`group flex cursor-pointer gap-2 rounded-md px-1.5 py-1.5 transition-colors ${p.depth ? 'ml-4' : ''} ${p.dragging ? 'opacity-40' : ''} ${p.active ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}
+        className={`live-session-row group flex cursor-pointer gap-2 rounded px-1.5 py-1 transition-colors ${p.depth ? 'ml-4' : ''} ${p.dragging ? 'opacity-40' : ''} ${p.active ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}
       >
         <span className={`w-[2px] shrink-0 self-stretch rounded-full ${
           tone === 'running' ? 'bg-accent shadow-[0_0_7px_var(--accent-glow)]'
@@ -315,7 +314,7 @@ function SessionRow(p: RowProps) {
           data-session-status={p.session.status}
           title={statusLabel(p.session.status)}
         >{p.session.status === 'running'
-          ? <span className="flex w-full items-center justify-center"><WorkingHammerIcon className="working-hammer-row" /></span>
+          ? <span className="flex w-full items-center justify-center"><MuyuIcon className="working-muyu-row" /></span>
           : p.session.status === 'reconnecting'
             ? <span className="flex h-[18px] w-full items-center justify-center text-warn"><MaterialIcon name="sync" spin className="h-4 w-4" /></span>
             : <span className="flex h-[18px] w-full items-center justify-center" aria-hidden="true"><span className="h-[7px] w-[7px] rounded-full border border-muted-strong opacity-60" /></span>}</span>
@@ -378,10 +377,10 @@ function SessionRow(p: RowProps) {
           </div>
 
           {/* line 2 — status · tags · group · location */}
-          <div className="flex h-[16px] items-center gap-1 overflow-hidden">
+          <div className="flex h-[14px] items-center gap-1 overflow-hidden">
             {p.pinned && <span className="flex shrink-0 items-center text-accent" title="已置顶"><MaterialIcon name="push_pin" className="h-3.5 w-3.5" /></span>}
             {p.tmuxSession && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-1.5 text-2xs leading-[14px] text-muted-strong" title={`终端可访问：tmux attach -t ${p.tmuxSession}`}><MaterialIcon name="terminal" className="h-3 w-3" />终端</span>}
-            {p.subagent && <span className={`inline-flex shrink-0 items-center gap-0.5 text-2xs leading-none ${taskStatusClass(p.taskStatus)}`} title={`子 Agent 任务：${taskStatusLabel(p.taskStatus)}`}>{p.taskStatus === 'running' ? <WorkingHammerIcon className="h-3 w-3" /> : <MaterialIcon name={taskStatusIcon(p.taskStatus)} className="h-3.5 w-3.5" />}子 Agent · {taskStatusLabel(p.taskStatus)}</span>}
+            {p.subagent && <span className={`inline-flex shrink-0 items-center gap-0.5 text-2xs leading-none ${taskStatusClass(p.taskStatus)}`} title={`子 Agent 任务：${taskStatusLabel(p.taskStatus)}`}>{p.taskStatus === 'running' ? <MuyuIcon className="h-3 w-3" /> : <MaterialIcon name={taskStatusIcon(p.taskStatus)} className="h-3.5 w-3.5" />}子 Agent · {taskStatusLabel(p.taskStatus)}</span>}
             {(p.pendingUiCount ?? 0) > 0 && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-warn-subtle px-1.5 text-2xs leading-[14px] text-warn" title={`该会话有 ${p.pendingUiCount} 个待应答请求，agent 正在等待回答`}><MaterialIcon name="error" className="h-3 w-3" />待应答 {p.pendingUiCount}</span>}
             {/* Task anchor state. Sessions that never set a goal draw nothing — a "—"
                 chip on every row would drown the ones that do carry a goal. A goal
@@ -419,7 +418,6 @@ function SessionRow(p: RowProps) {
             })()}
             {chips.map(t => <TagChip key={t} tag={t} active={p.tagFilter === t} onClick={p.onToggleTagFilter} />)}
             {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-2xs font-semibold leading-[14px] text-muted-strong" title={p.tags.join(', ')}>+{extra}</span>}
-            {p.groupName && <span className="shrink-0 truncate rounded-full bg-ok-subtle px-1.5 text-2xs leading-[14px] text-ok" title={`任务分组：${p.groupName}`}>{p.groupName}</span>}
             <span className="ml-auto flex min-w-0 shrink items-center gap-1 text-2xs leading-none text-muted-strong">
               {/* basename only: it is what tells the user what a session works on; the
                   full path stays in the row tooltip and the branch in `git.branch`. */}
@@ -531,6 +529,8 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
       return Array.isArray(saved) ? saved.filter((path): path is string => typeof path === 'string').slice(0, START_PATH_HISTORY_KEEP) : []
     } catch { return [] }
   })
+  /** Repos under `liveSessions.repoRoots`; refreshed whenever the start form opens. */
+  const [repoCandidates, setRepoCandidates] = useState<RepoCandidate[]>([])
   const [startGroupId, setStartGroupId] = useState('')
   const [startTags, setStartTags] = useState('')
   const [startCwdMenuOpen, setStartCwdMenuOpen] = useState(false)
@@ -558,7 +558,16 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
   const [groupDraft, setGroupDraft] = useState('')
   const [armedGroup, setArmedGroup] = useState<string | null>(null)
   const { meta, allTags, tagCounts, patch, refresh: refreshMeta, error: metaError } = useLiveSessionMeta()
-  const { order, save: saveOrder, reset: resetOrder, refresh: refreshOrder, error: orderError } = useLiveSessionOrder()
+  const { order, sectionOrder, savingSections, saveSections, save: saveOrder, reset: resetOrder, refresh: refreshOrder, error: orderError } = useLiveSessionOrder()
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
+  useEffect(() => { setCollapsedSections({}) }, [filter, tagFilter])
+  const orderedSectionIds = useMemo(() => sectionOrderIds(groups, sectionOrder), [groups, sectionOrder])
+  const moveSection = (id: string, direction: 'up' | 'down' | 'bottom') => {
+    const index = orderedSectionIds.indexOf(id)
+    const next = orderedSectionIds.filter(candidate => candidate !== id)
+    next.splice(direction === 'up' ? index - 1 : direction === 'down' ? index + 1 : next.length, 0, id)
+    void saveSections(next)
+  }
 
   const refreshGroups = useCallback(async () => {
     try {
@@ -650,6 +659,17 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     }).finally(() => setStartModelsLoading(false))
   }, [startOpen, startModels.length, startModelsLoading])
 
+  // Repo list for the cwd field's keyword search. A dashboard without
+  // `liveSessions.repoRoots` simply returns none — not worth an error banner.
+  useEffect(() => {
+    if (!startOpen) return
+    let cancelled = false
+    liveSessionApi.repoCandidates()
+      .then(repos => { if (!cancelled) setRepoCandidates(repos) })
+      .catch(() => { if (!cancelled) setRepoCandidates([]) })
+    return () => { cancelled = true }
+  }, [startOpen])
+
   const mutateGroups = useCallback(async (operation: () => Promise<LiveSessionGroup[]>) => {
     setBusy(true)
     setError(undefined)
@@ -715,10 +735,22 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     [recentStartPaths, sessions],
   )
 
+  /** Repos discovered under `liveSessions.repoRoots`, minus the ones history already shows. */
+  const startPathRepos = useMemo(() => {
+    const known = new Set(startPathHistory)
+    return repoCandidates.map(candidate => candidate.path).filter(path => !known.has(path))
+  }, [repoCandidates, startPathHistory])
+
+  /** History plus discovered repos: everything a typed keyword and Tab may choose. */
+  const startPathCandidates = useMemo(
+    () => [...startPathHistory, ...startPathRepos],
+    [startPathHistory, startPathRepos],
+  )
+
   /** What the field typed so far matches: keyword hits first, recency when empty. */
   const startPathSuggestions = useMemo(
-    () => matchStartPaths(startPathHistory, startCwd.trim()),
-    [startPathHistory, startCwd],
+    () => matchStartPaths(startPathCandidates, startCwd.trim()),
+    [startPathCandidates, startCwd],
   )
 
   const childrenByParent = useMemo(() => {
@@ -745,7 +777,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     })
   }, [sessions, meta, sessionTitles, filter, tagFilter, groupOf])
 
-  const sections = useMemo<SessionSection[]>(() => buildSessionSections(visible, meta, groups, order), [visible, groups, meta, order])
+  const sections = useMemo<SessionSection[]>(() => buildSessionSections(visible, meta, groups, order, sectionOrder), [visible, groups, meta, order, sectionOrder])
 
   /** A block's rows without the dragged session — the coordinate system every
    *  drop index (and the insertion line) is expressed in. */
@@ -919,23 +951,6 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     onSelect(session.processInstanceId)
   }
 
-  /** Section subtitle as colored counts — a dot carries the state, so the line
-   *  reads as a status summary instead of a wall of grey text. */
-  const summaryNodes = (items: LiveSessionSummary[]): React.ReactNode => {
-    const parts = [
-      { key: 'waiting', label: '等待', dot: 'bg-muted-strong opacity-50', count: items.filter(session => session.status === 'idle').length },
-      { key: 'working', label: '工作', dot: 'bg-accent', count: items.filter(session => session.status === 'running').length },
-      { key: 'reconnecting', label: '重连', dot: 'bg-warn', count: items.filter(session => session.status === 'reconnecting').length },
-    ].filter(part => part.count > 0)
-    if (parts.length === 0) return <span>暂无在线 session</span>
-    return <>{parts.map(part => (
-      <span key={part.key} className="inline-flex items-center gap-1">
-        <span className={`h-1.5 w-1.5 rounded-full ${part.dot}`} aria-hidden="true" />
-        {part.count} {part.label}
-      </span>
-    ))}</>
-  }
-
   const rowHandlers = (session: LiveSessionSummary) => ({
     onPin: (pinned: boolean) => void patch(session.processInstanceId, session.sessionId, { pinned }),
     onTags: (tags: string[]) => void patch(session.processInstanceId, session.sessionId, { tags }),
@@ -983,7 +998,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     const items = section.sessions
     const anchors = items.map(session => session.sessionId).filter(id => id !== drag?.sessionId)
     const target = dropTarget?.sectionId === section.id ? dropTarget.index : undefined
-    return items.map((session, index) => {
+    const renderRow = (session: LiveSessionSummary, index: number, depth = 0) => {
       const group = groupOf(session)
       const subagent = isSubagent(session)
       const childCount = childrenByParent.get(session.sessionId) || 0
@@ -1012,17 +1027,16 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
           key={session.processInstanceId}
           session={session}
           title={sessionTitle(session, sessionTitles)}
-          depth={0}
+          depth={depth}
           blockId={section.id}
           dragging={dragActive && drag?.sessionId === session.sessionId}
           dropBefore={target !== undefined && anchors.indexOf(session.sessionId) === target}
           dropAfter={target !== undefined && target === anchors.length && index === items.length - 1}
-          onDragStart={event => beginDrag(session, event)}
-          onMove={place => moveRow(session, place)}
-          moveIndex={index}
-          moveCount={items.length}
+          onDragStart={event => { if (!subagent) beginDrag(session, event) }}
+          onMove={place => { if (!subagent) moveRow(session, place) }}
+          moveIndex={subagent ? 0 : index}
+          moveCount={subagent ? 1 : items.length}
           active={activeId === session.processInstanceId}
-          groupName={group?.name}
           groupId={group?.id}
           childCount={childCount}
           subagent={subagent}
@@ -1043,8 +1057,22 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
           {...rowHandlers(session)}
         />
       )
+    }
+    return items.map((session, index) => {
+      const children = visible.filter(child => isSubagent(child) && child.parentSessionId === session.sessionId)
+      return <div key={session.processInstanceId}>
+        {renderRow(session, index)}
+        {children.length > 0 && <details className="ml-4" open={children.some(child => child.processInstanceId === activeId) ? true : undefined}>
+          <summary className="cursor-pointer rounded px-2 py-1 text-2xs text-muted hover:bg-bg-hover">子助手 · {children.length}</summary>
+          {children.map((child, childIndex) => renderRow(child, childIndex, 1))}
+        </details>}
+      </div>
     })
   }
+  const mainSessionIds = new Set(sections.flatMap(section => section.sessions.map(session => session.sessionId)))
+  const unassociatedSubagents = visible.filter(session => isSubagent(session) && !mainSessionIds.has(session.parentSessionId || ''))
+  const mainCount = sessions.filter(session => !isSubagent(session)).length
+  const visibleMainCount = visible.filter(session => !isSubagent(session)).length
 
   return (
     <aside className={`pidash-sidebar flex w-full shrink-0 flex-col overflow-y-auto border-r border-border bg-bg-accent md:w-[320px] ${dragActive ? 'select-none' : ''}`}>
@@ -1053,7 +1081,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
           <div className="min-w-0 flex-1 text-meta font-semibold uppercase tracking-[.05em] text-muted">
             Live Pi Sessions
             <span className="ml-1.5 font-mono text-2xs normal-case tracking-normal text-muted-strong">
-              {visible.length === sessions.length ? sessions.length : `${visible.length}/${sessions.length}`}
+              {visibleMainCount === mainCount ? mainCount : `${visibleMainCount}/${mainCount}`}
             </span>
           </div>
           <button type="button" disabled={busy || starting} onClick={() => { setStartError(undefined); setStartOpen(value => !value) }} className="flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-2 py-0.5 text-2xs text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="启动一个新的 Live Pi"><MaterialIcon name="add" className="h-3.5 w-3.5" />启动</button>
@@ -1098,11 +1126,11 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
                 // most common start failure, so make the valid choices visible.
                 if (event.key === 'Tab' && !event.shiftKey) {
                   event.preventDefault()
-                  // A keyword (not a path) that matches exactly one directory we
-                  // started before is filled in directly — that is the whole point
-                  // of remembering history. Anything else opens the menu.
+                  // A keyword (not a path) that matches exactly one candidate —
+                  // a directory we started before, or a repo under the configured
+                  // repo roots — is filled in directly. Anything else opens the menu.
                   const typed = startCwd.trim()
-                  const keywordHits = isPathLikeQuery(typed) ? [] : matchStartPaths(startPathHistory, typed, 2)
+                  const keywordHits = isPathLikeQuery(typed) ? [] : matchStartPaths(startPathCandidates, typed, 2)
                   if (keywordHits.length === 1 && keywordHits[0] !== typed) {
                     const filled = `${keywordHits[0]}/`
                     setStartCwd(filled)
@@ -1121,13 +1149,14 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
               {startPathSuggestions.map(path => <button key={path} type="button" onClick={() => setStartCwd(path)} title={path} className="max-w-full truncate rounded-full border border-border px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-text">{path}</button>)}
             </div>}
             <div className="text-2xs leading-[15px] text-muted-strong">
-              必须是<b>已存在</b>的绝对目录（或 <span className="font-mono">~/…</span>），且在白名单根目录内。输入关键词（如 <span className="font-mono">toolkit</span>）会从用过的目录里匹配，按 Tab 可直接补全。
+              必须是<b>已存在</b>的绝对目录（或 <span className="font-mono">~/…</span>），且在白名单根目录内。输入关键词（如 <span className="font-mono">toolkit</span>）会从用过的目录和仓库根目录下的现有仓库里匹配，按 Tab 可直接补全。
             </div>
             {startCwdMenuOpen && <PathCompleteMenu
               input={startCwd}
               cursorPos={startCwdCursor}
               anchorRef={startCwdRef}
               history={startPathHistory}
+              repos={startPathRepos}
               onComplete={(before, completed, after) => {
                 setStartCwd(before + completed + after)
                 setStartCwdMenuOpen(true)
@@ -1165,6 +1194,18 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
             {startError && <div className="whitespace-pre-wrap break-words text-2xs text-danger">{startError.startsWith('Pi 已启动') ? '' : '启动失败：'}{startError}</div>}
           </form>}
           {creating && <div className="space-y-1.5 border-t border-border pt-2">
+            <div className="space-y-1" aria-label="分组顺序" aria-busy={savingSections}>
+              <div className="text-2xs text-muted">分组顺序（置顶会话始终在最前）</div>
+              {orderedSectionIds.map((id, index) => {
+                const name = groups.find(group => group.id === id)?.name ?? '未分组'
+                return <div key={id} className="flex items-center gap-1 text-2xs">
+                  <span className="min-w-0 flex-1 truncate" title={name}>{name}</span>
+                  <button type="button" disabled={busy || savingSections || index === 0} aria-label={`${name}：上移分组`} onClick={() => moveSection(id, 'up')} className="rounded border border-border px-1.5 py-0.5 hover:bg-bg-hover disabled:opacity-30">↑</button>
+                  <button type="button" disabled={busy || savingSections || index === orderedSectionIds.length - 1} aria-label={`${name}：下移分组`} onClick={() => moveSection(id, 'down')} className="rounded border border-border px-1.5 py-0.5 hover:bg-bg-hover disabled:opacity-30">↓</button>
+                  <button type="button" disabled={busy || savingSections || index === orderedSectionIds.length - 1} aria-label={`${name}：移到底部`} onClick={() => moveSection(id, 'bottom')} className="rounded border border-border px-1.5 py-0.5 hover:bg-bg-hover disabled:opacity-30">移到底部</button>
+                </div>
+              })}
+            </div>
             <form onSubmit={event => { void createGroup(event) }} className="flex gap-1">
               <input value={newGroupName} onChange={event => setNewGroupName(event.target.value)} placeholder="新建任务分组名称" className="min-w-0 flex-1 rounded border border-border bg-card px-2 py-1 text-2xs text-text outline-none focus:border-accent" />
               <button type="submit" disabled={busy || !newGroupName.trim()} className="rounded border border-border px-2 py-1 text-2xs text-muted disabled:opacity-50">创建</button>
@@ -1206,12 +1247,20 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
 
       {sessions.length === 0 ? (
         <div className="p-5 text-sm text-muted">暂无已连接的 Pi session。已运行的 Pi 需要加载集成 Extension。</div>
-      ) : sections.length === 0 ? (
+      ) : sections.length === 0 && unassociatedSubagents.length === 0 ? (
         <div className="p-5 text-meta text-muted-strong">没有匹配的 session{filter || tagFilter ? '（清除筛选试试）' : ''}</div>
-      ) : sections.map(section => (
-        <section key={section.id} data-live-block={section.id} className="border-b border-border">
-          <div className="group/section flex items-center gap-1 px-2.5 pb-1 pt-2.5">
-            <span className={`flex shrink-0 items-center ${section.pinnedSection ? 'text-accent' : 'text-muted-strong'}`} aria-hidden="true"><MaterialIcon name="expand_more" className="h-4 w-4" /></span>
+      ) : sections.map(section => {
+        const collapsed = collapsedSections[section.id] ?? (isHoldGroup(section.name) && !filter && !tagFilter)
+        return (
+        <section key={section.id} data-live-block={section.id} className="live-session-section border-b border-border">
+          <div className="group/section flex min-h-5 items-center gap-1 px-2.5 py-px">
+            <button
+              type="button"
+              aria-label={`${section.name}：${collapsed ? '展开' : '折叠'}分组`}
+              aria-expanded={!collapsed}
+              onClick={() => setCollapsedSections(previous => ({ ...previous, [section.id]: !collapsed }))}
+              className={`flex h-[18px] shrink-0 items-center rounded hover:bg-bg-hover ${section.pinnedSection ? 'text-accent' : 'text-muted-strong'}`}
+            ><MaterialIcon name="expand_more" className={`h-3 w-3 ${collapsed ? '-rotate-90' : ''}`} /></button>
             {section.pinnedSection && <span className="flex shrink-0 items-center text-accent" title="置顶分组"><MaterialIcon name="push_pin" className="h-3.5 w-3.5" /></span>}
             {renamingGroup === section.id ? (
               <input
@@ -1228,9 +1277,9 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
                 className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-meta text-text-strong outline-none"
               />
             ) : (
-              <strong className="min-w-0 flex-1 truncate text-2xs font-semibold uppercase tracking-[.06em] text-text-strong" title={section.name}>{section.name}</strong>
+              <strong className="min-w-0 flex-1 truncate text-[10px] leading-[14px] font-semibold text-text-strong" title={section.name}>{section.name}</strong>
             )}
-            <span className="shrink-0 rounded-full bg-bg-hover px-1.5 font-mono text-2xs leading-[14px] text-muted-strong">{section.sessions.length}</span>
+            <span className="shrink-0 rounded-full bg-bg-hover px-1 font-mono text-[10px] leading-[14px] text-muted-strong">{section.sessions.length}</span>
             {section.group && <>
               <button type="button" disabled={busy} aria-label="重命名任务分组按钮" onClick={() => { setRenamingGroup(section.id); setGroupDraft(section.name) }} className="flex items-center rounded px-1 text-muted opacity-60 transition-opacity hover:bg-bg-hover hover:text-accent focus-visible:opacity-100 md:opacity-0 md:group-hover/section:opacity-100" title="重命名任务"><MaterialIcon name="edit" className="h-3.5 w-3.5" /></button>
               <button
@@ -1246,11 +1295,15 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
               >{armedGroup === section.id ? '确认删除' : <MaterialIcon name="close" className="h-3.5 w-3.5" />}</button>
             </>}
           </div>
-          <div className="flex items-center gap-2.5 px-2.5 pb-1 text-2xs text-muted-strong">{section.group || section.pinnedSection ? summaryNodes(section.sessions) : `${section.sessions.length} 个 session`}</div>
-          <div className="pb-1.5">{renderRows(section)}</div>
+          {!collapsed && <div className="live-session-section-rows pb-px">{renderRows(section)}</div>}
         </section>
-      ))}
+        )
+      })}
 
+      {unassociatedSubagents.length > 0 && <section aria-label="未关联子助手" className="border-b border-border px-2 py-2">
+        <div className="px-2 py-1 text-2xs font-semibold text-muted">未关联子助手 · {unassociatedSubagents.length}</div>
+        {renderRows({ id: '__unassociated_subagents', name: '未关联子助手', sessions: unassociatedSubagents })}
+      </section>}
       <div className="mt-auto flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-2xs text-muted-strong">
         <span className="flex items-center gap-1" title="行位置来自手动拖动，不会因活跃时间或上线状态自行变化"><MaterialIcon name="swap_vert" className="h-3.5 w-3.5" />排序：手动</span>
         <button

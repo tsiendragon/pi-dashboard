@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import type { BtwFeatureCommand, LiveSessionImage, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
+import type { BtwFeatureCommand, LiveSessionDetail, LiveSessionImage, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import MaterialIcon from '../../components/MaterialIcon'
 import DocumentPreviewModal from '../../components/DocumentPreviewModal'
@@ -9,14 +9,13 @@ import ExtensionUiModal from '../../components/ExtensionUiModal'
 import ErrorBoundary from '../../components/ErrorBoundary'
 import ToolCallBlock from '../../pages/chat/ToolCallBlock'
 import { ToolSummaryLine, type ToolSummaryStatus } from '../../components/ToolSummary'
-import WorkingHammerIcon from '../../components/WorkingHammerIcon'
 import { detectFileType, usePanelState, type Comment } from '../../hooks/usePanelState'
 import { useDocumentComments } from '../../hooks/useDocumentComments'
 import { loadFileComments, saveFileComments } from '../../api/fileComments'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { useArmedConfirm } from '../../hooks/useArmedConfirm'
 import { clampPercent, contextBarCells, contextTriggerPercent } from './contextStatusBar'
-import { clearCommandAvailable } from './liveSessionCommands'
+import { clearCommandAvailable, contextViewAvailable } from './liveSessionCommands'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { resolvePath } from '../../utils/resolvePath'
 import {
@@ -57,6 +56,10 @@ import { watchCompaction } from './compactionWatch'
 import LiveSessionFeatures from './LiveSessionFeatures'
 import { sessionGoalFromEntries, type SessionGoalSummary, type SessionGoalWorkItem } from './sessionGoal'
 import LiveSubagentPanel from './LiveSubagentPanel'
+import LiveSubagentStrip from './LiveSubagentStrip'
+import LiveSubagentRecordPanel from './LiveSubagentRecordPanel'
+import { projectSubagentSessions } from './subagentSessions'
+import type { ProjectionRecord } from './subagentProjection'
 import ToolResultCard, { shortToolId } from './ToolResultCard'
 import LiveWorkflowPanel from './LiveWorkflowPanel'
 import LiveWorkflowProgressCard, { type WorkflowRecord } from './LiveWorkflowProgressCard'
@@ -67,6 +70,7 @@ import { buildSessionTitles, buildSubagentStatuses } from './sessionTitle'
 import { displayWorktreePath } from '../../utils/displayPath'
 import { copyText } from '../../utils/clipboard'
 import LiveSessionsList from './LiveSessionsList'
+import ContextInspector from './ContextInspector'
 import { PendingDeliveryBar, pendingDeliveries, pendingDeliveryLabel, pendingDeliveryOf, pendingDeliveryTitle, queuedDeliveryFor } from './pendingDelivery'
 import { forkLiveSessionAtStep } from './forkPlacement'
 import { useLiveSessionsRuntime } from './useLiveSessions'
@@ -525,6 +529,8 @@ export function groupLiveToolEntries(
 ): { items: LiveTimelineItem[]; hidden: LiveTimelineHidden } {
   const hidden: LiveTimelineHidden = { tools: 0, thinking: 0, other: 0 }
   const result: LiveTimelineItem[] = []
+  const toolStates = collectToolStates(entries)
+  const renderedRunCodes = new Set<string>()
   let current: LiveToolItem[] = []
   let currentBatch = false
   let pendingThinking: { index: number; entry: unknown }[] = []
@@ -539,6 +545,10 @@ export function groupLiveToolEntries(
         ...existing,
         ...item,
         key: existing.key,
+        // Keep the parent call as the render anchor; its result is already in
+        // toolStates. A result-only anchor is suppressed by TimelineEntry.
+        entry: existing.toolName === 'run_code' && existing.source === 'call' ? existing.entry : item.entry,
+        index: existing.toolName === 'run_code' && existing.source === 'call' ? existing.index : item.index,
         argsText: item.argsText || existing.argsText,
         detail: item.detail || existing.detail,
         source: existing.source,
@@ -594,6 +604,18 @@ export function groupLiveToolEntries(
       return
     }
 
+    const message = messageFromEntry(entry)
+    const record = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : undefined
+    const data = record?.data && typeof record.data === 'object' ? record.data as Record<string, unknown> : record
+    const toolCallId = message?.toolCallId ?? (typeof data?.toolCallId === 'string' ? data.toolCallId : typeof data?.tool_call_id === 'string' ? data.tool_call_id : undefined)
+    const state = toolCallId ? toolStates.get(toolCallId) : undefined
+    if (state?.parentToolCallId) return
+    if (state?.toolName === 'run_code' && state.called && typeof record?.type === 'string' && record.type.startsWith('tool_execution_')) return
+    if (state?.nestedTools?.length && !state.called) {
+      if (renderedRunCodes.has(state.toolCallId)) return
+      renderedRunCodes.add(state.toolCallId)
+    }
+
     const tools = liveToolItems(index, entry)
     if (tools.length > 0) {
       const calls = tools.filter(item => item.source === 'call')
@@ -645,7 +667,12 @@ export type ToolState = {
   isError?: boolean
   errorText?: string
   command?: string
+  argsText?: string
+  timestamp?: string
+  parentToolCallId?: string
+  nestedTools?: ToolState[]
   partialText?: string
+  executionResult?: string
   result?: { text: string; toolName?: string; isError?: boolean; timestamp?: string }
 }
 
@@ -691,6 +718,8 @@ export function collectToolStates(entries: unknown[]): ToolStateMap {
         state.called = true
         if (typeof part.name === 'string') state.toolName = part.name
         const argumentsValue = part.arguments
+        state.argsText = typeof argumentsValue === 'string' ? argumentsValue : JSON.stringify(argumentsValue ?? {})
+        state.timestamp = entryTimestamp(entry)
         if (argumentsValue && typeof argumentsValue === 'object' && !Array.isArray(argumentsValue)) {
           const argumentsRecord = argumentsValue as Record<string, unknown>
           if (typeof argumentsRecord.command === 'string') state.command = argumentsRecord.command
@@ -709,6 +738,8 @@ export function collectToolStates(entries: unknown[]): ToolStateMap {
     if (typeof data.toolCallId !== 'string') continue
     const state = ensure(data.toolCallId)
     if (typeof data.toolName === 'string') state.toolName = data.toolName
+    if (data.args !== undefined) state.argsText = typeof data.args === 'string' ? data.args : JSON.stringify(data.args)
+    state.timestamp ||= entryTimestamp(entry)
     if (record.type === 'tool_execution_start' || record.type === 'tool_execution_update') {
       state.started = true
       state.abandoned = false
@@ -717,10 +748,21 @@ export function collectToolStates(entries: unknown[]): ToolStateMap {
       state.ended = true
       state.abandoned = false
       state.isError = data.isError === true || data.isError === 'true'
-      const errorText = partialText(data.result) || (typeof data.error === 'string' ? data.error : '')
+      state.executionResult = partialText(data.result)
+      const errorText = state.executionResult || (typeof data.error === 'string' ? data.error : '')
       if (errorText) state.errorText = errorText
     }
     if (record.type === 'tool_execution_update') state.partialText = partialText(data.partialResult)
+  }
+  // Code Mode emits internal calls as <parent>:code:<sequence>. Do not infer
+  // ownership from position: the recorded parent must be a run_code call.
+  for (const state of states.values()) {
+    const parentId = /^(.*):code:\d+$/.exec(state.toolCallId)?.[1]
+    const parent = parentId ? states.get(parentId) : undefined
+    if (parent?.toolName !== 'run_code') continue
+    state.parentToolCallId = parent.toolCallId
+    if (!parent.nestedTools) parent.nestedTools = []
+    parent.nestedTools.push(state)
   }
   return states
 }
@@ -1025,6 +1067,8 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
   let pendingCommentary: ActivityReport | undefined
   // Pi 正在干活时发来的输入只是排队：它不属于新活动，后续步骤也仍然属于旧活动。
   let agentBusy = false
+  // 历史会话没有 agent_start：工具消息也能说明当前工作尚未结束。
+  let assistantWorking = false
   // 上一个回合真正结束的位置：它之后的 agent 文字已经是新排队输入的答复。
   let lastSettledIndex = -1
   const queuedInputs: Array<{ text: string; index: number; deliverAs?: string }> = []
@@ -1136,6 +1180,9 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
       current = fallback
       return fallback
     }
+    // 占位活动装的是新请求到来前已经跑完的执行记录；结束信号（agent_settled）只打给当前活动，
+    // 新请求另立活动后它永远等不到结算、会一直挂「未完成」，这里直接补结算。
+    if (fallback?.title === '正在处理会话任务' && fallback.sourceLabel === '执行记录') settled.add(fallback.id)
     return startActivity(report)
   }
   // Agent 正文（进度说明与最终回复）跟着它所属的活动走；重复的流式片段只留一条。
@@ -1173,7 +1220,10 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
     if (message?.role === 'user' && message.text && followUpKind) {
       if (pendingCommentary && current) current.lastSummary = pendingCommentary.title
       pendingCommentary = undefined
-      const target = quoteOwner(message.text) || current || ensureFallbackActivity(index)
+      // 执行中的引用是补充当前要求，不应把整段后续工作搬回被引用的旧活动。
+      // 空闲后重新追问旧回复，才按引用内容找回原活动。
+      const target = (current && (agentBusy || assistantWorking) ? current : quoteOwner(message.text))
+        || current || ensureFallbackActivity(index)
       attachFollowUp(target, message.text, index, followUpKind, Boolean(queuedDelivery || agentBusy))
       if (userInput?.images.length) target.images = [...(target.images || []), ...userInput.images]
       // 后续执行也要留在同一个活动里，否则等于又拆开了。
@@ -1248,7 +1298,11 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
 
     const channel = entryChannel(entry)
     const hasHiddenOrToolParts = message?.role === 'assistant' && contentParts(message.content).some(part => part.type === 'thinking' || part.type === 'toolCall')
-    if (current && message?.role === 'assistant' && message.text && (channel === undefined || channel === 'final') && !hasHiddenOrToolParts) settled.add(current.id)
+    if (message?.role === 'assistant' && hasHiddenOrToolParts) assistantWorking = true
+    if (current && message?.role === 'assistant' && message.text && (channel === undefined || channel === 'final') && !hasHiddenOrToolParts) {
+      assistantWorking = false
+      settled.add(current.id)
+    }
 
     if (record?.type === 'agent_start' || record?.type === 'turn_start') {
       agentBusy = true
@@ -1291,6 +1345,7 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
       }
     } else if (record?.type === 'agent_settled') {
       agentBusy = false
+      assistantWorking = false
       lastSettledIndex = index
       if (current) settled.add(current.id)
     } else if (record?.type === 'custom' && record.customType === 'goal-state') {
@@ -1503,7 +1558,47 @@ function TuiLikeStatus({ summary }: { summary: LiveSessionSummary }) {
   </span>
 }
 
+export function RunCodeToolCard({ state }: { state: ToolState }) {
+  const [expanded, setExpanded] = useState(true)
+  const steps = state.nestedTools ?? []
+  const isError = state.result?.isError === true || state.isError === true || state.abandoned
+  const status: ToolSummaryStatus = isError ? 'error' : state.result || state.ended ? 'success' : state.started ? 'running' : 'pending'
+  const description = objectArgs(state.argsText).description
+  const summary = typeof description === 'string' ? description : `${steps.length} 个内部步骤`
+  const output = state.result?.text ?? state.executionResult ?? state.partialText ?? toolTerminalMessage(state)
+  const tone = isError ? 'border-danger' : status === 'success' ? 'border-ok' : status === 'running' ? 'border-accent' : 'border-border'
+  return (
+    <article aria-label="Run Code 及内部步骤" className={`w-full min-w-0 max-w-full overflow-hidden rounded-md border bg-bg-elevated ${tone}`}>
+      <button type="button" aria-expanded={expanded} aria-label={`${expanded ? '收起' : '展开'} Run Code 内部步骤`} onClick={() => setExpanded(value => !value)} className="flex w-full min-w-0 items-center gap-2 border-none bg-transparent px-2.5 py-1.5 text-left hover:bg-bg-hover">
+        <span aria-hidden="true" className="shrink-0 text-2xs text-muted">{expanded ? '▾' : '▸'}</span>
+        <ToolSummaryLine toolName="run_code" command={summary} timestamp={state.timestamp} status={status} className="flex-1" />
+        <span className="shrink-0 text-2xs text-muted">{steps.length} 步</span>
+      </button>
+      {expanded && (
+        <div className="space-y-2 border-t border-border px-2 py-2 sm:px-3">
+          <ol aria-label="内部工具步骤" className="m-0 list-none space-y-1.5 border-l border-border p-0 pl-2 sm:pl-3">
+            {steps.map(step => {
+              const result = step.result ?? (step.ended && step.executionResult !== undefined ? { text: step.executionResult, toolName: step.toolName, isError: step.isError, timestamp: step.timestamp } : undefined)
+              return <li key={step.toolCallId} className="min-w-0">
+                <ToolCallCard name={step.toolName || 'tool'} toolCallId={step.toolCallId} argsText={step.argsText || ''} timestamp={step.timestamp} state={{ ...step, result }} />
+              </li>
+            })}
+          </ol>
+          <details className="min-w-0 text-2xs text-muted">
+            <summary className="cursor-pointer py-1 hover:text-text">查看代码和汇总结果</summary>
+            <div className="space-y-2 pt-1">
+              {state.argsText && <pre className="m-0 max-h-[12rem] overflow-auto whitespace-pre-wrap break-words rounded bg-bg-hover p-2 font-mono">{state.argsText}</pre>}
+              {output !== undefined && <pre role={isError ? 'alert' : undefined} className="m-0 max-h-[20rem] overflow-auto whitespace-pre-wrap break-words rounded bg-bg-hover p-2 font-mono text-text">{output}</pre>}
+            </div>
+          </details>
+        </div>
+      )}
+    </article>
+  )
+}
+
 function ToolCallCard({ name, toolCallId, argsText, timestamp, state }: { name: string; toolCallId?: string; argsText: string; timestamp?: string; state?: ToolState }) {
+  if (state?.nestedTools?.length) return <RunCodeToolCard state={state} />
   const result = state?.result
   const terminalMessage = toolTerminalMessage(state)
   const isError = result?.isError === true || state?.isError === true || state?.abandoned === true
@@ -1744,7 +1839,9 @@ export const TimelineEntry = memo(function TimelineEntry({
   const message = messageFromEntry(entry)
   if (message) {
     if (message.role === 'toolResult') {
-      if (message.toolCallId && toolStates.get(message.toolCallId)?.called) return null
+      const state = message.toolCallId ? toolStates.get(message.toolCallId) : undefined
+      if (state?.called) return null
+      if (state?.nestedTools?.length) return <RunCodeToolCard state={state} />
       return <ToolResultCard text={message.text} toolName={message.toolName} toolCallId={message.toolCallId} command={message.toolCallId ? toolStates.get(message.toolCallId)?.command : undefined} isError={message.isError} timestamp={timestamp} />
     }
     const assistant = message.role === 'assistant'
@@ -1842,7 +1939,9 @@ export const TimelineEntry = memo(function TimelineEntry({
   if (type === 'tool_execution_update') {
     const data = record.data && typeof record.data === 'object' ? record.data as Record<string, unknown> : record
     const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
-    if (toolCallId && toolStates.get(toolCallId)?.called) return null
+    const state = toolCallId ? toolStates.get(toolCallId) : undefined
+    if (state?.called) return null
+    if (state?.nestedTools?.length) return <RunCodeToolCard state={state} />
     const text = partialText(data.partialResult)
     return text ? <ToolResultCard text={text} toolName={typeof data.toolName === 'string' ? data.toolName : 'tool'} toolCallId={toolCallId} command={typeof data.command === 'string' ? data.command : undefined} timestamp={timestamp} /> : null
   }
@@ -1850,6 +1949,8 @@ export const TimelineEntry = memo(function TimelineEntry({
     const data = record.data && typeof record.data === 'object' ? record.data as Record<string, unknown> : record
     const toolName = typeof data.toolName === 'string' ? data.toolName : 'tool'
     const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+    const state = toolCallId ? toolStates.get(toolCallId) : undefined
+    if (state?.nestedTools?.length) return state.called ? null : <RunCodeToolCard state={state} />
     if (type === 'tool_execution_start' && toolCallId && toolStates.get(toolCallId)?.called) return null
     if (type === 'tool_execution_end') {
       if (toolCallId && toolStates.get(toolCallId)?.result) return null
@@ -1934,6 +2035,7 @@ const LiveToolGroup = memo(function LiveToolGroup({ items, thinking, onFileOpen,
               const resultText = item.resultText ?? state?.result?.text
               const terminalMessage = resultText === undefined ? toolTerminalMessage(state) : undefined
               const status: ToolSummaryStatus = isError ? 'error' : resultText !== undefined || state?.ended ? 'success' : 'running'
+              if (state?.nestedTools?.length) return <RunCodeToolCard key={item.key} state={state} />
               return (
                 <div key={item.key}>
                   <button
@@ -2223,6 +2325,9 @@ export default function LiveSessionPage() {
   const [commentTarget, setCommentTarget] = useState<SelectionTarget | null>(null)
   const [chatComments, setChatComments] = useState<ReviewItem[]>([])
   const [focusedSubagentId, setFocusedSubagentId] = useState<string>()
+  const [focusedSubagentRecord, setFocusedSubagentRecord] = useState<ProjectionRecord>()
+  const retainedSubagent = useRef<LiveSessionSummary>()
+  const retainedSubagentDetail = useRef<LiveSessionDetail>()
   const [focusedWorkflow, setFocusedWorkflow] = useState<WorkflowRecord>()
   /** Subagent strip: pending two-step close confirm, in-flight closes, last result. */
   const [childCloseConfirm, setChildCloseConfirm] = useState<string>()
@@ -2231,6 +2336,8 @@ export default function LiveSessionPage() {
   const [subagentLoading, setSubagentLoading] = useState(false)
   const [availableModels, setAvailableModels] = useState<LiveSessionModelOption[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
+  /** 上下文检查器窗口：看这个会话实际发给模型的内容。 */
+  const [contextOpen, setContextOpen] = useState(false)
 
   // ── Voice output (TTS) ───────────────────────────────────────────────────
   // Settings (model / voice / language) live in Settings → Voice; the toggle
@@ -2269,8 +2376,14 @@ export default function LiveSessionPage() {
     })
   }, [stopSpeaking])
 
-  const focusedSubagent = useMemo(() => sessions.find(session => session.processInstanceId === focusedSubagentId), [focusedSubagentId, sessions])
-  const focusedSubagentDetail = focusedSubagentId ? state.details[focusedSubagentId] : undefined
+  const connectedSubagent = useMemo(() => sessions.find(session => session.processInstanceId === focusedSubagentId), [focusedSubagentId, sessions])
+  const connectedSubagentDetail = focusedSubagentId ? state.details[focusedSubagentId] : undefined
+  const focusedSubagent = connectedSubagent || (retainedSubagent.current?.processInstanceId === focusedSubagentId ? retainedSubagent.current : undefined)
+  const focusedSubagentDetail = connectedSubagentDetail || (retainedSubagentDetail.current?.summary.processInstanceId === focusedSubagentId ? retainedSubagentDetail.current : undefined)
+  useEffect(() => {
+    if (connectedSubagent) retainedSubagent.current = connectedSubagent
+    if (connectedSubagentDetail) retainedSubagentDetail.current = connectedSubagentDetail
+  }, [connectedSubagent, connectedSubagentDetail])
   const workflowItems = useMemo(() => {
     const feature = features['subagent-workflow']
     if (!feature || typeof feature !== 'object' || Array.isArray(feature)) return []
@@ -2280,6 +2393,20 @@ export default function LiveSessionPage() {
     return Array.isArray(items) ? items.filter(item => item && typeof item === 'object' && !Array.isArray(item)) as WorkflowRecord[] : []
   }, [features])
   const childSessions = useMemo(() => summary ? sessions.filter(session => session.parentSessionId === summary.sessionId) : [], [sessions, summary])
+  const childTaskStatuses = useMemo(() => buildSubagentStatuses(state.details), [state.details])
+  const childItems = useMemo(() => projectSubagentSessions(childSessions, features['subagent-workflow'], childTaskStatuses), [childSessions, features, childTaskStatuses])
+  useEffect(() => {
+    if (typeof focusedWorkflow?.id !== 'string') return
+    const latest = workflowItems.find(item => item.id === focusedWorkflow.id)
+    if (latest && latest !== focusedWorkflow) setFocusedWorkflow(latest)
+  }, [focusedWorkflow, workflowItems])
+  useEffect(() => {
+    const id = typeof focusedSubagentRecord?.id === 'string' ? focusedSubagentRecord.id
+      : typeof focusedSubagentRecord?.workId === 'string' ? focusedSubagentRecord.workId : undefined
+    if (!id) return
+    const latest = childItems.find(item => item.record?.id === id || item.record?.workId === id)?.record
+    if (latest && latest !== focusedSubagentRecord) setFocusedSubagentRecord(latest)
+  }, [childItems, focusedSubagentRecord])
 
   /**
    * Close one subagent from the strip.
@@ -2498,7 +2625,7 @@ export default function LiveSessionPage() {
   }, [timelineReady, scrollTimelineToBottom])
 
   useEffect(() => {
-    if (!focusedSubagentId || state.auth !== 'authenticated') return
+    if (!focusedSubagentId || !connectedSubagent || state.auth !== 'authenticated') return
     if (focusedSubagentDetail) {
       setSubagentLoading(false)
       return
@@ -2513,14 +2640,13 @@ export default function LiveSessionPage() {
       if (!cancelled) setSubagentLoading(false)
     })
     return () => { cancelled = true }
-  }, [dispatch, focusedSubagentDetail, focusedSubagentId, state.auth])
-
-  useEffect(() => {
-    if (focusedSubagentId && !focusedSubagent) setFocusedSubagentId(undefined)
-  }, [focusedSubagent, focusedSubagentId])
+  }, [connectedSubagent, dispatch, focusedSubagentDetail, focusedSubagentId, state.auth])
 
   useEffect(() => {
     setFocusedSubagentId(undefined)
+    setFocusedSubagentRecord(undefined)
+    retainedSubagent.current = undefined
+    retainedSubagentDetail.current = undefined
     setFocusedWorkflow(undefined)
     setAvailableModels([])
   }, [activeId])
@@ -2847,6 +2973,11 @@ export default function LiveSessionPage() {
           <div className="flex shrink-0 items-center gap-1">
             {summary && ownedLeaseId && <button type="button" disabled={busy} onClick={() => { void release().catch(() => {}) }} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted disabled:opacity-50">释放控制</button>}
             <button type="button" onClick={() => navigate(summary?.sessionFile ? `/live-sessions/graph?file=${encodeURIComponent(summary.sessionFile)}` : '/live-sessions/graph')} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent" title="在会话家族图谱中查看该会话">◈ 在图谱中查看</button>
+            {/* 只读探查：旧会话（Pi 还在跑旧扩展）也保留入口，点开后会直接说明去重载，
+                而不是把这个功能藏起来让人找不到。 */}
+            {activeId && (
+              <button type="button" onClick={() => setContextOpen(true)} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent" title="看这个会话实际发给模型的内容：系统提示、工具定义、消息序列，以及各自的大小">◲ 上下文</button>
+            )}
             <button type="button" onClick={toggleAuxiliary} className={`shrink-0 rounded border px-2 py-0.5 text-2xs ${auxiliary ? 'border-border bg-bg text-muted hover:border-accent hover:text-accent' : 'border-accent bg-accent-subtle text-accent'}`} title={auxiliary ? '切换到按活动分组的时间线' : '切回完整对话与工具记录'}>
               {auxiliary ? '活动视图' : '👁 完整对话'}
             </button>
@@ -2857,32 +2988,24 @@ export default function LiveSessionPage() {
             <button type="button" onClick={refreshNow} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent">刷新</button>
           </div>
         </div>
-        {childSessions.length > 0 && <div className="shrink-0 border-b border-border bg-card px-3 py-2">
-          <div className="mb-1 text-2xs font-medium text-muted">子 Agent · {childSessions.length}</div>
-          <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-            {childSessions.map(child => {
-              const title = sessionTitles[child.processInstanceId] || child.sessionName || `子 Agent · PID ${child.pid}`
-              const focused = focusedSubagentId === child.processInstanceId
-              const confirmingClose = childCloseConfirm === child.processInstanceId
-              const closing = closingChildIds.includes(child.processInstanceId)
-              return <div key={child.processInstanceId} className="group relative min-w-[150px] max-w-[220px]">
-                <button type="button" onClick={() => { setChildCloseConfirm(undefined); setFocusedSubagentId(child.processInstanceId) }} className={`w-full rounded border px-2 py-1.5 text-left transition-colors ${focused ? 'border-accent bg-accent-subtle' : 'border-border bg-card hover:border-accent'} ${closing ? 'opacity-50' : ''}`} title={`打开子 Agent：${title}`}>
-                  <div className="flex items-center gap-1.5"><span className="shrink-0 text-meta leading-none" aria-label={`Session 状态：${child.status === 'running' ? '工作中' : child.status === 'reconnecting' ? '重连中' : '等待输入'}`}>{child.status === 'running' ? <WorkingHammerIcon /> : child.status === 'reconnecting' ? '🔄' : '💤'}</span><span className="min-w-0 flex-1 truncate text-2xs font-medium text-text-strong">{title}</span><span className="text-2xs text-muted">{closing ? '关闭中…' : child.status === 'running' ? '工作中' : child.status === 'reconnecting' ? '重连中' : '等待'}</span></div>
-                  <div className="mt-0.5 truncate font-mono text-2xs text-muted">sid {child.sessionId.slice(0, 8)}… · PID {child.pid}</div>
-                </button>
-                {/* Sibling of the card: a nested button would reset the card's own click. */}
-                <button
-                  type="button"
-                  disabled={closing}
-                  onClick={event => { event.stopPropagation(); void closeChildSession(child) }}
-                  title={confirmingClose ? '再点一次确认关闭该子 Agent' : '关闭该子 Agent（结束它的 Pi 进程）'}
-                  aria-label={confirmingClose ? `确认关闭子 Agent ${title}` : `关闭子 Agent ${title}`}
-                  className={`absolute -right-1 -top-1 rounded-full border px-1 text-2xs leading-[16px] transition-opacity disabled:opacity-60 ${confirmingClose ? 'border-danger bg-danger text-danger-fg opacity-100' : 'border-border bg-card text-muted opacity-0 group-hover:opacity-100 hover:border-danger hover:text-danger focus-visible:opacity-100'}`}
-                >{confirmingClose ? '确认' : closing ? '…' : '×'}</button>
-              </div>
-            })}
-          </div>
-        </div>}
+        <LiveSubagentStrip
+          items={childItems.map(item => ({ ...item, label: item.session ? sessionTitles[item.session.processInstanceId] || item.label : item.label }))}
+          focusedId={childItems.find(item => item.session?.processInstanceId === focusedSubagentId)?.id || (typeof focusedSubagentRecord?.workId === 'string' ? focusedSubagentRecord.workId : typeof focusedSubagentRecord?.id === 'string' ? focusedSubagentRecord.id : undefined)}
+          confirmCloseId={childCloseConfirm}
+          closingIds={closingChildIds}
+          onFocus={item => {
+            setChildCloseConfirm(undefined)
+            setFocusedWorkflow(undefined)
+            if (item.session) {
+              setFocusedSubagentRecord(undefined)
+              setFocusedSubagentId(item.session.processInstanceId)
+            } else if (item.record) {
+              setFocusedSubagentId(undefined)
+              setFocusedSubagentRecord(item.record)
+            }
+          }}
+          onStop={item => { if (item.session) void closeChildSession(item.session) }}
+        />
         {state.error && <div className="px-4 py-2 bg-danger-subtle text-danger text-xs border-b border-danger">{state.error}</div>}
         {voiceError && <div className="flex items-center gap-2 border-b border-danger bg-danger-subtle px-4 py-2 text-xs text-danger">
           <span className="min-w-0 flex-1 truncate" title={voiceError}>语音输出：{voiceError}</span>
@@ -2918,7 +3041,7 @@ export default function LiveSessionPage() {
                 <div ref={timelineScrollRef} onScroll={handleTimelineScroll} data-timeline-scroll="" className="flex flex-1 flex-col overflow-y-auto p-3">
                   {/* 活动视图与完整对话都占满时间线列，宽屏下不再留出两侧空白。 */}
                   <div ref={timelineContentRef} className={auxiliary ? 'flex flex-col space-y-3' : 'w-full space-y-3'}>
-                    {workflowItems.map(workflow => <LiveWorkflowProgressCard key={String(workflow.id)} workflow={workflow} sessions={sessions} onOpen={workflowValue => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflowValue) }} />)}
+                    {workflowItems.map(workflow => <LiveWorkflowProgressCard key={String(workflow.id)} workflow={workflow} sessions={sessions} onOpen={workflowValue => { setFocusedSubagentId(undefined); setFocusedSubagentRecord(undefined); setFocusedWorkflow(workflowValue) }} />)}
                     {auxiliary
                       ? detail.entries.length === 0 && workflowItems.length === 0
                         ? <div className="py-10 text-center text-sm text-muted">该 session 暂无可显示消息。</div>
@@ -2986,7 +3109,7 @@ export default function LiveSessionPage() {
                   onBtwSubmit={text => { void btwCommand({ type: 'submit', text }).catch(() => {}) }}
                   onBtwAbort={() => { void btwCommand({ type: 'abort' }).catch(() => {}) }}
                   onBtwRefreshParent={() => { void btwCommand({ type: 'refresh-parent' }).catch(() => {}) }}
-                  onOpenWorkflow={workflow => { setFocusedSubagentId(undefined); setFocusedWorkflow(workflow) }}
+                  onOpenWorkflow={workflow => { setFocusedSubagentId(undefined); setFocusedSubagentRecord(undefined); setFocusedWorkflow(workflow) }}
                   goal={sessionGoalSummary}
                   goalLoaded={detail !== undefined}
                   goalBusy={busy}
@@ -3047,6 +3170,7 @@ export default function LiveSessionPage() {
           onClose={() => setFocusedWorkflow(undefined)}
           onOpenSubagent={processId => {
             setFocusedWorkflow(undefined)
+            setFocusedSubagentRecord(undefined)
             setFocusedSubagentId(processId)
           }}
         />
@@ -3057,9 +3181,11 @@ export default function LiveSessionPage() {
           detail={focusedSubagentDetail}
           loading={subagentLoading}
           onClose={() => setFocusedSubagentId(undefined)}
-          onOpenFull={() => navigate(`/live-sessions/${encodeURIComponent(focusedSubagent.processInstanceId)}`)}
+          disconnected={!connectedSubagent}
+          onOpenFull={connectedSubagent ? () => navigate(`/live-sessions/${encodeURIComponent(focusedSubagent.processInstanceId)}`) : undefined}
         />
       )}
+      {focusedSubagentRecord && <LiveSubagentRecordPanel record={focusedSubagentRecord} onClose={() => setFocusedSubagentRecord(undefined)} />}
       {documentPreview && (
         <ErrorBoundary key={`preview:${documentPreview.filePath}`}>
           <DocumentPreviewModal
@@ -3100,6 +3226,16 @@ export default function LiveSessionPage() {
           onSave={addChatComment}
           onCancel={() => { setCommentTarget(null); quoteSelection.clear() }}
         />
+      )}
+      {contextOpen && activeId && (
+        <ErrorBoundary key={`context:${activeId}`}>
+          <ContextInspector
+            processInstanceId={activeId}
+            sessionLabel={summary?.sessionName || (summary ? `Pi ${summary.pid}` : undefined)}
+            capable={contextViewAvailable(summary?.capabilities)}
+            onClose={() => setContextOpen(false)}
+          />
+        </ErrorBoundary>
       )}
       <ExtensionUiModal />
     </div>
