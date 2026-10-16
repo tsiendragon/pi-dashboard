@@ -44,7 +44,7 @@ describe('LiveSessionOrderStore', () => {
     expect(await store.replace(['session-b', 'session-a'])).toEqual(['session-b', 'session-a'])
     expect(statSync(file).mode & 0o777).toBe(0o600)
     const raw = JSON.parse(readFileSync(file, 'utf8'))
-    expect(raw).toEqual({ version: 1, order: ['session-b', 'session-a'] })
+    expect(raw).toEqual({ version: 1, order: ['session-b', 'session-a'], sectionOrder: [] })
   })
 
   it('clearing the list (auto-sort) is a real, persisted state', async () => {
@@ -56,6 +56,18 @@ describe('LiveSessionOrderStore', () => {
   it('reloads persisted state from disk', async () => {
     await store.replace(['session-b', 'session-a', 'session-c'])
     expect(await new LiveSessionOrderStore(file).list()).toEqual(['session-b', 'session-a', 'session-c'])
+  })
+
+  it('loads old files and persists section order independently of session order', async () => {
+    writeFileSync(file, JSON.stringify({ version: 1, order: ['session-a'] }), 'utf8')
+    expect(await store.listSections()).toEqual([])
+    await store.replaceSections(['work', '__ungrouped', 'hold', 'hold'])
+    await store.replace(['session-b'])
+    const loaded = new LiveSessionOrderStore(file)
+    expect(await loaded.list()).toEqual(['session-b'])
+    expect(await loaded.listSections()).toEqual(['work', '__ungrouped', 'hold'])
+    await loaded.rekey('session-b', 'session-c')
+    expect(await loaded.listSections()).toEqual(['work', '__ungrouped', 'hold'])
   })
 
   it('survives a corrupt file without throwing', async () => {
@@ -124,22 +136,38 @@ describe('live-session order HTTP routes', () => {
     } finally { await srv.close() }
   })
 
+  it('round-trips group order without resetting row order', async () => {
+    const srv = await serve()
+    try {
+      await srv.orderStore.replace(['session-b', 'session-a'])
+      const put = await fetch(`${srv.origin}/api/live-session-order`, {
+        method: 'PUT', headers: { cookie: srv.cookie, origin: srv.origin, 'content-type': 'application/json' },
+        body: JSON.stringify({ sectionOrder: ['work', '__ungrouped', 'hold'] }),
+      })
+      expect(put.status).toBe(200)
+      expect(await put.json()).toEqual({ ok: true, order: ['session-b', 'session-a'], sectionOrder: ['work', '__ungrouped', 'hold'] })
+      const state = await (await fetch(`${srv.origin}/api/live-session-order`, { headers: { cookie: srv.cookie } })).json()
+      expect(state.sectionOrder).toEqual(['work', '__ungrouped', 'hold'])
+      expect(await srv.orderStore.list()).toEqual(['session-b', 'session-a'])
+    } finally { await srv.close() }
+  })
+
   it('round-trips a dragged order and persists it', async () => {
     const srv = await serve()
     try {
       expect(await (await fetch(`${srv.origin}/api/live-session-order`, { headers: { cookie: srv.cookie } })).json())
-        .toEqual({ order: [] })
+        .toEqual({ order: [], sectionOrder: [] })
 
       const put = await fetch(`${srv.origin}/api/live-session-order`, {
         method: 'PUT', headers: { cookie: srv.cookie, origin: srv.origin, 'content-type': 'application/json' },
         body: JSON.stringify({ order: ['session-b', 'session-a'] }),
       })
       expect(put.status).toBe(200)
-      expect(await put.json()).toEqual({ ok: true, order: ['session-b', 'session-a'] })
+      expect(await put.json()).toEqual({ ok: true, order: ['session-b', 'session-a'], sectionOrder: [] })
       expect(await srv.orderStore.list()).toEqual(['session-b', 'session-a'])
 
       const after = await (await fetch(`${srv.origin}/api/live-session-order`, { headers: { cookie: srv.cookie } })).json()
-      expect(after).toEqual({ order: ['session-b', 'session-a'] })
+      expect(after).toEqual({ order: ['session-b', 'session-a'], sectionOrder: [] })
     } finally { await srv.close() }
   })
 

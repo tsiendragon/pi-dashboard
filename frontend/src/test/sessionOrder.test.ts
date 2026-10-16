@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import {
-  anchorIndexOf, buildOrderIndex, buildSessionSections, materializeOrder, moveInOrder, resolveDropTarget, sortSessions,
+  anchorIndexOf, buildOrderIndex, buildSessionSections, sectionOrderIds, materializeOrder, moveInOrder, resolveDropTarget, sortSessions,
 } from '../features/live-sessions/sessionOrder'
 
 function session(sessionId: string, startedAt: number, over: Partial<LiveSessionSummary> = {}): LiveSessionSummary {
@@ -23,6 +23,26 @@ function session(sessionId: string, startedAt: number, over: Partial<LiveSession
 }
 
 const ids = (items: LiveSessionSummary[]) => items.map(item => item.sessionId)
+
+describe('sectionOrderIds', () => {
+  const groups = [
+    { id: 'hold', name: ' Hold ', sessionIds: ['b'], createdAt: '', updatedAt: '' },
+    { id: 'work', name: '进行中', sessionIds: ['a'], createdAt: '', updatedAt: '' },
+  ]
+  it('puts Hold after ungrouped by default', () => {
+    expect(sectionOrderIds(groups, [])).toEqual(['work', '__ungrouped', 'hold'])
+  })
+  it('preserves manual positions and inserts new groups before trailing Hold', () => {
+    expect(sectionOrderIds(groups, ['gone', 'work', '__ungrouped', 'hold', 'hold'])).toEqual(['work', '__ungrouped', 'hold'])
+    const next = [...groups, { id: 'new', name: '新分组', sessionIds: [], createdAt: '', updatedAt: '' }]
+    expect(sectionOrderIds(next, ['work', '__ungrouped', 'hold'])).toEqual(['work', '__ungrouped', 'new', 'hold'])
+    expect(sectionOrderIds(groups, ['hold', '__ungrouped', 'work'])).toEqual(['hold', '__ungrouped', 'work'])
+  })
+  it('keeps pinned first while respecting manual block and row orders', () => {
+    const meta = { c: { tags: [], pinned: true, updatedAt: '' } }
+    expect(buildSessionSections([session('a', 1), session('b', 2), session('c', 3), session('d', 4)], meta, groups, [], ['__ungrouped', 'hold', 'work']).map(section => section.id)).toEqual(['__pinned', '__ungrouped', 'hold', 'work'])
+  })
+})
 
 describe('buildSessionSections', () => {
   it('lays pinned first, then task groups, then ungrouped, honouring the manual order', () => {
