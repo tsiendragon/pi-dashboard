@@ -380,8 +380,8 @@ function ModelTable({ items }: { items: UsageModelSummary[] }) {
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs">
         <thead className="text-2xs text-muted uppercase"><tr><th className="py-2 pr-3">模型</th><th className="py-2 pr-3">加权单价</th><th className="py-2 pr-3">费用</th><th className="py-2 pr-3">Token</th><th className="py-2">输入 / 输出</th></tr></thead>
-        <tbody>{items.length === 0 ? <tr><td colSpan={5} className="py-5 text-center text-muted">本月暂无记录</td></tr> : items.flatMap(model => [model, ...(model.efforts || []).map(effort => ({ ...effort, key: `${model.key} / ${effort.key}`, effortLabel: effort.key === 'unknown' ? '未知 effort' : effort.key }))]).map(item => (
-          <tr key={item.key} className="border-t border-border"><td className="py-2 pr-3 font-mono whitespace-normal break-all text-text" title={item.key}>{'effortLabel' in item ? <span className="pl-4 text-muted">↳ {String(item.effortLabel)}</span> : item.key}</td><td className="py-2 pr-3 text-text">{formatUnitCost(item.effectiveUsdPerMillionTokens)}</td><td className="py-2 pr-3 text-text-strong">{formatCost(item.costUsd)}</td><td className="py-2 pr-3"><Totals item={item} /></td><td className="py-2 text-muted">{formatTokens(item.inputTokens)} / {formatTokens(item.outputTokens)}</td></tr>
+        <tbody>{items.length === 0 ? <tr><td colSpan={5} className="py-5 text-center text-muted">本月暂无记录</td></tr> : items.map(item => (
+          <tr key={item.key} className="border-t border-border"><td className="py-2 pr-3 font-mono whitespace-normal break-all text-text" title={item.key}>{item.key}</td><td className="py-2 pr-3 text-text">{formatUnitCost(item.effectiveUsdPerMillionTokens)}</td><td className="py-2 pr-3 text-text-strong">{formatCost(item.costUsd)}</td><td className="py-2 pr-3"><Totals item={item} /></td><td className="py-2 text-muted">{formatTokens(item.inputTokens)} / {formatTokens(item.outputTokens)}</td></tr>
         ))}</tbody>
       </table>
     </div>

@@ -172,14 +172,25 @@ function defaultTimezone(): string {
   return process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 }
 
+// Constructing Intl.DateTimeFormat is expensive (~40µs); doing it once per
+// record made a 60k-record month take ~2.5s. Reuse one formatter per timezone.
+const dateFormatters = new Map<string, Intl.DateTimeFormat>()
+
 export function dateInTimezone(at: number, timezone: string): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(at))
-  const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]))
+  let formatter = dateFormatters.get(timezone)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    dateFormatters.set(timezone, formatter)
+  }
+  const values: Record<string, string> = {}
+  for (const part of formatter.formatToParts(new Date(at))) {
+    if (part.type !== 'literal') values[part.type] = part.value
+  }
   return `${values.year}-${values.month}-${values.day}`
 }
 
@@ -205,6 +216,10 @@ export class UsageLedger {
   private readonly fileCache = new Map<string, FileCacheEntry>()
   private readonly fileTails = new Map<string, Promise<number>>()
   private writeTail: Promise<void> = Promise.resolve()
+  /** Bumped on every ledger mutation; cached reports are valid only for the version they were built at. */
+  private version = 0
+  private readonly reportCache = new Map<string, { version: number; report: UsageReport }>()
+  private readonly reportPending = new Map<string, { version: number; promise: Promise<UsageReport> }>()
   private startPromise?: Promise<void>
 
   constructor(
@@ -272,7 +287,29 @@ export class UsageLedger {
     })
   }
 
-  async getReport(month: string, timezone = this.timezone): Promise<UsageReport> {
+  /**
+   * Memoized report. Always fresh (invalidated by any write) but free when the
+   * ledger has not changed since the last build; concurrent callers share one build.
+   */
+  getReport(month: string, timezone = this.timezone): Promise<UsageReport> {
+    if (!validMonth(month)) return Promise.reject(new Error('month must use YYYY-MM format'))
+    const key = `${month}|${timezone}`
+    const cached = this.reportCache.get(key)
+    if (cached && cached.version === this.version) return Promise.resolve(cached.report)
+    const pending = this.reportPending.get(key)
+    if (pending && pending.version === this.version) return pending.promise
+    const version = this.version
+    const promise = this.buildReport(month, timezone).then(report => {
+      if (version === this.version) this.reportCache.set(key, { version, report })
+      return report
+    }).finally(() => {
+      if (this.reportPending.get(key)?.promise === promise) this.reportPending.delete(key)
+    })
+    this.reportPending.set(key, { version, promise })
+    return promise
+  }
+
+  private async buildReport(month: string, timezone: string): Promise<UsageReport> {
     await this.start()
     if (!validMonth(month)) throw new Error('month must use YYYY-MM format')
     await this.loadMonth(month)
@@ -281,7 +318,6 @@ export class UsageLedger {
     const daily = new Map<string, UsageTotals>()
     const dailyModels = new Map<string, Map<string, UsageTotals>>()
     const models = new Map<string, UsageTotals>()
-    const efforts = new Map<string, Map<string, UsageTotals>>()
     const sessions = new Map<string, { totals: UsageTotals; label: string; sessionId?: string; sessionFile?: string; cwd?: string }>()
     const prefix = `${month}-`
 
@@ -300,12 +336,6 @@ export class UsageLedger {
       const model = models.get(item.modelKey) || emptyTotals()
       addTotals(model, item)
       models.set(item.modelKey, model)
-      const groups = efforts.get(item.modelKey) || new Map<string, UsageTotals>()
-      const effort = item.effort || 'unknown'
-      const subtotal = groups.get(effort) || emptyTotals()
-      addTotals(subtotal, item)
-      groups.set(effort, subtotal)
-      efforts.set(item.modelKey, groups)
 
       const session = sessions.get(item.sessionKey) || {
         totals: emptyTotals(),
@@ -331,9 +361,7 @@ export class UsageLedger {
     }
 
     const modelsResult: UsageModelSummary[] = [...models.entries()]
-      .map(([key, totals]) => ({ key, ...totals, effectiveUsdPerMillionTokens: effectiveUsdPerMillionTokens(totals),
-        efforts: [...efforts.get(key)!.entries()].map(([key, totals]) => ({ key, ...totals, effectiveUsdPerMillionTokens: effectiveUsdPerMillionTokens(totals) })).sort((a, b) => b.costUsd - a.costUsd),
-      }))
+      .map(([key, totals]) => ({ key, ...totals, effectiveUsdPerMillionTokens: effectiveUsdPerMillionTokens(totals) }))
       .sort((left, right) => right.costUsd - left.costUsd)
     const sessionsResult: UsageSessionSummary[] = [...sessions.entries()]
       .map(([key, value]) => ({
@@ -513,6 +541,7 @@ export class UsageLedger {
       ...(input.meta.cwd ? { cwd: input.meta.cwd } : {}),
     }
     monthRecords.set(item.id, item)
+    this.version += 1
     const line = `${JSON.stringify(item)}\n`
     const write = this.writeTail.then(() => appendFile(this.filePath(month), line, 'utf8'))
     this.writeTail = write.catch(() => undefined)
@@ -521,6 +550,7 @@ export class UsageLedger {
     } catch (error) {
       if (existing) monthRecords.set(item.id, existing)
       else monthRecords.delete(item.id)
+      this.version += 1
       throw error
     }
     return true
