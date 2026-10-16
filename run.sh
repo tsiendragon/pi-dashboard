@@ -5,6 +5,14 @@ set -euo pipefail
 # For restarts, use: ./restart.sh or sudo systemctl restart pi-dashboard
 cd "$(dirname "$0")"
 
+# Type-check first: fail fast in seconds, instead of after the slower Vite build.
+# The backend runs through tsx, which strips types without checking them, so the
+# backend needs this gate here just as much as the frontend does.
+echo "[pi-dashboard] Type-checking backend + frontend ($(date))"
+npm run typecheck
+
+echo "[pi-dashboard] Type check passed"
+
 echo "[pi-dashboard] Building frontend ($(date))"
 npm --prefix frontend run build
 
