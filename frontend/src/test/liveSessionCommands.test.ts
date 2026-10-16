@@ -8,7 +8,7 @@
  * that the model would answer (a click that burns a turn and clears nothing).
  */
 import { describe, expect, it } from 'vitest'
-import { clearCommandAvailable, LIVE_SESSION_SLASH_MENU } from '../features/live-sessions/liveSessionCommands'
+import { clearCommandAvailable, contextViewAvailable, LIVE_SESSION_SLASH_MENU } from '../features/live-sessions/liveSessionCommands'
 
 describe('clearCommandAvailable', () => {
   it('requires the bridge to advertise session_clear', () => {
@@ -19,5 +19,13 @@ describe('clearCommandAvailable', () => {
 
   it('keeps offering /clear in the slash menu', () => {
     expect(LIVE_SESSION_SLASH_MENU.some(item => item.command === '/clear')).toBe(true)
+  })
+})
+
+describe('contextViewAvailable', () => {
+  it('requires the bridge to advertise context_view', () => {
+    expect(contextViewAvailable(['session_tree', 'context_view'])).toBe(true)
+    expect(contextViewAvailable(['session_tree'])).toBe(false)
+    expect(contextViewAvailable(undefined)).toBe(false)
   })
 })

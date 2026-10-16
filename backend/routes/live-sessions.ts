@@ -16,6 +16,7 @@ import { SessionForkError, createBranchedSessionFile } from '../live-sessions/se
 import { SessionDiscardError, cleanupSessionDiscard, commitSessionDiscard, prepareSessionDiscard, prepareSessionWithdrawal } from '../live-sessions/session-discard.js'
 import { SessionTreeError, buildSessionFamilyGraph, readSessionCompactions } from '../live-sessions/session-tree.js'
 import { readSessionGoalAnchor } from '../live-sessions/session-goal.js'
+import { listRepoCandidates } from '../live-sessions/repo-candidates.js'
 
 export interface LiveSessionRouteOptions {
   app: Express
@@ -26,6 +27,10 @@ export interface LiveSessionRouteOptions {
   metaStore?: LiveSessionMetaStore
   orderStore?: LiveSessionOrderStore
   launcher?: LivePiLauncher
+  /** `liveSessions.repoRoots` — folders whose direct children the start field searches. */
+  repoRoots?: readonly string[]
+  /** Repos registered on the Repos page; merged into the start field's suggestions. */
+  registeredRepos?: () => readonly { id: string; path: string }[]
   /** Overridable in tests so the close path never signals a real process. */
   closeSession?: typeof closeLiveSession
 }
@@ -94,6 +99,8 @@ export class LiveSessionRoutes {
   private readonly launcher?: LivePiLauncher
   private readonly restarter: LiveSessionRestarter
   private readonly closeSession: typeof closeLiveSession
+  private readonly repoRoots: readonly string[]
+  private readonly registeredRepos: () => readonly { id: string; path: string }[]
   private readonly wss = new WebSocketServer({ noServer: true })
   private readonly clients = new Map<WebSocket, LiveSessionBrowserIdentity>()
   private readonly releaseTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -115,6 +122,8 @@ export class LiveSessionRoutes {
     this.launcher = options.launcher
     this.restarter = new LiveSessionRestarter({ registry: this.registry, metaStore: this.metaStore, launcher: this.launcher })
     this.closeSession = options.closeSession ?? closeLiveSession
+    this.repoRoots = options.repoRoots ?? []
+    this.registeredRepos = options.registeredRepos ?? (() => [])
   }
 
   start(): Promise<void> {
@@ -380,6 +389,21 @@ export class LiveSessionRoutes {
     })
 
     /**
+     * Repos the start field may suggest by keyword: direct children of the
+     * configured `liveSessions.repoRoots`. Read-only and configuration-driven;
+     * whether a listed path may actually be launched is still decided by the
+     * path policy against `liveSessions.roots`.
+     */
+    this.app.get('/api/live-sessions/repo-candidates', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+      await this.respond(res, async () => {
+        const scanned = await listRepoCandidates(this.repoRoots)
+        const known = new Set(scanned.map(candidate => candidate.path))
+        const registered = this.registeredRepos().filter(repo => !known.has(repo.path)).map(repo => ({ name: repo.id, path: repo.path, git: true }))
+        return { ok: true, repos: [...registered, ...scanned] }
+      })
+    })
+
+    /**
      * Reload every attached session at once.
      *
      * Bulk counterpart of the per-session `重载` button: after dashboard
@@ -440,11 +464,18 @@ export class LiveSessionRoutes {
     // Manual sidebar order for live sessions (same sessionId keying as meta).
     // Whole-list replace, so one drag costs one request instead of N index bumps.
     this.app.get('/api/live-session-order', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
-      res.json({ order: await this.orderStore.list() })
+      res.json({ order: await this.orderStore.list(), sectionOrder: await this.orderStore.listSections() })
     })
 
     this.app.put('/api/live-session-order', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {
-      await this.respond(res, async () => ({ ok: true, order: await this.orderStore.replace(req.body?.order) }))
+      await this.respond(res, async () => {
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'sectionOrder')) {
+          await this.orderStore.replaceSections(req.body.sectionOrder)
+        } else {
+          await this.orderStore.replace(req.body?.order)
+        }
+        return { ok: true, order: await this.orderStore.list(), sectionOrder: await this.orderStore.listSections() }
+      })
     })
 
     this.app.patch('/api/live-sessions/:processInstanceId/meta', requireMutationOrigin, requireAuth, async (req: Request, res: Response) => {

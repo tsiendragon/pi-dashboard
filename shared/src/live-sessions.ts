@@ -34,6 +34,84 @@ export interface LiveSessionMeta {
   updatedAt: string
 }
 
+/**
+ * A repo the Live Pi start field offers by keyword: a direct child of a folder
+ * configured in `liveSessions.repoRoots`. Dashboard-local REST shape; it is not
+ * part of the live-session wire protocol.
+ */
+export interface RepoCandidate {
+  name: string
+  path: string
+  /** Checkout marker (`.git` present) — the completion menu labels these rows. */
+  git: boolean
+}
+
+/**
+ * What the model was actually sent, normalized by the bridge's `context-view.ts`.
+ * Read-only view for the dashboard's context inspector; not a wire protocol type
+ * (the command result is opaque JSON on the wire).
+ *
+ * `version` is absent when the running Pi session uses an older build of the
+ * extension: a missing field then means "not reported", not "empty".
+ */
+export type LiveSessionContextCategory = 'system' | 'tools' | 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'reasoning' | 'other'
+
+export interface LiveSessionContextItem {
+  index: number
+  kind: 'message' | 'tool_call' | 'tool_result' | 'reasoning' | 'other'
+  category: LiveSessionContextCategory
+  role: string
+  label: string
+  /** Readable text, already clipped by the bridge when it is very long. */
+  text: string
+  /** True character count before clipping. */
+  chars: number
+  /** Approximate tokens (see `estimateTokens` in the bridge). */
+  tokens: number
+  images?: number
+  truncated?: boolean
+}
+
+export interface LiveSessionContextTool {
+  name: string
+  description: string
+  descriptionChars: number
+  parameters: string
+  parametersChars: number
+  tokens: number
+  truncated?: boolean
+}
+
+export interface LiveSessionContextSystemPart {
+  kind: 'base' | 'context_file' | 'skills' | 'guidelines'
+  label: string
+  chars: number
+  tokens: number
+  count?: number
+}
+
+export interface LiveSessionContextView {
+  /** Shape version of this view; absent = the session runs an older extension build. */
+  version?: number
+  /** `provider_request` = the latest real payload; `reconstructed` = approximation. */
+  source: 'provider_request' | 'reconstructed'
+  /** Detected provider wire format (`openai-responses`, `anthropic-messages`, …). */
+  format: string
+  generatedAt: number
+  capturedAt?: number
+  model?: { provider: string; id: string }
+  system: { text: string; chars: number; tokens: number; truncated?: boolean }
+  systemParts: LiveSessionContextSystemPart[]
+  tools: LiveSessionContextTool[]
+  messages: LiveSessionContextItem[]
+  totals: { tokens: number; chars: number; byCategory: Record<LiveSessionContextCategory, number> }
+  /** pi's own context usage, for calibration against the estimate. */
+  contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null }
+  /** Non-content request fields (model, reasoning, tool_choice, …), JSON-rendered. */
+  settings: Record<string, string>
+  truncated: boolean
+}
+
 import type { GoalAnchor, GoalProgress } from './goal-anchor.js'
 
 export interface LiveSessionSummary {
@@ -43,6 +121,8 @@ export interface LiveSessionSummary {
   parentSessionId?: string
   parentToolCallId?: string
   subagentWorkId?: string
+  /** Workflow task identity from trace provenance, separate from the Pi session ID. */
+  subagentTaskId?: string
   sessionFile?: string
   sessionName?: string
   pid: number
@@ -220,6 +300,9 @@ export type LiveSessionCommand =
   | { type: 'abort'; leaseId: string }
   | { type: 'set_session_name'; name: string }
   | { type: 'get_models' }
+  /** Read-only: what this session sends to the model. Dashboard-local REST shape
+   *  (`LiveSessionContextView`); answered by the bridge's `get_context` command. */
+  | { type: 'get_context' }
   | { type: 'set_model'; provider: string; modelId: string }
   | { type: 'compact'; leaseId: string }
   | { type: 'reload' }

@@ -149,7 +149,7 @@ export function parseGoodbye(value: unknown): LiveSessionGoodbye {
 export function validateLiveSessionCommand(value: unknown, browserOnly = false): LiveSessionCommand {
   if (!record(value) || !nonEmptyString(value.type, 64)) throw new LiveSessionProtocolError('invalid_command', 'command type is required')
   if (jsonBytes(value) > LIVE_SESSION_MAX_COMMAND_BYTES) throw new LiveSessionProtocolError('command_too_large', 'command exceeds 8 MiB')
-  if (browserOnly && value.type !== 'resync' && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'set_model' && value.type !== 'compact' && value.type !== 'reload' && value.type !== 'shutdown' && value.type !== 'feature_command' && value.type !== 'answer_ui') {
+  if (browserOnly && value.type !== 'resync' && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'get_context' && value.type !== 'set_model' && value.type !== 'compact' && value.type !== 'reload' && value.type !== 'shutdown' && value.type !== 'feature_command' && value.type !== 'answer_ui') {
     throw new LiveSessionProtocolError('unsupported_command', 'browser command is not supported')
   }
   switch (value.type) {
@@ -170,6 +170,9 @@ export function validateLiveSessionCommand(value: unknown, browserOnly = false):
     case 'get_models':
       if (onlyKeys(value, ['type'])) return value as unknown as LiveSessionCommand
       break
+    case 'get_context':
+      if (onlyKeys(value, ['type'])) return value as unknown as LiveSessionCommand
+      break
     case 'set_model':
       if (onlyKeys(value, ['type', 'provider', 'modelId']) && nonEmptyString(value.provider, 512) && nonEmptyString(value.modelId, 1024)) return value as unknown as LiveSessionCommand
       break
@@ -186,6 +189,9 @@ export function validateLiveSessionCommand(value: unknown, browserOnly = false):
       if (value.feature === 'btw') {
         // `btw` rides the adapter's full surface: open/close the side chat, submit a
         // question, abort a running answer, refresh the parent context snapshot.
+        // pi-tsien-extension's `packages/pi-tsien-live-session/src/protocol.ts`
+        // validates the same set on the Pi side; a command missing there is not
+        // an error reply — it destroys that session's live bridge. Keep both lists equal.
         const type = nonEmptyString(value.command.type, 64) ? value.command.type : ''
         if (!type) break
         if (type === 'submit') {
