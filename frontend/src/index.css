@@ -47,33 +47,47 @@
   .typing-dots span,.typing-dots-sm span{animation:none}
 }
 
-/* ── Working session glyph (animated hammer striking a nail) ── */
-.working-hammer{display:inline-block;width:1em;height:1em;vertical-align:-.15em;overflow:visible}
-/* The drawing sits low/right inside the 16×16 viewBox: nudge it down so it reads
-   centred against the text, and re-centre it horizontally in the row variant.
-   Lengths here are SVG user units (1 unit = 1/16 of the box). */
-.working-hammer>g{transform:translate(0,1px)}
-/* Sidebar-row slot: two text lines tall (18px title + 16px meta) so the swing is
-   never cramped, 26px wide so the title column stays usable. */
-.working-hammer-row{width:26px;height:34px}
-.working-hammer-row>g{transform:translate(-2.5px,1px)}
-.working-hammer-hit{transform-box:view-box;transform-origin:13px 13.1px;animation:working-hammer-swing 1.15s infinite}
-.working-hammer-nail{transform-box:view-box;animation:working-hammer-nail-jolt 1.15s infinite}
-@keyframes working-hammer-swing{
-  0%{transform:rotate(34deg);animation-timing-function:cubic-bezier(.5,.05,.85,.4)}
-  26%{transform:rotate(-3deg);animation-timing-function:ease-out}
-  36%{transform:rotate(7deg)}
-  50%{transform:rotate(2deg);animation-timing-function:cubic-bezier(.55,.05,.9,.45)}
-  100%{transform:rotate(34deg)}
+/* ── Working session glyph (mallet tapping a wooden fish 木鱼, "+1" merit) ──
+   One 1.3s beat: the mallet drops onto the dome (~25%), the body squashes,
+   impact ticks flash and a "+1" floats up, then the mallet eases back up.
+   Lengths inside the SVG are user units (1 unit = 1/16 of the box). */
+.working-muyu{position:relative;display:inline-block;width:1em;height:1em;vertical-align:-.15em;line-height:1}
+.working-muyu>svg{display:block;width:100%;height:100%;overflow:visible}
+/* Sidebar-row slot: two text lines tall (18px title + 16px meta) so the swing and
+   the floating "+1" are never cramped, 26px wide so the title column stays usable. */
+.working-muyu-row{width:26px;height:34px}
+.live-session-row{min-height:35px;border-bottom:1px dashed var(--border)}
+.live-session-section-rows>div:last-child .live-session-row{border-bottom-color:transparent}
+.live-session-row .working-muyu-row{height:32px}
+.working-muyu-row>svg{transform:translateY(2px)}
+.working-muyu-mallet{transform-box:view-box;transform-origin:14.6px 6px;animation:working-muyu-swing 1.3s infinite}
+.working-muyu-body{transform-box:view-box;transform-origin:7px 12.6px;animation:working-muyu-squash 1.3s infinite}
+.working-muyu-tok{opacity:0;animation:working-muyu-tok 1.3s infinite}
+.working-muyu-merit{position:absolute;left:-20%;top:-25%;font-size:max(7px,.32em);font-weight:700;line-height:1;
+  white-space:nowrap;pointer-events:none;user-select:none;opacity:0;animation:working-muyu-merit 1.3s infinite}
+.working-muyu-row .working-muyu-merit{left:-2px;top:4px;font-size:8px}
+@keyframes working-muyu-swing{
+  0%{transform:rotate(8deg);animation-timing-function:cubic-bezier(.5,.05,.85,.4)}
+  25%{transform:rotate(-21deg);animation-timing-function:ease-out}
+  34%{transform:rotate(-14deg)}
+  46%{transform:rotate(-17deg);animation-timing-function:cubic-bezier(.4,0,.6,1)}
+  100%{transform:rotate(8deg)}
 }
-@keyframes working-hammer-nail-jolt{
-  0%,25%{transform:translateY(0)}
-  30%{transform:translateY(.7px)}
-  44%{transform:translateY(.15px)}
-  58%,100%{transform:translateY(0)}
+@keyframes working-muyu-squash{
+  0%,24%{transform:scale(1)}
+  28%{transform:scale(1.05,.9)}
+  38%{transform:scale(.98,1.03)}
+  48%,100%{transform:scale(1)}
+}
+@keyframes working-muyu-tok{0%,24%{opacity:0}27%{opacity:1}45%,100%{opacity:0}}
+@keyframes working-muyu-merit{
+  0%,24%{opacity:0;transform:translateY(2px)}
+  32%{opacity:1;transform:translateY(0)}
+  70%{opacity:.9;transform:translateY(-5px)}
+  90%,100%{opacity:0;transform:translateY(-7px)}
 }
 @media (prefers-reduced-motion: reduce){
-  .working-hammer-hit,.working-hammer-nail{animation:none}
+  .working-muyu-mallet,.working-muyu-body,.working-muyu-tok,.working-muyu-merit{animation:none}
 }
 @keyframes pulse-dot{
   0%,100%{opacity:.3;transform:scale(.85)}
