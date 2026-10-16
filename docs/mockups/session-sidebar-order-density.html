@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会话侧栏 · 分组顺序与紧凑布局预览</title>
+<style>
+:root{color-scheme:light;--bg:#fafafa;--bg-elevated:#fff;--bg-hover:#f0f0f0;--text:#3f3f46;--text-strong:#18181b;--muted:#71717a;--border:#e4e4e7;--accent:#1d5aaf;--accent-subtle:rgba(29,90,175,.12);--ok:#11695e;--warn:#935b06;--radius-sm:6px;--radius-md:8px;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+[data-theme=dark]{color-scheme:dark;--bg:#18181b;--bg-elevated:#202023;--bg-hover:#2b2b30;--text:#d4d4d8;--text-strong:#fafafa;--muted:#a1a1aa;--border:#3f3f46;--accent:#7aafff;--accent-subtle:rgba(122,175,255,.13);--ok:#5bc4b2;--warn:#e2b65a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}button,select{font:inherit;color:inherit}button{cursor:pointer;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px}button:hover:not(:disabled){background:var(--bg-hover)}button:disabled{opacity:.35;cursor:default}button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}main{max-width:920px;padding:28px 24px 36px;margin:auto}h1{font-size:22px;line-height:1.4;margin:0 0 8px;color:var(--text-strong)}p{margin:0}.intro{color:var(--muted);max-width:760px}.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:18px 0}.toolbar label{display:flex;align-items:center;gap:6px}.toolbar select{background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:6px}.primary{color:var(--accent);border-color:var(--accent)}.comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.variant{min-width:0}.variant h2{font-size:15px;margin:0 0 4px;color:var(--text-strong)}.caption{color:var(--muted);font-size:12px;margin-bottom:12px}.sidebar{max-width:380px;height:610px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);display:flex;flex-direction:column;overflow:hidden}.sidebar-top{padding:12px 10px 10px;border-bottom:1px solid var(--border)}.brand{display:flex;justify-content:space-between;align-items:center;font-weight:600;color:var(--text-strong);margin-bottom:10px}.tiny{font-size:11px;color:var(--muted);font-weight:400}.search{display:flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--muted);font-size:12px}.search input{font:inherit;width:100%;min-width:0;background:transparent;border:0;color:var(--text);outline:none}.search:focus-within{outline:2px solid var(--accent)}.tabs{display:flex;align-items:center;gap:12px;font-size:12px;margin-top:10px}.tabs strong{color:var(--accent)}.list{flex:1;min-height:0;overflow:auto;padding:6px;scrollbar-width:thin}.section{margin-bottom:16px}.group-head{display:flex;align-items:center;gap:6px;min-height:30px;padding:0 6px;color:var(--muted);font-size:12px}.fold{border:0;background:transparent;padding:0;display:flex;align-items:center;gap:6px;flex:1;min-width:0;text-align:left;font-size:12px;min-height:28px}.count{font:11px var(--mono);color:var(--muted)}.section.hold .group-head{border-top:1px solid var(--border);margin-top:6px;padding-top:4px}.row{width:100%;border:0;background:transparent;display:flex;align-items:stretch;gap:8px;padding:6px;border-radius:6px;text-align:left;height:46px;min-width:0}.row.selected{background:var(--accent-subtle)}.status{display:flex;align-items:center;justify-content:center;width:26px;flex-shrink:0;color:var(--muted);font-size:13px}.status.running{color:var(--accent)}.status.wait{color:var(--warn)}.row-main{flex:1;min-width:0}.line-one{display:flex;align-items:center;height:18px;gap:5px}.title{font-size:13px;line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-strong);flex:1;min-width:0}.activity{font:10px var(--mono);color:var(--muted);flex-shrink:0}.line-two{display:flex;align-items:center;height:16px;gap:5px;font-size:10px;color:var(--muted);overflow:hidden;white-space:nowrap}.tag{border-radius:4px;padding:0 4px;background:var(--bg-hover);flex-shrink:0}.path{overflow:hidden;text-overflow:ellipsis;min-width:0}.row-menu{font-size:16px;color:var(--muted);width:18px;text-align:center}.compact .row{height:35px;padding-top:1px;padding-bottom:1px;border-bottom:1px dashed var(--border);border-radius:0}.compact .row:last-child{border-bottom-color:transparent}.compact .row.selected{border-radius:4px}.compact .line-two{height:14px;line-height:14px}.compact .section{margin-bottom:4px}.compact .group-head{min-height:20px;font-size:11px}.compact .fold{min-height:20px;font-size:11px;line-height:16px}.compact .count,.compact .group-head .tiny{font-size:10px}.compact .section.hold .group-head{margin-top:2px;padding-top:1px}.empty{padding:12px;color:var(--muted);font-size:12px}.sidebar-foot{border-top:1px solid var(--border);padding:8px 10px;font-size:11px;color:var(--muted)}.notes{margin-top:20px;border-top:1px solid var(--border);padding-top:16px}.notes h2{font-size:14px;margin:0 0 8px;color:var(--text-strong)}.notes ul{margin:0;padding-left:20px;color:var(--muted);font-size:13px}.feedback{margin-top:12px;font-size:13px;color:var(--accent)}dialog{background:var(--bg-elevated);color:var(--text);border:1px solid var(--border);border-radius:8px;width:440px;max-width:calc(100vw - 32px);padding:20px}dialog::backdrop{background:#0006}dialog h2{font-size:17px;margin:0 0 6px}dialog p{font-size:12px;color:var(--muted)}.order-list{padding:0;margin:14px 0;list-style:none}.order-item{display:flex;gap:5px;align-items:center;min-height:46px;border-bottom:1px solid var(--border)}.order-item strong{flex:1;font-size:13px}.order-item button{padding:4px 7px;font-size:12px;min-height:30px}.dialog-footer{display:flex;justify-content:flex-end;gap:8px}#announce{min-height:20px;font-size:12px;color:var(--accent)}
+@media(max-width:680px){main{padding:18px 14px}.comparison{grid-template-columns:minmax(0,1fr);gap:22px}.sidebar{max-width:none;height:560px}.toolbar{gap:8px}h1{font-size:19px}.activity{font-size:10px}}
+</style>
+</head>
+<body>
+<main>
+<h1>会话侧栏：常用的在前，暂留的在后</h1>
+<p class="intro">独立设计预览。左边保留当前间距，右边试用紧凑间距和分组排序。所有会话都是示例，不读取、修改或关闭你的真实会话。</p>
+<div class="toolbar">
+<button class="primary" id="order-open">调整分组顺序</button>
+<button id="hold-bottom">把 Hold 放到最下面</button>
+<label>右侧密度 <select id="density"><option value="compact">虚线紧凑 · 35 像素</option><option value="standard">当前 · 46 像素</option></select></label>
+<button id="theme">切换深色</button>
+<button id="reset">恢复推荐方案</button>
+</div>
+<div class="comparison">
+<section class="variant"><h2>当前布局 · 对照</h2><p class="caption">46 像素 / 条；Hold 夹在常用分组中间。</p><div class="sidebar" id="before"></div></section>
+<section class="variant"><h2>建议布局 · 可以试用</h2><p class="caption" id="after-caption">35 像素 / 条；淡虚线分隔，分组名字更小。</p><div class="sidebar compact" id="after"></div></section>
+</div>
+<section class="notes"><h2>虚线分隔，减少空白，不缩小会话标题</h2><ul><li>每条会话高 35 像素，用淡虚线分隔；会话标题仍是 13 像素，第二行仍保留状态、终端标记和目录。</li><li>分组名字从 12 缩到 11 像素，标题行从 30 缩到 20 像素，组间空白从 16 缩到 4 像素。</li><li>同样只计算会话行，相比左侧 46 像素的参考，紧凑版可多容纳约 31%；实际数量还取决于分组标题和折叠状态。</li><li>Hold 的位置表达“暂时保留”，不是“已暂停”。折叠只隐藏列表，不结束会话。</li><li>排序面板支持上移、下移、移到底部，也能移动“未分组”。以后正式接入时记住顺序；本预览刷新即恢复。</li><li>这里只演示布局，重启、退出和会话菜单不会执行真实操作。</li></ul><p class="feedback">请重点看：虚线会不会太抢眼？35 像素的会话和更小的分组名字，是否仍然看得清、点得准？</p></section>
+</main>
+<dialog id="order-dialog" aria-labelledby="dialog-title"><h2 id="dialog-title">调整分组顺序</h2><p>按钮排序也能用键盘操作。改动即时显示在右侧预览，不影响真实会话。</p><ol class="order-list" id="order-list"></ol><p id="announce" role="status" aria-live="polite"></p><div class="dialog-footer"><button id="order-close">完成</button></div></dialog>
+<script>
+const groups = {
+ work: {name:'进行中',items:[['侧栏分组与密度预览','pi-dashboard','运行中','刚刚'],['仓库关系图布局优化','pi-dashboard','运行中','2分'],['证件姓名字段复核','sample-ocr-pipeline','等待输入','5分'],['用量统计与账单核对','pi-dashboard','空闲','18分'],['路由评测结果检查','sample-kyc-llm','空闲','34分'],['多机器安装文档整理','pi-dashboard','空闲','1时'],['长标题检查：调整左侧会话列表分组顺序并保留所有操作','pi-dashboard','空闲','2时']]},
+ hold: {name:'Hold',items:[['暂留：上一轮侧栏方案','pi-dashboard','空闲','2天'],['暂留：旧评测记录核对','sample-kyc-llm','空闲','4天'],['暂留：安装问题排查','sample-ai-dev','空闲','7天']]},
+ other: {name:'未分组',items:[['卡证目录整理','sample-kyc-llm','空闲','3分'],['任务文档检查','sample-task-journal','空闲','8分'],['服务日志分析','pi-dashboard','等待输入','12分'],['地址拆分规则检查','sample-ocr-pipeline','空闲','25分'],['环境配置笔记','sample-ai-dev','空闲','43分'],['这是一个连续无空格的很长目录名称检查','a-very-long-repository-name-without-spaces','空闲','1时']]}
+};
+const defaultOrder=['work','other','hold'];
+let order=[...defaultOrder];
+let folded=new Set(['hold']);
+let selected='work-0';
+const before=document.getElementById('before'),after=document.getElementById('after');
+function row(item,key){
+ const button=document.createElement('button');button.className='row'+(key===selected?' selected':'');button.title=item[0]+'\n'+item[1]+' · '+item[2];button.setAttribute('aria-label',item[0]+'，'+item[2]);button.setAttribute('aria-pressed',String(key===selected));
+ const status=document.createElement('span');status.className='status '+(item[2]==='运行中'?'running':item[2]==='等待输入'?'wait':'');status.textContent=item[2]==='运行中'?'◉':item[2]==='等待输入'?'!':'○';status.setAttribute('aria-hidden','true');button.append(status);
+ const content=document.createElement('span');content.className='row-main';
+ const line=document.createElement('span');line.className='line-one';
+ const title=document.createElement('span');title.className='title';title.textContent=item[0];
+ const activity=document.createElement('span');activity.className='activity';activity.textContent='活动 '+item[3];
+ const menu=document.createElement('span');menu.className='row-menu';menu.textContent='⋯';menu.setAttribute('aria-hidden','true');line.append(title,activity,menu);
+ const meta=document.createElement('span');meta.className='line-two';
+ for(const [cls,text] of [['tag',item[2]],['tag','终端'],['path',item[1]]]){const span=document.createElement('span');span.className=cls;span.textContent=text;meta.append(span)}content.append(line,meta);button.append(content);
+ button.onclick=()=>{selected=key;const scrolls=[before.querySelector('.list').scrollTop,after.querySelector('.list').scrollTop];render();before.querySelector('.list').scrollTop=scrolls[0];after.querySelector('.list').scrollTop=scrolls[1]};return button;
+}
+function sidebar(root,ids,isAfter){
+ const previous=root.querySelector('.list')?.scrollTop||0;const query=root.querySelector('input')?.value||'';
+ root.replaceChildren();
+ const top=document.createElement('div');top.className='sidebar-top';top.innerHTML='<div class="brand"><span>会话</span><span class="tiny">16 个示例</span></div><label class="search"><span aria-hidden="true">⌕</span><input type="search" placeholder="搜索会话或目录" aria-label="'+(isAfter?'建议布局':'当前布局')+'：搜索会话或目录"></label><div class="tabs"><strong>会话列表</strong><span>总览</span><span style="margin-left:auto;color:var(--muted)">＋ 新会话</span></div>';
+ const list=document.createElement('div');list.className='list';list.setAttribute('aria-label',(isAfter?'建议':'当前')+'会话列表');
+ const input=top.querySelector('input');input.value=query;input.oninput=()=>filter(root,input.value);
+ for(const id of ids){const group=groups[id],section=document.createElement('section');section.className='section '+id;section.dataset.group=id;
+ const head=document.createElement('div');head.className='group-head';const fold=document.createElement('button');fold.className='fold';const collapsed=isAfter&&folded.has(id);fold.setAttribute('aria-expanded',String(!collapsed));fold.setAttribute('aria-label',(collapsed?'展开':'折叠')+group.name);
+ fold.innerHTML='<span aria-hidden="true">'+(collapsed?'▸':'▾')+'</span><span>'+group.name+'</span><span class="count">'+group.items.length+'</span>';if(isAfter&&id==='hold'){const label=document.createElement('span');label.className='tiny';label.textContent='暂时保留';fold.append(label)}
+ const items=document.createElement('div');items.className='group-items';items.hidden=collapsed;
+ group.items.forEach((item,index)=>items.append(row(item,id+'-'+index)));
+ fold.onclick=()=>{if(isAfter){folded.has(id)?folded.delete(id):folded.add(id);sidebar(root,ids,true)}else{items.hidden=!items.hidden;fold.setAttribute('aria-expanded',String(!items.hidden));fold.querySelector('span').textContent=items.hidden?'▸':'▾';fold.setAttribute('aria-label',(items.hidden?'展开':'折叠')+group.name)}};
+ head.append(fold);section.append(head,items);list.append(section)}
+ const empty=document.createElement('p');empty.className='empty';empty.textContent='没有匹配的会话';empty.hidden=true;list.append(empty);
+ const foot=document.createElement('div');foot.className='sidebar-foot';foot.textContent=isAfter?'只改显示方式 · 不会关闭会话':'当前间距参考 · 示例数据';root.append(top,list,foot);list.scrollTop=previous;filter(root,query);
+}
+function filter(root,query){let matches=0;for(const section of root.querySelectorAll('.section')){let local=0;for(const item of section.querySelectorAll('.row')){const match=item.title.toLowerCase().includes(query.toLowerCase());item.hidden=!match;item.style.display=match?'':'none';if(match)local++}section.hidden=!local;matches+=local;const body=section.querySelector('.group-items');body.hidden=query?false:section.querySelector('.fold').getAttribute('aria-expanded')==='false'}root.querySelector('.empty').hidden=matches>0}
+function render(){sidebar(before,['work','hold','other'],false);sidebar(after,order,true);document.getElementById('after-caption').textContent=(after.classList.contains('compact')?'35 像素 / 条 · 淡虚线 · 11 像素分组名':'46 像素 / 条')+'；顺序：'+order.map(id=>groups[id].name).join(' → ')}
+function orderPanel(){const list=document.getElementById('order-list');list.replaceChildren();order.forEach((id,index)=>{const item=document.createElement('li');item.className='order-item';const name=document.createElement('strong');name.textContent=groups[id].name;item.append(name);for(const [text,action,disabled] of [['↑','up',index===0],['↓','down',index===order.length-1],['移到底部','bottom',index===order.length-1]]){const button=document.createElement('button');button.textContent=text;button.disabled=disabled;button.dataset.focusKey=id+'-'+action;button.setAttribute('aria-label',groups[id].name+'：'+(action==='up'?'上移':action==='down'?'下移':'移到底部'));button.onclick=()=>{order.splice(index,1);order.splice(action==='up'?index-1:action==='down'?index+1:order.length,0,id);render();orderPanel();document.getElementById('announce').textContent='当前顺序：'+order.map(key=>groups[key].name).join(' → ');const next=list.querySelector('[data-focus-key="'+id+'-'+action+'"]');if(next&&!next.disabled)next.focus();else document.getElementById('order-close').focus()};item.append(button)}list.append(item)})}
+document.getElementById('order-open').onclick=()=>{orderPanel();document.getElementById('order-dialog').showModal()};document.getElementById('order-close').onclick=()=>document.getElementById('order-dialog').close();
+document.getElementById('hold-bottom').onclick=()=>{order=order.filter(id=>id!=='hold').concat('hold');render();const list=after.querySelector('.list');list.scrollTop=list.scrollHeight};
+document.getElementById('density').onchange=event=>{after.classList.toggle('compact',event.target.value==='compact');render()};
+document.getElementById('theme').onclick=()=>{const dark=document.documentElement.dataset.theme!=='dark';document.documentElement.dataset.theme=dark?'dark':'light';document.getElementById('theme').textContent=dark?'切换浅色':'切换深色'};
+document.getElementById('reset').onclick=()=>{order=[...defaultOrder];folded=new Set(['hold']);selected='work-0';after.classList.add('compact');document.getElementById('density').value='compact';render();for(const root of [before,after]){root.querySelector('input').value='';filter(root,'');root.querySelector('.list').scrollTop=0}};
+render();
+</script>
+</body>
+</html>

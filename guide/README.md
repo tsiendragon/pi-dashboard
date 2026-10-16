@@ -12,6 +12,7 @@
 | [standalone-install.md](standalone-install.md) | 手动逐步安装版（前置、逐条命令、systemd、排障、卸载） |
 | [stack-update.md](stack-update.md) | 多机更新规范（每机自选扩展/版本，`scripts/stack-update.sh`） |
 | [config.md](config.md) | 配置总览（四层地图、每个 config 谁读、怎么改） |
+| [llm-gateway.md](llm-gateway.md) | 大模型网关：申请密钥、Pi / Codex / Claude Code 配置与 API 调用 |
 
 > 维护规则见 [§7](#7-维护规则必须遵守)：任何影响安装/配置的改动，必须同步更新本目录。
 

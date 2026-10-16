@@ -27,6 +27,7 @@
 | dashboard 端口 / 监听地址 | 环境变量 `PI_DASH_PORT` / `PI_DASH_HOST` |
 | 用哪个 pi | `PI_SCRIPT`（`dashboard.env`） |
 | live session 可见目录 / 启动命令 | `~/.pi/dashboard.json` 的 `liveSessions` |
+| 常用仓库清单（路径、标签、Git Graph） | `~/.pi/dashboard.json` 的 `repos`（dashboard **Repos** 页可增删） |
 | 装哪些扩展 / 加载顺序 | `<agent dir>/extensions.config.json`（同步器）+ dashboard **Extensions** 页 |
 | 某扩展的开关（bash-digest 等） | `<agent dir>/<name>.json`（**Settings → Extension config**） |
 | 某项目的记忆 / rtk 配置 | `<cwd>/.pi/<name>.json` |
@@ -198,6 +199,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
   "liveSessions": {
     "enabled": true,
     "roots": ["/home/you", "/path/to/repos"],
+    "repoRoots": ["/home/you/repos", "/path/to/repos"],
     "launch": { "command": "/home/you/.local/bin/pi-clean", "args": [], "unsetEnv": [] },
     "disconnectGraceMs": 60000
   }
@@ -207,10 +209,29 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | 字段 | 作用 |
 |---|---|
 | `roots` | live session 可发现的目录范围（默认写死开发机 worktree，新机器要改） |
+| `repoRoots` | 「启动 Live Pi」目录框关键词搜索的仓库根目录：只取每个目录的**下一级**子目录作为候选（不递归、跳过隐藏目录）。默认空＝不搜索；它只影响输入建议，能不能启动仍由 `roots` 决定 |
 | `launch.command` | live session 用哪个 pi（可指向自己的包装脚本） |
 | `unsetEnv` | 启动前从环境剔除的变量 |
 | `launch.approve` | `true` 给 pane 追加 `--approve`（信任工程内的 `.pi` 扩展/skills/settings），`false` 追加 `--no-approve`；不写则保留 pi 自己的行为——会弹「是否信任该目录」的交互提问，而 pane 里没人能回答，启动就会卡住 |
 | `disconnectGraceMs` | 断连宽限时间 |
+
+### 4.1 `repos`：常用仓库清单
+
+```json
+{
+  "repos": [
+    { "id": "pi-dashboard", "path": "/home/you/repos/pi-dashboard", "tags": ["pi"], "pinned": true },
+    { "id": "sample", "name": "sample-app", "path": "/home/you/repos/sample-app", "defaultBranch": "main" }
+  ]
+}
+```
+
+- 每个仓库各自一个**绝对路径**，不要求在同一父目录下；没有 `roots` 之类的扫描字段。
+- `id` 是其他地方引用该仓库的稳定键（小写字母/数字/`. _ -`，登记后不可改）；`name` / `tags` / `pinned` / `defaultBranch` 均可选。`defaultBranch` 写了之后，当前分支不一致会在 Repos 页标「≠ main」。
+- 手改文件与在 **Repos** 页点添加/删除效果一致；页面「移除」只删登记，不动磁盘目录。
+- git 状态（分支、ahead/behind、改动数）用只读 git 命令查询，**不写入配置**。结果缓存到 `~/.pi/repos-status-cache.json`（重启后仍在）：打开页面时立刻显示缓存，超过 24 小时的会在后台自动更新（页面上写着读取时间，想看最新状态点「刷新状态」）；页面右上「刷新状态」强制全部重读。`/mnt` 这类网络盘上大仓库的 `git status` 可能要几十秒，所以列表从不等它；45 秒仍没读完的仓库标「git status 超时」，且不会覆盖之前读到的好结果。Git Graph 页 `#/repos/<id>/graph` 也只读；只有「Fetch」按钮会执行 `git fetch --prune`。
+- 清单里的仓库会并入「启动 Live Pi」目录框的关键词建议（与 `repoRoots` 扫描结果合并去重）；能否真正启动仍由 `liveSessions.roots` 决定。
+- 写操作（添加/编辑/移除/Fetch）需要浏览器已通过 Live Session 令牌认证，未认证会返回 401 并提示。
 
 **启动卡在「Trust project folder?」**：工程目录里出现 `.pi/settings.json`、`.pi/extensions`、`.pi/skills`、`.pi/prompts`、`.pi/themes`、`.pi/SYSTEM.md` 等资源，而 `~/.pi/agent/trust.json` 里没有该目录（或某个父目录）的决定时，pi 会先问一次。dashboard 的 pane 没有键盘，于是永不注册；旧版本会等满超时，浏览器侧先被网关掐断，只显示 `HTTP 504`。三种改法任选：在终端里对该目录跑一次 `pi` 并选 Trust（写进 `trust.json`）；手工把该目录或其父目录写进 `~/.pi/agent/trust.json`；或直接在该机器的 `dashboard.json` 里设 `"launch": { "approve": true }`（启动即自动信任，仅在 `liveSessions.roots` 内的目录生效，第三方克隆仓库慎用）。
 
