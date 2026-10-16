@@ -66,13 +66,13 @@ describe('ModelLeaderboard', () => {
       if (url.startsWith('/api/usage')) {
         return new Response(JSON.stringify(usageReport([
           { key: 'llm-gateway/claude-sonnet-5-5', costUsd: 3, totalTokens: 1_000_000, inputTokens: 900_000, outputTokens: 100_000, cacheReadTokens: 50_000 },
-          { key: 'azure-proxy/claude-sonnet-5-5', costUsd: 1, totalTokens: 500_000, inputTokens: 450_000, outputTokens: 50_000, cacheReadTokens: 0 },
+          { key: 'azure-gateway-claude/claude-sonnet-5-5', costUsd: 1, totalTokens: 500_000, inputTokens: 450_000, outputTokens: 50_000, cacheReadTokens: 0 },
         ])), { status: 200 })
       }
       if (url.startsWith('/api/timing')) {
         return new Response(JSON.stringify(timingReport([
           { key: 'llm-gateway/claude-sonnet-5-5', tokensPerSec: 90, outputTokens: 100_000 },
-          { key: 'azure-proxy/claude-sonnet-5-5', tokensPerSec: 30, outputTokens: 50_000 },
+          { key: 'azure-gateway-claude/claude-sonnet-5-5', tokensPerSec: 30, outputTokens: 50_000 },
         ])), { status: 200 })
       }
       return new Response('{}', { status: 404 })
@@ -102,6 +102,21 @@ describe('ModelLeaderboard', () => {
     const toggle = screen.getByLabelText(/只看已启用的模型/) as HTMLInputElement
     toggle.click()
     expect(await screen.findByText('Muse Wonder Full')).toBeInTheDocument()
+  })
+
+  it('marks llm-gateway unit prices whose usage has no cache tokens', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/usage')) {
+        return new Response(JSON.stringify(usageReport([
+          { key: 'llm-gateway/claude-sonnet-5-5', costUsd: 3, totalTokens: 1_000_000, inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0 },
+        ])), { status: 200 })
+      }
+      return new Response(JSON.stringify(timingReport([])), { status: 200 })
+    }))
+    render(<ModelLeaderboard />)
+    const row = await screen.findByText('Claude Sonnet 5.5', { selector: 'div.font-medium' })
+    expect(within(row.closest('tr')!).getByTitle(/未上报缓存/)).toBeInTheDocument()
   })
 
   it('renders AA scores for models without local usage as dashes', async () => {
