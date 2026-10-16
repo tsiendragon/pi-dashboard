@@ -140,7 +140,7 @@ function responseModelOf(message: Record<string, unknown>): string | undefined {
   const reported = stringValue(message.responseModel)
   const requested = stringValue(message.model)
   // Some OpenAI-compatible gateways report provider-internal deployment names
-  // for streamed responses (the the LLM Gateway echoes `MaaS_*` names). Those
+  // for streamed responses (some gateways echo `MaaS_*` deployment names). Those
   // are not the model the user selected, so keep the requested id instead and
   // let cost reporting stay on the user-facing model.
   if (reported && requested && reported.startsWith('MaaS_')) return requested
