@@ -23,10 +23,11 @@ import TasksPage from './pages/TasksPage'
 import SettingsPage from './pages/SettingsPage'
 import LiveSessionPage from './features/live-sessions/LiveSessionPage'
 import LiveSessionExtensionUiModal from './features/live-sessions/LiveSessionExtensionUiModal'
-import LiveSessionGalleryPage from './features/live-sessions/LiveSessionGalleryPage'
-import SessionGraphPage from './features/live-sessions/graph/SessionGraphPage'
+import SessionOverviewPage from './features/live-sessions/SessionOverviewPage'
 import InsightsPage from './pages/InsightsPage'
 import ExtensionsPage from './pages/ExtensionsPage'
+import ReposPage from './features/repos/ReposPage'
+import RepoGraphPage from './features/repos/RepoGraphPage'
 import CommandPalette from './components/CommandPalette'
 import SessionPicker from './components/SessionPicker'
 import { PluginContextProvider, CommandRouteSlot } from './plugins'
@@ -45,12 +46,12 @@ export const WsContext = createContext<{
 const NAV_ITEMS = [
   { path: '/chat', id: 'chat', label: 'Chat', group: 'Main', icon: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /> },
   { path: '/live-sessions', id: 'live-sessions', label: 'Live Pi', group: 'Main', icon: <><path d="M5 12h2l2-5 4 10 2-5h4" /><circle cx="12" cy="12" r="10" /></> },
-  { path: '/live-sessions/gallery', id: 'live-gallery', label: 'Session Gallery', group: 'Main', icon: <><rect x="3" y="4" width="7" height="7" rx="1" /><rect x="14" y="4" width="7" height="7" rx="1" /><rect x="3" y="13" width="7" height="7" rx="1" /><rect x="14" y="13" width="7" height="7" rx="1" /></> },
-  { path: '/live-sessions/graph', id: 'live-graph', label: 'Session Graph', group: 'Main', icon: <><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="12" cy="18" r="2.5" /><path d="M6 8.5v2a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2" /><path d="M12 12.5v3" /></> },
+  { path: '/live-sessions/gallery', id: 'live-gallery', label: '会话总览', group: 'Main', icon: <><rect x="3" y="4" width="7" height="7" rx="1" /><rect x="14" y="4" width="7" height="7" rx="1" /><rect x="3" y="13" width="7" height="7" rx="1" /><rect x="14" y="13" width="7" height="7" rx="1" /></> },
   { path: '/tasks', id: 'tasks', label: 'Tasks', group: 'Main', icon: <><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><path d="m3 6 1.5 1.5L7 5" /><path d="m3 12 1.5 1.5L7 11" /><path d="m3 18 1.5 1.5L7 17" /></> },
   { path: '/supervisor', id: 'supervisor', label: '工作监督台', group: 'Main', icon: <><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></> },
   { path: '/insights', id: 'insights', label: 'Cost · Time', group: 'Main', icon: <><path d="M4 19V5" /><path d="M4 19h17" /><path d="m7 15 3-4 3 2 5-7" /></> },
   { path: '/system', id: 'system', label: 'System', group: 'Main', icon: <><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></> },
+  { path: '/repos', id: 'repos', label: 'Repos', group: 'Tools', icon: <><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="9" r="2" /><path d="M6 7v10" /><path d="M18 11c0 4-6 3-12 6" /></> },
   { path: '/extensions', id: 'extensions', label: 'Extensions', group: 'Tools', icon: <><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h10" /><circle cx="18" cy="17" r="2" /></> },
   { path: '/logs', id: 'logs', label: 'Logs', group: 'Tools', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></> },
   { path: '/jobs', id: 'jobs', label: 'Jobs', group: 'Tools', icon: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></> },
@@ -190,8 +191,9 @@ export default function App() {
 
   const activePath = location.pathname
   const isChat = activePath === '/chat' || activePath === '/' || activePath.startsWith('/live-sessions')
-  const isNavActive = (path: string) => activePath === path
+  const isNavActive = (path: string) => activePath === path || (path === '/live-sessions/gallery' && activePath === '/live-sessions/graph')
     || (path === '/live-sessions' && activePath.startsWith('/live-sessions/'))
+    || (path === '/repos' && activePath.startsWith('/repos/'))
     || (path === '/tasks' && activePath.startsWith('/tasks/') && !activePath.startsWith('/tasks/events'))
   const visibleNav = tasksEnabled ? NAV_ITEMS : NAV_ITEMS.filter(n => n.id !== 'tasks')
   const groups = [...new Set(visibleNav.map(n => n.group))]
@@ -355,12 +357,14 @@ export default function App() {
             <Route path="/supervisor" element={<SupervisorPage />} />
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/live-sessions" element={<LiveSessionPage />} />
-            <Route path="/live-sessions/gallery" element={<LiveSessionGalleryPage />} />
-            <Route path="/live-sessions/graph" element={<SessionGraphPage />} />
+            <Route path="/live-sessions/gallery" element={<SessionOverviewPage />} />
+            <Route path="/live-sessions/graph" element={<SessionOverviewPage />} />
             <Route path="/live-sessions/:processInstanceId" element={<LiveSessionPage />} />
             <Route path="/insights" element={<InsightsPage />} />
             <Route path="/usage" element={<Navigate to="/insights?tab=cost" replace />} />
             <Route path="/time" element={<Navigate to="/insights?tab=time" replace />} />
+            <Route path="/repos" element={<ReposPage />} />
+            <Route path="/repos/:id/graph" element={<RepoGraphPage />} />
             <Route path="/extensions" element={<ExtensionsPage />} />
             <Route path="/system" element={<SystemPage />} />
             <Route path="/logs" element={<LogsPage />} />
