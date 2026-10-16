@@ -7,6 +7,8 @@
  *  - terminalBench21：Terminal-Bench 2.1（上一代基准，%）
  * ourModels 关联本机启用的 provider/model（~/.pi/agent/settings.json enabledModels），
  * 用于与真实成本/速度联表；没有分数的模型（如 Qwen3 Coder Plus）表示 AA 未收录。
+ * ourModels 为空表示本机未启用（旧一代 gpt-5.6-* 与 gpt-6-sol 已从 provider 配置下线）；
+ * 键名必须与 provider 配置一致（Azure 组是 azure-gateway / azure-gateway-claude，不是 azure-proxy）。
  * 更新方式：从 AA 模型页抓取（RSC 数据）后重新生成本文件。
  */
 
@@ -27,16 +29,16 @@ export interface ModelScore {
 }
 
 export const MODEL_SCORES: ModelScore[] = [
-  { slug: "claude-opus-5-5", name: "Claude Opus 5.5", creator: "Anthropic", releaseDate: "2026-09-22", intelligenceIndex: 57.6, terminalBench40: 59.6, frontierCode: 52.2, ourModels: ["llm-gateway/claude-opus-5-5", "azure-proxy/claude-opus-5-5"] },
-  { slug: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", creator: "Anthropic", releaseDate: "2026-09-28", intelligenceIndex: 56.0, terminalBench40: 63.6, frontierCode: 45.8, ourModels: ["llm-gateway/claude-sonnet-5-5", "azure-proxy/claude-sonnet-5-5"] },
-  { slug: "claude-haiku-5-5", name: "Claude Haiku 5.5", creator: "Anthropic", releaseDate: "2026-10-07", intelligenceIndex: 43.4, terminalBench40: 32.8, frontierCode: 41.8, ourModels: ["azure-proxy/claude-haiku-5-5"] },
-  { slug: "gpt-6-astra", name: "GPT-6 Astra", creator: "OpenAI", releaseDate: "2026-09-03", intelligenceIndex: 52.7, terminalBench40: 59.1, frontierCode: 47.0, terminalBench21: 88.4, ourModels: ["llm-gateway/gpt-6-astra", "azure-proxy/gpt-6-astra"] },
-  { slug: "gpt-6-1-sol", name: "GPT-6.1 Sol", creator: "OpenAI", releaseDate: "2026-09-29", intelligenceIndex: 51.8, terminalBench40: 56.1, frontierCode: 49.1, ourModels: ["llm-gateway/gpt-6.1-sol", "azure-proxy/gpt-6.1-sol", "openai-codex/gpt-6.1-sol"] },
-  { slug: "gpt-6-sol", name: "GPT-6 Sol", creator: "OpenAI", releaseDate: "2026-09-22", intelligenceIndex: 47.6, terminalBench40: 43.9, ourModels: ["llm-gateway/gpt-6-sol", "azure-proxy/gpt-6-sol"] },
-  { slug: "gpt-6-luna", name: "GPT-6 Luna", creator: "OpenAI", releaseDate: "2026-09-22", intelligenceIndex: 38.1, terminalBench40: 12.6, frontierCode: 41.9, ourModels: ["llm-gateway/gpt-6-luna", "azure-proxy/gpt-6-luna", "openai-codex/gpt-6-luna"] },
-  { slug: "gpt-5-6-sol", name: "GPT-5.6 Sol", creator: "OpenAI", releaseDate: "2026-07-09", intelligenceIndex: 47.0, terminalBench40: 39.9, terminalBench21: 88.0, ourModels: ["azure-proxy/gpt-5.6-sol"] },
-  { slug: "gpt-5-6-terra", name: "GPT-5.6 Terra", creator: "OpenAI", releaseDate: "2026-07-09", intelligenceIndex: 42.1, terminalBench40: 35.4, terminalBench21: 88.0, ourModels: ["azure-proxy/gpt-5.6-terra", "openai-codex/gpt-5.6-terra"] },
-  { slug: "gpt-5-6-luna", name: "GPT-5.6 Luna", creator: "OpenAI", releaseDate: "2026-07-09", intelligenceIndex: 37.3, terminalBench40: 11.6, terminalBench21: 80.9, ourModels: ["azure-proxy/gpt-5.6-luna"] },
+  { slug: "claude-opus-5-5", name: "Claude Opus 5.5", creator: "Anthropic", releaseDate: "2026-09-22", intelligenceIndex: 57.6, terminalBench40: 59.6, frontierCode: 52.2, ourModels: ["llm-gateway/claude-opus-5-5", "azure-gateway-claude/claude-opus-5-5"] },
+  { slug: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", creator: "Anthropic", releaseDate: "2026-09-28", intelligenceIndex: 56.0, terminalBench40: 63.6, frontierCode: 45.8, ourModels: ["llm-gateway/claude-sonnet-5-5", "azure-gateway-claude/claude-sonnet-5-5"] },
+  { slug: "claude-haiku-5-5", name: "Claude Haiku 5.5", creator: "Anthropic", releaseDate: "2026-10-07", intelligenceIndex: 43.4, terminalBench40: 32.8, frontierCode: 41.8, ourModels: ["azure-gateway-claude/claude-haiku-5-5"] },
+  { slug: "gpt-6-astra", name: "GPT-6 Astra", creator: "OpenAI", releaseDate: "2026-09-03", intelligenceIndex: 52.7, terminalBench40: 59.1, frontierCode: 47.0, terminalBench21: 88.4, ourModels: ["llm-gateway/gpt-6-astra", "azure-gateway/gpt-6-astra"] },
+  { slug: "gpt-6-1-sol", name: "GPT-6.1 Sol", creator: "OpenAI", releaseDate: "2026-09-29", intelligenceIndex: 51.8, terminalBench40: 56.1, frontierCode: 49.1, ourModels: ["llm-gateway/gpt-6.1-sol", "azure-gateway/gpt-6.1-sol", "openai-codex/gpt-6.1-sol"] },
+  { slug: "gpt-6-sol", name: "GPT-6 Sol", creator: "OpenAI", releaseDate: "2026-09-22", intelligenceIndex: 47.6, terminalBench40: 43.9, ourModels: [] },
+  { slug: "gpt-6-luna", name: "GPT-6 Luna", creator: "OpenAI", releaseDate: "2026-09-22", intelligenceIndex: 38.1, terminalBench40: 12.6, frontierCode: 41.9, ourModels: ["llm-gateway/gpt-6-luna", "azure-gateway/gpt-6-luna", "openai-codex/gpt-6-luna"] },
+  { slug: "gpt-5-6-sol", name: "GPT-5.6 Sol", creator: "OpenAI", releaseDate: "2026-07-09", intelligenceIndex: 47.0, terminalBench40: 39.9, terminalBench21: 88.0, ourModels: [] },
+  { slug: "gpt-5-6-terra", name: "GPT-5.6 Terra", creator: "OpenAI", releaseDate: "2026-07-09", intelligenceIndex: 42.1, terminalBench40: 35.4, terminalBench21: 88.0, ourModels: [] },
+  { slug: "gpt-5-6-luna", name: "GPT-5.6 Luna", creator: "OpenAI", releaseDate: "2026-07-09", intelligenceIndex: 37.3, terminalBench40: 11.6, terminalBench21: 80.9, ourModels: [] },
   { slug: "kimi-k3", name: "Kimi K3", creator: "Kimi", releaseDate: "2026-07-16", intelligenceIndex: 43.6, terminalBench40: 12.6, frontierCode: 43.6, terminalBench21: 85.0, ourModels: ["llm-gateway/kimi-k3", "dashscope/kimi-k3"] },
   { slug: "kimi-k2-7-code", name: "Kimi K2.7 Code", creator: "Kimi", releaseDate: "2026-06-12", intelligenceIndex: 25.8, terminalBench40: 1.0, terminalBench21: 67.4, ourModels: ["dashscope/kimi-k2.7-code"] },
   { slug: "glm-5-3", name: "GLM-5.3", creator: "Z AI", releaseDate: "2026-08-18", intelligenceIndex: 44.8, terminalBench40: 41.9, frontierCode: 40.1, terminalBench21: 83.9, ourModels: ["llm-gateway/glm-5.3"] },

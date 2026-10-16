@@ -50,6 +50,12 @@ const SORT_COLUMNS: { key: SortKey; label: string; hint: string; numeric: true }
   { key: 'terminalBench21', label: 'TB 2.1', hint: 'Terminal-Bench 2.1 胜率（%）', numeric: true },
 ]
 
+/** llm-gateway does not report cache tokens, so its inputs are all billed at full price and its unit price reads high. */
+function gatewayWithoutCache(match: ProviderMatch): boolean {
+  const usage = match.usage
+  return !!usage && match.key.startsWith('llm-gateway/') && usage.inputTokens > 0 && usage.cacheReadTokens + usage.cacheWriteTokens === 0
+}
+
 function scoreValue(row: LeaderRow, key: SortKey): number | undefined {
   switch (key) {
     case 'terminalBench40': return row.score.terminalBench40
@@ -88,7 +94,7 @@ export default function ModelLeaderboard() {
   const [month, setMonth] = useState(currentMonth)
   const [onlyOurs, setOnlyOurs] = useState(true)
   const [query, setQuery] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('terminalBench40')
+  const [sortKey, setSortKey] = useState<SortKey>('intelligenceIndex')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [expanded, setExpanded] = useState<string>()
   const [usage, setUsage] = useState<UsageReport>()
@@ -282,7 +288,10 @@ export default function ModelLeaderboard() {
                         <td className="py-2 pr-3 text-text">{row.score.frontierCode !== undefined ? <ScoreBar value={row.score.frontierCode} /> : '—'}</td>
                         <td className="py-2 pr-3 text-muted">{row.score.terminalBench21 !== undefined ? row.score.terminalBench21.toFixed(1) : '—'}</td>
                         <td className="py-2 pr-3 text-text">{row.costUsd > 0 ? formatCost(row.costUsd) : '—'}</td>
-                        <td className="py-2 pr-3 text-text">{row.effectiveUsdPerM > 0 ? `$${row.effectiveUsdPerM.toFixed(2)}/M` : '—'}</td>
+                        <td className="py-2 pr-3 text-text">
+                          {row.effectiveUsdPerM > 0 ? `$${row.effectiveUsdPerM.toFixed(2)}/M` : '—'}
+                          {row.matches.some(gatewayWithoutCache) && <span className="ml-0.5 text-muted" title="llm-gateway 未上报缓存用量，输入全按原价计算，单价偏高">†</span>}
+                        </td>
                         <td className="py-2 pr-3 text-text">{row.outputSpeed > 0 ? `${row.outputSpeed.toFixed(1)} tok/s` : '—'}</td>
                         <td className="py-2 text-text">{row.valuePerDollar > 0 ? row.valuePerDollar.toFixed(1) : '—'}</td>
                       </tr>
@@ -333,6 +342,7 @@ export default function ModelLeaderboard() {
             分数来源 <a href={SCORE_SOURCE_URL} target="_blank" rel="noreferrer" className="text-accent hover:underline">Artificial Analysis</a>（{SCORE_SNAPSHOT_DATE} 快照，静态数据，随本仓库更新）；
             Terminal-Bench 4.0 与 FrontierCode 为 agentic coding 方向评测；「—」表示无数据。
             成本 / 单价 / 速度列来自本机 usage 与 timing 账本（{month}），同一模型可能合并多个 provider 通道。
+            † 表示 llm-gateway 通道未上报缓存用量，输入全按原价计算，单价偏高，与 Azure 通道不能直接比较。
           </p>
         </section>
       </div>
