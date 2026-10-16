@@ -96,6 +96,53 @@ describe('recorded main-session process check', () => {
     expect(await processAlive(4004, root)).toBe(false)
   })
 })
+describe('supervisor clear', () => {
+  it('opens a new main session and persists its binding without writing task data', async () => {
+    const f = await fixture(); await f.runtime.start()
+    const credentials = JSON.parse(await readFile(path.join(f.root, 'private', 'credentials.json'), 'utf8'))
+    f.registry.sendBrowserCommand.mockImplementationOnce(async () => {
+      const detail = f.getDetail()!
+      detail.summary.sessionId = 'session-empty'
+      detail.summary.processInstanceId = 'process-empty'
+      detail.summary.sessionFile = '/sessions/empty.jsonl'
+      const loaded = await rpc(credentials.socketPath, credentials.token, '/loaded', { revision: credentials.revision, tools: credentials.allowedTools, sessionId: 'session-empty' })
+      expect(loaded.status).toBe(200)
+      return {}
+    })
+    const result = await f.runtime.clear()
+    expect(result.sessionId).toBe('session-empty')
+    expect(result.sessionFile).toBe('/sessions/empty.jsonl')
+    expect(f.registry.sendBrowserCommand).toHaveBeenCalledWith('process-main', 'dashboard-supervisor', { type: 'input', text: '/supervisor-clear', images: undefined, channel: 'web' })
+    expect(f.service.execute).not.toHaveBeenCalled()
+    expect(f.registry.release).toHaveBeenCalled()
+  })
+  it('does not clear a busy or claimed session', async () => {
+    const f = await fixture(); await f.runtime.start()
+    f.getDetail()!.summary.status = 'running'
+    await expect(f.runtime.clear()).rejects.toThrow('正在工作')
+    f.getDetail()!.summary.status = 'idle'
+    f.getDetail()!.summary.claim = { state: 'claimed', leaseId: 'human' } as LiveSessionDetail['summary']['claim']
+    await expect(f.runtime.clear()).rejects.toThrow('不抢控制权')
+    expect(f.registry.sendBrowserCommand).not.toHaveBeenCalled()
+  })
+  it('requires updated resources before sending the clear command', async () => {
+    const f = await fixture(); await f.runtime.start()
+    await writeFile(f.config.agentResources.extensionPaths[0], 'export default function updated() {}')
+    await expect(f.runtime.clear()).rejects.toThrow('资源已更新')
+    expect(f.registry.sendBrowserCommand).not.toHaveBeenCalled()
+  })
+  it('rejects concurrent input and restores availability after dispatch failure', async () => {
+    const f = await fixture(); await f.runtime.start()
+    f.registry.sendBrowserCommand.mockImplementationOnce(async () => {
+      await expect(f.runtime.input('hello')).rejects.toThrow('清空')
+      await expect(f.runtime.clear()).rejects.toThrow('正在处理')
+      throw new Error('transport failed')
+    })
+    await expect(f.runtime.clear()).rejects.toThrow('transport failed')
+    await expect(f.runtime.input('hello')).resolves.toBeUndefined()
+  })
+})
+
 describe('supervisor runtime gates', () => {
   it('authenticates the Unix gateway and separates user requests from patrol', async () => {
     const f = await fixture(); await f.runtime.start()

@@ -22,6 +22,7 @@ export const supervisorApi = {
   state: (signal?: AbortSignal) => request<SupervisorState>('/state', { signal }),
   config: (signal?: AbortSignal) => request<SupervisorConfig | null>('/config', { signal }),
   configure: (config: SupervisorConfig) => request<SupervisorConfig>('/config', { method: 'PUT', body: JSON.stringify({ config }) }),
+  clear: () => post<{ processInstanceId: string; sessionId: string }>('/agent/clear'),
   start: () => post<{ processInstanceId: string; sessionId: string }>('/agent/start'),
   input: (body: { text: string; images?: SupervisorImage[]; attachmentIds?: string[]; objectRef?: string }) => post<{ ok: true }>('/agent/input', body),
   detail: (signal?: AbortSignal) => request<LiveSessionDetail>('/agent/detail', { signal }),
