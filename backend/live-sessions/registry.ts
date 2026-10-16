@@ -47,7 +47,7 @@ type PendingCommand = {
   timer: ReturnType<typeof setTimeout>
 }
 
-type SessionLineage = Pick<LiveSessionSummary, 'role' | 'parentSessionId' | 'parentToolCallId' | 'subagentWorkId'>
+type SessionLineage = Pick<LiveSessionSummary, 'role' | 'parentSessionId' | 'parentToolCallId' | 'subagentWorkId' | 'subagentTaskId'>
 
 type Entry = {
   transport: LiveSessionTransport
@@ -146,6 +146,7 @@ function inferProcessLineage(pid: number): SessionLineage | undefined {
       ...(bounded(trace.parentSessionId) ? { parentSessionId: bounded(trace.parentSessionId) } : {}),
       ...(bounded(trace.parentToolCallId) ? { parentToolCallId: bounded(trace.parentToolCallId) } : {}),
       ...(bounded(trace.workId) ? { subagentWorkId: bounded(trace.workId) } : {}),
+      ...(bounded(trace.taskId) ? { subagentTaskId: bounded(trace.taskId) } : {}),
     }
   } catch {
     return undefined
@@ -548,12 +549,12 @@ export class LiveSessionRegistry extends EventEmitter {
 
   async sendBrowserCommand(processInstanceId: string, browserClientId: string, command: unknown): Promise<unknown> {
     const validated = validateLiveSessionCommand(command, true)
-    if (validated.type !== 'resync' && validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'shutdown' && validated.type !== 'feature_command' && validated.type !== 'answer_ui') {
+    if (validated.type !== 'resync' && validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'get_context' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'shutdown' && validated.type !== 'feature_command' && validated.type !== 'answer_ui') {
       throw new LiveSessionRegistryError('unsupported_command', 'browser command is not allowed')
     }
     // answer_ui settles a pending extension UI request (first answer wins), so it
     // is deliberately dispatchable without holding the lease.
-    if (validated.type === 'resync' || validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'set_model' || validated.type === 'reload' || validated.type === 'shutdown' || validated.type === 'answer_ui') return this.dispatch(processInstanceId, validated)
+    if (validated.type === 'resync' || validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'get_context' || validated.type === 'set_model' || validated.type === 'reload' || validated.type === 'shutdown' || validated.type === 'answer_ui') return this.dispatch(processInstanceId, validated)
     this.requireLease(processInstanceId, browserClientId, validated.leaseId)
     return this.dispatch(processInstanceId, validated)
   }

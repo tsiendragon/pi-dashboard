@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { LiveSessionStatus } from '@shared/live-sessions'
 import type { SessionGoalSummary } from './sessionGoal'
 import { goalProgressOf } from './sessionGoal'
@@ -6,17 +6,12 @@ import GoalAnchorDialog from './goal/GoalAnchorDialog'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import FileBrowser from '../../components/FileBrowser'
 import { SupervisorNotificationsSidebarButton } from '../supervisor/SupervisorAgentProvider'
+import { isCollapsedByDefault, projectStatus, projectSubagentSnapshot, stableTaskId, textValue } from './subagentProjection'
 
 type RecordValue = Record<string, unknown>
 
 function record(value: unknown): RecordValue | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : undefined
-}
-
-function items(value: unknown, key: string): RecordValue[] {
-  const container = record(value)
-  const list = Array.isArray(container?.[key]) ? container?.[key] : []
-  return (list as unknown[]).map(record).filter((item): item is RecordValue => !!item)
 }
 
 const RAIL_ICON = 'h-4 w-4 shrink-0 fill-none stroke-current'
@@ -33,6 +28,9 @@ const BTW_STATUS_LABEL: Record<string, string> = {
   busy: '回答中',
   error: '出错',
 }
+
+/** Side-chat transcript roles, in the same words the terminal panel uses. */
+const BTW_ROLE_LABEL: Record<string, string> = { user: '你', assistant: 'BTW', notice: '提示' }
 
 const FEATURE_LABEL: Record<'btw' | 'schedule' | 'subagent' | 'commands', string> = {
   btw: 'BTW',
@@ -118,24 +116,59 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
   const schedule = record(features.schedule)
   const background = record(features['background-commands'])
   const subagent = record(features['subagent-workflow'])
-  const conversations = items(subagent?.conversations, 'items')
-  const workflows = items(subagent?.workflows, 'items')
+  const projectedSubagents = projectSubagentSnapshot({ conversations: subagent?.conversations, workflows: subagent?.workflows }, 'live-session')
+  const conversations = projectedSubagents.topLevelConversations
+  const workflows = projectedSubagents.workflows
+  const projectionStatus = (value: unknown) => ({ active: '工作中', attention: '需处理', completed: '已完成', stopped: '已停止', unknown: '未知' })[projectStatus(value)]
   const tasks = Array.isArray(schedule?.tasks) ? schedule.tasks.map(record).filter((task): task is RecordValue => !!task) : []
   const backgroundTasks = Array.isArray(background?.tasks) ? background.tasks.map(record).filter((task): task is RecordValue => !!task) : []
   const conversation = Array.isArray(btw?.conversation) ? btw.conversation.map(record).filter((entry): entry is RecordValue => !!entry) : []
   const [btwDraft, setBtwDraft] = useState('')
+  const [btwNotice, setBtwNotice] = useState('')
   const btwStatus = String(btw?.status || 'closed')
   const btwOpen = btwStatus === 'ready' || btwStatus === 'busy'
   const btwStarting = btwStatus === 'starting'
+  const btwBusy = btwStatus === 'busy'
   const btwActivity = typeof btw?.activity === 'string' ? btw.activity : ''
   const btwError = typeof btw?.error === 'string' ? btw.error : ''
-  const btwLocked = !!busy || btwStarting
+  const btwModel = typeof btw?.model === 'string' ? btw.model : ''
+  const btwParentMessages = Number(btw?.parentMessageCount || 0)
+  /* Asking is possible while the main session works: the side chat runs in its own
+     session, so the only things that gate the composer are its own startup and its
+     own answer in flight. */
+  const btwLocked = btwStarting
+  const canSendBtw = !!btwDraft.trim() && !btwLocked && !btwBusy
   const sendBtw = () => {
     const text = btwDraft.trim()
-    if (!text || !btwOpen || btwLocked) return
+    if (!text || btwLocked) return
+    if (btwBusy) {
+      setBtwNotice('BTW 正在回答：先「中止」或等它答完再问下一句')
+      return
+    }
     setBtwDraft('')
     onBtwSubmit(text)
   }
+  const copyBtwAnswer = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setBtwNotice('已复制这个回答的原文')
+    } catch {
+      setBtwNotice('浏览器拒绝了复制，请手动选中文本复制')
+    }
+  }
+  useEffect(() => {
+    if (!btwNotice) return
+    const timer = window.setTimeout(() => setBtwNotice(''), 3000)
+    return () => window.clearTimeout(timer)
+  }, [btwNotice])
+  /* Follow the newest exchange, but never yank the view while the user reads back. */
+  const btwTranscript = useRef<HTMLDivElement | null>(null)
+  const btwPinned = useRef(true)
+  useEffect(() => {
+    const node = btwTranscript.current
+    if (!node || !btwPinned.current) return
+    node.scrollTop = node.scrollHeight
+  }, [conversation.length, btwActivity])
   const [filesOpen, setFilesOpen] = useState(false)
   const [goalOpen, setGoalOpen] = useState(false)
   const goalProgress = goalProgressOf(goal)
@@ -210,36 +243,63 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
 
     <Feature title="BTW" icon="btw" count={conversation.length}>
       <div className="flex items-center gap-2">
-        <span className="text-xs text-muted">状态：{BTW_STATUS_LABEL[btwStatus] ?? btwStatus}{btwActivity ? ` · ${btwActivity}` : ''}</span>
-        <button type="button" disabled={btwLocked} onClick={onBtwRefreshParent} className="ml-auto text-xs text-muted rounded px-2 py-1 hover:bg-bg-hover disabled:opacity-50" title="把主会话当前的上下文重新同步给 BTW">同步上下文</button>
+        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
+          {btwBusy && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" aria-hidden="true" />}
+          <span className="truncate">状态：{BTW_STATUS_LABEL[btwStatus] ?? btwStatus}{btwActivity ? ` · ${btwActivity}` : ''}</span>
+        </span>
+        <button type="button" disabled={btwStarting} onClick={onBtwRefreshParent} className="ml-auto shrink-0 text-xs text-muted rounded px-2 py-1 hover:bg-bg-hover disabled:opacity-50" title="立刻把主会话当前的上下文重新同步给 BTW（每次提问前也会自动同步）">同步上下文</button>
         {btwOpen
-          ? <button type="button" disabled={busy} onClick={onCloseBtw} className="text-xs text-muted rounded px-2 py-1 hover:bg-bg-hover disabled:opacity-50">关闭 BTW</button>
-          : <button type="button" disabled={btwLocked} onClick={onOpenBtw} className="text-xs text-accent-fg bg-accent rounded px-2 py-1 disabled:opacity-50">{btwStarting ? '正在打开…' : '打开 BTW'}</button>}
+          ? <button type="button" onClick={onCloseBtw} className="shrink-0 text-xs text-muted rounded px-2 py-1 hover:bg-bg-hover">关闭 BTW</button>
+          : <button type="button" disabled={btwStarting} onClick={onOpenBtw} className="shrink-0 text-xs text-accent-fg bg-accent rounded px-2 py-1 disabled:opacity-50">{btwStarting ? '正在打开…' : '打开 BTW'}</button>}
+      </div>
+      <div className="mt-1 truncate text-2xs text-muted" title={btwModel ? `只读旁聊 · ${btwModel}` : '只读旁聊'}>
+        只读 · {btwModel || '模型未启动'}{btwParentMessages > 0 ? ` · 已同步主上下文 ${btwParentMessages} 条` : ''} · 每次提问前自动同步
       </div>
       {btwError && <div className="mt-2 rounded bg-danger-subtle px-2 py-1 text-xs text-danger" role="alert">BTW 出错：{btwError}</div>}
-      {!btwOpen && !btwStarting && !btwError && <div className="mt-2 text-xs text-muted">BTW 未打开：点「打开 BTW」启动一个只读旁聊（不会改动主会话）。</div>}
+      {btwNotice && <div className="mt-1 text-2xs text-muted" role="status">{btwNotice}</div>}
+      {!btwOpen && !btwStarting && !btwError && <div className="mt-2 text-xs text-muted">
+        {conversation.length > 0
+          ? `已保留 ${conversation.length} 条记录：在下面接着问，或点「打开 BTW」把面板打开。`
+          : 'BTW 未打开：在下面输入问题发送即可启动一个只读旁聊（不会改动主会话）。'}
+      </div>}
       {conversation.length === 0 && (btwOpen || btwStarting)
         ? <div className="mt-2 text-xs text-muted">{btwStarting ? 'BTW 正在启动…' : 'BTW 已就绪：直接在下面提问，它只读、不影响主会话。'}</div>
-        : conversation.length > 0 && <div className="mt-2 space-y-1.5">
-          {conversation.map((entry, index) => <div key={index} className={`rounded px-2.5 py-1.5 text-xs ${entry.role === 'user' ? 'bg-accent-subtle' : 'bg-bg-hover'}`}>
-            <div className="mb-1 text-2xs uppercase text-muted">{String(entry.role || 'notice')}</div>
-            <MarkdownRenderer content={String(entry.text || '')} />
-          </div>)}
+        : conversation.length > 0 && <div
+          ref={btwTranscript}
+          onScroll={event => {
+            const node = event.currentTarget
+            btwPinned.current = node.scrollHeight - node.scrollTop - node.clientHeight < 60
+          }}
+          className="mt-2 max-h-[40vh] space-y-1.5 overflow-y-auto overscroll-contain pr-1"
+          aria-label="BTW 对话记录"
+        >
+          {conversation.map((entry, index) => {
+            const role = String(entry.role || 'notice')
+            const text = String(entry.text || '')
+            const streaming = btwBusy && index === conversation.length - 1 && role === 'assistant' && !text
+            return <div key={index} className={`rounded px-2.5 py-1.5 text-xs ${role === 'user' ? 'bg-accent-subtle' : role === 'notice' ? 'bg-warn-subtle' : 'bg-bg-hover'}`}>
+              <div className="mb-1 flex items-center gap-2 text-2xs text-muted">
+                <span className={role === 'notice' ? 'text-warn' : ''}>{BTW_ROLE_LABEL[role] ?? role}</span>
+                {role === 'assistant' && text && <button type="button" onClick={() => void copyBtwAnswer(text)} className="ml-auto rounded px-1 hover:bg-bg hover:text-text" title="复制这个回答的原文" aria-label="复制 BTW 这个回答">复制</button>}
+              </div>
+              {streaming ? <span className="text-muted">正在生成…</span> : <MarkdownRenderer content={text} />}
+            </div>
+          })}
         </div>}
       <div className="mt-2 flex items-end gap-1.5">
         <textarea
           value={btwDraft}
           rows={2}
-          disabled={!btwOpen || btwLocked}
+          disabled={btwStarting}
           onChange={event => setBtwDraft(event.target.value)}
           onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendBtw() } }}
-          placeholder={btwOpen ? '问 BTW 一个问题（Enter 发送，Shift+Enter 换行）' : '先打开 BTW'}
+          placeholder={btwBusy ? 'BTW 正在回答；可先点「中止」' : btwStarting ? '正在启动只读旁聊…' : '问 BTW 一个问题（Enter 发送，Shift+Enter 换行）'}
           aria-label="BTW 提问"
           className="min-h-[40px] flex-1 resize-none rounded-md bg-bg-hover px-2.5 py-1.5 text-xs text-text outline-none placeholder:text-muted disabled:opacity-50"
         />
-        {btwStatus === 'busy'
-          ? <button type="button" disabled={busy} onClick={onBtwAbort} className="h-[26px] shrink-0 rounded-md bg-danger-subtle px-2.5 text-xs text-danger hover:bg-danger hover:text-danger-fg disabled:opacity-50">中止</button>
-          : <button type="button" disabled={!btwOpen || btwLocked || !btwDraft.trim()} onClick={sendBtw} className="h-[26px] shrink-0 rounded-md bg-accent px-2.5 text-xs text-accent-fg disabled:opacity-50">发送</button>}
+        {btwBusy
+          ? <button type="button" onClick={onBtwAbort} className="h-[26px] shrink-0 rounded-md bg-danger-subtle px-2.5 text-xs text-danger hover:bg-danger hover:text-danger-fg">中止</button>
+          : <button type="button" disabled={!canSendBtw} onClick={sendBtw} className="h-[26px] shrink-0 rounded-md bg-accent px-2.5 text-xs text-accent-fg disabled:opacity-50">发送</button>}
       </div>
     </Feature>
 
@@ -269,8 +329,8 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
 
     <Feature title="Subagent / Workflow" icon="subagent" count={conversations.length + workflows.length}>
       {conversations.length + workflows.length === 0 ? <div className="text-xs text-muted">当前没有 Subagent 或 Workflow 记录。</div> : <div className="space-y-2">
-        {workflows.map(item => <button type="button" key={String(item.id)} onClick={() => onOpenWorkflow(item)} className="w-full rounded border border-border bg-card p-2 text-left text-xs hover:border-accent"><span className="font-mono text-accent">workflow</span> · {String(item.label || item.id)}<span className="float-right text-muted">{String(item.status || '')}</span></button>)}
-        {conversations.map(item => <div key={String(item.id)} className="rounded border border-border bg-card p-2 text-xs"><span className="font-mono text-accent">subagent</span> · {String(item.label || item.id)}<span className="float-right text-muted">{String(item.status || '')}</span></div>)}
+        {workflows.map((item, index) => { const status = projectStatus(item.status); return <details key={stableTaskId(item, index)} open={!isCollapsedByDefault(item.status) || status === 'attention'} className={`rounded border ${status === 'attention' ? 'border-danger bg-danger-subtle' : 'border-border bg-card'}`}><summary className="cursor-pointer list-none p-2 text-xs"><span className="font-mono text-accent">workflow</span> · {textValue(item.label, textValue(item.id, '未命名'))}<span className={`float-right ${status === 'attention' ? 'text-danger' : 'text-muted'}`}>{projectionStatus(item.status)}</span></summary><button type="button" onClick={() => onOpenWorkflow(item)} className="border-t border-border px-2 py-1.5 text-2xs text-accent hover:underline">打开 Workflow 详情</button></details> })}
+        {conversations.map((item, index) => { const status = projectStatus(item.status); return <div key={stableTaskId(item, index)} className={`rounded border p-2 text-xs ${status === 'attention' ? 'border-danger bg-danger-subtle text-danger' : 'border-border bg-card'}`}><span className="font-mono text-accent">subagent</span> · {textValue(item.label, textValue(item.id, '未命名'))}<span className="float-right">{projectionStatus(item.status)}</span></div> })}
       </div>}
     </Feature>
 

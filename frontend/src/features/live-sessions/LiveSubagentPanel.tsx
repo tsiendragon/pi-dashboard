@@ -1,6 +1,6 @@
 import type { LiveSessionDetail, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
-import WorkingHammerIcon from '../../components/WorkingHammerIcon'
+import MuyuIcon from '../../components/MuyuIcon'
 import ToolResultCard from './ToolResultCard'
 import { displayWorktreePath } from '../../utils/displayPath'
 
@@ -8,8 +8,9 @@ interface LiveSubagentPanelProps {
   summary: LiveSessionSummary
   detail?: LiveSessionDetail
   loading?: boolean
+  disconnected?: boolean
   onClose: () => void
-  onOpenFull: () => void
+  onOpenFull?: () => void
 }
 
 type PanelItem =
@@ -117,7 +118,7 @@ function roleLabel(role: string): string {
   return role
 }
 
-export default function LiveSubagentPanel({ summary, detail, loading = false, onClose, onOpenFull }: LiveSubagentPanelProps) {
+export default function LiveSubagentPanel({ summary, detail, loading = false, disconnected = false, onClose, onOpenFull }: LiveSubagentPanelProps) {
   const items = detail ? panelItems(detail.entries) : []
   return (
     <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(620px,92vw)] flex-col border-l border-accent bg-bg shadow-2xl shadow-black/40">
@@ -129,8 +130,8 @@ export default function LiveSubagentPanel({ summary, detail, loading = false, on
               <h2 className="truncate text-sm font-semibold text-text-strong" title={summary.sessionName || `PID ${summary.pid}`}>
                 {summary.sessionName || `子 Agent · PID ${summary.pid}`}
               </h2>
-              <span className="shrink-0 text-2xs" title={`Session 状态：${summary.status === 'running' ? '工作中' : summary.status === 'reconnecting' ? '重连中' : '等待输入'}`}>
-                {summary.status === 'running' ? <WorkingHammerIcon /> : sessionStatusEmoji(summary.status)} {summary.status === 'running' ? '工作中' : summary.status === 'reconnecting' ? '重连中' : '等待输入'}
+              <span className="shrink-0 text-2xs" title={disconnected ? '实时连接已断开，不代表任务成功或进程已经退出' : `Session 状态：${summary.status === 'running' ? '工作中' : summary.status === 'reconnecting' ? '重连中' : '等待输入'}`}>
+                {disconnected ? '当前无连接' : <>{summary.status === 'running' ? <MuyuIcon /> : sessionStatusEmoji(summary.status)} {summary.status === 'running' ? '工作中' : summary.status === 'reconnecting' ? '重连中' : '等待输入'}</>}
               </span>
             </div>
             <div className="mt-1 truncate text-2xs text-muted" title={summary.canonicalCwd}>{displayWorktreePath(summary.canonicalCwd)}</div>
@@ -142,12 +143,13 @@ export default function LiveSubagentPanel({ summary, detail, loading = false, on
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <button type="button" onClick={onOpenFull} className="rounded border border-border bg-bg px-2 py-1 text-2xs text-muted hover:border-accent hover:text-accent">完整页</button>
+            <button type="button" onClick={onOpenFull} disabled={!onOpenFull} title={!onOpenFull ? '会话已断开，保留已读取的详情' : undefined} className="rounded border border-border bg-bg px-2 py-1 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-40">完整页</button>
             <button type="button" onClick={onClose} className="rounded border border-border bg-bg px-2 py-1 text-sm leading-none text-muted hover:border-danger hover:text-danger" title="返回主 Agent">×</button>
           </div>
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {disconnected && <p className="mb-3 text-2xs text-muted">保留此前已读取的记录；当前没有实时更新，关闭面板不会删除任务结果。</p>}
         {loading && <div className="flex h-full items-center justify-center text-sm text-muted">加载子 Agent…</div>}
         {!loading && !detail && <div className="flex h-full items-center justify-center text-sm text-muted">暂时无法读取子 Agent 内容。</div>}
         {!loading && detail && items.length === 0 && <div className="flex h-full items-center justify-center text-sm text-muted">该子 Agent 暂无可显示内容。</div>}

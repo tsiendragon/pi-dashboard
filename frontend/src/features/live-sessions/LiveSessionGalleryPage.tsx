@@ -4,7 +4,7 @@ import type { LiveSessionSummary } from '@shared/live-sessions'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { authenticated } from '../../store/liveSessionsSlice'
 import { buildSessionTitles } from './sessionTitle'
-import WorkingHammerIcon from '../../components/WorkingHammerIcon'
+import MuyuIcon from '../../components/MuyuIcon'
 import { AuthPanel } from './LiveSessionPage'
 import { useLiveSessionsRuntime } from './useLiveSessions'
 
@@ -48,7 +48,7 @@ export default function LiveSessionGalleryPage() {
   return <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-bg p-4 md:p-6">
     <header className="mb-4 flex flex-wrap items-center gap-3">
       <div className="min-w-0 flex-1">
-        <h1 className="text-lg font-semibold text-text-strong">Session Gallery</h1>
+        <h1 className="text-lg font-semibold text-text-strong">会话卡片</h1>
         <p className="mt-1 text-xs text-muted">所有 Chat / Live session 的可视化总览；点击卡片进入独立会话。</p>
       </div>
       <button type="button" onClick={() => navigate('/live-sessions')} className="rounded border border-border bg-card px-3 py-1.5 text-xs text-muted hover:border-accent hover:text-accent">返回 Live Pi</button>
@@ -65,7 +65,7 @@ export default function LiveSessionGalleryPage() {
         return <button key={session.processInstanceId} type="button" onClick={() => navigate(`/live-sessions/${encodeURIComponent(session.processInstanceId)}`)} className="group rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-accent hover:bg-accent-subtle">
           <div className="flex items-start gap-2">
             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-text-strong" title={titles[session.processInstanceId] || session.sessionName || `Pi ${session.pid}`}>{titles[session.processInstanceId] || session.sessionName || `Pi ${session.pid}`}</span>
-            <span className={`shrink-0 rounded border px-1.5 py-0.5 text-2xs ${statusClass(session.status)}`}><span aria-hidden="true">{session.status === 'running' ? <WorkingHammerIcon /> : statusEmoji(session.status)}</span> {statusLabel(session.status)}</span>
+            <span className={`shrink-0 rounded border px-1.5 py-0.5 text-2xs ${statusClass(session.status)}`}><span aria-hidden="true">{session.status === 'running' ? <MuyuIcon /> : statusEmoji(session.status)}</span> {statusLabel(session.status)}</span>
           </div>
           <div className="mt-3 flex items-center gap-2 text-2xs text-muted"><span className="rounded bg-bg px-1.5 py-0.5">{subagent ? '子 Agent' : '主 Pi'}</span><span>PID {session.pid}</span><span>{session.mode.toUpperCase()}</span></div>
           <div className="mt-2 truncate text-xs text-muted" title={session.canonicalCwd}>{session.canonicalCwd}</div>
