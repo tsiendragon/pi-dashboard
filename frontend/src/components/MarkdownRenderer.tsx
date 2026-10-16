@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useCallback, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import DOMPurify from 'dompurify'
@@ -17,6 +17,7 @@ import rust from 'highlight.js/lib/languages/rust'
 import java from 'highlight.js/lib/languages/java'
 import markdown from 'highlight.js/lib/languages/markdown'
 import { api } from '../api/client'
+import { resolveMarkdownAssetUrl } from '../utils/resolvePath'
 import { useBlockAssembler } from '../hooks/useBlockAssembler'
 import DiffBlock from './DiffBlock'
 import ResizableImage from './ResizableImage'
@@ -195,15 +196,30 @@ function fixCodeFences(s: string): string {
   return s
 }
 
-const MarkdownBlock = memo(function MarkdownBlock({ content }: { content: string }) {
+/**
+ * Markdown asset URLs are relative to the file being previewed, not to the
+ * page — see `resolveMarkdownAssetUrl`. Only `src` is rewritten; links keep
+ * their raw href so click-to-open-in-panel keeps working.
+ */
+function makeUrlTransform(baseFilePath?: string) {
+  return (url: string, key: string) =>
+    defaultUrlTransform(key === 'src' ? resolveMarkdownAssetUrl(url, baseFilePath) : url)
+}
+
+const MarkdownBlock = memo(function MarkdownBlock({ content, baseFilePath }: { content: string; baseFilePath?: string }) {
   return (
-    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={MD_COMPONENTS}>
+    <ReactMarkdown
+      remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={REHYPE_PLUGINS}
+      components={MD_COMPONENTS}
+      urlTransform={makeUrlTransform(baseFilePath)}
+    >
       {fixCodeFences(content)}
     </ReactMarkdown>
   )
 })
 
-function BlockRenderer({ block }: { block: ContentBlock }) {
+function BlockRenderer({ block, baseFilePath }: { block: ContentBlock; baseFilePath?: string }) {
   switch (block.type) {
     case 'diff':
       return <DiffBlock code={block.content} complete={block.complete} />
@@ -214,11 +230,11 @@ function BlockRenderer({ block }: { block: ContentBlock }) {
     case 'code':
       return <CodeBlock code={block.content} lang={block.language} complete={block.complete} />
     case 'markdown':
-      return <MarkdownBlock content={block.content} />
+      return <MarkdownBlock content={block.content} baseFilePath={baseFilePath} />
   }
 }
 
-export default memo(function MarkdownRenderer({ content, streaming = false, onFileOpen, showRaw: allowRaw = true }: { content: string; streaming?: boolean; onFileOpen?: (path: string) => void; showRaw?: boolean }) {
+export default memo(function MarkdownRenderer({ content, streaming = false, onFileOpen, showRaw: allowRaw = true, baseFilePath }: { content: string; streaming?: boolean; onFileOpen?: (path: string) => void; showRaw?: boolean; baseFilePath?: string }) {
   const blocks = useBlockAssembler(content, streaming)
   const [rawVisible, setRawVisible] = useState(false)
   useEffect(() => { if (!allowRaw) setRawVisible(false) }, [allowRaw])
@@ -253,7 +269,7 @@ export default memo(function MarkdownRenderer({ content, streaming = false, onFi
 
   return (
     <div className="group" onClick={handleClick}>
-      {blocks.map((block, i) => <BlockRenderer key={`${block.type}-${i}`} block={block} />)}
+      {blocks.map((block, i) => <BlockRenderer key={`${block.type}-${i}`} block={block} baseFilePath={baseFilePath} />)}
       {allowRaw && !streaming && content.length > 20 && (
         <button className="hidden md:inline-block text-muted text-meta opacity-30 group-hover:opacity-60 hover:!opacity-100 transition-opacity cursor-pointer mt-1" onClick={() => setRawVisible(true)}>raw</button>
       )}

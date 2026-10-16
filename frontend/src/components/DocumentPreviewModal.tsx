@@ -167,7 +167,7 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
             <div className="rounded-md border border-danger bg-danger-subtle px-3 py-2 text-sm text-danger">{error}</div>
           ) : markdown ? (
             <div className="msg-content text-sm leading-relaxed text-text">
-              <MarkdownRenderer content={content} />
+              <MarkdownRenderer content={content} baseFilePath={filePath} />
             </div>
           ) : (
             <div className="rounded-md border border-border bg-bg-elevated p-3">
