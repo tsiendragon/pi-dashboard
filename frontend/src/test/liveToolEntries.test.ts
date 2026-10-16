@@ -313,6 +313,45 @@ describe('activity timeline', () => {
     expect(activities[1]?.steps).toEqual([])
   })
 
+  it.each([
+    ['history quote', false, '引用（来自你的回复）：\n> repos 使用 roots 配置\n\n每个 repo 一个路径，不需要 roots'],
+    ['live quote', true, '引用（来自你的回复）：\n> repos 使用 roots 配置\n\n每个 repo 一个路径，不需要 roots'],
+    ['history comment', false, 'Please review and address these comments about the quoted parts of our conversation:\n\n[1] Agent 回复\nQuoted: "repos 使用 roots 配置"\nComment: 每个 repo 一个路径，不需要 roots'],
+    ['live comment', true, 'Please review and address these comments about the quoted parts of our conversation:\n\n[1] Agent 回复\nQuoted: "repos 使用 roots 配置"\nComment: 每个 repo 一个路径，不需要 roots'],
+  ])('keeps an in-flight supplement in the current activity: %s', (_label, live, supplement) => {
+    const entries = [
+      { type: 'message', message: { role: 'user', content: '增加仓库页面' } },
+      { type: 'message', message: { role: 'assistant', content: 'repos 使用 roots 配置。' } },
+      { type: 'message', message: { role: 'user', content: '增加 Git Graph 按钮' } },
+      ...(live ? [{ type: 'agent_start' }] : []),
+      { type: 'message', message: { role: 'assistant', content: [
+        { type: 'text', text: '读取真实提交历史。' },
+        { type: 'toolCall', id: 'git-history', name: 'bash', arguments: { command: 'git log' } },
+      ] } },
+      { type: 'message', message: { role: 'toolResult', toolCallId: 'git-history', toolName: 'bash', content: 'commits' } },
+      { type: 'message', message: { role: 'user', content: supplement } },
+      { type: 'message', message: { role: 'assistant', content: [
+        { type: 'toolCall', id: 'write-mock', name: 'write', arguments: { path: '/repo/repos-mock.html', content: 'mock' } },
+      ] } },
+      { type: 'message', message: { role: 'toolResult', toolCallId: 'write-mock', toolName: 'write', content: 'written' } },
+      { type: 'message', message: { role: 'assistant', content: '已去掉 roots，并增加 Git Graph 按钮。' } },
+      ...(live ? [{ type: 'agent_settled' }] : []),
+    ]
+    const activities = buildLiveActivities(entries, 'idle', null)
+
+    expect(activities.map(activity => activity.title)).toEqual(['增加仓库页面', '增加 Git Graph 按钮'])
+    expect(activities.map(activity => activity.status)).toEqual(['done', 'done'])
+    expect(activities[0]?.steps).toEqual([])
+    expect(activities[0]?.followUps).toBeUndefined()
+    expect(activities[0]?.replies.map(reply => reply.text)).toEqual(['repos 使用 roots 配置。'])
+    expect(activities[1]?.followUps?.map(item => item.text)).toEqual([supplement])
+    expect(activities[1]?.steps.map(step => step.entryIndex)).toEqual(live ? [4, 7] : [3, 6])
+    expect(activities[1]?.replies.map(reply => [reply.kind, reply.text])).toEqual([
+      ['commentary', '读取真实提交历史。'],
+      ['final', '已去掉 roots，并增加 Git Graph 按钮。'],
+    ])
+  })
+
   it('merges a comment round and keeps its queued flag until Pi picks it up', () => {
     const commentRound = [
       'Please review and address these comments about the quoted parts of our conversation:',
@@ -378,6 +417,20 @@ describe('activity timeline', () => {
     expect(activities.map(activity => activity.steps.map(step => step.status))).toEqual([['done'], ['done']])
     expect(activities.map(activity => activity.steps[0]?.label)).toEqual(['读取文件', '运行回归测试'])
     expect(activities.map(activity => activity.replies)).toEqual([[], []])
+  })
+
+  it('settles the orphan fallback activity once a real user request supersedes it', () => {
+    const activities = buildLiveActivities([
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'boot-1', name: 'bash', arguments: { command: 'uname -a' } }] } },
+      { type: 'message', message: { role: 'toolResult', toolCallId: 'boot-1', toolName: 'bash', content: 'Linux' } },
+      { type: 'message', message: { role: 'assistant', channel: 'commentary', content: '会话启动检查完成。' } },
+      { type: 'message', message: { role: 'user', content: '搜索可用 repo' } },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: '已找到候选 repo 列表。' }] } },
+      { type: 'agent_settled' },
+    ], 'idle', null)
+
+    expect(activities.map(activity => activity.title)).toEqual(['正在处理会话任务', '搜索可用 repo'])
+    expect(activities.map(activity => activity.status)).toEqual(['done', 'done'])
   })
 
   it('keeps the agent reply body on the activity that produced it', () => {
