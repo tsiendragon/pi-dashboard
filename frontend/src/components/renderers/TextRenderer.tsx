@@ -247,12 +247,12 @@ export default function TextRenderer({ content, filePath, mode, lineNums, onChan
     for (const bp of breakpoints) {
       const lineIdx = Math.min(bp, lines.length)
       const chunk = lines.slice(start, lineIdx).join('\n')
-      if (chunk.trim()) elements.push(<MarkdownRenderer key={`md-${start}`} content={chunk} />)
+      if (chunk.trim()) elements.push(<MarkdownRenderer key={`md-${start}`} content={chunk} baseFilePath={filePath} />)
       for (const c of commentMap.get(bp)!) elements.push(<InlineCommentWidget key={c.id} comment={c} onEdit={onEditComment} onDelete={onDeleteComment} />)
       start = lineIdx
     }
     const remaining = lines.slice(start).join('\n')
-    if (remaining.trim()) elements.push(<MarkdownRenderer key={`md-${start}`} content={remaining} />)
+    if (remaining.trim()) elements.push(<MarkdownRenderer key={`md-${start}`} content={remaining} baseFilePath={filePath} />)
 
     return <div ref={scrollRef} className="msg-content text-sm leading-relaxed h-full overflow-auto" onScroll={onScroll}>{elements}</div>
   }
@@ -261,7 +261,7 @@ export default function TextRenderer({ content, filePath, mode, lineNums, onChan
   return (
     <div className="w-full h-full">
       <div className="msg-content text-sm leading-relaxed h-full overflow-auto">
-        <MarkdownRenderer content={displayContent} />
+        <MarkdownRenderer content={displayContent} baseFilePath={filePath} />
       </div>
     </div>
   )

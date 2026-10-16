@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import DocumentPreviewModal, { languageForPreview } from '../components/DocumentPreviewModal'
 
 vi.mock('../components/MarkdownRenderer', () => ({
-  default: ({ content }: { content: string }) => <div data-testid="markdown-preview">{content}</div>,
+  default: ({ content, baseFilePath }: { content: string; baseFilePath?: string }) => (
+    <div data-testid="markdown-preview" data-base={baseFilePath ?? ''}>{content}</div>
+  ),
 }))
 
 describe('DocumentPreviewModal', () => {
@@ -40,6 +42,18 @@ describe('DocumentPreviewModal', () => {
 
     expect(screen.getByText('Markdown')).toBeInTheDocument()
     expect(screen.getByTestId('markdown-preview')).toHaveTextContent('# Hello')
+  })
+
+  it('gives the Markdown renderer the file path so relative images resolve', () => {
+    render(
+      <DocumentPreviewModal
+        filePath="/tmp/docs/features.md"
+        content="![shot](images/a.png)"
+        onClose={() => {}}
+      />,
+    )
+
+    expect(screen.getByTestId('markdown-preview')).toHaveAttribute('data-base', '/tmp/docs/features.md')
   })
 
   it('closes on Escape', () => {

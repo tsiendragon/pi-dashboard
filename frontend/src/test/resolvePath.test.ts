@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolvePath } from '../utils/resolvePath'
+import { resolveMarkdownAssetUrl, resolvePath } from '../utils/resolvePath'
 
 describe('resolvePath', () => {
   const cwd = '/workspace/example-project'
@@ -41,5 +41,55 @@ describe('resolvePath', () => {
 
   it('returns empty input unchanged', () => {
     expect(resolvePath('', cwd)).toBe('')
+  })
+})
+
+describe('resolveMarkdownAssetUrl', () => {
+  const doc = '/workspace/example-project/docs/features.md'
+  const localFile = (p: string) => `/api/local-file?path=${encodeURIComponent(p)}`
+
+  it('resolves a relative asset against the markdown file directory', () => {
+    expect(resolveMarkdownAssetUrl('images/features/chat.png', doc))
+      .toBe(localFile('/workspace/example-project/docs/images/features/chat.png'))
+  })
+
+  it('resolves ./ and ../ segments', () => {
+    expect(resolveMarkdownAssetUrl('./chat.png', doc))
+      .toBe(localFile('/workspace/example-project/docs/chat.png'))
+    expect(resolveMarkdownAssetUrl('../assets/chat.png', doc))
+      .toBe(localFile('/workspace/example-project/assets/chat.png'))
+  })
+
+  it('leaves absolute URLs and root-relative URLs alone', () => {
+    for (const url of [
+      'https://example.com/a.png',
+      'http://example.com/a.png',
+      'data:image/png;base64,AAAA',
+      'blob:http://localhost/abc',
+      '//cdn.example.com/a.png',
+      '/api/local-file?path=%2Ftmp%2Fa.png',
+      '/images/a.png',
+    ]) expect(resolveMarkdownAssetUrl(url, doc)).toBe(url)
+  })
+
+  it('drops a query / fragment suffix before resolving', () => {
+    expect(resolveMarkdownAssetUrl('chat.png?v=2#fig-1', doc))
+      .toBe(localFile('/workspace/example-project/docs/chat.png'))
+  })
+
+  it('keeps ~ paths so the backend can expand them', () => {
+    expect(resolveMarkdownAssetUrl('images/a.png', '~/notes/doc.md'))
+      .toBe(localFile('~/notes/images/a.png'))
+  })
+
+  it('leaves assets alone when the file path is unknown (chat, live sessions)', () => {
+    expect(resolveMarkdownAssetUrl('images/a.png', undefined)).toBe('images/a.png')
+    expect(resolveMarkdownAssetUrl('images/a.png', null)).toBe('images/a.png')
+    expect(resolveMarkdownAssetUrl('images/a.png', '')).toBe('images/a.png')
+  })
+
+  it('falls back to a repo-relative path for a file with no directory', () => {
+    expect(resolveMarkdownAssetUrl('docs/a.png', 'README.md'))
+      .toBe(localFile('docs/a.png'))
   })
 })
