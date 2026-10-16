@@ -14,7 +14,7 @@ cd "$(dirname "$0")"
 
 if [[ "$1" == "--build" ]]; then
   echo "Building frontend..."
-  cd frontend && npx vite build && cd ..
+  npm --prefix frontend run build
 fi
 
 # Kill any stale tmux pi-dash session that might conflict
