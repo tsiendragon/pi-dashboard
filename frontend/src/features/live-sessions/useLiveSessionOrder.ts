@@ -11,17 +11,24 @@ import { liveSessionApi } from './api'
  */
 export function useLiveSessionOrder(): {
   order: string[]
+  sectionOrder: string[]
+  savingSections: boolean
+  saveSections: (next: string[]) => Promise<void>
   save: (next: string[]) => Promise<void>
   reset: () => Promise<void>
   refresh: () => Promise<void>
   error: string | undefined
 } {
   const [order, setOrder] = useState<string[]>([])
+  const [sectionOrder, setSectionOrder] = useState<string[]>([])
+  const [savingSections, setSavingSections] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
 
   const refresh = useCallback(async () => {
     try {
-      setOrder(await liveSessionApi.listOrder())
+      const state = await liveSessionApi.listOrderState()
+      setOrder(state.order)
+      setSectionOrder(state.sectionOrder)
       setError(undefined)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -43,7 +50,23 @@ export function useLiveSessionOrder(): {
     }
   }, [order, refresh])
 
+  const saveSections = useCallback(async (next: string[]) => {
+    const previous = sectionOrder
+    setSavingSections(true)
+    setSectionOrder(next)
+    try {
+      setSectionOrder(await liveSessionApi.saveSectionOrder(next))
+      setError(undefined)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+      setSectionOrder(previous)
+      await refresh()
+    } finally {
+      setSavingSections(false)
+    }
+  }, [sectionOrder, refresh])
+
   const reset = useCallback(() => save([]), [save])
 
-  return { order, save, reset, refresh, error }
+  return { order, sectionOrder, savingSections, saveSections, save, reset, refresh, error }
 }

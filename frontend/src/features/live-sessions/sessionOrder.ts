@@ -25,18 +25,40 @@ export interface SessionSection {
   sessions: LiveSessionSummary[]
 }
 
+/** Default Hold groups go after 未分组; explicit order can move any task block. */
+export function isHoldGroup(name: string): boolean {
+  return name.trim().toLowerCase() === 'hold'
+}
+
+export function sectionOrderIds(groups: readonly LiveSessionGroup[], saved: readonly string[]): string[] {
+  const holdIds = new Set(groups.filter(group => isHoldGroup(group.name)).map(group => group.id))
+  const defaults = [...groups.filter(group => !holdIds.has(group.id)).map(group => group.id), '__ungrouped', ...holdIds]
+  const valid = new Set(defaults)
+  const result = [...new Set(saved.filter(id => valid.has(id)))]
+  for (const id of defaults) {
+    if (result.includes(id)) continue
+    let index = result.length
+    if (!holdIds.has(id)) {
+      while (index > 0 && holdIds.has(result[index - 1])) index--
+    }
+    result.splice(index, 0, id)
+  }
+  return result
+}
+
 /**
  * Lay sessions out into the sidebar's blocks and their within-block order.
  *
  * Shared by the sidebar and by fork placement, so a newly forked row is put
  * beside its source using exactly the order the reader sees. Block order is
- * fixed: 置顶 → task groups (creation order) → 未分组.
+ * manual, with 置顶 always first and Hold groups last by default.
  */
 export function buildSessionSections(
   sessions: readonly LiveSessionSummary[],
   meta: Record<string, LiveSessionMeta>,
   groups: readonly LiveSessionGroup[],
   order: string[],
+  sectionOrder: readonly string[] = [],
 ): SessionSection[] {
   const main = sessions.filter(session => !isSubagent(session))
   const pinned = main.filter(session => meta[session.sessionId]?.pinned)
@@ -48,7 +70,10 @@ export function buildSessionSections(
     out.push({ id: group.id, name: group.name, group, sessions: sortSessions(rest.filter(session => group.sessionIds.includes(session.sessionId)), order) })
   }
   out.push({ id: '__ungrouped', name: '未分组', sessions: sortSessions(rest.filter(session => !groupOfSession(session, groups)), order) })
-  return out.filter(section => section.sessions.length > 0)
+  const ranks = new Map(sectionOrderIds(groups, sectionOrder).map((id, index) => [id, index]))
+  return out.filter(section => section.sessions.length > 0).sort((left, right) =>
+    (left.pinnedSection ? -1 : ranks.get(left.id)!) - (right.pinnedSection ? -1 : ranks.get(right.id)!),
+  )
 }
 
 /**

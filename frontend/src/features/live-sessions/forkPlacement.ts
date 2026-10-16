@@ -21,9 +21,9 @@ export async function placeForkBesideParent(input: {
   forkedSessionId: string
   /** Every live session, so the manual order can be materialised in full. */
   sessions: readonly LiveSessionSummary[]
-}): Promise<void> {  const [groups, order, meta] = await Promise.all([
+}): Promise<void> {  const [groups, orderState, meta] = await Promise.all([
     liveSessionApi.listGroups(),
-    liveSessionApi.listOrder(),
+    liveSessionApi.listOrderState(),
     liveSessionApi.listMeta(),
   ])
 
@@ -33,7 +33,8 @@ export async function placeForkBesideParent(input: {
   if (meta[input.parent.sessionId]?.pinned) await liveSessionApi.patchMeta(input.forkedProcessInstanceId, { pinned: true })
 
   // Directly behind the parent in the order list, so the two rows are adjacent.
-  const displayed = buildSessionSections(input.sessions, meta, groups, order)
+  const { order, sectionOrder } = orderState
+  const displayed = buildSessionSections(input.sessions, meta, groups, order, sectionOrder)
     .flatMap(section => section.sessions.map(session => session.sessionId))
   const base = materializeOrder(order, displayed)
   const parentIndex = base.indexOf(input.parent.sessionId)

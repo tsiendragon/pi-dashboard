@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { LiveSessionGroup, LiveSessionMeta, LiveSessionSummary } from '@shared/live-sessions'
+import type { LiveSessionGroup, LiveSessionMeta, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
 import LiveSessionsList from '../features/live-sessions/LiveSessionsList'
 
 type Call = { url: string; method: string; body: unknown }
@@ -25,11 +25,12 @@ function session(processInstanceId: string, pid: number, over: Partial<LiveSessi
 }
 
 /** Route-mocked fetch for the live-session REST surface; records every call. */
-function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string, LiveSessionMeta>; order?: string[] } = {}) {
+function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string, LiveSessionMeta>; order?: string[]; sectionOrder?: string[]; repos?: RepoCandidate[] } = {}) {
   const calls: Call[] = []
   let groups = initial.groups || []
   let meta = initial.meta || {}
   let order = initial.order || []
+  let sectionOrder = initial.sectionOrder || []
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const method = (init?.method || 'GET').toUpperCase()
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
@@ -37,10 +38,12 @@ function mockFetch(initial: { groups?: LiveSessionGroup[]; meta?: Record<string,
     const ok = (payload: unknown) => ({ ok: true, status: 200, json: async () => payload })
 
     if (url === '/api/live-session-groups' && method === 'GET') return ok({ groups })
-    if (url === '/api/live-session-order' && method === 'GET') return ok({ order })
+    if (url === '/api/live-sessions/repo-candidates' && method === 'GET') return ok({ repos: initial.repos || [] })
+    if (url === '/api/live-session-order' && method === 'GET') return ok({ order, sectionOrder })
     if (url === '/api/live-session-order' && method === 'PUT') {
-      order = Array.isArray((body as { order?: unknown })?.order) ? (body as { order: string[] }).order : []
-      return ok({ ok: true, order })
+      if (Array.isArray(body?.sectionOrder)) sectionOrder = body.sectionOrder
+      else order = Array.isArray(body?.order) ? body.order : []
+      return ok({ ok: true, order, sectionOrder })
     }
     if (url === '/api/live-session-meta' && method === 'GET') return ok({ meta })
     if (method === 'PATCH' && url.startsWith('/api/live-sessions/') && url.endsWith('/meta')) {
@@ -101,6 +104,60 @@ const menuFor = (title: string) => {
 describe('LiveSessionsList sidebar', () => {
   beforeEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
 
+  it('puts Hold last, defaults it to collapsed, and reveals search matches', async () => {
+    mockFetch({ groups: [
+      { id: 'hold', name: 'Hold', sessionIds: ['session-pid-b'], createdAt: '', updatedAt: '' },
+      { id: 'work', name: '进行中', sessionIds: ['session-pid-a'], createdAt: '', updatedAt: '' },
+    ] })
+    const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-b', 102), session('pid-c', 103)]} onSelect={() => {}} />)
+    await screen.findByRole('button', { name: 'Hold：展开分组' })
+    expect([...container.querySelectorAll('section[data-live-block]')].map(section => section.getAttribute('data-live-block'))).toEqual(['work', '__ungrouped', 'hold'])
+    expect(screen.queryByText('pi 102')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Hold：展开分组' }))
+    expect(screen.getByText('pi 102')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Hold：折叠分组' }))
+    fireEvent.change(screen.getByPlaceholderText('搜索 session / 目录 / 标签…'), { target: { value: 'pi 102' } })
+    expect(screen.getByText('pi 102')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Hold：折叠分组' }))
+    expect(screen.queryByText('pi 102')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Hold：展开分组' }))
+    expect(screen.getByText('pi 102')).toBeInTheDocument()
+  })
+
+  it('saves group order, including ungrouped, and reloads it without changing row order', async () => {
+    const { calls } = mockFetch({ groups: [{ id: 'work', name: '进行中', sessionIds: ['session-pid-a'], createdAt: '', updatedAt: '' }], order: ['session-pid-a', 'session-pid-b'] })
+    const sessions = [session('pid-a', 101), session('pid-b', 102)]
+    const { container, unmount } = render(<LiveSessionsList sessions={sessions} onSelect={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: /任务$/ }))
+    const move = await screen.findByRole('button', { name: '进行中：移到底部' })
+    fireEvent.click(move)
+    await waitFor(() => expect(calls.some(call => call.url === '/api/live-session-order' && call.method === 'PUT' && JSON.stringify(call.body) === JSON.stringify({ sectionOrder: ['__ungrouped', 'work'] }))).toBe(true))
+    expect([...container.querySelectorAll('section[data-live-block]')].map(section => section.getAttribute('data-live-block'))).toEqual(['__ungrouped', 'work'])
+    unmount()
+    const reloaded = render(<LiveSessionsList sessions={sessions} onSelect={() => {}} />)
+    await waitFor(() => expect([...reloaded.container.querySelectorAll('section[data-live-block]')].map(section => section.getAttribute('data-live-block'))).toEqual(['__ungrouped', 'work']))
+  })
+
+  it('does not allow overlapping group-order writes while a save is pending', async () => {
+    const { calls } = mockFetch({ groups: [{ id: 'work', name: '进行中', sessionIds: ['session-pid-a'], createdAt: '', updatedAt: '' }] })
+    const originalFetch = globalThis.fetch
+    let release!: () => void
+    const waiting = new Promise<void>(resolve => { release = resolve })
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT' && String(init.body).includes('sectionOrder')) await waiting
+      return originalFetch(url, init)
+    })
+    render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-b', 102)]} onSelect={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: /任务$/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '进行中：移到底部' }))
+    const reverse = screen.getByRole('button', { name: '进行中：上移分组' })
+    expect(reverse).toBeDisabled()
+    fireEvent.click(reverse)
+    release()
+    await waitFor(() => expect(reverse).toBeEnabled())
+    expect(calls.filter(call => call.url === '/api/live-session-order' && call.method === 'PUT')).toHaveLength(1)
+  })
+
   it('restarts one eligible session after two-click confirmation and selects its replacement', async () => {
     const { calls } = mockFetch({ meta: { 'session-pid-a': { tags: [], pinned: false, tmux: 'pi-dash-live-abc12345', updatedAt: '' } } })
     const onSelect = vi.fn()
@@ -123,11 +180,12 @@ describe('LiveSessionsList sidebar', () => {
     expect(screen.getByLabelText('重启 session pi 101')).toBeDisabled()
   })
 
-  it('shows the animated working hammer without a redundant status label', () => {
+  it('shows the animated working muyu without a redundant status label', () => {
     mockFetch()
     render(<LiveSessionsList sessions={[session('pid-a', 101, { status: 'running' })]} onSelect={() => {}} />)
     expect(screen.getByText('pi 101')).toBeInTheDocument()
-    expect(within(screen.getByRole('status', { name: 'Session 状态：工作中' })).getByTestId('working-hammer')).toBeInTheDocument()
+    expect(screen.getByText('pi 101').closest('[data-live-row]')).toHaveClass('py-1')
+    expect(within(screen.getByRole('status', { name: 'Session 状态：工作中' })).getByTestId('working-muyu')).toBeInTheDocument()
     expect(screen.queryByText('工作中')).not.toBeInTheDocument()
     expect(screen.getByText('2h')).toBeInTheDocument()// lastActivityAt = now - 101min
   })
@@ -160,7 +218,7 @@ describe('LiveSessionsList sidebar', () => {
     const { calls, meta } = mockFetch()
     render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
     menuFor('pi 101')
-    fireEvent.click(await screen.findByText('📌 置顶'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '📌 置顶' }))
   })
 
   it('adds a tag by completion, then filters the list by another tag', async () => {
@@ -333,9 +391,13 @@ describe('LiveSessionsList sidebar', () => {
 
   it('renders a task group block above 未分组 and keeps membership edits working', async () => {
     const groups: LiveSessionGroup[] = [{ id: 'g1', name: '任务A', sessionIds: ['session-pid-b'], createdAt: '', updatedAt: '' }]
-    const { groups: currentGroups } = mockFetch({ groups })
+    const { groups: currentGroups } = mockFetch({ groups, meta: { 'session-pid-b': { tags: ['demo-tag'], updatedAt: '' } } })
     const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101), session('pid-b', 102)]} onSelect={() => {}} />)
-    await waitFor(() => expect(screen.getByTitle('任务分组：任务A')).toBeInTheDocument())
+    await screen.findByRole('button', { name: '任务A：折叠分组' })
+    const row = container.querySelector('[data-live-row="session-pid-b"]') as HTMLElement
+    expect(within(row).queryByText('任务A')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('任务分组：任务A')).not.toBeInTheDocument()
+    expect(within(row).getByText('demo-tag')).toBeInTheDocument()
     await waitFor(() => expect(renderedOrder(container)).toEqual(['session-pid-b', 'session-pid-a']))
 
     menuFor('pi 102')
@@ -428,6 +490,56 @@ describe('LiveSessionsList sidebar', () => {
     expect(input.value).toBe('~/repos/toolkit-wt/')
   })
 
+  it('searches repos under the configured repo roots by keyword and fills a unique hit', async () => {
+    mockFetch({
+      repos: [
+        { name: 'sample-toolkit', path: '/srv/repos/sample-toolkit', git: true },
+        { name: 'pi-dashboard', path: '/srv/repos/pi-dashboard', git: true },
+      ],
+    })
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTitle('启动一个新的 Live Pi'))
+    const input = screen.getByPlaceholderText(/工作目录/) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'toolkit' } })
+
+    // A repo never opened before is still offered, by name alone.
+    expect(await screen.findByRole('button', { name: '/srv/repos/sample-toolkit' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '/srv/repos/pi-dashboard' })).not.toBeInTheDocument()
+
+    fireEvent.keyDown(input, { key: 'Tab' })
+    expect(input.value).toBe('/srv/repos/sample-toolkit/')
+  })
+
+  it('labels repo hits in the Tab menu separately from used directories', async () => {
+    window.localStorage.setItem('pi-dashboard:live-session-start-paths', JSON.stringify(['/srv/repos/sample-ai-dev']))
+    mockFetch({
+      repos: [
+        { name: 'sample-viz', path: '/srv/repos/sample-viz', git: true },
+        { name: 'sample-ai-dev', path: '/srv/repos/sample-ai-dev', git: true },
+      ],
+    })
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTitle('启动一个新的 Live Pi'))
+    const input = screen.getByPlaceholderText(/工作目录/) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'sample' } })
+
+    // Wait for the repo list to arrive so the keyword has two hits (history + repo).
+    expect(await screen.findByRole('button', { name: '/srv/repos/sample-viz' })).toBeInTheDocument()
+    fireEvent.keyDown(input, { key: 'Tab' })
+
+    const menu = await screen.findByRole('listbox', { name: '目录补全' })
+    const repoRow = within(menu).getByText('/srv/repos/sample-viz').closest('button')!
+    expect(within(repoRow).getByText('仓库目录')).toBeInTheDocument()
+    // A path already in history stays a history row instead of a second repo row.
+    const historyRow = within(menu).getByText('/srv/repos/sample-ai-dev').closest('button')!
+    expect(within(historyRow).getByText('用过的目录')).toBeInTheDocument()
+    expect(within(menu).getAllByText('/srv/repos/sample-ai-dev')).toHaveLength(1)
+  })
+
   // ---- tmux-first live sessions -------------------------------------------
 
   it('marks a tmux-hosted session as terminal-reachable and copies the attach command', async () => {
@@ -492,6 +604,27 @@ describe('LiveSessionsList sidebar', () => {
     )).toBe(true))
     await waitFor(() => expect(screen.getByLabelText('会话操作结果')).toHaveTextContent('已发送退出指令'))
     expect(calls.some(call => call.url.startsWith('/api/pty/sessions/'))).toBe(false)
+  })
+
+  it('nests a child under its main session and reveals the selected child', async () => {
+    mockFetch()
+    const parent = session('pid-a', 101)
+    const child = session('pid-child', 202, { role: 'subagent', parentSessionId: parent.sessionId })
+    const { container } = render(<LiveSessionsList sessions={[parent, child]} sessionTitles={{ 'pid-child': '子助手检查' }} activeId="pid-child" onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('pi 101')).toBeInTheDocument())
+    const childRow = screen.getByText('子助手检查').closest('[role="button"]')
+    const details = childRow?.closest('details')
+    expect(details?.open).toBe(true)
+    expect(details?.querySelector('summary')).toHaveTextContent('子助手 · 1')
+    expect(container.querySelector('[aria-label="未关联子助手"]')).toBeNull()
+  })
+
+  it('keeps an orphan child accessible instead of hiding it from the sidebar', async () => {
+    mockFetch()
+    render(<LiveSessionsList sessions={[session('pid-child', 202, { role: 'subagent', parentSessionId: 'missing-parent' })]} sessionTitles={{ 'pid-child': '离线父会话的子助手' }} onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('离线父会话的子助手')).toBeInTheDocument())
+    expect(screen.getByRole('region', { name: '未关联子助手' })).toBeInTheDocument()
+    expect(screen.queryByText('没有匹配的 session')).toBeNull()
   })
 
   // window.confirm is answered with a silent `false` when the browser suppresses
