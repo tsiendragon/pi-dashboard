@@ -43,12 +43,14 @@ import {
 } from './routes/index.js'
 import { extensionBridgeRegistry } from './extension-bridge/registry.js'
 import { rpcExtensionBridgeServer } from './extension-bridge/rpc-server.js'
-import { getDashConfig, getTasksConfig } from './pi-env.js'
+import { getDashConfig, getTasksConfig, saveDashConfig } from './pi-env.js'
 import { normalizeSupervisorConfig, supervisorRoot } from './supervisor/config.js'
 import { SupervisorStore } from './supervisor/store.js'
 import { SupervisorService } from './supervisor/service.js'
 import { SupervisorRuntime } from './supervisor/runtime.js'
 import { registerSupervisorRoutes, protectSupervisorFiles } from './routes/supervisor.js'
+import { registerRepoRoutes } from './routes/repos.js'
+import { RepoStore, sanitizeEntries } from './repos/store.js'
 import { TaskService } from './tasks/service.js'
 import { parseLiveSessionConfig } from './live-sessions/config.js'
 import { LiveSessionBrowserAuth } from './live-sessions/auth.js'
@@ -89,6 +91,11 @@ asrRealtimeWss.on('connection', (ws, req) => {
 })
 const manager = new PiManager()
 const liveSessionConfig = parseLiveSessionConfig((getDashConfig() as Record<string, unknown>).liveSessions)
+/** `repos` in ~/.pi/dashboard.json — the Repos page and Live Pi start suggestions share it. */
+const repoStore = new RepoStore({
+  load: () => sanitizeEntries(getDashConfig().repos),
+  save: entries => { saveDashConfig({ ...getDashConfig(), repos: entries }) },
+})
 const liveSessionAuth = new LiveSessionBrowserAuth()
 const liveSessionBroker = liveSessionConfig.enabled
   ? new LiveSessionBroker({ registry: liveSessionRegistry, roots: liveSessionConfig.roots })
@@ -100,11 +107,20 @@ const livePiManager = liveSessionConfig.enabled ? new PiManager() : undefined
 const livePiLauncher = liveSessionConfig.enabled
   ? new LivePiLauncher({ registry: liveSessionRegistry, roots: liveSessionConfig.roots, manager: livePiManager, launch: liveSessionConfig.launch })
   : undefined
+const currentMonthKey = () => {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
 const usageLedger = new UsageLedger()
-void usageLedger.start().catch(error => console.error('[usage] Failed to load ledger:', error))
+void usageLedger.start()
+  // Pre-parse the current month so the first Cost page open is not a cold 60MB+ jsonl load.
+  .then(() => usageLedger.getReport(currentMonthKey()))
+  .catch(error => console.error('[usage] Failed to load ledger:', error))
 const usageLimits = new UsageLimitsService()
 const timingLedger = new TimingLedger()
-void timingLedger.start().catch(error => console.error('[timing] Failed to load ledger:', error))
+void timingLedger.start()
+  .then(() => timingLedger.getReport('month'))
+  .catch(error => console.error('[timing] Failed to load ledger:', error))
 let liveSessionRoutes: LiveSessionRoutes | undefined
 let machineOutbound: ReturnType<typeof startMachineOutbound> | undefined
 let machineReplay: ReturnType<typeof openMachineInputReplay> | undefined
@@ -249,6 +265,8 @@ if (liveSessionConfig.enabled && !process.env.VITEST) {
     auth: liveSessionAuth,
     disconnectGraceMs: liveSessionConfig.disconnectGraceMs,
     launcher: livePiLauncher,
+    repoRoots: liveSessionConfig.repoRoots,
+    registeredRepos: () => repoStore.list(),
   })
   void Promise.all([liveSessionRoutes.start(), liveSessionBroker!.start()]).then(() => {
     console.log(`[live-sessions] Broker ready at ${liveSessionBroker!.socketPath}`)
@@ -957,6 +975,13 @@ registerExtConfigRoutes({ app, auth: liveSessionAuth })
 registerPiExtListRoutes({ app })
 registerPiExtWriteRoutes({ app, auth: liveSessionAuth })
 registerPiExtPackagesRoutes({ app, auth: liveSessionAuth })
+registerRepoRoutes({
+  app,
+  auth: liveSessionAuth,
+  store: repoStore,
+  statusCacheFile: join(os.homedir(), '.pi', 'repos-status-cache.json'),
+  liveCwds: () => liveSessionRegistry.list().map(session => session.canonicalCwd),
+})
 registerPtyRoutes({ app, auth: liveSessionAuth })
 
 const taskService = new TaskService({
