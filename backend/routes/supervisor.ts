@@ -75,6 +75,7 @@ export function registerSupervisorRoutes(options: { app: Express; auth: LiveSess
     } catch(e) { routeError(res, e) }
   })
   app.get('/api/supervisor/state', async (_req, res) => { try { res.json(await runtime.state()) } catch(e) { routeError(res, e) } })
+  app.post('/api/supervisor/agent/clear', async (_req, res) => { try { res.json(await runtime.clear()) } catch(e) { routeError(res, e) } })
   app.post('/api/supervisor/agent/start', async (_req, res) => { try { res.json(await runtime.start()) } catch(e) { routeError(res, e) } })
   app.get('/api/supervisor/agent/detail', (_req, res) => { try { res.json(runtime.detail()) } catch(e) { routeError(res, e) } })
   app.post('/api/supervisor/agent/input', async (req, res) => {

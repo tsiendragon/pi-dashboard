@@ -87,6 +87,7 @@ export class SupervisorRuntime {
   private starting?: Promise<AgentRecord>
   private sending = false
   private inputPending = false
+  private clearing = false
   private activeGrant?: string
   private grants = new Map<string, Grant>()
   private lastPatrolSignature = ''
@@ -171,6 +172,7 @@ export class SupervisorRuntime {
     return { ...data, enabled: this.config.enabled, mode: this.config.agentResources.mode, sessions: this.listSessions(), agent: { sessionId: this.record.sessionId, processInstanceId: detail?.summary.processInstanceId, connected: !!detail, resourceState, revision: this.record.revision, extensionsStale, error: this.lastError }, sampledAt: new Date().toISOString() }
   }
   async start(): Promise<AgentRecord> {
+    if (this.clearing) fail('主助手正在清空并重新加载。')
     if (!this.config.enabled) fail('监督功能未启用，请先配置并启用。', 403)
     if (this.starting) return this.starting
     this.starting = this.startOnce().finally(() => { this.starting = undefined })
@@ -205,6 +207,31 @@ export class SupervisorRuntime {
     await this.persist()
     return this.record
   }
+  async clear(): Promise<AgentRecord> {
+    if (this.clearing || this.starting || this.inputPending || this.sending) fail('主助手正在处理请求，请稍后清空。')
+    if (!this.config.enabled) fail('监督功能未启用。', 403)
+    this.clearing = true
+    const previousId = this.record.sessionId
+    try {
+      const detail = this.detail()
+      const resources = await validateSupervisorResources(this.config)
+      if (resources.revision !== this.record.revision || resources.extensionsRevision !== this.record.extensionsRevision) fail('主助手资源已更新，请先结束旧主会话并重新启动，再使用清空功能。')
+      await this.send(detail, '/supervisor-clear')
+      const deadline = Date.now() + 15000
+      while (Date.now() < deadline) {
+        const current = this.currentDetail()
+        if (this.record.sessionId !== previousId && current && this.loaded) {
+          this.record = { ...this.record, processInstanceId: current.summary.processInstanceId, pid: current.summary.pid, sessionFile: current.summary.sessionFile }
+          this.lastPatrolSignature = ''
+          this.lastError = undefined
+          await this.persist()
+          return { ...this.record }
+        }
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      fail('未能确认空白主会话已重新连接，请刷新状态后检查，不要连续重试。', 504)
+    } finally { this.clearing = false }
+  }
   detail(): LiveSessionDetail { const detail = this.currentDetail(); if (!detail) fail('主 Agent 未连接。', 503); return detail }
   private async send(detail: LiveSessionDetail, text: string, images?: unknown[], beforeDispatch?: () => void): Promise<void> {
     if (detail.summary.status !== 'idle' || detail.pendingUi?.length) fail('主 Agent 正在工作或等待确认，请稍后发送。')
@@ -224,6 +251,7 @@ export class SupervisorRuntime {
     } finally { this.sending = false }
   }
   async input(text: string, images?: unknown[], attachmentIds: string[] = [], objectRef?: string): Promise<void> {
+    if (this.clearing) fail('主助手正在清空并重新加载。')
     if (!this.config.enabled || !text.trim() || text.length > 16000) fail('无效输入或监督功能未启用。', 400)
     if (this.inputPending || this.sending) fail('已有消息在处理，本次未提交。')
     this.inputPending = true
@@ -269,6 +297,10 @@ export class SupervisorRuntime {
       const payload = JSON.parse(body || '{}')
       if (req.method === 'POST' && req.url === '/loaded') {
         if (payload.revision !== this.record.revision || !this.config.agentResources.allowedTools.every(t => payload.tools?.includes(t))) fail('resource_registration_mismatch', 403)
+        if (this.clearing && typeof payload.sessionId === 'string' && payload.sessionId !== this.record.sessionId) {
+          this.record = { ...this.record, sessionId: payload.sessionId, sessionFile: undefined, processInstanceId: undefined, pid: undefined }
+          this.grants.clear(); this.activeGrant = undefined
+        }
         this.loaded = true; this.record.loaded = true; await this.persist(); return send(200, { ok: true })
       }
       if (req.method !== 'POST' || req.url !== '/execute') return send(404, { error: 'not_found' })
@@ -363,6 +395,7 @@ export class SupervisorRuntime {
     }
   }
   async patrol(): Promise<void> {
+    if (this.clearing) return
     if (!this.config.enabled || Date.now() - this.lastPatrolAt < this.config.pollIntervalMs) return
     const detail = this.currentDetail()
     if (!detail || !this.loaded || detail.summary.status !== 'idle' || detail.summary.claim.state === 'claimed' || detail.pendingUi?.length) return
