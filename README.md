@@ -4,6 +4,10 @@ A web and iOS dashboard for the [pi coding agent](https://github.com/mariozechne
 
 ![Pi Dashboard](https://img.shields.io/badge/status-alpha-orange)
 
+![Pi Dashboard — chat](docs/images/features/00-nav-overview.png)
+
+Feature tour: [English](docs/features.en.md) · [中文](docs/features.md)
+
 ## Features
 
 ### Chat
@@ -36,6 +40,18 @@ A web and iOS dashboard for the [pi coding agent](https://github.com/mariozechne
 ### Desktop App (Optional)
 - **Electron wrapper** — native window with system tray
 - **SSH tunnel management** — automatic tunnel setup for remote servers
+
+## Screenshots
+
+**Extensions** — what pi actually loads: installed list, enable/disable, packages, versions, audit and diagnostics.
+
+![Installed extensions](docs/images/features/09-extensions.png)
+
+**Settings** — providers and models, interface (theme, chat, voice, terminal, shortcuts), and system (packages, vault, tasks, Lark).
+
+![Settings](docs/images/features/14-settings.png)
+
+More, in detail: [English feature tour](docs/features.en.md) · [中文功能导览](docs/features.md).
 
 ## Quick Start
 
