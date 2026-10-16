@@ -97,13 +97,84 @@ describe('LiveSessionFeatures', () => {
     expect(idleHandlers.onBtwRefreshParent).toHaveBeenCalledOnce()
   })
 
-  it('keeps the composer disabled and offers open when BTW is closed', () => {
+  it('lets the user ask straight away even while BTW is closed', () => {
     const { handlers } = renderFeatures({ features: { btw: { status: 'closed', conversation: [] } } })
 
-    expect(btwPanel().getByText(/BTW 未打开/)).toBeInTheDocument()
-    expect(btwPanel().getByLabelText('BTW 提问')).toBeDisabled()
+    // Sending itself opens the side chat (the extension's submit opens it), so the
+    // panel must not make the user click 打开 BTW first.
+    expect(btwPanel().getByText(/BTW 未打开：在下面输入问题发送/)).toBeInTheDocument()
+    const box = btwPanel().getByLabelText('BTW 提问') as HTMLTextAreaElement
+    expect(box).toBeEnabled()
+    fireEvent.change(box, { target: { value: '刚才那个报错是什么' } })
+    fireEvent.click(btwPanel().getByText('发送'))
+    expect(handlers.onBtwSubmit).toHaveBeenCalledWith('刚才那个报错是什么')
+
     fireEvent.click(btwPanel().getByText('打开 BTW'))
     expect(handlers.onOpenBtw).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the side chat askable while the main session is working', () => {
+    const { handlers } = renderFeatures({
+      busy: true,
+      status: 'running',
+      features: { btw: { status: 'ready', conversation: [] } },
+    })
+
+    // The side chat runs in its own session: the main turn must not lock it.
+    const box = btwPanel().getByLabelText('BTW 提问') as HTMLTextAreaElement
+    expect(box).toBeEnabled()
+    fireEvent.change(box, { target: { value: '主会话现在跑到哪了' } })
+    fireEvent.click(btwPanel().getByText('发送'))
+    expect(handlers.onBtwSubmit).toHaveBeenCalledWith('主会话现在跑到哪了')
+  })
+
+  it('keeps the typed question while the side chat is answering', () => {
+    const { handlers } = renderFeatures({ features: { btw: { status: 'busy', activity: '只读工具：read src/app.ts', conversation: [{ role: 'user', text: 'q' }, { role: 'assistant', text: '' }] } } })
+
+    expect(btwPanel().getByText(/只读工具：read src\/app.ts/)).toBeInTheDocument()
+    expect(btwPanel().getByText('正在生成…')).toBeInTheDocument()
+    const box = btwPanel().getByLabelText('BTW 提问') as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: '我下一句先打好' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+
+    expect(handlers.onBtwSubmit).not.toHaveBeenCalled()
+    expect(box.value).toBe('我下一句先打好')
+    expect(btwPanel().getByText(/先「中止」或等它答完/)).toBeInTheDocument()
+  })
+
+  it('names the transcript roles in plain words and copies an answer', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderFeatures({
+      features: {
+        btw: {
+          status: 'ready',
+          model: 'dashscope/deepseek-v4.1-flash',
+          parentMessageCount: 12,
+          conversation: [
+            { role: 'user', text: '刚才那个文件叫什么' },
+            { role: 'assistant', text: 'src/app.ts' },
+            { role: 'notice', text: '已刷新主会话快照' },
+          ],
+        },
+      },
+    })
+
+    const transcript = () => within(btwPanel().getByLabelText('BTW 对话记录'))
+    expect(transcript().getByText('你')).toBeInTheDocument()
+    expect(transcript().getByText('BTW')).toBeInTheDocument()
+    expect(transcript().getByText('提示')).toBeInTheDocument()
+    expect(btwPanel().getByText(/已同步主上下文 12 条/)).toBeInTheDocument()
+
+    fireEvent.click(btwPanel().getByRole('button', { name: '复制 BTW 这个回答' }))
+    expect(writeText).toHaveBeenCalledWith('src/app.ts')
+    expect(await btwPanel().findByText('已复制这个回答的原文')).toBeInTheDocument()
+  })
+
+  it('tells the user that the closed side chat was kept', () => {
+    renderFeatures({ features: { btw: { status: 'closed', conversation: [{ role: 'user', text: 'q' }, { role: 'assistant', text: 'a' }] } } })
+
+    expect(btwPanel().getByText(/已保留 2 条记录/)).toBeInTheDocument()
   })
 
   it('surfaces a BTW startup error', () => {
