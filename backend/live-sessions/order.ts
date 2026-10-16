@@ -33,7 +33,7 @@ export const DEFAULT_LIVE_SESSION_ORDER_PATH = join(agentDir(), 'pi', 'live-sess
  */
 const MAX_ORDER_ENTRIES = 1000
 
-type StoredOrder = { version: 1; order: string[] }
+type StoredOrder = { version: 1; order: string[]; sectionOrder?: string[] }
 
 /** Trim, drop empties/non-strings, de-duplicate (first wins), cap the length. */
 export function normalizeOrder(value: unknown): string[] {
@@ -54,6 +54,7 @@ export function normalizeOrder(value: unknown): string[] {
 export class LiveSessionOrderStore {
   private readonly filePath: string
   private order: string[] = []
+  private sectionOrder: string[] = []
   private loaded = false
   private writeQueue: Promise<void> = Promise.resolve()
 
@@ -67,6 +68,7 @@ export class LiveSessionOrderStore {
     try {
       const parsed = JSON.parse(await readFile(this.filePath, 'utf8')) as StoredOrder | unknown
       this.order = normalizeOrder((parsed as StoredOrder)?.order)
+      this.sectionOrder = normalizeOrder((parsed as StoredOrder)?.sectionOrder)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         console.error(`[live-session-order] Failed to load ${this.filePath}:`, error)
@@ -78,6 +80,18 @@ export class LiveSessionOrderStore {
   async list(): Promise<string[]> {
     await this.start()
     return [...this.order]
+  }
+
+  async listSections(): Promise<string[]> {
+    await this.start()
+    return [...this.sectionOrder]
+  }
+
+  async replaceSections(value: unknown): Promise<string[]> {
+    await this.start()
+    this.sectionOrder = normalizeOrder(value)
+    await this.persist()
+    return this.listSections()
   }
 
   /** Whole-list replacement: a drag sends one array, not N index patches. */
@@ -111,7 +125,7 @@ export class LiveSessionOrderStore {
   }
 
   private async persist(): Promise<void> {
-    const payload: StoredOrder = { version: 1, order: this.order }
+    const payload: StoredOrder = { version: 1, order: this.order, sectionOrder: this.sectionOrder }
     const content = `${JSON.stringify(payload, null, 2)}\n`
     const tempPath = `${this.filePath}.${process.pid}.tmp`
     this.writeQueue = this.writeQueue.then(async () => {
