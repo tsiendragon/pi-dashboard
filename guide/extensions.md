@@ -159,5 +159,6 @@ node scripts/pi-extension-sync.mjs --config config/extensions.standalone.json --
 2. 终端 `pi` 里 `/sidebar`、`/effort`、`/schedule`、`/btw` 等命令存在
 3. `node scripts/pi-extension-sync.mjs` 再次运行输出 `Pi extensions already match the ordered user config.`
 4. dashboard `/extensions` 页面条目数与 `settings.json` 一致，无 `drift`
+5. 升级 `pi-tsien-live-session` 后，live 会话页顶部出现「◲ 上下文」按钮（bridge 声明 `context_view` 能力）。已经跑着的 Pi 会话需要重载才会认新命令：开着旧版的会话看不到这个按钮，强行请求会得到明确的 `unsupported_command`，而不是静默失败。
 
 外部用户视角的完整步骤与踩坑：扩展仓库 `pi-tsien-extension/docs/quickstart.md`。
