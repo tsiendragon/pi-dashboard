@@ -65,7 +65,7 @@ function statusLabel(status: LiveSessionSummary['status']): string {
 
 function describe(summary: LiveSessionSummary, ctx: CommandContext): string {
   const project = basename(summary.cwd.replace(/[\\/]+$/, '')) || summary.cwd
-  const currentBinding = ctx.mapping.lookupByChat(ctx.chatId, ctx.threadId)
+  const currentBinding = ctx.mapping.lookup(ctx.chatId, ctx.threadId)
   const isBoundHere = currentBinding?.sessionFile === summary.sessionFile
   const isBoundElsewhere = summary.sessionFile
     ? ctx.mapping.lookupsBySession(summary.sessionFile).some(binding => binding.chatId !== ctx.chatId || binding.threadId !== ctx.threadId)
@@ -129,9 +129,14 @@ async function newSession(arg: string, ctx: CommandContext): Promise<string> {
 }
 
 async function status(ctx: CommandContext): Promise<string> {
-  const binding = ctx.mapping.lookupByChat(ctx.chatId, ctx.threadId)
+  const binding = ctx.mapping.lookup(ctx.chatId, ctx.threadId)
   if (!binding) return '当前未绑定会话。用 /list 和 /bind 绑定。'
   const summary = ctx.catalog.resolveBinding(binding.sessionFile)
   const state = summary ? `在线（${summary.status}）` : '离线（会话已结束或未连接）'
-  return `绑定：${summary ? sessionLabel(summary) : binding.sessionName || basename(binding.sessionFile)}\n状态：${state}\n工作目录：${summary?.cwd ?? '—'}`
+  return [
+    `绑定：${summary ? sessionLabel(summary) : binding.sessionName || basename(binding.sessionFile)}`,
+    `状态：${state}`,
+    `作用域：${binding.threadId ? '仅本话题' : '整个聊天'}`,
+    `工作目录：${summary?.cwd ?? '—'}`,
+  ].join('\n')
 }
