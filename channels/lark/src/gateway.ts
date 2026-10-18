@@ -41,7 +41,9 @@ export class Gateway {
       console.warn(`[gateway] initial session list failed (${errorText(error)}); will recover on reconnect`)
     }
     await this.dashboard.subscribe(frame => {
-      void this.onFrame(frame)
+      // `onFrame` is async; an unhandled rejection here would take the whole
+      // gateway process down (Node exits on those), silencing both directions.
+      void this.onFrame(frame).catch(error => console.error(`[gateway] frame failed: ${errorText(error)}`))
     })
     await this.transport.start(
       message => this.onMessage(message),
@@ -84,14 +86,22 @@ export class Gateway {
   /** Send a reply to a chat, with a compact outbound log. */
   private async reply(chatId: string, threadId: string | null, text: string): Promise<void> {
     console.log(`[out] reply -> ${chatId} (${text.length} chars)`)
-    await this.transport.sendText(chatId, threadId, text)
+    try {
+      await this.transport.sendText(chatId, threadId, text)
+    } catch (error) {
+      // An attempt is logged before the send, so a failure must say so explicitly.
+      console.error(`[out] reply failed -> ${chatId}: ${errorText(error)}`)
+      throw new ReplyFailedError(errorText(error))
+    }
   }
 
   private async onFrame(frame: LiveSessionBrowserEvent): Promise<void> {
     switch (frame.type) {
       case 'live_session_attached': {
-        const data = frame.data as { sessions?: LiveSessionSummary[] }
-        for (const summary of data.sessions ?? []) this.catalog.upsert(summary)
+        // Two shapes on this one event; see `attachedSummaries`. Reading only the
+        // `{ sessions }` shape left the catalog blind to every session that
+        // attached after the socket opened.
+        for (const summary of attachedSummaries(frame.data)) this.catalog.upsert(summary)
         return
       }
       case 'live_session_snapshot': {
@@ -127,18 +137,30 @@ export class Gateway {
       this.lastSequence.set(record.processInstanceId, record.sequence)
     }
 
-    const summary = this.catalog.findByProcessId(record.processInstanceId)
-    if (!summary?.sessionFile) return
-
     const text = extractAssistantText(record.event.type, record.event.data)
     if (!text) return
+
+    const summary = this.catalog.findByProcessId(record.processInstanceId)
+    if (!summary?.sessionFile) {
+      // Never drop an answer silently again: without a catalog row there is no
+      // sessionFile, so no binding resolves and the chat just stays quiet.
+      console.warn(
+        `[out] dropped: unknown live session ${record.processInstanceId} (${text.length} chars, catalog=${this.catalog.list().length})`,
+      )
+      return
+    }
 
     const targets = this.mapping.lookupsBySession(summary.sessionFile)
     if (targets.length === 0) return
     console.log(`[out] ${summary.sessionName || summary.sessionFile} -> ${targets.map(t => t.chatId).join(',')} (${text.length} chars)`)
     for (const binding of targets) {
       for (const chunk of chunkText(text)) {
-        await this.transport.sendText(binding.chatId, binding.threadId, chunk, binding.replyMessageId)
+        try {
+          await this.transport.sendText(binding.chatId, binding.threadId, chunk, binding.replyMessageId)
+        } catch (error) {
+          // One failed chat/chunk must not swallow the remaining ones.
+          console.error(`[out] send failed -> ${binding.chatId}: ${errorText(error)}`)
+        }
       }
     }
   }
@@ -166,6 +188,18 @@ export class Gateway {
     if (!text) return
     console.log(`[in] ${message.chatId} ${message.userId}: ${text.slice(0, 80)}`)
 
+    try {
+      await this.dispatch(message, text)
+    } catch (error) {
+      console.error(`[in] handling failed: ${errorText(error)}`)
+      // A notice we could not deliver must not be followed by another notice: let
+      // it out so the SDK logs it and the id is released for a redelivery.
+      if (error instanceof ReplyFailedError) throw error
+      await this.reply(message.chatId, message.threadId, `处理失败：${errorText(error)}`)
+    }
+  }
+
+  private async dispatch(message: ImMessage, text: string): Promise<void> {
     if (text.startsWith('/')) {
       const reply = await handleCommand(text, {
         chatId: message.chatId,
@@ -204,6 +238,44 @@ export class Gateway {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * A chat notice could not be delivered at all. It is thrown (instead of
+ * swallowed) so the inbound message id is released and a redelivery can retry —
+ * and so the failure reaches the SDK log rather than ending in silence.
+ */
+class ReplyFailedError extends Error {
+  constructor(detail: string) {
+    super(detail)
+    this.name = 'ReplyFailedError'
+  }
+}
+
+/**
+ * Summaries carried by a `live_session_attached` frame.
+ *
+ * The event has two shapes on the same channel: the frame sent right after the
+ * socket opens carries every session (`{ sessions: [...] }`), while a session
+ * that attaches later carries only itself — a `LiveSessionDetail`
+ * (`{ summary, entries, ... }`). The web frontend handles both; the gateway used
+ * to read `sessions` alone, so a session that attached after connect never
+ * reached the catalog and every one of its replies was dropped as "unknown
+ * live session" (silently, before this fix).
+ */
+function attachedSummaries(data: unknown): LiveSessionSummary[] {
+  if (!data || typeof data !== 'object') return []
+  const record = data as { sessions?: unknown; summary?: unknown }
+  if (Array.isArray(record.sessions)) return record.sessions.filter(isSessionSummary)
+  return isSessionSummary(record.summary) ? [record.summary] : []
+}
+
+function isSessionSummary(value: unknown): value is LiveSessionSummary {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as { processInstanceId?: unknown }).processInstanceId === 'string'
+  )
 }
 
 const WELCOME = [

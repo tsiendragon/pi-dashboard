@@ -81,22 +81,31 @@ function describe(summary: LiveSessionSummary, ctx: CommandContext): string {
 }
 
 async function listSessions(ctx: CommandContext): Promise<string> {
-  let refreshed = true
+  // A failed refresh still answers from cache, but it must say WHY: a silent
+  // fallback once hid a dead dashboard channel for a full day.
+  let staleReason = ''
   try {
     ctx.catalog.replace(await ctx.dashboard.listSessions())
-  } catch {
-    refreshed = false
+  } catch (error) {
+    staleReason = brief(error instanceof Error ? error.message : String(error))
+    console.warn(`[gateway] /list refresh failed: ${staleReason}`)
   }
   const sessions = ctx.catalog.list()
   if (!sessions.length) {
-    return refreshed
-      ? '当前 dashboard 没有在线的 live-session。'
-      : '暂时无法读取 dashboard 的 live-session，请检查网关到 dashboard 的连接。'
+    return staleReason
+      ? `暂时无法读取 dashboard 的 live-session：${staleReason}`
+      : '当前 dashboard 没有在线的 live-session。'
   }
   return [
-    `当前 dashboard 有 ${sessions.length} 个在线会话${refreshed ? '' : '（使用缓存列表）'}（用 /bind <序号> 绑定到当前聊天）：`,
+    `当前 dashboard 有 ${sessions.length} 个在线会话${staleReason ? `（缓存列表，刷新失败：${staleReason}）` : ''}（用 /bind <序号> 绑定到当前聊天）：`,
     ...sessions.map((summary, index) => `${index + 1}. ${describe(summary, ctx)}`),
   ].join('\n')
+}
+
+/** Keep an error readable inside a chat bubble. */
+function brief(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > 120 ? `${flat.slice(0, 120)}…` : flat
 }
 
 async function bindSession(arg: string, ctx: CommandContext): Promise<string> {

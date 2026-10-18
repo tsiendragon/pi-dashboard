@@ -32,7 +32,12 @@ export class TransportManager implements ImTransport {
   }
 
   async sendText(chatId: string, threadId: string | null, text: string, replyMessageId?: string): Promise<void> {
-    await this.current?.sendText(chatId, threadId, text, replyMessageId)
+    const transport = this.current
+    // Fail loudly instead of silently doing nothing: a no-op reply used to look
+    // exactly like a delivered one in the gateway log (`[out] ...` is written
+    // before the send).
+    if (!transport) throw new Error('no active transport: the chat channel is not connected')
+    await transport.sendText(chatId, threadId, text, replyMessageId)
   }
 
   async stop(): Promise<void> {
