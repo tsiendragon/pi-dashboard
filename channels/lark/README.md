@@ -97,6 +97,29 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 - **启动容错**：dashboard 未就绪时 `subscribe()` 不抛异常，后台退避重试（指数退避，上限 30s）
 - **Cookie 刷新**：入站命令等受保护请求遇 401、或 WebSocket 票据遇 401/403 时，会重新认证并重试一次；重试仍失败时向 Lark 用户提示消息未送达
 - **去重**：出站按 `(processInstanceId, sequence)` 单调去重；入站按 `message_id` 去重
+- **会话目录（出站的前提）**：`live_session_attached` 同时识别两种载荷——建连帧的 `{ sessions: [...] }` 与会话**后加入**时的单会话 detail（`{ summary, ... }`）。以前只认前者，导致 socket 建立之后才 attach 的会话不在目录里，它的每条回复都被静默丢掉（表现为「Lark 里怎么发都没回复」，`/list` 之后又恢复）。现在目录缺行会打 `[out] dropped: unknown live session <pid> (...)`
+- **失败可见、互不牵连**：单个群/分片发送失败只记 `[out] send failed -> <chatId>`，不影响其它群；聊天回复投递失败记 `[out] reply failed -> <chatId>`，并把入站 `message_id` 释放给 Lark 重投；帧处理异常记 `[gateway] frame failed: ...`，不再以 unhandled rejection 直接打死网关进程
+- **无传输不再假装成功**：没有活跃 transport 时 `sendText` 抛错（以前是静默 no-op，日志里看起来和已送达一样）
+
+### 排障：Lark 里发了消息，但收不到回复
+
+先看网关日志（默认 `~/.pi/logs/lark-gateway.log`，`LARK_GW_LOG` 可改），按行里的标记定位：
+
+| 日志 | 含义 | 处理 |
+| --- | --- | --- |
+| 完全没有 `[in]` 行 | 事件没到网关：群里没 @ 机器人；消息不是文本（图片/文件/富文本/合并转发被丢弃）；或长连接正在重连（`[ws] reconnect`）期间丢事件 | 群里 @ 机器人；用纯文本重发；确认有 `[ws] ws client ready` |
+| `[in] ignored (not allowed)` | 白名单不含该 open_id | 改 Settings → Lark 的允许用户（或 `LARK_ALLOWED_USER_IDS`） |
+| `[in] duplicate ignored` | Lark 重投了同一条消息 | 无需处理 |
+| `[out] dropped: unknown live session …` | 该会话不在网关目录里，回复无法寻址（修复前是静默丢弃） | 先发一次 `/list` 应急；把该行贴出来定位 |
+| `[out] send failed` / `[out] reply failed` | 发往 Lark 失败（限流 / 凭证 / `reply_in_thread`） | 看冒号后的错误文本 |
+| 群里收到「消息暂时未能送达 Agent」 | 网关 → dashboard 的入站转发失败（cookie / 会话状态） | `/status` 看会话是否在线，必要时 `/list` 后 `/bind` |
+| `[in] handling failed` | 处理链路异常 | 冒号后即原因 |
+| `[gateway] failed: …`，或进程不在 | 网关本身没跑起来（lock 冲突 / 凭证错误） | 重新运行 `./run.sh`，确认输出里有 `[gateway] started: transport=lark(...)` |
+
+两条设计上的预期行为，不要当故障：
+
+- 只有 **assistant 文本**（`message_end`，见 `render.ts`）会转发到群；纯工具轮次、被中断的一轮不会有任何消息。
+- 群里必须 **@机器人** 才会推送 `im.message.receive_v1`。
 
 环境变量：
 
