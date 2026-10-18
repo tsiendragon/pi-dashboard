@@ -86,13 +86,16 @@ export class Gateway {
   /** Send a reply to a chat, with a compact outbound log. */
   private async reply(chatId: string, threadId: string | null, text: string): Promise<void> {
     const scope = scopeOf(chatId, threadId)
-    console.log(`[out] reply -> ${scope} (${text.length} chars)`)
-    try {
-      await this.transport.sendText(chatId, threadId, text)
-    } catch (error) {
-      // An attempt is logged before the send, so a failure must say so explicitly.
-      console.error(`[out] reply failed -> ${scope}: ${errorText(error)}`)
-      throw new ReplyFailedError(errorText(error))
+    // `/model` and `/list` can exceed a single Lark message.
+    for (const chunk of chunkText(text)) {
+      console.log(`[out] reply -> ${scope} (${chunk.length} chars)`)
+      try {
+        await this.transport.sendText(chatId, threadId, chunk)
+      } catch (error) {
+        // An attempt is logged before the send, so a failure must say so explicitly.
+        console.error(`[out] reply failed -> ${scope}: ${errorText(error)}`)
+        throw new ReplyFailedError(errorText(error))
+      }
     }
   }
 
@@ -215,9 +218,14 @@ export class Gateway {
         catalog: this.catalog,
         mapping: this.mapping,
         dashboard: this.dashboard,
+        notify: notice => this.reply(message.chatId, message.threadId, notice),
       })
-      await this.reply(message.chatId, message.threadId, reply)
-      return
+      // `null` = not a gateway command (`/clear`, `/goal`, skill commands, …). Those
+      // ride pi's input stream, so fall through to the forwarding path below.
+      if (reply !== null) {
+        await this.reply(message.chatId, message.threadId, reply)
+        return
+      }
     }
 
     const binding = this.mapping.lookup(message.chatId, message.threadId)
@@ -298,6 +306,7 @@ const WELCOME = [
   '  /bind <序号或名称>   绑定一个会话',
   '  /status            查看当前绑定',
   '  /unbind            解除绑定',
+  '  /help              全部命令（/model /compact /abort /context …）',
   '',
   '绑定后直接发消息，即可进入该会话。',
 ].join('\n')

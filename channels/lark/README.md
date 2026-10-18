@@ -116,6 +116,8 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 | `[out] send failed` / `[out] reply failed` | 发往 Lark 失败（限流 / 凭证 / `reply_in_thread`） | 看冒号后的错误文本 |
 | 群里收到「消息暂时未能送达 Agent」 | 网关 → dashboard 的入站转发失败（cookie / 会话状态） | `/status` 看会话是否在线，必要时 `/list` 后 `/bind` |
 | `[in] handling failed` | 处理链路异常 | 冒号后即原因 |
+| 回复是「会话正被网页端接管」 | `/compact`、`/abort` 需要独占租约，网页端正持有 | 等 30 秒或先在网页端放手；不影响普通消息（普通输入不需要租约） |
+| 回复是「没有匹配/匹配到 N 个模型」 | `/model` 的片段匹配不唯一 | 用 `/model` 看编号，或改成 `provider/id` |
 | `[gateway] failed: …`，或进程不在 | 网关本身没跑起来（lock 冲突 / 凭证错误） | 重新运行 `./run.sh`，确认输出里有 `[gateway] started: transport=lark(...)` |
 
 两条设计上的预期行为，不要当故障：
@@ -144,6 +146,31 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 - 使用者需**在每个群里各自** `/list` + `/bind`
 
 管理命令：`/list`、`/bind <序号或名称>`、`/new <cwd>`、`/unbind`、`/status`。
+
+## 会话操作命令（模型 / 压缩 / 中断 / 上下文）
+
+绑定之后，除了发普通消息，还能直接操作这个会话——与网页端 composer 的行为一致：
+
+| 命令 | 作用 | 后端命令 | 需要接管（lease） |
+| --- | --- | --- | --- |
+| `/model` | 列出可用模型，当前模型标 `← 当前` | `get_models` | 否 |
+| `/model <序号>` | 按上次列表的序号切换 | `set_model` | 否 |
+| `/model provider/id` | 按全名切换 | `set_model` | 否 |
+| `/model <名称片段>` | 模糊匹配（唯一才切，多个会列出候选） | `set_model` | 否 |
+| `/compact` | 压缩当前会话上下文 | `compact` | **是** |
+| `/abort`（`/stop`） | 中断当前回合 | `abort` | **是** |
+| `/context`（`/ctx`） | 上下文用量（token / 窗口占比 / 模型） | `get_context` | 否 |
+| `/reload`（`/restart`） | 重载扩展 / 技能 / 提示词 | `reload` | 否 |
+| `/name <新名称>`（`/rename`） | 重命名会话 | `set_session_name` | 否 |
+| `/shutdown confirm` | 关闭会话（**必须带 `confirm`**，不带只回风险提示） | `shutdown` | 否 |
+
+几点说明：
+
+- **为什么要“接管”**：`compact` / `abort` 在后端是带独占租约的命令（同一时刻只能一个客户端写）。网关会先 `claim` 一个 30 秒租约 → 执行 → 立即 `release`。这一步期间网页端会短暂看到该会话被接管（1～2 秒）。
+- 如果网页端正持有租约，会直接回「会话正被网页端接管……等半分钟或先在网页端放手后再试」，不会硬抢。
+- `/compact` 这类耗时命令会先回一条「正在压缩…」再回结果。
+- **其它 `/xxx` 不再报「未知命令」**：`/clear`、`/goal`、`/effort`、skill / 扩展命令会原样转给会话（pi 的输入流只 dispatch 扩展命令和 skill，TUI 内置命令如 `/compact` 必须翻译成结构化命令，所以上表这几条由网关先接住）。
+- `/model` 的序号依赖「上一次 `/model` 输出」的缓存；换绑定或缓存丢失时用全名/模糊匹配即可。
 
 ### 群聊注意
 
