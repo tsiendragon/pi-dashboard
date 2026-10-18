@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { LiveSessionGroup, LiveSessionReloadResult, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
+import type { LiveSessionGroup, LiveSessionMeta, LiveSessionReloadResult, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
+import SessionAppearanceDialog, { type SessionAppearance } from './SessionAppearanceDialog'
 import { displayWorktreePath } from '../../utils/displayPath'
 import { api } from '../../api/client'
 import type { ModelLike } from '../../utils/modelUtils'
@@ -146,6 +147,8 @@ interface RowProps {
   onToggleTagFilter: (tag: string) => void
   onPin: (pinned: boolean) => void
   onTags: (tags: string[]) => void
+  appearance?: Pick<LiveSessionMeta, 'color' | 'emoji'>
+  onAppearance: (appearance: SessionAppearance) => Promise<void>
   onRename: (name: string) => void
   /** Start a new independent Pi forked from this session (pi `--fork`). */
   onFork: () => void
@@ -176,6 +179,7 @@ function SessionRow(p: RowProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [tagEditing, setTagEditing] = useState(false)
+  const [appearanceEditing, setAppearanceEditing] = useState(false)
   const [renameValue, setRenameValue] = useState(p.title)
   const [exitArmed, setExitArmed] = useState(false)
   const [exitPending, setExitPending] = useState(false)
@@ -250,6 +254,7 @@ function SessionRow(p: RowProps) {
     { actions: [
       { label: '✎ 重命名', onClick: () => { setRenameValue(p.title); setRenaming(true) } },
       { label: '🏷 标签', onClick: () => setTagEditing(true) },
+      { label: '🎨 会话装扮', onClick: () => setAppearanceEditing(true) },
     ] },
     ...(p.subagent ? [] : [{ label: '⑂ 从此分叉', hint: '独立 Pi 会话', inlineHint: true, onClick: p.onFork } as RowMenuItem]),
     { separator: true },
@@ -294,13 +299,15 @@ function SessionRow(p: RowProps) {
         data-pidash-live-status={tone}
         data-live-row={p.session.sessionId}
         data-live-block={p.blockId}
+        data-session-color={p.appearance?.color || undefined}
         title={`${p.title}\n${cwd}${branch ? ` · ${branch}` : ''}`}
         onMouseDown={e => e.preventDefault()}
         onPointerDown={p.onDragStart}
         onClick={p.onSelect}
         onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onSelect() } }}
-        className={`live-session-row group flex cursor-pointer gap-2 rounded px-1.5 py-1 transition-colors ${p.depth ? 'ml-4' : ''} ${p.dragging ? 'opacity-40' : ''} ${p.active ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}
+        className={`live-session-row relative group flex cursor-pointer gap-2 rounded px-1.5 py-1 transition-colors ${p.depth ? 'ml-4' : ''} ${p.dragging ? 'opacity-40' : ''} ${p.active ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}
       >
+        {p.appearance?.color && <span aria-hidden="true" className="pointer-events-none absolute inset-y-1 left-0 w-[3px] rounded-r" style={{ backgroundColor: p.appearance.color }} />}
         <span className={`w-[2px] shrink-0 self-stretch rounded-full ${
           tone === 'running' ? 'bg-accent shadow-[0_0_7px_var(--accent-glow)]'
             : tone === 'reconnecting' ? 'bg-warn' : 'bg-transparent'
@@ -322,6 +329,7 @@ function SessionRow(p: RowProps) {
           {/* line 1 — title */}
           <div className="flex h-[18px] items-center gap-1.5">
             {p.depth > 0 && <span className="shrink-0 text-2xs leading-none text-accent">↳</span>}
+            {!renaming && p.appearance?.emoji && <span data-session-emoji className="max-w-16 shrink-0 truncate text-base" title={p.appearance.emoji}>{p.appearance.emoji}</span>}
             {renaming ? (
               <input
                 autoFocus
@@ -367,6 +375,14 @@ function SessionRow(p: RowProps) {
               onClick={requestExit}
               className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-wait ${exitArmed ? 'bg-danger-subtle text-danger opacity-100' : exitPending ? 'text-muted opacity-100' : 'text-muted opacity-50 hover:bg-danger-subtle hover:text-danger group-hover:opacity-100 md:opacity-0 focus-visible:opacity-100'}`}
             >{exitPending ? '…' : exitArmed ? '确认' : '⏻'}</button>
+            <button
+              type="button"
+              aria-label={`设置 ${p.title} 的装扮`}
+              title="设置会话装扮"
+              onMouseDown={event => event.stopPropagation()}
+              onClick={event => { event.stopPropagation(); setAppearanceEditing(true) }}
+              className="flex shrink-0 items-center rounded px-1 text-muted opacity-60 hover:bg-bg-hover hover:text-accent focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent md:opacity-0 md:group-hover:opacity-100"
+            ><MaterialIcon name="palette" className="h-3.5 w-3.5" /></button>
             <button
               type="button"
               aria-label="Session menu"
@@ -429,6 +445,7 @@ function SessionRow(p: RowProps) {
       {p.dropAfter && <div aria-hidden className="pointer-events-none -mt-px h-[2px] rounded-full bg-accent" />}
 
       {tagEditing && <TagEditor tags={p.tags} allTags={p.allTags} onTags={p.onTags} onClose={() => setTagEditing(false)} />}
+      {appearanceEditing && <SessionAppearanceDialog title={p.title} appearance={p.appearance} onSave={p.onAppearance} onClose={() => setAppearanceEditing(false)} />}
       {menuOpen && <RowMenu items={items} up={p.up} ariaLabel={`Session actions for ${p.title}`} onClose={() => setMenuOpen(false)} />}
     </div>
   )
@@ -954,6 +971,11 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
   const rowHandlers = (session: LiveSessionSummary) => ({
     onPin: (pinned: boolean) => void patch(session.processInstanceId, session.sessionId, { pinned }),
     onTags: (tags: string[]) => void patch(session.processInstanceId, session.sessionId, { tags }),
+    onAppearance: async (appearance: SessionAppearance) => {
+      if (!await patch(session.processInstanceId, session.sessionId, appearance)) {
+        throw new Error('装扮保存失败，请检查连接后重试。')
+      }
+    },
     onRename: (name: string) => { void liveSessionApi.rename(session.processInstanceId, name).then(() => onRefresh?.()) },
     onFork: () => { void forkSession(session) },
     onJoinGroup: (groupId: string) => void mutateGroups(() => liveSessionApi.addGroupMember(groupId, session.processInstanceId)),
@@ -1045,6 +1067,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
           taskStatus={subagent && session.subagentWorkId ? subagentStatuses[session.subagentWorkId] : undefined}
           tags={meta[session.sessionId]?.tags || []}
           pinned={!!meta[session.sessionId]?.pinned}
+          appearance={meta[session.sessionId]}
           pendingUiCount={pendingUiCounts[session.processInstanceId]}
           tagFilter={tagFilter}
           allTags={allTags}
@@ -1318,7 +1341,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
 
       <div className="px-3 py-2 text-2xs text-muted-strong">
         拖动行可调顺序，拖到别的分组即改归属；触屏用 ⋯ 里的箭头菜单
-        {metaError !== undefined && <button type="button" className="ml-1 text-danger underline" onClick={() => void refreshMeta()}>· 标签同步失败，点击重试</button>}
+        {metaError !== undefined && <button type="button" className="ml-1 text-danger underline" onClick={() => void refreshMeta()}>· 会话设置同步失败，点击重试</button>}
       </div>
     </aside>
   )

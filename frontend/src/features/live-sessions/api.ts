@@ -1,4 +1,4 @@
-import type { LiveSessionCommand, LiveSessionContextView, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionModelOption, LiveSessionReloadResult, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
+import type { LiveSessionCommand, LiveSessionContextView, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionMetaPatch, LiveSessionModelOption, LiveSessionReloadResult, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
 import type { SessionTreeGraph } from '@shared/session-tree'
 import type { CompactionMark } from './compactionWatch'
 
@@ -71,7 +71,7 @@ export const liveSessionApi = {
     .then(result => Array.isArray(result.repos) ? result.repos : []),
   listMeta: () => fetch('/api/live-session-meta', { credentials: 'same-origin' })
     .then(json<{ meta: Record<string, LiveSessionMeta> }>).then(result => result.meta),
-  patchMeta: (processInstanceId: string, patch: { tags?: string[]; pinned?: boolean }) => fetch(`/api/live-sessions/${encodeURIComponent(processInstanceId)}/meta`, {
+  patchMeta: (processInstanceId: string, patch: LiveSessionMetaPatch) => fetch(`/api/live-sessions/${encodeURIComponent(processInstanceId)}/meta`, {
     method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
   }).then(json<{ ok: true; meta: LiveSessionMeta; all: Record<string, LiveSessionMeta> }>).then(result => result.all),
   listOrderState: () => fetch('/api/live-session-order', { credentials: 'same-origin' })

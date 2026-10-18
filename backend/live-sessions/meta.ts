@@ -2,9 +2,11 @@ import { join } from 'node:path'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { agentDir } from '../env-file.js'
+import type { LiveSessionMeta, LiveSessionMetaPatch } from '../../shared/src/live-sessions.js'
+export type { LiveSessionMeta } from '../../shared/src/live-sessions.js'
 
 /**
- * Per-session UI metadata (tags + pin) for the Live Pi Sessions sidebar.
+ * Per-session UI metadata (tags + pin + appearance) for the Live Pi Sessions sidebar.
  *
  * Deliberately NOT part of `LiveSessionSummary`: the live-session wire protocol
  * is versioned and validated, and this is browser-side organization data. Keyed
@@ -14,18 +16,6 @@ import { agentDir } from '../env-file.js'
  * Same shape/guarantees as `LiveSessionGroupStore`: single JSON file, 0700 dir,
  * 0600 file, temp-file + rename, serialized write queue.
  */
-export interface LiveSessionMeta {
-  tags: string[]
-  pinned: boolean
-  /**
-   * Namespaced tmux session hosting this live Pi (`pi-dash-live-xxxxxxxx`),
-   * written only by the launcher. Present ⇒ the session can be reached from a
-   * terminal (`tmux attach -t …`) and can be closed by killing that session.
-   */
-  tmux?: string
-  updatedAt: string
-}
-
 export type LiveSessionMetaMap = Record<string, LiveSessionMeta>
 
 /** Default state file (portable); override with an env var. */
@@ -50,17 +40,31 @@ export function normalizeTags(value: unknown): string[] {
 
 type StoredMeta = { version: 1; meta: LiveSessionMetaMap }
 
+function normalizeColor(value: unknown): string | undefined {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : undefined
+}
+
+function normalizeEmoji(value: unknown): string | undefined {
+  if (typeof value !== 'string' || /[\u0000-\u001f\u007f-\u009f]/u.test(value)) return undefined
+  const emoji = value.trim()
+  return emoji && emoji.length <= 24 ? emoji : undefined
+}
+
 function normalizeEntry(value: unknown): LiveSessionMeta | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   const record = value as Record<string, unknown>
   const tags = normalizeTags(record.tags)
   const pinned = record.pinned === true
   const tmux = typeof record.tmux === 'string' && record.tmux.trim() ? record.tmux.trim().slice(0, 128) : undefined
-  if (!tags.length && !pinned && !tmux) return undefined
+  const color = normalizeColor(record.color)
+  const emoji = normalizeEmoji(record.emoji)
+  if (!tags.length && !pinned && !tmux && !color && !emoji) return undefined
   return {
     tags,
     pinned,
     ...(tmux ? { tmux } : {}),
+    ...(color ? { color } : {}),
+    ...(emoji ? { emoji } : {}),
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : new Date().toISOString(),
   }
 }
@@ -107,12 +111,22 @@ export class LiveSessionMetaStore {
   /**
    * Merge a partial update for one session. `null`/`[]` clears the field; an
    * entry that ends up empty is removed so the file does not accumulate ghosts.
+   * Appearance fields use an empty string to clear and reject malformed values.
    * `tmux` is machine-written (launcher only) and never comes from the browser.
    */
-  async update(sessionId: string, patch: { tags?: unknown; pinned?: unknown; tmux?: unknown }): Promise<LiveSessionMeta> {
+  async update(sessionId: string, patch: Pick<LiveSessionMetaPatch, 'color' | 'emoji'> & { tags?: unknown; pinned?: unknown; tmux?: unknown }): Promise<LiveSessionMeta> {
     await this.start()
     if (!sessionId) throw new Error('session_id_required')
-    const current = this.meta[sessionId] || { tags: [], pinned: false, updatedAt: new Date().toISOString() }
+    const previous = this.meta[sessionId]
+    const current = previous || { tags: [], pinned: false, updatedAt: new Date().toISOString() }
+    const hasColor = Object.prototype.hasOwnProperty.call(patch, 'color')
+    const hasEmoji = Object.prototype.hasOwnProperty.call(patch, 'emoji')
+    const color = hasColor ? normalizeColor(patch.color) : current.color
+    const emoji = hasEmoji ? normalizeEmoji(patch.emoji) : current.emoji
+    if (hasColor && patch.color !== '' && !color) throw new Error('invalid_session_color')
+    if (hasEmoji && (typeof patch.emoji !== 'string' || /[\u0000-\u001f\u007f-\u009f]/u.test(patch.emoji) || patch.emoji.trim().length > 24)) {
+      throw new Error('invalid_session_emoji')
+    }
     const tmux = Object.prototype.hasOwnProperty.call(patch, 'tmux')
       ? (typeof patch.tmux === 'string' && patch.tmux.trim() ? patch.tmux.trim().slice(0, 128) : undefined)
       : current.tmux
@@ -120,11 +134,23 @@ export class LiveSessionMetaStore {
       tags: Object.prototype.hasOwnProperty.call(patch, 'tags') ? normalizeTags(patch.tags) : current.tags,
       pinned: Object.prototype.hasOwnProperty.call(patch, 'pinned') ? patch.pinned === true : current.pinned,
       ...(tmux ? { tmux } : {}),
+      ...(color ? { color } : {}),
+      ...(emoji ? { emoji } : {}),
       updatedAt: new Date().toISOString(),
     }
-    if (next.tags.length || next.pinned || next.tmux) this.meta[sessionId] = next
+    const retained = !!(next.tags.length || next.pinned || next.tmux || next.color || next.emoji)
+    if (retained) this.meta[sessionId] = next
     else delete this.meta[sessionId]
-    await this.persist()
+    try {
+      await this.persist()
+    } catch (error) {
+      // A failed write must not look saved when the browser reloads metadata.
+      if (this.meta[sessionId] === next || (!retained && !this.meta[sessionId])) {
+        if (previous) this.meta[sessionId] = previous
+        else delete this.meta[sessionId]
+      }
+      throw error
+    }
     return next
   }
 
@@ -136,7 +162,7 @@ export class LiveSessionMetaStore {
   }
 
   /**
-   * Move one session's tags/pin to a new `sessionId`.
+   * Move one session's tags/pin/appearance to a new `sessionId`.
    *
    * A live Pi can switch session in-process (`/clear`, `/ls-fork`) while keeping
    * its `processInstanceId`; the row is the same row to the user, so its labels
@@ -157,11 +183,13 @@ export class LiveSessionMetaStore {
     const payload: StoredMeta = { version: 1, meta: this.meta }
     const content = `${JSON.stringify(payload, null, 2)}\n`
     const tempPath = `${this.filePath}.${process.pid}.tmp`
-    this.writeQueue = this.writeQueue.then(async () => {
+    const write = async () => {
       await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 })
       await writeFile(tempPath, content, { encoding: 'utf8', mode: 0o600 })
       await rename(tempPath, this.filePath)
-    })
+    }
+    // Keep each caller's rejection, while allowing a later retry to write again.
+    this.writeQueue = this.writeQueue.then(write, write)
     return this.writeQueue
   }
 }

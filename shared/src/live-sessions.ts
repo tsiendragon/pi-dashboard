@@ -21,7 +21,7 @@ export interface LiveSessionGroup {
 
 /**
  * Browser-side organization metadata for a live Pi session (sidebar tags +
- * pin + the tmux session hosting a dashboard-started live Pi). Persisted
+ * pin + appearance + the tmux session hosting a dashboard-started live Pi). Persisted
  * server-side keyed by pi `sessionId`; intentionally kept out of
  * {@link LiveSessionSummary} so the versioned live-session wire protocol is
  * untouched.
@@ -29,10 +29,16 @@ export interface LiveSessionGroup {
 export interface LiveSessionMeta {
   tags: string[]
   pinned: boolean
+  /** Optional user-chosen #RRGGBB marker, separate from the running status. */
+  color?: string
+  /** Optional title symbol, at most 24 UTF-16 units after trimming. */
+  emoji?: string
   /** Namespaced tmux session (`pi-dash-live-xxxxxxxx`) — terminal access path. */
   tmux?: string
   updatedAt: string
 }
+
+export type LiveSessionMetaPatch = Partial<Pick<LiveSessionMeta, 'tags' | 'pinned' | 'color' | 'emoji'>>
 
 /**
  * A repo the Live Pi start field offers by keyword: a direct child of a folder

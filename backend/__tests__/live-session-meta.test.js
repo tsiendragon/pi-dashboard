@@ -2,7 +2,7 @@
  * Tests for live-sessions/meta.ts — sidebar tags + pin store for live Pi sessions.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, readFileSync, statSync } from 'fs'
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { mkdtemp, rm } from 'fs/promises'
 import { EventEmitter } from 'events'
 import express from 'express'
@@ -74,6 +74,77 @@ describe('LiveSessionMetaStore', () => {
     await store.update('sess-1', { tags: ['ocr'], pinned: true })
     const reopened = new LiveSessionMetaStore(file)
     expect(await reopened.list()).toMatchObject({ 'sess-1': { tags: ['ocr'], pinned: true } })
+  })
+
+  it('persists appearance-only entries and preserves it during tags, pin and terminal updates', async () => {
+    await store.update('sess-1', { color: '#5287BE', emoji: '  🐈‍⬛  ' })
+    await store.update('sess-1', { tags: ['ocr'], pinned: true, tmux: 'pi-dash-live-test' })
+    expect(await new LiveSessionMetaStore(file).list()).toMatchObject({
+      'sess-1': { color: '#5287be', emoji: '🐈‍⬛', tags: ['ocr'], pinned: true, tmux: 'pi-dash-live-test' },
+    })
+    await store.update('sess-2', { emoji: '😊' })
+    expect(await new LiveSessionMetaStore(file).list()).toHaveProperty('sess-2.emoji', '😊')
+    await store.update('sess-3', { color: '#54937d' })
+    expect(await new LiveSessionMetaStore(file).list()).toHaveProperty('sess-3.color', '#54937d')
+  })
+
+  it('clears only requested appearance fields and prunes empty entries', async () => {
+    await store.update('sess-1', { color: '#9571c4', emoji: '😊' })
+    await store.update('sess-1', { color: '' })
+    expect((await store.list())['sess-1']).toMatchObject({ emoji: '😊' })
+    expect((await store.list())['sess-1']).not.toHaveProperty('color')
+    await store.update('sess-1', { emoji: '' })
+    expect(await store.list()).toEqual({})
+    await store.update('sess-1', { tags: ['ocr'], pinned: true, tmux: 'pi-dash-live-test', color: '#9571c4', emoji: '😊' })
+    await store.update('sess-1', { color: '', emoji: '' })
+    expect((await store.list())['sess-1']).toMatchObject({ tags: ['ocr'], pinned: true, tmux: 'pi-dash-live-test' })
+    expect((await store.list())['sess-1']).not.toHaveProperty('color')
+    expect((await store.list())['sess-1']).not.toHaveProperty('emoji')
+  })
+
+  it.each([
+    { color: null }, { color: 3 }, { color: '#fff' }, { color: 'red' }, { color: 'url(javascript:x)' },
+    { emoji: null }, { emoji: {} }, { emoji: 'x'.repeat(25) }, { emoji: 'a\u0001b' }, { emoji: '\n😊' },
+  ])('rejects invalid appearance without partially writing other fields: %j', async patch => {
+    await store.update('sess-1', { tags: ['ocr'], color: '#54937d', emoji: '📖' })
+    await expect(store.update('sess-1', { tags: ['changed'], ...patch })).rejects.toThrow(/invalid_session_/)
+    expect((await store.list())['sess-1']).toMatchObject({ tags: ['ocr'], color: '#54937d', emoji: '📖' })
+    expect((await new LiveSessionMetaStore(file).list())['sess-1']).toMatchObject({ tags: ['ocr'], color: '#54937d', emoji: '📖' })
+  })
+
+  it('loads old entries and drops malformed appearance fields without losing tags', async () => {
+    writeFileSync(file, JSON.stringify({ version: 1, meta: {
+      old: { tags: ['ocr'], pinned: false, updatedAt: '' },
+      malformed: { tags: ['router'], color: 'red', emoji: 'x'.repeat(25) },
+      appearance: { color: '#9571c4', emoji: '😊' },
+    } }))
+    expect(await store.list()).toEqual({
+      old: { tags: ['ocr'], pinned: false, updatedAt: '' },
+      malformed: { tags: ['router'], pinned: false, updatedAt: expect.any(String) },
+      appearance: { tags: [], pinned: false, color: '#9571c4', emoji: '😊', updatedAt: expect.any(String) },
+    })
+  })
+
+  it('moves appearance with a session switch and respects the existing target', async () => {
+    await store.update('sess-1', { color: '#9571c4', emoji: '😊' })
+    await store.rekey('sess-1', 'sess-new')
+    expect(await new LiveSessionMetaStore(file).list()).toEqual({ 'sess-new': expect.objectContaining({ color: '#9571c4', emoji: '😊' }) })
+    await store.update('sess-target', { emoji: '🚀' })
+    await store.rekey('sess-new', 'sess-target')
+    expect(await store.list()).toEqual({ 'sess-target': expect.objectContaining({ emoji: '🚀' }) })
+  })
+
+  it('rolls back a failed disk write and can retry after storage is repaired', async () => {
+    await store.update('sess-1', { emoji: '📖' })
+    const original = readFileSync(file, 'utf8')
+    rmSync(file)
+    mkdirSync(file)
+    await expect(store.update('sess-1', { emoji: '😊' })).rejects.toThrow()
+    expect((await store.list())['sess-1'].emoji).toBe('📖')
+    rmSync(file, { recursive: true })
+    writeFileSync(file, original)
+    await store.update('sess-1', { emoji: '🚀' })
+    expect((await new LiveSessionMetaStore(file).list())['sess-1'].emoji).toBe('🚀')
   })
 
   it('survives a corrupt file without throwing', async () => {
@@ -168,6 +239,35 @@ describe('live-session meta HTTP routes', () => {
       const after = await (await fetch(`${srv.origin}/api/live-session-meta`, { headers: { cookie: srv.cookie } })).json()
       expect(after.meta['session-a']).toMatchObject({ tags: ['ocr', 'router'], pinned: true })
       expect(await srv.metaStore.list()).toMatchObject({ 'session-a': { pinned: true } })
+    } finally { await srv.close() }
+  })
+
+  it('writes, reads and resets appearance through the authenticated metadata endpoint', async () => {
+    const srv = await serve()
+    const headers = { cookie: srv.cookie, origin: srv.origin, 'content-type': 'application/json' }
+    try {
+      const written = await fetch(`${srv.origin}/api/live-sessions/pid-a/meta`, { method: 'PATCH', headers, body: JSON.stringify({ color: '#9571c4', emoji: '😊', tags: ['ocr'], pinned: true }) })
+      expect(written.status).toBe(200)
+      expect(await written.json()).toMatchObject({ all: { 'session-a': { color: '#9571c4', emoji: '😊', tags: ['ocr'], pinned: true } } })
+      const read = await fetch(`${srv.origin}/api/live-session-meta`, { headers: { cookie: srv.cookie } })
+      expect(await read.json()).toMatchObject({ meta: { 'session-a': { color: '#9571c4', emoji: '😊' } } })
+      const reset = await fetch(`${srv.origin}/api/live-sessions/pid-a/meta`, { method: 'PATCH', headers, body: JSON.stringify({ color: '', emoji: '' }) })
+      expect(reset.status).toBe(200)
+      expect((await reset.json()).all['session-a']).toEqual({ tags: ['ocr'], pinned: true, updatedAt: expect.any(String) })
+    } finally { await srv.close() }
+  })
+
+  it('returns 400 for invalid appearance and does not save a partial patch', async () => {
+    const srv = await serve()
+    try {
+      for (const patch of [{ color: null }, { color: '#fff' }, { emoji: [] }, { emoji: 'x'.repeat(25) }, { emoji: 'a\nb' }]) {
+        const response = await fetch(`${srv.origin}/api/live-sessions/pid-a/meta`, {
+          method: 'PATCH', headers: { cookie: srv.cookie, origin: srv.origin, 'content-type': 'application/json' },
+          body: JSON.stringify({ pinned: true, ...patch }),
+        })
+        expect(response.status).toBe(400)
+        expect(await srv.metaStore.list()).toEqual({})
+      }
     } finally { await srv.close() }
   })
 
