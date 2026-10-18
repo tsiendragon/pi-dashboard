@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -107,6 +107,8 @@ describe('Lark gateway outbound delivery', () => {
   interface Harness {
     gateway: Gateway
     sent: { chatId: string; text: string }[]
+    calls: { chatId: string; threadId: string | null; text: string; replyMessageId?: string }[]
+    mappingPath: string
     warnings: string[]
     errors: string[]
     frame(type: string, data: unknown): Promise<void>
@@ -115,15 +117,18 @@ describe('Lark gateway outbound delivery', () => {
   async function makeHarness(options: { failFor?: readonly string[] } = {}): Promise<Harness> {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'lark-gateway-out-'))
     const sent: { chatId: string; text: string }[] = []
+    const calls: { chatId: string; threadId: string | null; text: string; replyMessageId?: string }[] = []
     const transport: ImTransport = {
       async start() {},
       async stop() {},
-      async sendText(chatId, _threadId, text) {
+      async sendText(chatId, threadId, text, replyMessageId) {
         if (options.failFor?.includes(chatId)) throw new Error('Lark send failed')
+        calls.push({ chatId, threadId, text, replyMessageId })
         sent.push({ chatId, text })
       },
     }
-    const gateway = new Gateway(configFor(directory), transport)
+    const config = configFor(directory)
+    const gateway = new Gateway(config, transport)
     const warnings: string[] = []
     const errors: string[] = []
     vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -131,7 +136,7 @@ describe('Lark gateway outbound delivery', () => {
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(String(args[0])) })
     const frame = (type: string, data: unknown): Promise<void> =>
       (gateway as unknown as { onFrame(frame: unknown): Promise<void> }).onFrame({ type, data })
-    return { gateway, sent, warnings, errors, frame }
+    return { gateway, sent, calls, mappingPath: config.mappingPath, warnings, errors, frame }
   }
 
   /**
@@ -181,5 +186,103 @@ describe('Lark gateway outbound delivery', () => {
 
     expect(harness.sent).toEqual([{ chatId: 'chat-b', text: 'hello' }])
     expect(harness.errors.some(line => line.includes('[out] send failed -> chat-a'))).toBe(true)
+  })
+
+  /**
+   * Outbound half of the "second message says 尚未绑定会话" bug: anchoring a plain
+   * chat's answer to the `/bind` message makes Lark create a thread, and the next
+   * message sent in that thread carries a `thread_id` the chat key does not match.
+   */
+  it('answers a plain chat without anchoring into a thread', async () => {
+    const harness = await makeHarness()
+    // The shape real mapping files have after binding from a thread-aware chat.
+    await writeFile(
+      harness.mappingPath,
+      JSON.stringify({
+        version: 1,
+        bindings: [
+          {
+            platform: 'lark',
+            chatId: 'chat-a',
+            threadId: null,
+            replyMessageId: 'om_anchor',
+            sessionFile: '/tmp/session-123.jsonl',
+            boundAt: '2026-10-18T00:00:00.000Z',
+          },
+        ],
+      }),
+      'utf8',
+    )
+    await harness.gateway.mapping.load()
+
+    await harness.frame('live_session_attached', { sessions: [makeSession()] })
+    await harness.frame('live_session_event', assistantEnd(1, 'hello'))
+
+    expect(harness.calls).toEqual([{ chatId: 'chat-a', threadId: null, text: 'hello', replyMessageId: undefined }])
+  })
+
+  it('still anchors answers inside a topic-scoped binding', async () => {
+    const harness = await makeHarness()
+    await harness.gateway.mapping.bind('chat-a', '/tmp/session-123.jsonl', 'demo', 'omt_1', 'om_anchor')
+
+    await harness.frame('live_session_attached', { sessions: [makeSession()] })
+    await harness.frame('live_session_event', assistantEnd(1, 'hello'))
+
+    expect(harness.calls).toEqual([{ chatId: 'chat-a', threadId: 'omt_1', text: 'hello', replyMessageId: 'om_anchor' }])
+  })
+})
+
+describe('Lark gateway thread scoping', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  async function makeInboundHarness(): Promise<{
+    gateway: Gateway
+    replies: string[]
+    onMessage(message: ImMessage): Promise<void>
+  }> {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'lark-gateway-thread-'))
+    const replies: string[] = []
+    const transport: ImTransport = {
+      async start() {},
+      async stop() {},
+      async sendText(_chatId, _threadId, text) {
+        replies.push(text)
+      },
+    }
+    const gateway = new Gateway(configFor(directory), transport)
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onMessage = (gateway as unknown as { onMessage(message: ImMessage): Promise<void> }).onMessage.bind(gateway)
+    return { gateway, replies, onMessage }
+  }
+
+  /** Inbound half of the reported bug. */
+  it('forwards a message sent inside a thread through the chat-level binding', async () => {
+    const harness = await makeInboundHarness()
+    await harness.gateway.mapping.bind('chat-a', '/tmp/session-123.jsonl', 'demo')
+    harness.gateway.catalog.upsert(makeSession())
+
+    await harness.onMessage({
+      chatId: 'chat-a',
+      threadId: 'omt_19b15bb9d7cf1852',
+      userId: 'user-a',
+      messageId: 'om_1',
+      text: '要重启吗？',
+    })
+
+    // The dashboard is unreachable in this harness, so getting to the forwarding
+    // step (instead of "尚未绑定会话") is the assertion.
+    expect(harness.replies).toEqual(['消息暂时未能送达 Agent，请稍后重试。'])
+  })
+
+  it('still asks a chat with no binding at all to bind', async () => {
+    const harness = await makeInboundHarness()
+
+    await harness.onMessage({ chatId: 'chat-b', threadId: 'omt_x', userId: 'user-a', messageId: 'om_2', text: 'hello' })
+
+    expect(harness.replies).toEqual(['尚未绑定会话。用 /list 查看，/bind <序号或名称> 绑定。'])
   })
 })

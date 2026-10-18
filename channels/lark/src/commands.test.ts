@@ -34,7 +34,7 @@ function context(sessions: LiveSessionSummary[], cachedSessions = sessions) {
     replace: (next: LiveSessionSummary[]) => { currentSessions = next },
   } as unknown as Catalog
   const mapping = {
-    lookupByChat: () => undefined,
+    lookup: () => undefined,
     lookupsBySession: () => [],
   } as unknown as Mapping
   return {

@@ -85,12 +85,13 @@ export class Gateway {
 
   /** Send a reply to a chat, with a compact outbound log. */
   private async reply(chatId: string, threadId: string | null, text: string): Promise<void> {
-    console.log(`[out] reply -> ${chatId} (${text.length} chars)`)
+    const scope = scopeOf(chatId, threadId)
+    console.log(`[out] reply -> ${scope} (${text.length} chars)`)
     try {
       await this.transport.sendText(chatId, threadId, text)
     } catch (error) {
       // An attempt is logged before the send, so a failure must say so explicitly.
-      console.error(`[out] reply failed -> ${chatId}: ${errorText(error)}`)
+      console.error(`[out] reply failed -> ${scope}: ${errorText(error)}`)
       throw new ReplyFailedError(errorText(error))
     }
   }
@@ -152,14 +153,18 @@ export class Gateway {
 
     const targets = this.mapping.lookupsBySession(summary.sessionFile)
     if (targets.length === 0) return
-    console.log(`[out] ${summary.sessionName || summary.sessionFile} -> ${targets.map(t => t.chatId).join(',')} (${text.length} chars)`)
+    console.log(`[out] ${summary.sessionName || summary.sessionFile} -> ${targets.map(t => scopeOf(t.chatId, t.threadId)).join(',')} (${text.length} chars)`)
     for (const binding of targets) {
+      // Only a topic-scoped binding may anchor its answers to a message. On a plain
+      // chat `reply_in_thread` makes Lark nest the answer into a new thread, and the
+      // user's next message then arrives with a `thread_id` the chat key misses.
+      const anchor = binding.threadId ? binding.replyMessageId : undefined
       for (const chunk of chunkText(text)) {
         try {
-          await this.transport.sendText(binding.chatId, binding.threadId, chunk, binding.replyMessageId)
+          await this.transport.sendText(binding.chatId, binding.threadId, chunk, anchor)
         } catch (error) {
           // One failed chat/chunk must not swallow the remaining ones.
-          console.error(`[out] send failed -> ${binding.chatId}: ${errorText(error)}`)
+          console.error(`[out] send failed -> ${scopeOf(binding.chatId, binding.threadId)}: ${errorText(error)}`)
         }
       }
     }
@@ -186,7 +191,9 @@ export class Gateway {
   private async handleMessage(message: ImMessage): Promise<void> {
     const text = message.text.trim()
     if (!text) return
-    console.log(`[in] ${message.chatId} ${message.userId}: ${text.slice(0, 80)}`)
+    // Include the thread: a chat-level binding answers messages from any of its
+    // threads, and the two are otherwise indistinguishable in the log.
+    console.log(`[in] ${scopeOf(message.chatId, message.threadId)} ${message.userId}: ${text.slice(0, 80)}`)
 
     try {
       await this.dispatch(message, text)
@@ -213,7 +220,7 @@ export class Gateway {
       return
     }
 
-    const binding = this.mapping.lookupByChat(message.chatId, message.threadId)
+    const binding = this.mapping.lookup(message.chatId, message.threadId)
     if (!binding) {
       await this.reply(message.chatId, message.threadId, '尚未绑定会话。用 /list 查看，/bind <序号或名称> 绑定。')
       return
@@ -238,6 +245,11 @@ export class Gateway {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** `chatId#threadId` when the message is thread-scoped, else just the chat id. */
+function scopeOf(chatId: string, threadId: string | null): string {
+  return threadId ? `${chatId}#${threadId}` : chatId
 }
 
 /**
