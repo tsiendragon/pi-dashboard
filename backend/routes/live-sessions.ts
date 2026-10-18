@@ -61,7 +61,7 @@ function errorStatus(error: unknown): number {
   if (code === 'session_operation_in_progress' || code === 'session_changed' || code === 'entry_not_on_active_branch' || code === 'not_latest_user_message' || code === 'rewind_root_has_other_branches' || code === 'nothing_to_discard' || code === 'discard_failed' || code === 'withdraw_failed') return 409
   if (code.startsWith('invalid_') || code === 'unsupported_command' || code === 'command_too_large') return 400
   if (error instanceof Error && error.message === 'group_not_found') return 404
-  if (error instanceof Error && (error.message === 'group_name_required' || error.message === 'invalid_group_merge' || error.message === 'invalid_thinking_level' || error.message === 'model_id_required' || error.message === 'model_provider_required' || error.message === 'invalid_fork_from')) return 400
+  if (error instanceof Error && (error.message === 'group_name_required' || error.message === 'invalid_group_merge' || error.message === 'invalid_thinking_level' || error.message === 'model_id_required' || error.message === 'model_provider_required' || error.message === 'invalid_fork_from' || error.message === 'invalid_session_color' || error.message === 'invalid_session_emoji')) return 400
   if (error instanceof Error && error.message === 'live_pi_start_failed') return 500
   if (error instanceof Error && error.message.includes('outside configured live session roots')) return 403
   return 500
@@ -486,6 +486,8 @@ export class LiveSessionRoutes {
         const meta = await this.metaStore.update(detail.summary.sessionId, {
           ...(Object.prototype.hasOwnProperty.call(body, 'tags') ? { tags: body.tags } : {}),
           ...(Object.prototype.hasOwnProperty.call(body, 'pinned') ? { pinned: body.pinned } : {}),
+          ...(Object.prototype.hasOwnProperty.call(body, 'color') ? { color: body.color } : {}),
+          ...(Object.prototype.hasOwnProperty.call(body, 'emoji') ? { emoji: body.emoji } : {}),
         })
         return { ok: true, meta, all: await this.metaStore.list() }
       })

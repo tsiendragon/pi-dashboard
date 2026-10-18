@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { LiveSessionMeta } from '@shared/live-sessions'
+import type { LiveSessionMeta, LiveSessionMetaPatch } from '@shared/live-sessions'
 import { liveSessionApi } from './api'
 
 export type LiveSessionMetaMap = Record<string, LiveSessionMeta>
 
 /**
- * Sidebar tags + pin for live Pi sessions.
+ * Sidebar tags, pin and appearance for live Pi sessions.
  *
  * Server-side store keyed by pi `sessionId` (see `backend/live-sessions/meta.ts`),
  * so the labels survive a Pi restart and reappear when the same session
@@ -17,7 +17,7 @@ export function useLiveSessionMeta(): {
   allTags: string[]
   tagCounts: { tag: string; count: number }[]
   refresh: () => Promise<void>
-  patch: (processInstanceId: string, sessionId: string, p: { tags?: string[]; pinned?: boolean }) => Promise<void>
+  patch: (processInstanceId: string, sessionId: string, p: LiveSessionMetaPatch) => Promise<boolean>
   error: string | undefined
 } {
   const [meta, setMeta] = useState<LiveSessionMetaMap>({})
@@ -34,25 +34,30 @@ export function useLiveSessionMeta(): {
 
   useEffect(() => { void refresh() }, [refresh])
 
-  const patch = useCallback(async (processInstanceId: string, sessionId: string, p: { tags?: string[]; pinned?: boolean }) => {
-    setMeta(current => {
+  const patch = useCallback(async (processInstanceId: string, sessionId: string, p: LiveSessionMetaPatch) => {
+    // Appearance has an explicit preview/save flow: keep the row unchanged until
+    // the server confirms the write. Existing tags/pin remain optimistic.
+    if (p.color === undefined && p.emoji === undefined) setMeta(current => {
       const prev = current[sessionId] || { tags: [], pinned: false, updatedAt: '' }
       const next: LiveSessionMeta = {
+        ...prev,
         tags: p.tags ?? prev.tags,
         pinned: p.pinned ?? prev.pinned,
         updatedAt: new Date().toISOString(),
       }
       const map = { ...current }
-      if (next.tags.length || next.pinned) map[sessionId] = next
+      if (next.tags.length || next.pinned || next.tmux || next.color || next.emoji) map[sessionId] = next
       else delete map[sessionId]
       return map
     })
     try {
       setMeta(await liveSessionApi.patchMeta(processInstanceId, p))
       setError(undefined)
+      return true
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
       await refresh()
+      setError(reason instanceof Error ? reason.message : String(reason))
+      return false
     }
   }, [refresh])
 

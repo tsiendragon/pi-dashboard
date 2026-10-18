@@ -104,6 +104,93 @@ const menuFor = (title: string) => {
 describe('LiveSessionsList sidebar', () => {
   beforeEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
 
+  it('loads appearance without replacing the running indicator or selection', async () => {
+    mockFetch({ meta: { 'session-pid-a': { tags: ['ai_dev'], pinned: false, color: '#9571c4', emoji: '😊', updatedAt: '' } } })
+    const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101, { status: 'running' })]} activeId="pid-a" onSelect={() => {}} />)
+    await waitFor(() => expect(container.querySelector('[data-live-row="session-pid-a"]')).toHaveAttribute('data-session-color', '#9571c4'))
+    const row = container.querySelector('[data-live-row="session-pid-a"]') as HTMLElement
+    expect(row).toHaveAttribute('aria-current', 'true')
+    expect(row).toHaveAttribute('data-session-color', '#9571c4')
+    expect(row.querySelector('[data-session-emoji]')).toHaveTextContent('😊')
+    expect(row.querySelector('[data-session-status="running"]')).toBeInTheDocument()
+    expect(within(row).getByText('ai_dev')).toBeInTheDocument()
+  })
+
+  it('previews and saves appearance only for the chosen session and reloads it', async () => {
+    const { calls, meta } = mockFetch()
+    const onSelect = vi.fn()
+    const sessions = [session('pid-a', 101), session('pid-b', 102)]
+    const view = render(<LiveSessionsList sessions={sessions} onSelect={onSelect} />)
+    fireEvent.click(screen.getByRole('button', { name: '设置 pi 101 的装扮' }))
+    const dialog = screen.getByRole('dialog', { name: '设置会话装扮' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '紫色标记' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '使用符号 😊' }))
+    expect(within(dialog).getByLabelText('装扮预览')).toHaveTextContent('😊')
+    expect(view.container.querySelector('[data-session-emoji]')).not.toBeInTheDocument()
+    expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(0)
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(calls).toContainEqual({ url: '/api/live-sessions/pid-a/meta', method: 'PATCH', body: { color: '#9571c4', emoji: '😊' } })
+    expect(meta()['session-pid-a']).toMatchObject({ color: '#9571c4', emoji: '😊' })
+    expect(meta()['session-pid-b']).toBeUndefined()
+    expect(onSelect).not.toHaveBeenCalled()
+    view.unmount()
+    const reloaded = render(<LiveSessionsList sessions={sessions} onSelect={onSelect} />)
+    await waitFor(() => expect(reloaded.container.querySelector('[data-live-row="session-pid-a"]')).toHaveAttribute('data-session-color', '#9571c4'))
+    expect(reloaded.container.querySelector('[data-live-row="session-pid-a"] [data-session-emoji]')).toHaveTextContent('😊')
+    expect(reloaded.container.querySelector('[data-live-row="session-pid-b"] [data-session-emoji]')).not.toBeInTheDocument()
+  })
+
+  it('can open appearance from the row menu and cancel without writing', async () => {
+    const { calls } = mockFetch()
+    render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    menuFor('pi 101')
+    fireEvent.click(screen.getByRole('menuitem', { name: /会话装扮/ }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('自定义符号'), { target: { value: '🐱' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(0)
+  })
+
+  it('resets appearance while preserving tags, pin and terminal metadata', async () => {
+    const { meta } = mockFetch({ meta: { 'session-pid-a': { tags: ['ai_dev'], pinned: true, tmux: 'pi-dash-live-abcd1234', color: '#5287be', emoji: '🚀', updatedAt: '' } } })
+    const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    await waitFor(() => expect(container.querySelector('[data-session-emoji]')).toHaveTextContent('🚀'))
+    fireEvent.click(screen.getByRole('button', { name: '设置 pi 101 的装扮' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: '恢复默认' }))
+    expect(container.querySelector('[data-session-emoji]')).toHaveTextContent('🚀')
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(container.querySelector('[data-session-emoji]')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-session-color]')).not.toBeInTheDocument()
+    expect(meta()['session-pid-a']).toMatchObject({ tags: ['ai_dev'], pinned: true, tmux: 'pi-dash-live-abcd1234' })
+  })
+
+  it('keeps a failed save open, does not apply the draft, and allows retry', async () => {
+    const { calls } = mockFetch()
+    const fetchMock = globalThis.fetch
+    let fail = true
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (init?.method === 'PATCH' && fail) return { ok: false, status: 503, json: async () => ({ message: 'storage unavailable' }) } as Response
+      return fetchMock(url, init)
+    })
+    const { container } = render(<LiveSessionsList sessions={[session('pid-a', 101)]} onSelect={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: '设置 pi 101 的装扮' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('自定义符号'), { target: { value: '🐱' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('装扮保存失败')
+    expect(container.querySelector('[data-session-emoji]')).not.toBeInTheDocument()
+    expect(within(dialog).getByLabelText('自定义符号')).toHaveValue('🐱')
+    fail = false
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(container.querySelector('[data-session-emoji]')).toHaveTextContent('🐱')
+    expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1)
+  })
+
   it('puts Hold last, defaults it to collapsed, and reveals search matches', async () => {
     mockFetch({ groups: [
       { id: 'hold', name: 'Hold', sessionIds: ['session-pid-b'], createdAt: '', updatedAt: '' },
