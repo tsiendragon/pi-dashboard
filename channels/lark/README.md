@@ -118,6 +118,7 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 | `[in] handling failed` | 处理链路异常 | 冒号后即原因 |
 | 回复是「会话正被网页端接管」 | `/compact`、`/abort` 需要独占租约，网页端正持有 | 等 30 秒或先在网页端放手；不影响普通消息（普通输入不需要租约） |
 | 回复是「没有匹配/匹配到 N 个模型」 | `/model` 的片段匹配不唯一 | 用 `/model` 看编号，或改成 `provider/id` |
+| `/effort` 有回「已下发」但没有结果提示 | 回执只转发命令后 30 秒内的 `extension_ui_notify`；或该会话没加载 thinking-level 扩展（那就只是一句普通提示词） | 看日志有无 `[out] notice -> …`；否则用 `/reload` 重载扩展 |
 | `[gateway] failed: …`，或进程不在 | 网关本身没跑起来（lock 冲突 / 凭证错误） | 重新运行 `./run.sh`，确认输出里有 `[gateway] started: transport=lark(...)` |
 
 两条设计上的预期行为，不要当故障：
@@ -162,6 +163,7 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 | `/context`（`/ctx`） | 上下文用量（token / 窗口占比 / 模型） | `get_context` | 否 |
 | `/reload`（`/restart`） | 重载扩展 / 技能 / 提示词 | `reload` | 否 |
 | `/name <新名称>`（`/rename`） | 重命名会话 | `set_session_name` | 否 |
+| `/effort <档位>` | 调 thinking level（`off\|minimal\|low\|medium\|high\|xhigh\|max`） | `input`（转给 `pi-tsien-thinking-level` 扩展命令） | 否 |
 | `/shutdown confirm` | 关闭会话（**必须带 `confirm`**，不带只回风险提示） | `shutdown` | 否 |
 
 几点说明：
@@ -171,6 +173,8 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 - `/compact` 这类耗时命令会先回一条「正在压缩…」再回结果。
 - **其它 `/xxx` 不再报「未知命令」**：`/clear`、`/goal`、`/effort`、skill / 扩展命令会原样转给会话（pi 的输入流只 dispatch 扩展命令和 skill，TUI 内置命令如 `/compact` 必须翻译成结构化命令，所以上表这几条由网关先接住）。
 - `/model` 的序号依赖「上一次 `/model` 输出」的缓存；换绑定或缓存丢失时用全名/模糊匹配即可。
+- **`/effort` 必须带档位**：不带参数时扩展会弹 `ctx.ui.select` 选择框，而 live-session 是 headless（`hasUI=false`），会静默什么都不做 —— 所以网关在无参时直接回用法。
+- **命令回执**：扩展的 `ctx.ui.notify`（比如 `/effort` 打完档位后的“已设为 high”）走的是 `extension_ui_notify` 事件，不是 assistant 文本。网关只在**命令后 30 秒内**把它转发到聊天（ℹ️/⚠️/❌ 前缀），长跑任务的背景通知不会刷屏。
 
 ### 群聊注意
 

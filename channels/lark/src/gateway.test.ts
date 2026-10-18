@@ -241,6 +241,7 @@ describe('Lark gateway thread scoping', () => {
     gateway: Gateway
     replies: string[]
     onMessage(message: ImMessage): Promise<void>
+    frame(type: string, data: unknown): Promise<void>
   }> {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'lark-gateway-thread-'))
     const replies: string[] = []
@@ -256,7 +257,9 @@ describe('Lark gateway thread scoping', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const onMessage = (gateway as unknown as { onMessage(message: ImMessage): Promise<void> }).onMessage.bind(gateway)
-    return { gateway, replies, onMessage }
+    const frame = (type: string, data: unknown): Promise<void> =>
+      (gateway as unknown as { onFrame(frame: unknown): Promise<void> }).onFrame({ type, data })
+    return { gateway, replies, onMessage, frame }
   }
 
   /** Inbound half of the reported bug. */
@@ -296,5 +299,47 @@ describe('Lark gateway thread scoping', () => {
 
     // Reaching the forwarding step proves it was not answered locally.
     expect(harness.replies).toEqual(['消息暂时未能送达 Agent，请稍后重试。'])
+  })
+
+  it('needs a level for /effort and forwards it as an extension command', async () => {
+    const harness = await makeInboundHarness()
+    await harness.gateway.mapping.bind('chat-a', '/tmp/session-123.jsonl', 'demo')
+    harness.gateway.catalog.upsert(makeSession())
+
+    await harness.onMessage({ chatId: 'chat-a', threadId: null, userId: 'user-a', messageId: 'om_4', text: '/effort' })
+    expect(harness.replies[0]).toContain('用法：/effort')
+
+    await harness.onMessage({ chatId: 'chat-a', threadId: null, userId: 'user-a', messageId: 'om_5', text: '/effort high' })
+    expect(harness.replies).toContain('已下发 /effort high')
+  })
+
+  /** The extension's `ctx.ui.notify` is the only receipt a command produces. */
+  it('relays an extension notice to a chat that just ran a command', async () => {
+    const harness = await makeInboundHarness()
+    await harness.gateway.mapping.bind('chat-a', '/tmp/session-123.jsonl', 'demo')
+    harness.gateway.catalog.upsert(makeSession())
+
+    await harness.onMessage({ chatId: 'chat-a', threadId: null, userId: 'user-a', messageId: 'om_6', text: '/status' })
+    await harness.frame('live_session_event', {
+      processInstanceId: 'process-123',
+      sequence: 20,
+      event: { type: 'extension_ui_notify', data: { message: 'Thinking level 已设为 high', notifyType: 'info' } },
+    })
+
+    expect(harness.replies).toContain('ℹ️ Thinking level 已设为 high')
+  })
+
+  it('stays quiet about extension notices when no command asked for a receipt', async () => {
+    const harness = await makeInboundHarness()
+    await harness.gateway.mapping.bind('chat-a', '/tmp/session-123.jsonl', 'demo')
+    harness.gateway.catalog.upsert(makeSession())
+
+    await harness.frame('live_session_event', {
+      processInstanceId: 'process-123',
+      sequence: 21,
+      event: { type: 'extension_ui_notify', data: { message: 'background chatter', notifyType: 'info' } },
+    })
+
+    expect(harness.replies.some(text => text.includes('background chatter'))).toBe(false)
   })
 })

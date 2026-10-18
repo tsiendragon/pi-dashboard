@@ -105,6 +105,7 @@ function sessionContext(options: { models?: LiveSessionModelOption[]; failClaim?
   const claims: string[] = []
   const releases: string[] = []
   const notices: string[] = []
+  const forwards: string[] = []
   const catalog = {
     list: () => [summary],
     replace: () => {},
@@ -153,8 +154,9 @@ function sessionContext(options: { models?: LiveSessionModelOption[]; failClaim?
     mapping,
     dashboard,
     notify: async (text: string) => { notices.push(text) },
+    forward: async (text: string) => { forwards.push(text) },
   }
-  return { ctx, calls, claims, releases, notices }
+  return { ctx, calls, claims, releases, notices, forwards }
 }
 
 describe('Lark session commands', () => {
@@ -254,6 +256,16 @@ describe('Lark session commands', () => {
     const confirmed = sessionContext()
     await handleCommand('/shutdown confirm', confirmed.ctx)
     expect(confirmed.calls.map(call => call.type)).toEqual(['shutdown'])
+  })
+
+  it('/effort needs a level and forwards the rest as an extension command', async () => {
+    const bare = sessionContext()
+    expect(await handleCommand('/effort', bare.ctx)).toContain('用法：/effort')
+    expect(bare.forwards).toEqual([])
+
+    const withLevel = sessionContext()
+    expect(await handleCommand('/effort high', withLevel.ctx)).toBe('已下发 /effort high')
+    expect(withLevel.forwards).toEqual(['/effort high'])
   })
 
   it('lets pi/extension commands through to the session instead of answering "unknown command"', async () => {
