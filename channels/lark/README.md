@@ -108,6 +108,8 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 | 日志 | 含义 | 处理 |
 | --- | --- | --- |
 | 完全没有 `[in]` 行 | 事件没到网关：群里没 @ 机器人；消息不是文本（图片/文件/富文本/合并转发被丢弃）；或长连接正在重连（`[ws] reconnect`）期间丢事件 | 群里 @ 机器人；用纯文本重发；确认有 `[ws] ws client ready` |
+| `[in] <chatId>` 而不是 `[in] <chatId>#<threadId>` | 消息来自主聊天；带 `#` 则来自某个话题 | 对不上绑定就看下一行 |
+| `[in] …` 后的回复是「尚未绑定会话」 | 这个聊天（或这个话题）确实没有绑定 | `/status` 看作用域，`/list` 后 `/bind`；聊天级绑定对它的所有话题都生效 |
 | `[in] ignored (not allowed)` | 白名单不含该 open_id | 改 Settings → Lark 的允许用户（或 `LARK_ALLOWED_USER_IDS`） |
 | `[in] duplicate ignored` | Lark 重投了同一条消息 | 无需处理 |
 | `[out] dropped: unknown live session …` | 该会话不在网关目录里，回复无法寻址（修复前是静默丢弃） | 先发一次 `/list` 应急；把该行贴出来定位 |
@@ -155,6 +157,12 @@ Lark 话题群里每条消息属于一个话题（`thread_id`）。网关会把�
 - 同一个话题群里，**每个话题可以独立绑定一个 session**
 - 出站消息通过回复原消息（`reply_in_thread`）发入对应话题，不会到处乱串
 - 需要在每个话题里各自 `/list` + `/bind`
+
+两级绑定的关系（也是「第二条消息提示尚未绑定会话」那个 bug 的修复点）：
+
+- **聊天级绑定**（`threadId: null`，普通群 / 私聊 / 在群主聊天里 `/bind`）：对该聊天的**所有消息与话题**都生效；回答直接发在主聊天，**不会**用 `reply_in_thread` 造话题。
+- **话题级绑定**（`chatId#threadId`，在某个话题里 `/bind`）：优先级高于聊天级，只对该话题生效；回答锚定回 `/bind` 那条消息，落在该话题内。
+- `/status` 会显示当前绑定的「作用域：整个聊天 / 仅本话题」。
 
 ### 入群欢迎
 
