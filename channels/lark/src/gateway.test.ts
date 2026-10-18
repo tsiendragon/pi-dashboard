@@ -285,4 +285,16 @@ describe('Lark gateway thread scoping', () => {
 
     expect(harness.replies).toEqual(['尚未绑定会话。用 /list 查看，/bind <序号或名称> 绑定。'])
   })
+
+  /** `/clear`, `/goal`, skill commands belong to pi, not to the gateway. */
+  it('forwards slash commands it does not own to the session instead of answering "unknown command"', async () => {
+    const harness = await makeInboundHarness()
+    await harness.gateway.mapping.bind('chat-a', '/tmp/session-123.jsonl', 'demo')
+    harness.gateway.catalog.upsert(makeSession())
+
+    await harness.onMessage({ chatId: 'chat-a', threadId: null, userId: 'user-a', messageId: 'om_3', text: '/clear' })
+
+    // Reaching the forwarding step proves it was not answered locally.
+    expect(harness.replies).toEqual(['消息暂时未能送达 Agent，请稍后重试。'])
+  })
 })

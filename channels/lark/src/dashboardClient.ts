@@ -3,8 +3,48 @@ import http from 'node:http'
 import https from 'node:https'
 import { URL } from 'node:url'
 import WebSocket from 'ws'
-import type { LiveSessionBrowserEvent, LiveSessionInputChannel, LiveSessionSummary } from '../../../shared/src/live-sessions.js'
+import type {
+  LiveSessionBrowserEvent,
+  LiveSessionInputChannel,
+  LiveSessionModelOption,
+  LiveSessionSummary,
+} from '../../../shared/src/live-sessions.js'
 import type { LarkGatewayConfig } from './config.js'
+
+/**
+ * A dashboard HTTP failure that keeps the status and the machine-readable code,
+ * so callers can react to a specific rejection (e.g. `session_already_claimed`)
+ * instead of matching on message text.
+ */
+export class DashboardRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'DashboardRequestError'
+  }
+}
+
+/** Keep the historical `label: status body` message, plus the parsed code. */
+function requestError(label: string, status: number, body: string): DashboardRequestError {
+  let code = label
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown; code?: unknown }
+    const reported = typeof parsed?.error === 'string' ? parsed.error : typeof parsed?.code === 'string' ? parsed.code : ''
+    if (reported) code = reported
+  } catch {
+    /* non-JSON body: the label stays the code */
+  }
+  return new DashboardRequestError(status, code, `${label}: ${status} ${body}`)
+}
+
+/** `{ ok, result }` envelopes come from the live-session routes; plain bodies from the rest. */
+function readResult(body: string): unknown {
+  const parsed = JSON.parse(body) as { result?: unknown }
+  return parsed && typeof parsed === 'object' && 'result' in parsed ? parsed.result : parsed
+}
 
 interface HttpResult {
   status: number
@@ -105,7 +145,7 @@ export class DashboardClient {
     const res = await this.requestWithCookie(`${this.cfg.dashboardBaseUrl}/api/live-sessions`, {
       method: 'GET',
     })
-    if (res.status !== 200) throw new Error(`list_failed: ${res.status} ${res.body}`)
+    if (res.status !== 200) throw requestError('list_failed', res.status, res.body)
     return (JSON.parse(res.body) as { sessions: LiveSessionSummary[] }).sessions
   }
 
@@ -123,7 +163,45 @@ export class DashboardClient {
         body: JSON.stringify({ command: { type: 'input', text, channel } }),
       },
     )
-    if (res.status !== 200) throw new Error(`command_failed: ${res.status} ${res.body}`)
+    if (res.status !== 200) throw requestError('command_failed', res.status, res.body)
+  }
+
+  /**
+   * Run one structured live-session command (model switch, compact, reload, …).
+   * These are the same commands the web UI sends; TUI built-ins such as
+   * `/compact` do NOT work as plain `input` text.
+   */
+  async command(processInstanceId: string, command: unknown): Promise<unknown> {
+    const res = await this.post(
+      'command_failed',
+      `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`,
+      { command },
+    )
+    return readResult(res.body)
+  }
+
+  /** Models this session can switch to. */
+  async models(processInstanceId: string): Promise<LiveSessionModelOption[]> {
+    const result = await this.command(processInstanceId, { type: 'get_models' })
+    const models = (result as { models?: LiveSessionModelOption[] } | undefined)?.models
+    return Array.isArray(models) ? models : []
+  }
+
+  /**
+   * Take the exclusive write lease for a session. `compact`, `abort` and the
+   * feature commands require it; only one client can hold it at a time.
+   */
+  async claim(processInstanceId: string, requestedLeaseMs = 30_000): Promise<{ leaseId: string; expiresAt?: number }> {
+    const res = await this.post('claim_failed', `/api/live-sessions/${encodeURIComponent(processInstanceId)}/claim`, { requestedLeaseMs })
+    const result = readResult(res.body) as { leaseId?: unknown; expiresAt?: unknown } | undefined
+    const leaseId = typeof result?.leaseId === 'string' ? result.leaseId : ''
+    if (!leaseId) throw new Error('claim_failed: the dashboard did not return a leaseId')
+    return { leaseId, ...(typeof result?.expiresAt === 'number' ? { expiresAt: result.expiresAt } : {}) }
+  }
+
+  /** Give the lease back so the web UI can take over again. */
+  async release(processInstanceId: string, leaseId: string): Promise<void> {
+    await this.post('release_failed', `/api/live-sessions/${encodeURIComponent(processInstanceId)}/release`, { leaseId })
   }
 
   /** Start a new live session (pi in a fresh tmux session). Returns the raw start result. */
@@ -133,9 +211,20 @@ export class DashboardClient {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ cwd, ...(title ? { title } : {}) }),
     })
-    if (res.status !== 200) throw new Error(`start_failed: ${res.status} ${res.body}`)
+    if (res.status !== 200) throw requestError('start_failed', res.status, res.body)
     const parsed = JSON.parse(res.body) as { result?: { sessionId?: string; tmuxSession?: string } }
     return parsed.result ?? {}
+  }
+
+  /** POST a JSON body and turn a non-200 into a `DashboardRequestError`. */
+  private async post(label: string, path: string, payload: unknown): Promise<HttpResult> {
+    const res = await this.requestWithCookie(`${this.cfg.dashboardBaseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload ?? {}),
+    })
+    if (res.status !== 200) throw requestError(label, res.status, res.body)
+    return res
   }
 
   /**
