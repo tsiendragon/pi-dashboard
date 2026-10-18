@@ -14,6 +14,8 @@ export interface CommandContext {
   dashboard: DashboardClient
   /** Send an extra message before the final reply (used for long commands). */
   notify?: (text: string) => Promise<void>
+  /** Forward a command to the session as input (extension/TUI-adjacent commands). */
+  forward?: (text: string) => Promise<void>
 }
 
 /** Lease length for `compact` / `abort`: long enough for one command, short-lived. */
@@ -39,6 +41,7 @@ const HELP = [
   '/context             查看上下文用量',
   '/reload              重载扩展 / 技能',
   '/name <新名称>        重命名会话',
+  '/effort <档位>        调整 thinking level（off|minimal|low|medium|high|xhigh|max）',
   '/shutdown confirm    关闭会话（必须带 confirm）',
   '',
   '其它 /xxx（/clear、/goal、skill 命令等）会原样转给会话。',
@@ -85,6 +88,8 @@ export async function handleCommand(text: string, ctx: CommandContext): Promise<
     case 'reload':
     case 'restart':
       return reload(ctx)
+    case 'effort':
+      return effortCommand(arg, ctx)
     case 'name':
     case 'rename':
       return rename(arg, ctx)
@@ -342,8 +347,28 @@ async function reload(ctx: CommandContext): Promise<string> {
   return `已触发「${sessionLabel(summary)}」重载。扩展/技能/提示词改动现已生效。`
 }
 
-async function rename(arg: string, ctx: CommandContext): Promise<string> {
-  if (!arg) return '用法：/name <新会话名>'
+const EFFORT_USAGE = [
+  '用法：/effort <档位>：off | minimal | low | medium | high | xhigh | max',
+  '（不带档位会弹选择框，那需要终端或网页端，聊天里不会有反应）',
+].join('\n')
+
+/**
+ * `/effort` is registered by the pi-tsien-thinking-level extension, so it must
+ * ride the input stream to reach the agent. Without an argument it opens a
+ * `ctx.ui.select` dialog, which a headless live session cannot show — hence the
+ * local usage hint instead of a silent no-op.
+ */
+async function effortCommand(arg: string, ctx: CommandContext): Promise<string> {
+  const target = bound(ctx)
+  if ('error' in target) return target.error
+  if (!arg) return EFFORT_USAGE
+  if (!ctx.forward) return '当前通道不支持转发命令。'
+  await ctx.forward(`/effort ${arg}`)
+  // The extension's own `ctx.ui.notify` comes back as a receipt message.
+  return `已下发 /effort ${arg}`
+}
+
+async function rename(arg: string, ctx: CommandContext): Promise<string> {  if (!arg) return '用法：/name <新会话名>'
   if (arg.length > 160) return '会话名太长（最多 160 字）。'
   const target = bound(ctx)
   if ('error' in target) return target.error

@@ -12,6 +12,9 @@ import type { ImMessage, ImTransport } from './transport.js'
  *  - inbound : transport message -> (command | input) -> live session
  *  - outbound: live session event -> assistant text -> bound chats
  */
+/** How long after a command the session's extension notices are relayed to the chat. */
+const NOTICE_WINDOW_MS = 30_000
+
 export class Gateway {
   readonly catalog = new Catalog()
   readonly mapping: Mapping
@@ -21,6 +24,8 @@ export class Gateway {
   private readonly lastSequence = new Map<string, number>()
   /** Handled/in-flight message ids; failed handling releases the id for redelivery. */
   private readonly seenMessageIds = new Set<string>()
+  /** Chats waiting for an extension notice (chat scope -> expiry), opened by a command. */
+  private readonly receiptUntil = new Map<string, number>()
 
   constructor(
     cfg: LarkGatewayConfig,
@@ -141,22 +146,36 @@ export class Gateway {
       this.lastSequence.set(record.processInstanceId, record.sequence)
     }
 
-    const text = extractAssistantText(record.event.type, record.event.data)
-    if (!text) return
-
     const summary = this.catalog.findByProcessId(record.processInstanceId)
-    if (!summary?.sessionFile) {
-      // Never drop an answer silently again: without a catalog row there is no
-      // sessionFile, so no binding resolves and the chat just stays quiet.
-      console.warn(
-        `[out] dropped: unknown live session ${record.processInstanceId} (${text.length} chars, catalog=${this.catalog.list().length})`,
-      )
+    const text = extractAssistantText(record.event.type, record.event.data)
+    if (text) {
+      if (!summary) {
+        // Never drop an answer silently again: without a catalog row there is no
+        // sessionFile, so no binding resolves and the chat just stays quiet.
+        console.warn(
+          `[out] dropped: unknown live session ${record.processInstanceId} (${text.length} chars, catalog=${this.catalog.list().length})`,
+        )
+        return
+      }
+      await this.forwardAnswer(summary, text)
       return
     }
 
-    const targets = this.mapping.lookupsBySession(summary.sessionFile)
+    // A one-way `ctx.ui.notify` from an extension (e.g. `/effort` → level set). The
+    // terminal and the web UI show these; the chat only gets them shortly after a
+    // command, so background chatter stays out.
+    if (record.event.type === 'extension_ui_notify' && summary) {
+      await this.forwardNotice(summary, record.event.data)
+    }
+  }
+
+  /** Deliver one assistant answer to every chat bound to that session. */
+  private async forwardAnswer(summary: LiveSessionSummary, text: string): Promise<void> {
+    const sessionFile = summary.sessionFile
+    if (!sessionFile) return
+    const targets = this.mapping.lookupsBySession(sessionFile)
     if (targets.length === 0) return
-    console.log(`[out] ${summary.sessionName || summary.sessionFile} -> ${targets.map(t => scopeOf(t.chatId, t.threadId)).join(',')} (${text.length} chars)`)
+    console.log(`[out] ${summary.sessionName || sessionFile} -> ${targets.map(t => scopeOf(t.chatId, t.threadId)).join(',')} (${text.length} chars)`)
     for (const binding of targets) {
       // Only a topic-scoped binding may anchor its answers to a message. On a plain
       // chat `reply_in_thread` makes Lark nest the answer into a new thread, and the
@@ -171,6 +190,44 @@ export class Gateway {
         }
       }
     }
+  }
+
+  /** Relay an extension notice to the chats that just asked for a receipt. */
+  private async forwardNotice(summary: LiveSessionSummary, data: unknown): Promise<void> {
+    const sessionFile = summary.sessionFile
+    if (!sessionFile) return
+    const record = data as { message?: unknown; notifyType?: unknown } | null | undefined
+    const message = typeof record?.message === 'string' ? record.message.trim() : ''
+    if (!message) return
+    const icon = record?.notifyType === 'error' ? '❌' : record?.notifyType === 'warning' ? '⚠️' : 'ℹ️'
+    for (const binding of this.mapping.lookupsBySession(sessionFile)) {
+      if (!this.hasReceipt(binding.chatId, binding.threadId)) continue
+      const scope = scopeOf(binding.chatId, binding.threadId)
+      try {
+        await this.transport.sendText(binding.chatId, binding.threadId, `${icon} ${message}`)
+        console.log(`[out] notice -> ${scope} (${message.length} chars)`)
+      } catch (error) {
+        console.error(`[out] notice failed -> ${scope}: ${errorText(error)}`)
+      }
+    }
+  }
+
+  /** Open the receipt window for a chat, so a command's notices land in the chat. */
+  private openReceipt(chatId: string, threadId: string | null): void {
+    const now = Date.now()
+    for (const [scope, until] of this.receiptUntil) if (until <= now) this.receiptUntil.delete(scope)
+    this.receiptUntil.set(scopeOf(chatId, threadId), now + NOTICE_WINDOW_MS)
+  }
+
+  private hasReceipt(chatId: string, threadId: string | null): boolean {
+    const scope = scopeOf(chatId, threadId)
+    const until = this.receiptUntil.get(scope)
+    if (until === undefined) return false
+    if (until <= Date.now()) {
+      this.receiptUntil.delete(scope)
+      return false
+    }
+    return true
   }
 
   private async onMessage(message: ImMessage): Promise<void> {
@@ -211,6 +268,9 @@ export class Gateway {
 
   private async dispatch(message: ImMessage, text: string): Promise<void> {
     if (text.startsWith('/')) {
+      // A command can make an extension emit `ctx.ui.notify` (`/effort high` →
+      // "level set"); relay those for a short window so the chat gets a receipt.
+      this.openReceipt(message.chatId, message.threadId)
       const reply = await handleCommand(text, {
         chatId: message.chatId,
         threadId: message.threadId,
@@ -219,6 +279,7 @@ export class Gateway {
         mapping: this.mapping,
         dashboard: this.dashboard,
         notify: notice => this.reply(message.chatId, message.threadId, notice),
+        forward: commandText => this.forwardInput(message.chatId, message.threadId, commandText),
       })
       // `null` = not a gateway command (`/clear`, `/goal`, skill commands, …). Those
       // ride pi's input stream, so fall through to the forwarding path below.
@@ -228,16 +289,21 @@ export class Gateway {
       }
     }
 
-    const binding = this.mapping.lookup(message.chatId, message.threadId)
+    await this.forwardInput(message.chatId, message.threadId, text)
+  }
+
+  /** Send text into the bound session, answering the chat when that is impossible. */
+  private async forwardInput(chatId: string, threadId: string | null, text: string): Promise<void> {
+    const binding = this.mapping.lookup(chatId, threadId)
     if (!binding) {
-      await this.reply(message.chatId, message.threadId, '尚未绑定会话。用 /list 查看，/bind <序号或名称> 绑定。')
+      await this.reply(chatId, threadId, '尚未绑定会话。用 /list 查看，/bind <序号或名称> 绑定。')
       return
     }
     const summary = this.catalog.resolveBinding(binding.sessionFile)
     if (!summary) {
       await this.reply(
-        message.chatId,
-        message.threadId,
+        chatId,
+        threadId,
         `会话「${binding.sessionName || binding.sessionFile}」当前不可用，请 /list 后重新 /bind。`,
       )
       return
@@ -246,7 +312,7 @@ export class Gateway {
       await this.dashboard.sendInput(summary.processInstanceId, text, 'chatapp')
     } catch (error) {
       console.error(`[in] dashboard forwarding failed: ${errorText(error)}`)
-      await this.reply(message.chatId, message.threadId, '消息暂时未能送达 Agent，请稍后重试。')
+      await this.reply(chatId, threadId, '消息暂时未能送达 Agent，请稍后重试。')
     }
   }
 }
