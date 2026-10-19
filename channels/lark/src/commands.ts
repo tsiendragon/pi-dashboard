@@ -20,6 +20,13 @@ export interface CommandContext {
 
 /** Lease length for `compact` / `abort`: long enough for one command, short-lived. */
 const LEASE_MS = 30_000
+/** `/new` looks the fresh session up again a few times: `/start` may answer one beat early. */
+const NEW_LOOKUP_ATTEMPTS = 3
+const NEW_LOOKUP_DELAY_MS = 400
+const NEW_USAGE = [
+  '用法：/new <cwd>（可带标题：/new <cwd> | <标题>）',
+  'cwd 必须位于 liveSessions.roots 内（支持 ~ 与 ~/…），新建后自动绑定本聊天。',
+].join('\n')
 /** `/model` numbering is only meaningful against the list shown for this chat. */
 const modelLists = new Map<string, { sessionFile: string; models: LiveSessionModelOption[] }>()
 
@@ -32,7 +39,7 @@ const HELP = [
   '可用命令：',
   '/list                列出当前 dashboard 的在线会话',
   '/bind <序号或名称>     绑定当前会话（/switch 同义）',
-  '/new <cwd>           新建会话',
+  '/new <cwd> [| 标题]  新建会话并自动绑定本聊天',
   '/unbind              解除绑定',
   '/status              查看当前绑定状态',
   '/model               列出可用模型；/model <序号|provider/id|名称片段> 切换',
@@ -160,6 +167,10 @@ function brief(text: string): string {
   return flat.length > 120 ? `${flat.slice(0, 120)}…` : flat
 }
 
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 async function bindSession(arg: string, ctx: CommandContext): Promise<string> {
   if (!arg) return '用法：/bind <序号或名称>；先用 /list 查看。'
   const target = ctx.catalog.resolve(arg)
@@ -178,9 +189,83 @@ async function unbindSession(ctx: CommandContext): Promise<string> {
 }
 
 async function newSession(arg: string, ctx: CommandContext): Promise<string> {
-  if (!arg) return '用法：/new <cwd>（新建会话需指定工作目录）。'
-  const result = await ctx.dashboard.startSession(arg)
-  return `已新建会话（sessionId=${result.sessionId ?? '?'}）。稍候用 /list 查看，再用 /bind 绑定。`
+  const [cwdPart, ...titleParts] = arg.split('|')
+  const cwd = (cwdPart ?? '').trim()
+  if (!cwd) return NEW_USAGE
+  const title = titleParts.join('|').trim() || undefined
+
+  // `/start` answers only after the new Pi registered (median ~7s, up to 120s), so
+  // the chat gets an immediate notice instead of minutes of silence.
+  await ctx.notify?.(`正在创建「${cwd}」…（首次启动可能要 10–30 秒）`)
+
+  let created = false
+  try {
+    const result = await ctx.dashboard.startSession(cwd, title)
+    created = true
+    const summary = await locateStarted(result, ctx)
+    if (!summary?.sessionFile) {
+      return `已新建会话（sessionId=${result.sessionId ?? '?'}），但还没在列表里看到它。稍候用 /list 查看，再用 /bind 绑定。`
+    }
+    // Register it locally too: outbound answers resolve through this catalog.
+    ctx.catalog.upsert(summary)
+    await ctx.mapping.bind(ctx.chatId, summary.sessionFile, summary.sessionName, ctx.threadId, ctx.messageId)
+    modelLists.delete(scopeKey(ctx))
+    return `已新建并绑定「${sessionLabel(summary)}」（${summary.cwd ?? cwd}）。直接发消息即可。`
+  } catch (error) {
+    // A failure after `/start` returned means the session exists: say so instead
+    // of reporting a creation failure the user would retry.
+    if (created) return `会话已创建，但收尾步骤失败：${brief(errorText(error))}。用 /list 查看后再 /bind。`
+    return startFailureMessage(error)
+  }
+}
+
+/**
+ * Find the session that just started.
+ *
+ * `/start` only answers once the Pi has registered, so one read of the list
+ * usually suffices; the short poll covers a snapshot that is one beat behind.
+ */
+async function locateStarted(
+  result: { sessionId?: string; processInstanceId?: string },
+  ctx: CommandContext,
+): Promise<LiveSessionSummary | undefined> {
+  const byProcessId = result.processInstanceId
+  if (!byProcessId && !result.sessionId) return undefined
+  for (let attempt = 0; attempt < NEW_LOOKUP_ATTEMPTS; attempt++) {
+    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, NEW_LOOKUP_DELAY_MS))
+    const sessions = await ctx.dashboard.listSessions()
+    const match = sessions.find(session =>
+      byProcessId ? session.processInstanceId === byProcessId : session.sessionId === result.sessionId,
+    )
+    if (match) return match
+  }
+  return undefined
+}
+
+/**
+ * Translate launcher/route failures into something a chat can act on.
+ *
+ * The raw messages carry a path-policy rejection, a `tmux capture-pane` tail or
+ * a Trust-prompt hint; none of that is readable in a chat bubble.
+ */
+function startFailureMessage(error: unknown): string {
+  const raw = errorText(error)
+  const status = error instanceof DashboardRequestError ? error.status : 0
+  const code = error instanceof DashboardRequestError ? error.code : ''
+  if (raw.includes('outside configured live session roots')) {
+    return '目录不在允许范围：只能新建 liveSessions.roots 内的目录（在 ~/.pi/dashboard.json 里配置，支持 ~ 与 ~/…）。'
+  }
+  if (raw.includes('live_pi_blocked_on_prompt')) {
+    return '启动卡在「Trust project folder?」：pane 没有键盘回答不了。先在终端对该目录跑一次 pi 并选 Trust，或把它写进 ~/.pi/agent/trust.json。'
+  }
+  if (raw.includes('live_pi_registration_timeout') || status === 504) {
+    return '启动超时：Pi 在限定时间内没有注册上来（默认 120s，可用 PI_DASH_LIVE_START_TIMEOUT_MS 调整）。'
+  }
+  if (code === 'live_launcher_unavailable') {
+    return '服务端没启用 live session 启动器：检查 ~/.pi/dashboard.json 的 liveSessions.roots 是否为空。'
+  }
+  if (code === 'live_sessions_disabled') return '服务端禁用了 live session（liveSessions.enabled）。'
+  return `新建失败：${brief(raw)}`
 }
 
 async function status(ctx: CommandContext): Promise<string> {

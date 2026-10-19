@@ -159,6 +159,127 @@ function sessionContext(options: { models?: LiveSessionModelOption[]; failClaim?
   return { ctx, calls, claims, releases, notices, forwards }
 }
 
+/**
+ * Harness for `/new`: scripted start + list, recording the bind it performs.
+ *
+ * The started session deliberately has different ids from `sessionContext`'s, so
+ * a lookup that ignores the `/start` result cannot accidentally match.
+ */
+function startContext(options: {
+  result?: { sessionId?: string; processInstanceId?: string; tmuxSession?: string }
+  sessions?: LiveSessionSummary[]
+  failStart?: unknown
+  failList?: unknown
+} = {}) {
+  const started = makeSession({
+    processInstanceId: 'process-new',
+    sessionId: 'session-new',
+    sessionFile: '/home/user/.pi/agent/sessions/session-new.jsonl',
+    sessionName: '新建的会话',
+    cwd: '/home/user/apps/new-project',
+  })
+  const starts: { cwd: string; title?: string }[] = []
+  const binds: { sessionFile: string; sessionName?: string }[] = []
+  const upserts: string[] = []
+  const notices: string[] = []
+  const ctx: CommandContext = {
+    chatId: 'chat-1',
+    threadId: null,
+    messageId: 'om_new_1',
+    catalog: { upsert: (summary: LiveSessionSummary) => { upserts.push(summary.processInstanceId) } } as unknown as Catalog,
+    mapping: {
+      lookup: () => undefined,
+      lookupsBySession: () => [],
+      bind: async (_chatId: string, sessionFile: string, sessionName?: string) => {
+        binds.push({ sessionFile, sessionName })
+        return undefined
+      },
+    } as unknown as Mapping,
+    dashboard: {
+      startSession: async (cwd: string, title?: string) => {
+        starts.push({ cwd, ...(title ? { title } : {}) })
+        if (options.failStart) throw options.failStart
+        return options.result ?? { sessionId: 'session-new', processInstanceId: 'process-new', tmuxSession: 'pi-dash-live-1' }
+      },
+      listSessions: async () => {
+        if (options.failList) throw options.failList
+        return options.sessions ?? [started]
+      },
+    } as unknown as DashboardClient,
+    notify: async (text: string) => { notices.push(text) },
+  }
+  return { ctx, starts, binds, upserts, notices }
+}
+
+describe('Lark /new command', () => {
+  beforeEach(() => {
+    resetCommandState()
+  })
+
+  it('needs a working directory', async () => {
+    const { ctx, starts } = startContext()
+    const reply = await handleCommand('/new', ctx)
+
+    expect(reply).toContain('用法：/new <cwd>')
+    expect(starts).toEqual([])
+  })
+
+  it('creates a session, registers it and binds the chat in one step', async () => {
+    const { ctx, starts, binds, upserts, notices } = startContext()
+    const reply = await handleCommand('/new /home/user/apps/new-project', ctx)
+
+    expect(starts).toEqual([{ cwd: '/home/user/apps/new-project' }])
+    // The wait for registration must never look like silence.
+    expect(notices[0]).toContain('正在创建')
+    expect(binds).toEqual([{ sessionFile: '/home/user/.pi/agent/sessions/session-new.jsonl', sessionName: '新建的会话' }])
+    expect(upserts).toEqual(['process-new'])
+    expect(reply).toContain('已新建并绑定「新建的会话」')
+    expect(reply).toContain('/home/user/apps/new-project')
+  })
+
+  it('takes an optional title behind a pipe', async () => {
+    const { ctx, starts } = startContext()
+    await handleCommand('/new /home/user/apps/new-project | 修 Lark 网关', ctx)
+
+    expect(starts).toEqual([{ cwd: '/home/user/apps/new-project', title: '修 Lark 网关' }])
+  })
+
+  it('falls back to /list + /bind when the new session is not in the list yet', async () => {
+    const { ctx, binds } = startContext({ sessions: [] })
+    const reply = await handleCommand('/new /home/user/apps/new-project', ctx)
+
+    expect(binds).toEqual([])
+    expect(reply).toContain('sessionId=session-new')
+    expect(reply).toContain('/list')
+  })
+
+  it('explains a directory outside liveSessions.roots instead of dumping the raw error', async () => {
+    const { ctx } = startContext({
+      failStart: new DashboardRequestError(403, 'live_session_error', 'start_failed: 403 {"error":"live_session_error","message":"cwd is outside configured live session roots"}'),
+    })
+    const reply = await handleCommand('/new /etc', ctx)
+
+    expect(reply).toContain('目录不在允许范围')
+    expect(reply).toContain('liveSessions.roots')
+  })
+
+  it('explains a Trust prompt and a registration timeout', async () => {
+    const blocked = startContext({ failStart: new Error('live_pi_blocked_on_prompt: Pi is waiting for an answer; (waited 31.4s, tmux session pi-dash-live-x removed)') })
+    expect(await handleCommand('/new /home/user/apps/new-project', blocked.ctx)).toContain('Trust')
+
+    const timeout = startContext({ failStart: new Error('live_pi_registration_timeout: tmux session pi-dash-live-x was killed after 120000ms without registering') })
+    expect(await handleCommand('/new /home/user/apps/new-project', timeout.ctx)).toContain('启动超时')
+  })
+
+  it('reports "created but not finished" when only the cleanup step fails', async () => {
+    const { ctx } = startContext({ failList: new Error('list_failed: 502 dashboard unavailable') })
+    const reply = await handleCommand('/new /home/user/apps/new-project', ctx)
+
+    expect(reply).toContain('会话已创建')
+    expect(reply).toContain('/list')
+  })
+})
+
 describe('Lark session commands', () => {
   beforeEach(() => {
     resetCommandState()

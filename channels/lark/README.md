@@ -119,6 +119,9 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 | 回复是「会话正被网页端接管」 | `/compact`、`/abort` 需要独占租约，网页端正持有 | 等 30 秒或先在网页端放手；不影响普通消息（普通输入不需要租约） |
 | 回复是「没有匹配/匹配到 N 个模型」 | `/model` 的片段匹配不唯一 | 用 `/model` 看编号，或改成 `provider/id` |
 | `/effort` 有回「已下发」但没有结果提示 | 回执只转发命令后 30 秒内的 `extension_ui_notify`；或该会话没加载 thinking-level 扩展（那就只是一句普通提示词） | 看日志有无 `[out] notice -> …`；否则用 `/reload` 重载扩展 |
+| `/new` 回「目录不在允许范围」 | `cwd` 不在 `liveSessions.roots` 内 | 改 `~/.pi/dashboard.json` 的 `liveSessions.roots`，或换成其中的目录 |
+| `/new` 回「启动卡在 Trust project folder?」 | 目标目录有 `.pi` 资源但未被信任，pane 无法回答该提示 | 在该目录终端跑一次 `pi` 选 Trust，或写进 `~/.pi/agent/trust.json` |
+| `/new` 回了「已新建会话（sessionId=…）」但没绑定 | `/start` 返回后列表/收尾失败（列表滞后或 dashboard 抖动） | 用 `/list` + `/bind` 收尾（会话已创建，不要重复 `/new`） |
 | `[gateway] failed: …`，或进程不在 | 网关本身没跑起来（lock 冲突 / 凭证错误） | 重新运行 `./run.sh`，确认输出里有 `[gateway] started: transport=lark(...)` |
 
 两条设计上的预期行为，不要当故障：
@@ -147,6 +150,20 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 - 使用者需**在每个群里各自** `/list` + `/bind`
 
 管理命令：`/list`、`/bind <序号或名称>`、`/new <cwd>`、`/unbind`、`/status`。
+
+### 新建会话（`/new`）
+
+`/new <cwd>` 会在 tmux 里起一个新的 Pi，并**直接绑定到当前聊天**（不必再 `/list` + `/bind`）；可选标题用 `|` 分隔：
+
+```
+/new ~/apps/foobar
+/new ~/apps/foobar | 修 Lark 网关
+```
+
+- `cwd` 必须落在 `~/.pi/dashboard.json` 的 `liveSessions.roots` 内（支持 `~` 与 `~/…`）；否则回「目录不在允许范围」而不是 403 原文。
+- 接口要等新 Pi 注册上来（中位 ~7s，冷启动见过 30s，上限 120s）才返回，所以网关会先发一条「正在创建…」，再发结果。
+- 失败时按原因给可操作的一句话：目录越界 / 卡在 `Trust project folder?`（pane 没键盘，需先信任该目录）/ 注册超时（`PI_DASH_LIVE_START_TIMEOUT_MS`）/ 服务端未启用启动器。
+- 万一只建成了没绑定（列表里有延迟），会回 sessionId 并提示用 `/list` + `/bind` 收尾；此时会话**已经创建**了，不要重复 `/new`。
 
 ## 会话操作命令（模型 / 压缩 / 中断 / 上下文）
 
