@@ -12,6 +12,9 @@ import type { ImMessage, ImTransport } from './transport.js'
  *  - inbound : transport message -> (command | input) -> live session
  *  - outbound: live session event -> assistant text -> bound chats
  */
+/** How long after a command the session's extension notices are relayed to the chat. */
+const NOTICE_WINDOW_MS = 30_000
+
 export class Gateway {
   readonly catalog = new Catalog()
   readonly mapping: Mapping
@@ -21,6 +24,8 @@ export class Gateway {
   private readonly lastSequence = new Map<string, number>()
   /** Handled/in-flight message ids; failed handling releases the id for redelivery. */
   private readonly seenMessageIds = new Set<string>()
+  /** Chats waiting for an extension notice (chat scope -> expiry), opened by a command. */
+  private readonly receiptUntil = new Map<string, number>()
 
   constructor(
     cfg: LarkGatewayConfig,
@@ -41,7 +46,9 @@ export class Gateway {
       console.warn(`[gateway] initial session list failed (${errorText(error)}); will recover on reconnect`)
     }
     await this.dashboard.subscribe(frame => {
-      void this.onFrame(frame)
+      // `onFrame` is async; an unhandled rejection here would take the whole
+      // gateway process down (Node exits on those), silencing both directions.
+      void this.onFrame(frame).catch(error => console.error(`[gateway] frame failed: ${errorText(error)}`))
     })
     await this.transport.start(
       message => this.onMessage(message),
@@ -83,15 +90,27 @@ export class Gateway {
 
   /** Send a reply to a chat, with a compact outbound log. */
   private async reply(chatId: string, threadId: string | null, text: string): Promise<void> {
-    console.log(`[out] reply -> ${chatId} (${text.length} chars)`)
-    await this.transport.sendText(chatId, threadId, text)
+    const scope = scopeOf(chatId, threadId)
+    // `/model` and `/list` can exceed a single Lark message.
+    for (const chunk of chunkText(text)) {
+      console.log(`[out] reply -> ${scope} (${chunk.length} chars)`)
+      try {
+        await this.transport.sendText(chatId, threadId, chunk)
+      } catch (error) {
+        // An attempt is logged before the send, so a failure must say so explicitly.
+        console.error(`[out] reply failed -> ${scope}: ${errorText(error)}`)
+        throw new ReplyFailedError(errorText(error))
+      }
+    }
   }
 
   private async onFrame(frame: LiveSessionBrowserEvent): Promise<void> {
     switch (frame.type) {
       case 'live_session_attached': {
-        const data = frame.data as { sessions?: LiveSessionSummary[] }
-        for (const summary of data.sessions ?? []) this.catalog.upsert(summary)
+        // Two shapes on this one event; see `attachedSummaries`. Reading only the
+        // `{ sessions }` shape left the catalog blind to every session that
+        // attached after the socket opened.
+        for (const summary of attachedSummaries(frame.data)) this.catalog.upsert(summary)
         return
       }
       case 'live_session_snapshot': {
@@ -128,19 +147,87 @@ export class Gateway {
     }
 
     const summary = this.catalog.findByProcessId(record.processInstanceId)
-    if (!summary?.sessionFile) return
-
     const text = extractAssistantText(record.event.type, record.event.data)
-    if (!text) return
+    if (text) {
+      if (!summary) {
+        // Never drop an answer silently again: without a catalog row there is no
+        // sessionFile, so no binding resolves and the chat just stays quiet.
+        console.warn(
+          `[out] dropped: unknown live session ${record.processInstanceId} (${text.length} chars, catalog=${this.catalog.list().length})`,
+        )
+        return
+      }
+      await this.forwardAnswer(summary, text)
+      return
+    }
 
-    const targets = this.mapping.lookupsBySession(summary.sessionFile)
+    // A one-way `ctx.ui.notify` from an extension (e.g. `/effort` → level set). The
+    // terminal and the web UI show these; the chat only gets them shortly after a
+    // command, so background chatter stays out.
+    if (record.event.type === 'extension_ui_notify' && summary) {
+      await this.forwardNotice(summary, record.event.data)
+    }
+  }
+
+  /** Deliver one assistant answer to every chat bound to that session. */
+  private async forwardAnswer(summary: LiveSessionSummary, text: string): Promise<void> {
+    const sessionFile = summary.sessionFile
+    if (!sessionFile) return
+    const targets = this.mapping.lookupsBySession(sessionFile)
     if (targets.length === 0) return
-    console.log(`[out] ${summary.sessionName || summary.sessionFile} -> ${targets.map(t => t.chatId).join(',')} (${text.length} chars)`)
+    console.log(`[out] ${summary.sessionName || sessionFile} -> ${targets.map(t => scopeOf(t.chatId, t.threadId)).join(',')} (${text.length} chars)`)
     for (const binding of targets) {
+      // Only a topic-scoped binding may anchor its answers to a message. On a plain
+      // chat `reply_in_thread` makes Lark nest the answer into a new thread, and the
+      // user's next message then arrives with a `thread_id` the chat key misses.
+      const anchor = binding.threadId ? binding.replyMessageId : undefined
       for (const chunk of chunkText(text)) {
-        await this.transport.sendText(binding.chatId, binding.threadId, chunk, binding.replyMessageId)
+        try {
+          await this.transport.sendText(binding.chatId, binding.threadId, chunk, anchor)
+        } catch (error) {
+          // One failed chat/chunk must not swallow the remaining ones.
+          console.error(`[out] send failed -> ${scopeOf(binding.chatId, binding.threadId)}: ${errorText(error)}`)
+        }
       }
     }
+  }
+
+  /** Relay an extension notice to the chats that just asked for a receipt. */
+  private async forwardNotice(summary: LiveSessionSummary, data: unknown): Promise<void> {
+    const sessionFile = summary.sessionFile
+    if (!sessionFile) return
+    const record = data as { message?: unknown; notifyType?: unknown } | null | undefined
+    const message = typeof record?.message === 'string' ? record.message.trim() : ''
+    if (!message) return
+    const icon = record?.notifyType === 'error' ? '❌' : record?.notifyType === 'warning' ? '⚠️' : 'ℹ️'
+    for (const binding of this.mapping.lookupsBySession(sessionFile)) {
+      if (!this.hasReceipt(binding.chatId, binding.threadId)) continue
+      const scope = scopeOf(binding.chatId, binding.threadId)
+      try {
+        await this.transport.sendText(binding.chatId, binding.threadId, `${icon} ${message}`)
+        console.log(`[out] notice -> ${scope} (${message.length} chars)`)
+      } catch (error) {
+        console.error(`[out] notice failed -> ${scope}: ${errorText(error)}`)
+      }
+    }
+  }
+
+  /** Open the receipt window for a chat, so a command's notices land in the chat. */
+  private openReceipt(chatId: string, threadId: string | null): void {
+    const now = Date.now()
+    for (const [scope, until] of this.receiptUntil) if (until <= now) this.receiptUntil.delete(scope)
+    this.receiptUntil.set(scopeOf(chatId, threadId), now + NOTICE_WINDOW_MS)
+  }
+
+  private hasReceipt(chatId: string, threadId: string | null): boolean {
+    const scope = scopeOf(chatId, threadId)
+    const until = this.receiptUntil.get(scope)
+    if (until === undefined) return false
+    if (until <= Date.now()) {
+      this.receiptUntil.delete(scope)
+      return false
+    }
+    return true
   }
 
   private async onMessage(message: ImMessage): Promise<void> {
@@ -164,9 +251,26 @@ export class Gateway {
   private async handleMessage(message: ImMessage): Promise<void> {
     const text = message.text.trim()
     if (!text) return
-    console.log(`[in] ${message.chatId} ${message.userId}: ${text.slice(0, 80)}`)
+    // Include the thread: a chat-level binding answers messages from any of its
+    // threads, and the two are otherwise indistinguishable in the log.
+    console.log(`[in] ${scopeOf(message.chatId, message.threadId)} ${message.userId}: ${text.slice(0, 80)}`)
 
+    try {
+      await this.dispatch(message, text)
+    } catch (error) {
+      console.error(`[in] handling failed: ${errorText(error)}`)
+      // A notice we could not deliver must not be followed by another notice: let
+      // it out so the SDK logs it and the id is released for a redelivery.
+      if (error instanceof ReplyFailedError) throw error
+      await this.reply(message.chatId, message.threadId, `处理失败：${errorText(error)}`)
+    }
+  }
+
+  private async dispatch(message: ImMessage, text: string): Promise<void> {
     if (text.startsWith('/')) {
+      // A command can make an extension emit `ctx.ui.notify` (`/effort high` →
+      // "level set"); relay those for a short window so the chat gets a receipt.
+      this.openReceipt(message.chatId, message.threadId)
       const reply = await handleCommand(text, {
         chatId: message.chatId,
         threadId: message.threadId,
@@ -174,21 +278,32 @@ export class Gateway {
         catalog: this.catalog,
         mapping: this.mapping,
         dashboard: this.dashboard,
+        notify: notice => this.reply(message.chatId, message.threadId, notice),
+        forward: commandText => this.forwardInput(message.chatId, message.threadId, commandText),
       })
-      await this.reply(message.chatId, message.threadId, reply)
-      return
+      // `null` = not a gateway command (`/clear`, `/goal`, skill commands, …). Those
+      // ride pi's input stream, so fall through to the forwarding path below.
+      if (reply !== null) {
+        await this.reply(message.chatId, message.threadId, reply)
+        return
+      }
     }
 
-    const binding = this.mapping.lookupByChat(message.chatId, message.threadId)
+    await this.forwardInput(message.chatId, message.threadId, text)
+  }
+
+  /** Send text into the bound session, answering the chat when that is impossible. */
+  private async forwardInput(chatId: string, threadId: string | null, text: string): Promise<void> {
+    const binding = this.mapping.lookup(chatId, threadId)
     if (!binding) {
-      await this.reply(message.chatId, message.threadId, '尚未绑定会话。用 /list 查看，/bind <序号或名称> 绑定。')
+      await this.reply(chatId, threadId, '尚未绑定会话。用 /list 查看，/bind <序号或名称> 绑定。')
       return
     }
     const summary = this.catalog.resolveBinding(binding.sessionFile)
     if (!summary) {
       await this.reply(
-        message.chatId,
-        message.threadId,
+        chatId,
+        threadId,
         `会话「${binding.sessionName || binding.sessionFile}」当前不可用，请 /list 后重新 /bind。`,
       )
       return
@@ -197,13 +312,56 @@ export class Gateway {
       await this.dashboard.sendInput(summary.processInstanceId, text, 'chatapp')
     } catch (error) {
       console.error(`[in] dashboard forwarding failed: ${errorText(error)}`)
-      await this.reply(message.chatId, message.threadId, '消息暂时未能送达 Agent，请稍后重试。')
+      await this.reply(chatId, threadId, '消息暂时未能送达 Agent，请稍后重试。')
     }
   }
 }
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** `chatId#threadId` when the message is thread-scoped, else just the chat id. */
+function scopeOf(chatId: string, threadId: string | null): string {
+  return threadId ? `${chatId}#${threadId}` : chatId
+}
+
+/**
+ * A chat notice could not be delivered at all. It is thrown (instead of
+ * swallowed) so the inbound message id is released and a redelivery can retry —
+ * and so the failure reaches the SDK log rather than ending in silence.
+ */
+class ReplyFailedError extends Error {
+  constructor(detail: string) {
+    super(detail)
+    this.name = 'ReplyFailedError'
+  }
+}
+
+/**
+ * Summaries carried by a `live_session_attached` frame.
+ *
+ * The event has two shapes on the same channel: the frame sent right after the
+ * socket opens carries every session (`{ sessions: [...] }`), while a session
+ * that attaches later carries only itself — a `LiveSessionDetail`
+ * (`{ summary, entries, ... }`). The web frontend handles both; the gateway used
+ * to read `sessions` alone, so a session that attached after connect never
+ * reached the catalog and every one of its replies was dropped as "unknown
+ * live session" (silently, before this fix).
+ */
+function attachedSummaries(data: unknown): LiveSessionSummary[] {
+  if (!data || typeof data !== 'object') return []
+  const record = data as { sessions?: unknown; summary?: unknown }
+  if (Array.isArray(record.sessions)) return record.sessions.filter(isSessionSummary)
+  return isSessionSummary(record.summary) ? [record.summary] : []
+}
+
+function isSessionSummary(value: unknown): value is LiveSessionSummary {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as { processInstanceId?: unknown }).processInstanceId === 'string'
+  )
 }
 
 const WELCOME = [
@@ -214,6 +372,7 @@ const WELCOME = [
   '  /bind <序号或名称>   绑定一个会话',
   '  /status            查看当前绑定',
   '  /unbind            解除绑定',
+  '  /help              全部命令（/model /compact /abort /context …）',
   '',
   '绑定后直接发消息，即可进入该会话。',
 ].join('\n')
