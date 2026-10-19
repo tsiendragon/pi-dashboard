@@ -2,15 +2,26 @@
  * Session routes — search, list, resume, host sessions, restart
  */
 import { Request, Response } from 'express'
-import { readFileSync, readdirSync } from 'fs'
+import { readFileSync, readdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import { execSync } from 'child_process'
 import os from 'os'
 import { DatabaseSync } from 'node:sqlite'
 import type { RouteDeps } from './types.js'
 import * as piEnv from '../pi-env.js'
+import { searchSessionsOnDisk } from '../session-store.js'
 
 const SESSION_INDEX_DIR = join(os.homedir(), '.pi', 'session-search', 'index')
+const SESSION_INDEX_JSON = join(SESSION_INDEX_DIR, 'session-index.json')
+
+/** The optional pi-session-search FTS index. Absent on machines that never ran an indexer. */
+function hasSessionIndex(): boolean {
+  try {
+    return existsSync(SESSION_INDEX_JSON)
+  } catch {
+    return false
+  }
+}
 
 // ─── Session search (FTS5 + session-index.json) ─────────────────────
 interface SessionSearchResult {
@@ -107,23 +118,24 @@ function listRecentSessions(limit: number): SessionSearchResult[] {
 export function registerSessionRoutes(deps: RouteDeps): void {
   const { app, manager, persistSlots } = deps
 
-  // Session search (uses pi-session-search FTS5 index)
+  // History search. Prefers the FTS index when one exists, and otherwise
+  // falls back to scanning the session files directly, so "Resume Session…"
+  // works on a machine that never built an index.
   app.get('/api/sessions/search', (req: Request, res: Response) => {
     const query = (req.query.q as string || '').trim()
     const limit = Math.min(parseInt(req.query.limit as string || '20', 10), 50)
-    if (!query) {
+    const indexed = hasSessionIndex()
+    if (indexed) {
       try {
-        const results = listRecentSessions(limit)
-        return res.json({ results })
-      } catch (err: any) {
-        return res.json({ results: [], error: err.message })
-      }
+        const results = query ? searchSessionIndex(query, limit) : listRecentSessions(limit)
+        if (results.length > 0) return res.json({ results, source: 'index', indexed })
+      } catch { /* fall through to the disk scan */ }
     }
     try {
-      const results = searchSessionIndex(query, limit)
-      res.json({ results })
+      const results = searchSessionsOnDisk(query, limit)
+      return res.json({ results, source: 'scan', indexed })
     } catch (err: any) {
-      res.json({ results: [], error: err.message })
+      return res.json({ results: [], source: 'scan', indexed, error: err.message })
     }
   })
 
