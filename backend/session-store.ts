@@ -1,7 +1,7 @@
 /**
  * Session persistence and JSONL parser for pi sessions.
  */
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, openSync, readSync, closeSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
@@ -243,6 +243,220 @@ export function findSessionFile(key: string): string | null {
     // skip
   }
   return null
+}
+
+// ── Session discovery (index-free history search) ──
+
+/**
+ * One session file summarized from its head, without loading the whole file.
+ *
+ * `userMessageCount` / `assistantMessageCount` stay at 0 on purpose: exact
+ * counts need a full read of every transcript (several GB on a busy machine),
+ * so history search reports titles and projects instead of numbers it cannot
+ * back up cheaply. The UI hides the count when it is 0.
+ */
+export interface SessionFileSummary {
+  id: string
+  name: string
+  file: string
+  cwd: string
+  startedAt: string
+  projectSlug: string
+  modified: string
+  size: number
+  userMessageCount: number
+  assistantMessageCount: number
+  models: string[]
+}
+
+interface SessionFileEntry {
+  file: string
+  modifiedMs: number
+  summary: SessionFileSummary
+}
+
+const SCAN_CACHE_TTL_MS = 20_000
+const SCAN_HEAD_BYTES = 16 * 1024
+const CONTENT_SCAN_FILES = 120
+const CONTENT_SCAN_BYTES = 192 * 1024
+const CONTENT_SCAN_TAIL_BYTES = 128 * 1024
+const CONTENT_SCAN_BUDGET_MS = 900
+
+let scanCache: { at: number; entries: SessionFileEntry[] } | null = null
+
+function readFileSlice(file: string, offset: number, bytes: number): string {
+  try {
+    const fd = openSync(file, 'r')
+    try {
+      const buf = Buffer.alloc(bytes)
+      const read = readSync(fd, buf, 0, bytes, offset)
+      return buf.subarray(0, read).toString('utf-8')
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    return ''
+  }
+}
+
+function readFileHead(file: string, bytes: number): string {
+  return readFileSlice(file, 0, bytes)
+}
+
+function summarizeSessionHead(
+  id: string,
+  file: string,
+  projectDir: string,
+  head: string,
+  modified: Date,
+  size: number,
+): SessionFileSummary {
+  let name = ''
+  let cwd = ''
+  let startedAt = ''
+  const models: string[] = []
+  for (const line of head.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    let obj: any
+    try {
+      obj = JSON.parse(trimmed)
+    } catch {
+      break // head was cut mid-line
+    }
+    if (obj.type === 'session') {
+      if (typeof obj.cwd === 'string') cwd = obj.cwd
+      if (typeof obj.timestamp === 'string') startedAt = obj.timestamp
+    } else if (obj.type === 'session_info') {
+      if (!name && typeof obj.name === 'string') name = obj.name
+    } else if (obj.type === 'model_change') {
+      const model = [obj.provider, obj.modelId].filter(Boolean).join('/')
+      if (model && !models.includes(model)) models.push(model)
+    } else if (obj.type === 'message' && !name && obj.message?.role === 'user') {
+      const text = stripInjectedBlocks(extractText(obj.message.content))
+      if (text) name = text.slice(0, 100).replace(/\s+/g, ' ')
+    }
+  }
+  const projectLabel = projectDir.replace(/^--/, '').replace(/--$/, '').replace(/--/g, '/')
+  return {
+    id,
+    name: name || projectLabel || id,
+    file,
+    cwd,
+    startedAt: startedAt || modified.toISOString(),
+    projectSlug: projectDir,
+    modified: modified.toISOString(),
+    size,
+    userMessageCount: 0,
+    assistantMessageCount: 0,
+    models,
+  }
+}
+
+/**
+ * Every session file on disk, newest first, cached briefly so keystroke-debounced
+ * search does not re-stat 600+ transcripts on each query.
+ */
+function scanSessionFiles(): SessionFileEntry[] {
+  const now = Date.now()
+  if (scanCache && now - scanCache.at < SCAN_CACHE_TTL_MS) return scanCache.entries
+  const entries: SessionFileEntry[] = []
+  let projectDirs: string[] = []
+  try {
+    projectDirs = readdirSync(SESSIONS_DIR).filter((d: string) => d.startsWith('--'))
+  } catch {
+    scanCache = { at: now, entries }  // no sessions directory yet
+    return entries
+  }
+  for (const dir of projectDirs) {
+    const full = join(SESSIONS_DIR, dir)
+    let names: string[]
+    try {
+      if (!statSync(full).isDirectory()) continue
+      names = readdirSync(full)
+    } catch {
+      continue
+    }
+    for (const name of names) {
+      if (!name.endsWith('.jsonl')) continue
+      const file = join(full, name)
+      let stat
+      try {
+        stat = statSync(file)
+      } catch {
+        continue
+      }
+      const id = name.replace(/\.jsonl$/, '')
+      const head = readFileHead(file, SCAN_HEAD_BYTES)
+      entries.push({
+        file,
+        modifiedMs: stat.mtimeMs,
+        summary: summarizeSessionHead(id, file, dir, head, stat.mtime, stat.size),
+      })
+    }
+  }
+  entries.sort((a, b) => b.modifiedMs - a.modifiedMs)
+  scanCache = { at: now, entries }
+  return entries
+}
+
+function tokenizeQuery(query: string): string[] {
+  return query.toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean)
+}
+
+/**
+ * History search that needs no FTS index: match titles/projects from the scan
+ * cache, then fall back to a bounded read of recent transcripts so keywords
+ * from the conversation body still hit. The content pass is capped in both file
+ * count and wall time — a search request must never stall the server.
+ */
+export function searchSessionsOnDisk(query: string, limit: number): SessionFileSummary[] {
+  const entries = scanSessionFiles()
+  const tokens = tokenizeQuery(query)
+  if (tokens.length === 0) return entries.slice(0, limit).map(e => e.summary)
+
+  const scored: { entry: SessionFileEntry; score: number }[] = []
+  const matched = new Set<string>()
+  for (const entry of entries) {
+    const name = entry.summary.name.toLowerCase()
+    const haystack = [entry.summary.projectSlug, entry.summary.cwd, entry.file].join(' ').toLowerCase()
+    let score = 0
+    for (const token of tokens) {
+      if (name.includes(token)) score += 3
+      else if (haystack.includes(token)) score += 1
+    }
+    if (score > 0) {
+      scored.push({ entry, score })
+      matched.add(entry.file)
+    }
+  }
+  scored.sort((a, b) => b.score - a.score || b.entry.modifiedMs - a.entry.modifiedMs)
+  const results = scored.map(s => s.entry)
+
+  if (results.length < limit) {
+    const started = Date.now()
+    let scanned = 0
+    for (const entry of entries) {
+      if (results.length >= limit) break
+      if (matched.has(entry.file)) continue
+      if (scanned >= CONTENT_SCAN_FILES) break
+      if (Date.now() - started > CONTENT_SCAN_BUDGET_MS) break
+      scanned++
+      // Read the beginning and the end: transcripts run to hundreds of MB, so
+      // the newest exchange (end) matters as much as the session opener (head).
+      const begin = readFileHead(entry.file, CONTENT_SCAN_BYTES)
+      const end = entry.summary.size > CONTENT_SCAN_BYTES
+        ? readFileSlice(entry.file, Math.max(0, entry.summary.size - CONTENT_SCAN_TAIL_BYTES), CONTENT_SCAN_TAIL_BYTES)
+        : ''
+      const text = (begin + '\n' + end).toLowerCase()
+      if (tokens.every(token => text.includes(token))) {
+        results.push(entry)
+        matched.add(entry.file)
+      }
+    }
+  }
+
+  return results.slice(0, limit).map(e => e.summary)
 }
 
 // ── Parse session JSONL into a tree structure ──

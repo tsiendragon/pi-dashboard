@@ -46,6 +46,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
   const [sessionQuery, setSessionQuery] = useState('')
   const [sessionResults, setSessionResults] = useState<SessionResult[]>([])
   const [sessionSearching, setSessionSearching] = useState(false)
+  const [sessionSource, setSessionSource] = useState<'index' | 'scan' | null>(null)
   const [sessionSelected, setSessionSelected] = useState(0)
   const sessionListRef = useRef<HTMLDivElement>(null)
   const sessionDebounce = useRef<ReturnType<typeof setTimeout>>()
@@ -81,8 +82,12 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
     setSessionSearching(true)
     sessionDebounce.current = setTimeout(() => {
       api.searchSessions(sessionQuery.trim(), 20)
-        .then((d: { results?: SessionResult[] }) => { setSessionResults(d.results || []); setSessionSelected(0) })
-        .catch(() => setSessionResults([]))
+        .then((d: { results?: SessionResult[]; source?: 'index' | 'scan' }) => {
+          setSessionResults(d.results || [])
+          setSessionSource(d.source || null)
+          setSessionSelected(0)
+        })
+        .catch(() => { setSessionResults([]); setSessionSource(null) })
         .finally(() => setSessionSearching(false))
     }, sessionQuery.trim() ? 200 : 0)
     return () => { if (sessionDebounce.current) clearTimeout(sessionDebounce.current) }
@@ -99,7 +104,7 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
     setMode(m)
     if (m === 'rename') setRenameValue(currentSlot?.title || '')
     if (m === 'tag') setTagValue('')
-    if (m === 'session-search') { setSessionQuery(''); setSessionResults([]); setSessionSelected(0) }
+    if (m === 'session-search') { setSessionQuery(''); setSessionResults([]); setSessionSource(null); setSessionSelected(0) }
     if (m === 'system-prompt') {
       setSystemPrompt(null)
       setSystemPromptLoading(true)
@@ -263,7 +268,11 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
           </div>
           <div ref={sessionListRef} className="cmdk-list" style={{ maxHeight: 400, overflowY: 'auto' }}>
             {!sessionSearching && sessionResults.length === 0 && (
-              <div className="cmdk-empty">{sessionQuery.trim() ? 'No sessions found.' : 'Loading…'}</div>
+              <div className="cmdk-empty">
+                {sessionQuery.trim()
+                  ? 'No sessions found.'
+                  : sessionSource === 'scan' ? 'No session files found on disk.' : 'Loading…'}
+              </div>
             )}
             {sessionResults.map((r, i) => {
               const date = r.startedAt ? new Date(r.startedAt).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' }) : ''
@@ -286,12 +295,17 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
                       {date && <span>{date}</span>}
                       {project && <span className="font-mono truncate max-w-[150px]">{project}</span>}
                       {model && <span>🧠 {model}</span>}
-                      <span>{r.userMessageCount} msgs</span>
+                      {r.userMessageCount > 0 && <span>{r.userMessageCount} msgs</span>}
                     </div>
                   </div>
                 </div>
               )
             })}
+            {sessionSource === 'scan' && sessionResults.length > 0 && (
+              <div className="cmdk-empty" style={{ textAlign: 'left', fontSize: '11px' }}>
+                No full-text index on this machine: matches session titles and projects, plus the text of the most recent sessions.
+              </div>
+            )}
           </div>
         </div>
       </>
