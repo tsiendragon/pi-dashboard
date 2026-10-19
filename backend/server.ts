@@ -35,6 +35,7 @@ import {
   registerLarkRoutes,
   registerTaskRoutes,
   registerVoiceRoutes,
+  registerMemeRoutes,
   registerExtConfigRoutes,
   registerPiExtListRoutes,
   registerPiExtWriteRoutes,
@@ -1007,6 +1008,7 @@ supervisorRuntime = new SupervisorRuntime({ registry: liveSessionRegistry, servi
 registerSupervisorRoutes({ app, auth: liveSessionAuth, runtime: supervisorRuntime, service: supervisorService, store: supervisorStore })
 if (!process.env.VITEST) void supervisorRuntime.boot().catch(error => console.error('[supervisor] initialization failed:', error))
 registerVoiceRoutes({ app })
+registerMemeRoutes({ app, auth: liveSessionAuth })
 registerLarkRoutes(app)
 void liveSessionAuth.start().then(() => {
   console.log(`[pty] Terminal control token: ${liveSessionAuth.tokenPath}`)

@@ -139,6 +139,14 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `PI_OBSERVATION_DIR` | `observation-pack` 大结果归档 | `<agent dir>/archiv`（可移植） |
 | `DASHSCOPE_API_KEY` / `ANTHROPIC_API_KEY` 等 | 模型 provider 凭证 | 无 |
 | `DASHSCOPE_BASE_URL` / `DASHSCOPE_TTS_BASE_URL` | DashScope 端点覆盖（ASR/TTS） | 官方端点 |
+| `DASHSCOPE_IMAGE_ENDPOINT` | 表情包图片生成/编辑的完整 HTTPS 地址，不复用语音端点 | `https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` |
+| `DASHSCOPE_IMAGE_MODEL` / `DASHSCOPE_IMAGE_EDIT_MODEL` | 表情包无参考图/有参考图模型；使用 `DASHSCOPE_API_KEY` | `qwen-image-3.0` / `qwen-image-3.0` |
+| `AZURE_OPENAI_IMAGE_API_KEY` / `AZURE_OPENAI_IMAGE_ENDPOINT` | Azure 图片服务密钥与 HTTPS 基础地址，不带 deployment 路径 | 无；均配置后启用 |
+| `AZURE_OPENAI_IMAGE_DEPLOYMENT` | 同时支持生成和编辑的 GPT Image 部署名（不支持 DALL-E） | `gpt-image-2.5-sunburst` |
+| `AZURE_OPENAI_IMAGE_API_VERSION` | Azure 图片生成/编辑接口版本 | `2025-04-01-preview` |
+| `AZURE_OPENAI_IMAGE_AUTH` | `bearer` 沿用 Toolkit 网关认证；原生 Azure API key 选 `api-key` | `bearer` |
+| `AZURE_FLUX2_API_KEY` / `AZURE_FLUX2_ENDPOINT` | 可选 FLUX.2 独立密钥与完整生成/参考图编辑 URL；不配置时沿用 Azure 图片密钥，从图片基础地址派生 `/providers/blackforestlabs/v1/flux-2-pro?api-version=preview`。参考图通过 `input_image` base64 提交。FLUX 1.1 Pro 独立沿用 `AZURE_OPENAI_IMAGE_API_KEY` 与图片基础地址，派生同前缀的 `/flux-pro-1.1?api-version=preview`，不使用此 FLUX.2 专用覆盖项 | 沿用/派生 |
+| `AZURE_MAI_IMAGE_API_KEY` / `AZURE_MAI_IMAGE_ENDPOINT` | 可选 MAI 独立密钥与基础地址；不配置时沿用 Azure 图片密钥，基础域名将 `.cognitiveservices.azure.com` 换成 `.services.ai.azure.com`；调用 `/mai/v1/images/generations?api-version=preview`，固定使用 `api-key` 认证 | 沿用/派生 |
 | `PI_BEDROCK_PROFILE` / `AWS_PROFILE` | Bedrock profile（未设 `AWS_PROFILE` 时回退） | 无 |
 
 > 语音输入使用 `DASHSCOPE_API_KEY` 和上述 DashScope 端点：浏览器通过同源 WebSocket 将 16 kHz 音频流交给 dashboard 后端，再调用 `qwen3-asr-flash-realtime`；录音停止后接收最终文本。它不需要新增环境变量。批量识别接口 `/api/asr/transcribe` 仍保留给非实时调用方。
