@@ -67,7 +67,10 @@ export class Mapping {
       platform: 'lark',
       chatId,
       threadId,
-      ...(replyMessageId ? { replyMessageId } : {}),
+      // Only a topic-scoped binding anchors its answers to a message. Keeping the
+      // anchor for a chat-scoped binding made every answer a `reply_in_thread`
+      // reply, which creates a Lark thread the plain chat key cannot follow.
+      ...(replyMessageId && threadId ? { replyMessageId } : {}),
       sessionFile,
       ...(sessionName ? { sessionName } : {}),
       boundAt: new Date().toISOString(),
@@ -77,14 +80,26 @@ export class Mapping {
     return binding
   }
 
-  async unbind(chatId: string, threadId: string | null = null): Promise<boolean> {
-    const removed = this.bindings.delete(key(chatId, threadId))
-    if (removed) await this.save()
-    return removed
+  /**
+   * Effective binding for an inbound message.
+   *
+   * A chat-level binding also covers messages sent inside a Lark thread of that
+   * chat: replying in a thread sets the message's `thread_id`, so a strict
+   * `chat#thread` lookup would miss a plain chat binding. An exact thread
+   * binding still wins, which keeps per-topic bindings isolated.
+   */
+  lookup(chatId: string, threadId: string | null = null): Binding | undefined {
+    const exact = this.bindings.get(key(chatId, threadId))
+    if (exact) return exact
+    return threadId ? this.bindings.get(key(chatId, null)) : undefined
   }
 
-  lookupByChat(chatId: string, threadId: string | null = null): Binding | undefined {
-    return this.bindings.get(key(chatId, threadId))
+  async unbind(chatId: string, threadId: string | null = null): Promise<boolean> {
+    const bound = this.lookup(chatId, threadId)
+    if (!bound) return false
+    const removed = this.bindings.delete(key(bound.chatId, bound.threadId))
+    if (removed) await this.save()
+    return removed
   }
 
   lookupsBySession(sessionFile: string): Binding[] {

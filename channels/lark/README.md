@@ -97,6 +97,37 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 - **启动容错**：dashboard 未就绪时 `subscribe()` 不抛异常，后台退避重试（指数退避，上限 30s）
 - **Cookie 刷新**：入站命令等受保护请求遇 401、或 WebSocket 票据遇 401/403 时，会重新认证并重试一次；重试仍失败时向 Lark 用户提示消息未送达
 - **去重**：出站按 `(processInstanceId, sequence)` 单调去重；入站按 `message_id` 去重
+- **会话目录（出站的前提）**：`live_session_attached` 同时识别两种载荷——建连帧的 `{ sessions: [...] }` 与会话**后加入**时的单会话 detail（`{ summary, ... }`）。以前只认前者，导致 socket 建立之后才 attach 的会话不在目录里，它的每条回复都被静默丢掉（表现为「Lark 里怎么发都没回复」，`/list` 之后又恢复）。现在目录缺行会打 `[out] dropped: unknown live session <pid> (...)`
+- **失败可见、互不牵连**：单个群/分片发送失败只记 `[out] send failed -> <chatId>`，不影响其它群；聊天回复投递失败记 `[out] reply failed -> <chatId>`，并把入站 `message_id` 释放给 Lark 重投；帧处理异常记 `[gateway] frame failed: ...`，不再以 unhandled rejection 直接打死网关进程
+- **无传输不再假装成功**：没有活跃 transport 时 `sendText` 抛错（以前是静默 no-op，日志里看起来和已送达一样）
+
+### 排障：Lark 里发了消息，但收不到回复
+
+先看网关日志（默认 `~/.pi/logs/lark-gateway.log`，`LARK_GW_LOG` 可改），按行里的标记定位：
+
+| 日志 | 含义 | 处理 |
+| --- | --- | --- |
+| 完全没有 `[in]` 行 | 事件没到网关：群里没 @ 机器人；消息不是文本（图片/文件/富文本/合并转发被丢弃）；或长连接正在重连（`[ws] reconnect`）期间丢事件 | 群里 @ 机器人；用纯文本重发；确认有 `[ws] ws client ready` |
+| `[in] <chatId>` 而不是 `[in] <chatId>#<threadId>` | 消息来自主聊天；带 `#` 则来自某个话题 | 对不上绑定就看下一行 |
+| `[in] …` 后的回复是「尚未绑定会话」 | 这个聊天（或这个话题）确实没有绑定 | `/status` 看作用域，`/list` 后 `/bind`；聊天级绑定对它的所有话题都生效 |
+| `[in] ignored (not allowed)` | 白名单不含该 open_id | 改 Settings → Lark 的允许用户（或 `LARK_ALLOWED_USER_IDS`） |
+| `[in] duplicate ignored` | Lark 重投了同一条消息 | 无需处理 |
+| `[out] dropped: unknown live session …` | 该会话不在网关目录里，回复无法寻址（修复前是静默丢弃） | 先发一次 `/list` 应急；把该行贴出来定位 |
+| `[out] send failed` / `[out] reply failed` | 发往 Lark 失败（限流 / 凭证 / `reply_in_thread`） | 看冒号后的错误文本 |
+| 群里收到「消息暂时未能送达 Agent」 | 网关 → dashboard 的入站转发失败（cookie / 会话状态） | `/status` 看会话是否在线，必要时 `/list` 后 `/bind` |
+| `[in] handling failed` | 处理链路异常 | 冒号后即原因 |
+| 回复是「会话正被网页端接管」 | `/compact`、`/abort` 需要独占租约，网页端正持有 | 等 30 秒或先在网页端放手；不影响普通消息（普通输入不需要租约） |
+| 回复是「没有匹配/匹配到 N 个模型」 | `/model` 的片段匹配不唯一 | 用 `/model` 看编号，或改成 `provider/id` |
+| `/effort` 有回「已下发」但没有结果提示 | 回执只转发命令后 30 秒内的 `extension_ui_notify`；或该会话没加载 thinking-level 扩展（那就只是一句普通提示词） | 看日志有无 `[out] notice -> …`；否则用 `/reload` 重载扩展 |
+| `/new` 回「目录不在允许范围」 | `cwd` 不在 `liveSessions.roots` 内 | 改 `~/.pi/dashboard.json` 的 `liveSessions.roots`，或换成其中的目录 |
+| `/new` 回「启动卡在 Trust project folder?」 | 目标目录有 `.pi` 资源但未被信任，pane 无法回答该提示 | 在该目录终端跑一次 `pi` 选 Trust，或写进 `~/.pi/agent/trust.json` |
+| `/new` 回了「已新建会话（sessionId=…）」但没绑定 | `/start` 返回后列表/收尾失败（列表滞后或 dashboard 抖动） | 用 `/list` + `/bind` 收尾（会话已创建，不要重复 `/new`） |
+| `[gateway] failed: …`，或进程不在 | 网关本身没跑起来（lock 冲突 / 凭证错误） | 重新运行 `./run.sh`，确认输出里有 `[gateway] started: transport=lark(...)` |
+
+两条设计上的预期行为，不要当故障：
+
+- 只有 **assistant 文本**（`message_end`，见 `render.ts`）会转发到群；纯工具轮次、被中断的一轮不会有任何消息。
+- 群里必须 **@机器人** 才会推送 `im.message.receive_v1`。
 
 环境变量：
 
@@ -120,6 +151,48 @@ npm run lark:probe            # 只验证 dashboard 通道（不需要 Lark 凭�
 
 管理命令：`/list`、`/bind <序号或名称>`、`/new <cwd>`、`/unbind`、`/status`。
 
+### 新建会话（`/new`）
+
+`/new <cwd>` 会在 tmux 里起一个新的 Pi，并**直接绑定到当前聊天**（不必再 `/list` + `/bind`）；可选标题用 `|` 分隔：
+
+```
+/new ~/apps/foobar
+/new ~/apps/foobar | 修 Lark 网关
+```
+
+- `cwd` 必须落在 `~/.pi/dashboard.json` 的 `liveSessions.roots` 内（支持 `~` 与 `~/…`）；否则回「目录不在允许范围」而不是 403 原文。
+- 接口要等新 Pi 注册上来（中位 ~7s，冷启动见过 30s，上限 120s）才返回，所以网关会先发一条「正在创建…」，再发结果。
+- 失败时按原因给可操作的一句话：目录越界 / 卡在 `Trust project folder?`（pane 没键盘，需先信任该目录）/ 注册超时（`PI_DASH_LIVE_START_TIMEOUT_MS`）/ 服务端未启用启动器。
+- 万一只建成了没绑定（列表里有延迟），会回 sessionId 并提示用 `/list` + `/bind` 收尾；此时会话**已经创建**了，不要重复 `/new`。
+
+## 会话操作命令（模型 / 压缩 / 中断 / 上下文）
+
+绑定之后，除了发普通消息，还能直接操作这个会话——与网页端 composer 的行为一致：
+
+| 命令 | 作用 | 后端命令 | 需要接管（lease） |
+| --- | --- | --- | --- |
+| `/model` | 列出可用模型，当前模型标 `← 当前` | `get_models` | 否 |
+| `/model <序号>` | 按上次列表的序号切换 | `set_model` | 否 |
+| `/model provider/id` | 按全名切换 | `set_model` | 否 |
+| `/model <名称片段>` | 模糊匹配（唯一才切，多个会列出候选） | `set_model` | 否 |
+| `/compact` | 压缩当前会话上下文 | `compact` | **是** |
+| `/abort`（`/stop`） | 中断当前回合 | `abort` | **是** |
+| `/context`（`/ctx`） | 上下文用量（token / 窗口占比 / 模型） | `get_context` | 否 |
+| `/reload`（`/restart`） | 重载扩展 / 技能 / 提示词 | `reload` | 否 |
+| `/name <新名称>`（`/rename`） | 重命名会话 | `set_session_name` | 否 |
+| `/effort <档位>` | 调 thinking level（`off\|minimal\|low\|medium\|high\|xhigh\|max`） | `input`（转给 `pi-tsien-thinking-level` 扩展命令） | 否 |
+| `/shutdown confirm` | 关闭会话（**必须带 `confirm`**，不带只回风险提示） | `shutdown` | 否 |
+
+几点说明：
+
+- **为什么要“接管”**：`compact` / `abort` 在后端是带独占租约的命令（同一时刻只能一个客户端写）。网关会先 `claim` 一个 30 秒租约 → 执行 → 立即 `release`。这一步期间网页端会短暂看到该会话被接管（1～2 秒）。
+- 如果网页端正持有租约，会直接回「会话正被网页端接管……等半分钟或先在网页端放手后再试」，不会硬抢。
+- `/compact` 这类耗时命令会先回一条「正在压缩…」再回结果。
+- **其它 `/xxx` 不再报「未知命令」**：`/clear`、`/goal`、`/effort`、skill / 扩展命令会原样转给会话（pi 的输入流只 dispatch 扩展命令和 skill，TUI 内置命令如 `/compact` 必须翻译成结构化命令，所以上表这几条由网关先接住）。
+- `/model` 的序号依赖「上一次 `/model` 输出」的缓存；换绑定或缓存丢失时用全名/模糊匹配即可。
+- **`/effort` 必须带档位**：不带参数时扩展会弹 `ctx.ui.select` 选择框，而 live-session 是 headless（`hasUI=false`），会静默什么都不做 —— 所以网关在无参时直接回用法。
+- **命令回执**：扩展的 `ctx.ui.notify`（比如 `/effort` 打完档位后的“已设为 high”）走的是 `extension_ui_notify` 事件，不是 assistant 文本。网关只在**命令后 30 秒内**把它转发到聊天（ℹ️/⚠️/❌ 前缀），长跑任务的背景通知不会刷屏。
+
 ### 群聊注意
 
 - 群里必须 **@机器人** 才触发（除非申请「接收群聊中所有消息」权限）。网关会自动剥离 `@_user_1` 这类提及占位符，所以 `@bot /list` 能正确识别为命令。
@@ -132,6 +205,12 @@ Lark 话题群里每条消息属于一个话题（`thread_id`）。网关会把�
 - 同一个话题群里，**每个话题可以独立绑定一个 session**
 - 出站消息通过回复原消息（`reply_in_thread`）发入对应话题，不会到处乱串
 - 需要在每个话题里各自 `/list` + `/bind`
+
+两级绑定的关系（也是「第二条消息提示尚未绑定会话」那个 bug 的修复点）：
+
+- **聊天级绑定**（`threadId: null`，普通群 / 私聊 / 在群主聊天里 `/bind`）：对该聊天的**所有消息与话题**都生效；回答直接发在主聊天，**不会**用 `reply_in_thread` 造话题。
+- **话题级绑定**（`chatId#threadId`，在某个话题里 `/bind`）：优先级高于聊天级，只对该话题生效；回答锚定回 `/bind` 那条消息，落在该话题内。
+- `/status` 会显示当前绑定的「作用域：整个聊天 / 仅本话题」。
 
 ### 入群欢迎
 
