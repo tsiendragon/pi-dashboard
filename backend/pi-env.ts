@@ -51,6 +51,10 @@ interface SessionSummary {
   created: string
   modified: string
   size: number
+  /** Session JSONL path — lets plugins read entries via the generic /api/file-read endpoint. */
+  path: string
+  /** Working directory recorded in the session header (undefined for very old sessions). */
+  cwd?: string
 }
 
 interface Extension {
@@ -249,12 +253,14 @@ export function getRecentSessions(limit: number = 30): SessionSummary[] {
         const filePath = join(full, f)
         const stat = statSync(filePath)
         let title: string = f.replace('.jsonl', '')
+        let cwd: string | undefined
         try {
           const head = readFileSync(filePath, 'utf-8').slice(0, 8000)
           const lines = head.split('\n').filter(Boolean)
           for (const line of lines) {
             try {
-              const obj = JSON.parse(line) as { sessionName?: string; type?: string; message?: { role?: string; content?: unknown } }
+              const obj = JSON.parse(line) as { sessionName?: string; type?: string; cwd?: string; message?: { role?: string; content?: unknown } }
+              if (!cwd && typeof obj.cwd === 'string') cwd = obj.cwd
               if (obj.sessionName) { title = obj.sessionName; break }
               if (obj.type === 'message' && obj.message?.role === 'user') {
                 const text = extractText(obj.message.content as string | null, ' ')
@@ -270,6 +276,8 @@ export function getRecentSessions(limit: number = 30): SessionSummary[] {
           created: stat.birthtime.toISOString(),
           modified: stat.mtime.toISOString(),
           size: stat.size,
+          path: filePath,
+          cwd,
         })
       }
     }

@@ -130,6 +130,7 @@ interface RowProps {
   title: string
   depth: number
   active: boolean
+  groupName?: string
   groupId?: string
   childCount: number
   subagent: boolean
@@ -418,6 +419,7 @@ function SessionRow(p: RowProps) {
             })()}
             {chips.map(t => <TagChip key={t} tag={t} active={p.tagFilter === t} onClick={p.onToggleTagFilter} />)}
             {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-2xs font-semibold leading-[14px] text-muted-strong" title={p.tags.join(', ')}>+{extra}</span>}
+            {p.groupName && <span className="shrink-0 truncate rounded-full bg-ok-subtle px-1.5 text-2xs leading-[14px] text-ok" title={`任务分组：${p.groupName}`}>{p.groupName}</span>}
             <span className="ml-auto flex min-w-0 shrink items-center gap-1 text-2xs leading-none text-muted-strong">
               {/* basename only: it is what tells the user what a session works on; the
                   full path stays in the row tooltip and the branch in `git.branch`. */}
@@ -1037,6 +1039,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
           moveIndex={subagent ? 0 : index}
           moveCount={subagent ? 1 : items.length}
           active={activeId === session.processInstanceId}
+          groupName={group?.name}
           groupId={group?.id}
           childCount={childCount}
           subagent={subagent}

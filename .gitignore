@@ -44,3 +44,7 @@ frontend/src/generated/plugin-registry.tsx
 /*-mock.html
 /frontend/public/*-mock.html
 /PLAN.md
+
+# Dev symlink for the external research-workspace plugin (canonical source lives in
+# the research toolchain repo; see its dashboard/pi-research-plugin/README.md)
+plugins/research-workspace

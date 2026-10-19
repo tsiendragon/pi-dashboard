@@ -141,6 +141,7 @@ function responseModelOf(message: Record<string, unknown>): string | undefined {
   const requested = stringValue(message.model)
   // Some OpenAI-compatible gateways report provider-internal deployment names
   // for streamed responses (some gateways echo `MaaS_*` deployment names). Those
+// for streamed responses (the OKG LLM Gateway echoes `MaaS_*` names). Those
   // are not the model the user selected, so keep the requested id instead and
   // let cost reporting stay on the user-facing model.
   if (reported && requested && reported.startsWith('MaaS_')) return requested
@@ -318,6 +319,7 @@ export class UsageLedger {
     const daily = new Map<string, UsageTotals>()
     const dailyModels = new Map<string, Map<string, UsageTotals>>()
     const models = new Map<string, UsageTotals>()
+    const efforts = new Map<string, Map<string, UsageTotals>>()
     const sessions = new Map<string, { totals: UsageTotals; label: string; sessionId?: string; sessionFile?: string; cwd?: string }>()
     const prefix = `${month}-`
 
@@ -336,6 +338,12 @@ export class UsageLedger {
       const model = models.get(item.modelKey) || emptyTotals()
       addTotals(model, item)
       models.set(item.modelKey, model)
+      const groups = efforts.get(item.modelKey) || new Map<string, UsageTotals>()
+      const effort = item.effort || 'unknown'
+      const subtotal = groups.get(effort) || emptyTotals()
+      addTotals(subtotal, item)
+      groups.set(effort, subtotal)
+      efforts.set(item.modelKey, groups)
 
       const session = sessions.get(item.sessionKey) || {
         totals: emptyTotals(),
@@ -361,7 +369,9 @@ export class UsageLedger {
     }
 
     const modelsResult: UsageModelSummary[] = [...models.entries()]
-      .map(([key, totals]) => ({ key, ...totals, effectiveUsdPerMillionTokens: effectiveUsdPerMillionTokens(totals) }))
+      .map(([key, totals]) => ({ key, ...totals, effectiveUsdPerMillionTokens: effectiveUsdPerMillionTokens(totals),
+        efforts: [...efforts.get(key)!.entries()].map(([key, totals]) => ({ key, ...totals, effectiveUsdPerMillionTokens: effectiveUsdPerMillionTokens(totals) })).sort((a, b) => b.costUsd - a.costUsd),
+      }))
       .sort((left, right) => right.costUsd - left.costUsd)
     const sessionsResult: UsageSessionSummary[] = [...sessions.entries()]
       .map(([key, value]) => ({

@@ -37,7 +37,7 @@ it('real extension tools create/update local tasks, record evidence and retain h
   const runtime = new SupervisorRuntime({ root: path.join(root, 'private'), service, registry, getConfig: () => config, liveConfig: DEFAULT_LIVE_SESSION_CONFIG, launch: async () => ({ processInstanceId: 'process-main', sessionId: 'supervisor-main' }) }); cleanup.push(() => runtime.close()); await runtime.boot(); await runtime.start()
   const tools = new Map<string, { execute: (...args: unknown[]) => Promise<{content:Array<{text:string}>}> }>()
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
-  const api = { registerFlag: vi.fn(), getFlag: () => path.join(root, 'private/credentials.json'), registerTool: (t: {name:string;execute:(...args:unknown[])=>Promise<{content:Array<{text:string}>}>}) => tools.set(t.name,t), on: (name:string, handler:(...args:unknown[])=>unknown) => handlers.set(name,handler), getAllTools: () => [...tools.keys()].map(name => ({name})), setActiveTools: vi.fn() } as unknown as ExtensionAPI
+  const api = { registerFlag: vi.fn(), registerCommand: vi.fn(), getFlag: () => path.join(root, 'private/credentials.json'), registerTool: (t: {name:string;execute:(...args:unknown[])=>Promise<{content:Array<{text:string}>}>}) => tools.set(t.name,t), on: (name:string, handler:(...args:unknown[])=>unknown) => handlers.set(name,handler), getAllTools: () => [...tools.keys()].map(name => ({name})), setActiveTools: vi.fn() } as unknown as ExtensionAPI
   supervisorExtension(api)
   const context = { sessionManager: { getSessionId: () => 'supervisor-main' }, hasUI: true, ui: { confirm: vi.fn(async () => true) } }
   await handlers.get('session_start')!({}, context)
@@ -71,7 +71,7 @@ it('real extension tools create/update local tasks, record evidence and retain h
   expect((await provider.get(created.task.id))!.completion).toBe('done'); expect(context.ui.confirm).toHaveBeenCalled()
   await user('不要创建任务')
   context.ui.confirm.mockResolvedValueOnce(false)
-  await expect(tool('supervisor_task_create', { title: '不能误建' })).rejects.toThrow('cancelled')
+  await expect(tool('supervisor_task_create', { title: '不能误建' })).rejects.toThrow('确认未通过')
   expect(await provider.list()).toHaveLength(2)
   await handlers.get('before_agent_start')!({prompt:'[supervisor-auto-patrol]自动巡查，不是用户新授权'})
   await expect(tool('supervisor_task_update',{uid:created.task.uid,status:'doing'})).rejects.toThrow()

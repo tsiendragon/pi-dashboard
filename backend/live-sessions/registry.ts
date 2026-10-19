@@ -555,6 +555,7 @@ export class LiveSessionRegistry extends EventEmitter {
     // answer_ui settles a pending extension UI request (first answer wins), so it
     // is deliberately dispatchable without holding the lease.
     if (validated.type === 'resync' || validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'get_context' || validated.type === 'set_model' || validated.type === 'reload' || validated.type === 'shutdown' || validated.type === 'answer_ui') return this.dispatch(processInstanceId, validated)
+
     this.requireLease(processInstanceId, browserClientId, validated.leaseId)
     return this.dispatch(processInstanceId, validated)
   }
