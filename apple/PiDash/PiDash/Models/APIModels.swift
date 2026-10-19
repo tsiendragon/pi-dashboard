@@ -685,7 +685,7 @@ struct ModelInfo: Decodable, Identifiable, Hashable {
         }
     }
 
-    static let allThinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"]
+    static let allThinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
     private static let thinkingLevelSet = Set(allThinkingLevels)
 
     static func splitThinkingSuffix(_ pattern: String) -> (modelPattern: String, thinkingLevel: String?) {
