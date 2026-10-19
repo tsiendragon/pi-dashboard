@@ -137,10 +137,10 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
      session, so the only things that gate the composer are its own startup and its
      own answer in flight. */
   const btwLocked = btwStarting
-  const canSendBtw = !!btwDraft.trim() && !btwLocked && !btwBusy
+  const canSendBtw = !!btwDraft.trim() && btwOpen && !btwLocked && !btwBusy
   const sendBtw = () => {
     const text = btwDraft.trim()
-    if (!text || btwLocked) return
+    if (!text || !btwOpen || btwLocked) return
     if (btwBusy) {
       setBtwNotice('BTW 正在回答：先「中止」或等它答完再问下一句')
       return
@@ -290,7 +290,7 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
         <textarea
           value={btwDraft}
           rows={2}
-          disabled={btwStarting}
+          disabled={!btwOpen || btwStarting}
           onChange={event => setBtwDraft(event.target.value)}
           onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendBtw() } }}
           placeholder={btwBusy ? 'BTW 正在回答；可先点「中止」' : btwStarting ? '正在启动只读旁聊…' : '问 BTW 一个问题（Enter 发送，Shift+Enter 换行）'}

@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>敲木鱼 · 进度动画 Mock v2（圆木鱼修正版）</title>
+<style>
+  /* ── 主题令牌（取自 frontend/src/themes/*.css，便于按真实配色评估） ── */
+  [data-theme="dark"]{--bg:#12141a;--panel:#1a1d25;--elevated:#1f232c;--text:#e4e4e7;--strong:#fafafa;--muted:#a1a1aa;--border:#27272a;--accent:#7aa2f7;--accent-subtle:rgba(122,162,247,.15)}
+  [data-theme="light"]{--bg:#fafafa;--panel:#ffffff;--elevated:#f5f5f5;--text:#3f3f46;--strong:#18181b;--muted:#71717a;--border:#e4e4e7;--accent:#1d5aaf;--accent-subtle:rgba(29,90,175,.12)}
+  [data-theme="rose-pine"]{--bg:#191724;--panel:#1f1d2e;--elevated:#26233a;--text:#e0def4;--strong:#e0def4;--muted:#908caa;--border:#393552;--accent:#c4a7e7;--accent-subtle:rgba(196,167,231,.15)}
+  [data-theme="rose-pine-dawn"]{--bg:#faf4ed;--panel:#fffaf3;--elevated:#f2e9e1;--text:#575279;--strong:#26233a;--muted:#9893a5;--border:#dfdad9;--accent:#907aa9;--accent-subtle:rgba(144,122,169,.12)}
+
+  :root{--dur:1.4s} /* 木鱼节奏；锤子保持线上原速 1.15s */
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:400 14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--text);padding:28px 20px 60px;transition:background .2s,color .2s}
+  .wrap{max-width:1060px;margin:0 auto}
+  h1{font-size:20px;color:var(--strong);letter-spacing:-.02em}
+  h2{font-size:15px;color:var(--strong);margin:36px 0 12px;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin-top:6px;max-width:780px}
+  .sub b{color:var(--text);font-weight:600}
+
+  /* ── 控制条 ── */
+  .controls{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:18px;
+    background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+  .ctl{display:flex;align-items:center;gap:6px}
+  .ctl>span{font-size:12px;color:var(--muted)}
+  .pill{border:1px solid var(--border);background:transparent;color:var(--text);border-radius:999px;
+    padding:3px 12px;font-size:12px;cursor:pointer;line-height:1.5}
+  .pill:hover{background:var(--elevated)}
+  .pill.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  label.chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;margin-left:auto}
+
+  /* ── 候选卡片 ── */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px}
+  .card{background:var(--panel);border:1.5px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;
+    position:relative;transition:border-color .15s}
+  .card:hover{border-color:var(--muted)}
+  .card.picked{border-color:var(--accent)}
+  .card .tag{position:absolute;top:-9px;left:12px;font-size:11px;padding:1px 8px;border-radius:999px;
+    background:var(--accent);color:#fff;display:none}
+  .card.picked .tag{display:block}
+  .card h3{font-size:14px;color:var(--strong);margin-bottom:2px}
+  .card .en{font-size:11px;color:var(--muted);font-family:ui-monospace,monospace}
+  .big{height:118px;margin:12px 0 10px;background:var(--elevated);border-radius:10px;
+    display:flex;align-items:center;justify-content:center;font-size:64px}
+  .sizes{display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);
+    background:var(--elevated);border-radius:10px;padding:8px 12px}
+  .sizes .demo{display:inline-flex;align-items:center;gap:5px}
+  .sizes .g16{font-size:16px;color:var(--text)}
+  .sizes .g26{font-size:26px;color:var(--text)}
+  ul.notes{margin:10px 0 0;padding-left:0;list-style:none;font-size:12.5px;color:var(--muted)}
+  ul.notes li{padding-left:18px;position:relative;margin-top:3px}
+  ul.notes li::before{position:absolute;left:0}
+  ul.notes li.good::before{content:"✓";color:#3fb950}
+  ul.notes li.warn::before{content:"⚠";color:#d29922}
+  ul.notes li.info::before{content:"·";color:var(--muted)}
+
+  /* ── 图标通用 ── */
+  .glyph{display:inline-block;width:1em;height:1em;overflow:visible;vertical-align:-.15em}
+  .glyph-row{width:26px;height:34px;vertical-align:middle}
+  /* 现状：锤子（与 index.css 线上实现一致） */
+  .hm-swing{transform-box:view-box;transform-origin:13px 13.1px;animation:hm-swing 1.15s infinite}
+  .hm-nail{transform-box:view-box;animation:hm-nail-jolt 1.15s infinite}
+  @keyframes hm-swing{
+    0%{transform:rotate(34deg);animation-timing-function:cubic-bezier(.5,.05,.85,.4)}
+    26%{transform:rotate(-3deg);animation-timing-function:ease-out}
+    36%{transform:rotate(7deg)}
+    50%{transform:rotate(2deg);animation-timing-function:cubic-bezier(.55,.05,.9,.45)}
+    100%{transform:rotate(34deg)}}
+  @keyframes hm-nail-jolt{0%,25%{transform:translateY(0)}30%{transform:translateY(.7px)}44%{transform:translateY(.15px)}58%,100%{transform:translateY(0)}}
+
+  /* ── 木鱼：圆木鱼鼓 + 蒲团 + 木槌（手法与锤子同构：CSS 关键帧 + currentColor） ── */
+  /* 木槌绕右下支点摆动，26% 时敲到球顶 */
+  .an-swing{transform-box:view-box;transform-origin:13.2px 13.2px;animation:muyu-swing var(--dur) infinite}
+  @keyframes muyu-swing{
+    0%{transform:rotate(38deg);animation-timing-function:cubic-bezier(.5,.05,.85,.4)}
+    26%{transform:rotate(-3deg);animation-timing-function:ease-out}
+    36%{transform:rotate(7deg)}
+    50%{transform:rotate(2deg);animation-timing-function:cubic-bezier(.55,.05,.9,.45)}
+    100%{transform:rotate(38deg)}}
+  /* 球体受击：向下压扁再回弹（以底边为轴，像压进蒲团） */
+  .an-ball{transform-box:fill-box;transform-origin:50% 100%;animation:muyu-squash var(--dur) infinite}
+  @keyframes muyu-squash{
+    0%,25%{transform:none;animation-timing-function:ease-out}
+    30%{transform:translateY(.35px) scale(1.06,.92)}
+    44%{transform:scale(.99,1.01)}
+    58%,100%{transform:none}}
+  /* 敲击波纹：从击点向外扩散消散 */
+  .an-tok{transform-box:fill-box;transform-origin:center;opacity:0;animation:muyu-tok var(--dur) infinite}
+  @keyframes muyu-tok{
+    0%,25%{opacity:0;transform:scale(.25)}
+    31%{opacity:.75;transform:scale(.55)}
+    58%{opacity:0;transform:scale(1.35)}
+    100%{opacity:0;transform:scale(1.35)}}
+  /* 功德 +1：从击点上方浮起淡出 */
+  .an-de{transform-box:fill-box;transform-origin:center;opacity:0;animation:muyu-de var(--dur) infinite;font-weight:700}
+  @keyframes muyu-de{
+    0%,26%{opacity:0;transform:translateY(1.5px)}
+    31%{opacity:1;transform:translateY(.5px)}
+    64%{opacity:0;transform:translateY(-2.6px)}
+    100%{opacity:0;transform:translateY(-2.6px)}}
+  .offset .an-swing,.offset .an-ball,.offset .an-tok,.offset .an-de{animation-delay:calc(var(--dur) * .37)}
+
+  /* 模拟 prefers-reduced-motion：落回静止的「槌贴球」姿态 */
+  .sim-reduced .an-swing,.sim-reduced .an-ball,.sim-reduced .an-tok,.sim-reduced .an-de,
+  .sim-reduced .hm-swing,.sim-reduced .hm-nail{animation:none}
+  @media (prefers-reduced-motion:reduce){
+    .an-swing,.an-ball,.an-tok,.an-de,.hm-swing,.hm-nail{animation:none}}
+
+  /* ── 侧边栏场景模拟（结构对照 ChatSidebar.tsx 的行布局） ── */
+  .scene{display:flex;gap:14px;flex-wrap:wrap}
+  .sb{width:340px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 6px}
+  .sb .cap{font-size:11px;color:var(--muted);padding:2px 10px 8px}
+  .sb-row{display:flex;align-items:stretch;gap:8px;padding:5px 10px;border-radius:8px}
+  .sb-row:hover{background:var(--elevated)}
+  .sb-gutter{display:flex;width:26px;flex-shrink:0;align-items:center;justify-content:center;color:var(--text)}
+  .sb-main{min-width:0;flex:1}
+  .sb-title{font-size:13px;color:var(--strong);height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sb-meta{font-size:11px;color:var(--muted);height:16px;margin-top:2px}
+  .typing{display:inline-flex;align-items:center;gap:3px}
+  .typing span{width:4px;height:4px;border-radius:50%;background:var(--muted);opacity:.4;animation:typing-b 1.4s ease-in-out infinite}
+  .typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+  @keyframes typing-b{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-3px);opacity:1}}
+
+  /* ── 落地说明 ── */
+  .plan{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px 18px;font-size:13px}
+  .plan ol{padding-left:20px}
+  .plan li{margin-top:4px;color:var(--text)}
+  .plan li em{color:var(--muted);font-style:normal}
+  .plan code{font-family:ui-monospace,monospace;font-size:12px;background:var(--elevated);padding:1px 5px;border-radius:4px}
+  .review-q{margin-top:26px;background:var(--accent-subtle);border:1px solid var(--accent);border-radius:12px;padding:12px 16px;font-size:13px}
+  .review-q ol{padding-left:20px;margin-top:4px}
+  .fact{margin-top:18px;background:var(--panel);border:1px dashed var(--border);border-radius:12px;padding:12px 16px;font-size:13px;color:var(--muted)}
+  .fact b{color:var(--text)}
+  footer{margin-top:30px;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🪵 进度动画：敲木鱼 v2（形象修正版）</h1>
+  <p class="sub">
+    v1 把木鱼画成了「侧面鱼形」，这是错的。真正的木鱼（佛教法器）是<b>圆球形的木鱼鼓</b>：
+    圆木球上刻<b>鱼鳞纹</b>，放在<b>蒲团垫</b>上，用<b>木槌</b>敲击球顶。
+    v2 按真实形象重画，保留你选定的 D 风格（敲击压扁回弹 + 波纹 + 功德+1），
+    提供<b>有脸（治愈版）</b>与<b>无脸（传统版）</b>两个选项。<b>点击卡片</b>在下方侧边栏预览。
+  </p>
+
+  <div class="fact">
+    <b>形象依据</b>（Wikipedia · Wooden fish / 木鱼）：起源于中国的法器，大乘佛教诵经时使用；
+    圆形木鼓，表面刻鱼鳞纹，中式木鱼常雕成双鱼首相对、衔珠的造型，寓意「鱼昼夜不合目」、警醒精进；
+    摆放在佛坛左侧的<b>软垫</b>上，用木槌敲击；尺寸从 15 厘米到 1.2 米不等。
+    「电子木鱼」App 的流行形象即：带鳞纹与治愈表情的圆球 + 蒲团 + 木槌 +「功德+1」。
+  </div>
+
+  <div class="controls">
+    <div class="ctl"><span>主题</span>
+      <button class="pill on" data-t="dark">深色</button>
+      <button class="pill" data-t="light">浅色</button>
+      <button class="pill" data-t="rose-pine">Rose Pine</button>
+      <button class="pill" data-t="rose-pine-dawn">RP Dawn</button>
+    </div>
+    <div class="ctl"><span>木鱼节奏</span>
+      <button class="pill" data-d="2">禅意 2.0s</button>
+      <button class="pill on" data-d="1.4">舒缓 1.4s</button>
+      <button class="pill" data-d="1.15">同现状 1.15s</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="rm"> 模拟「减少动效」（静止姿态）</label>
+  </div>
+
+  <h2>候选对比（大图 64px · 行内 26px / 16px）</h2>
+  <div class="grid">
+
+    <div class="card" data-pick="hammer" style="cursor:default">
+      <span class="tag">对照</span>
+      <h3>现状 · 锤子敲钉子</h3><div class="en">WorkingHammerIcon — 线上方案</div>
+      <div class="big"><span data-glyph="hammer"></span></div>
+      <div class="sizes">
+        <span class="demo g26">运行中 <span data-glyph="hammer"></span></span>
+        <span class="demo g16">运行中 <span data-glyph="hammer"></span></span>
+      </div>
+      <ul class="notes">
+        <li class="info">节奏 1.15s，放在这里是对照基准，不参与选择</li>
+      </ul>
+    </div>
+
+    <div class="card picked" data-pick="d1">
+      <span class="tag">预览中</span>
+      <h3>D-1 · 治愈版（有脸）</h3><div class="en">healing muyu — 电子木鱼风 · 推荐</div>
+      <div class="big"><span data-glyph="d1"></span></div>
+      <div class="sizes">
+        <span class="demo g26">运行中 <span data-glyph="d1"></span></span>
+        <span class="demo g16">运行中 <span data-glyph="d1"></span></span>
+      </div>
+      <ul class="notes">
+        <li class="good">圆木鱼鼓 + 鱼鳞纹 + 闭眼微笑 + 蒲团，即大众熟知的「电子木鱼」形象</li>
+        <li class="good">敲击时球体压扁回弹 + 波纹 +「+1」浮起，三重反馈都落在同一拍上</li>
+        <li class="warn">16px 下脸和鳞纹基本不可见，读作「圆球被敲」——语义仍成立</li>
+      </ul>
+    </div>
+
+    <div class="card" data-pick="d2">
+      <span class="tag">预览中</span>
+      <h3>D-2 · 传统版（无脸）</h3><div class="en">traditional muyu — 法器风</div>
+      <div class="big"><span data-glyph="d2"></span></div>
+      <div class="sizes">
+        <span class="demo g26">运行中 <span data-glyph="d2"></span></span>
+        <span class="demo g16">运行中 <span data-glyph="d2"></span></span>
+      </div>
+      <ul class="notes">
+        <li class="good">去掉表情、鳞纹铺满球身，更接近真实法器的庄严感</li>
+        <li class="warn">少了治愈感，「+1」和它并置会略显跳脱</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>真实场景：聊天侧边栏（点上方卡片切换运行图标）</h2>
+  <div class="scene">
+    <div class="sb">
+      <div class="cap">会话 · 运行中的两行用选中变体（第二个错开半拍）</div>
+      <div class="sb-row">
+        <span class="sb-gutter"><span class="demo-run" data-glyph="d1"></span></span>
+        <div class="sb-main">
+          <div class="sb-title">kyc-forgery-eval</div>
+          <div class="sb-meta">运行中 · 12 分钟 · 子任务 3/5</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <span class="sb-gutter offset"><span class="demo-run" data-glyph="d1"></span></span>
+        <div class="sb-main">
+          <div class="sb-title">周报整理</div>
+          <div class="sb-meta">运行中 · 3 分钟</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <span class="sb-gutter"><span class="typing" title="当前会话"><span></span><span></span><span></span></span></span>
+        <div class="sb-main">
+          <div class="sb-title">作业清理助手</div>
+          <div class="sb-meta">当前会话 · 正在输入</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <span class="sb-gutter" style="opacity:.6">💤</span>
+        <div class="sb-main">
+          <div class="sb-title">marketplace 同步</div>
+          <div class="sb-meta">空闲 · 昨天</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sb">
+      <div class="cap">26px 行高版 · 并排对比（判断行内辨识度）</div>
+      <div class="sb-row"><span class="sb-gutter"><span data-glyph="d1"></span></span>
+        <div class="sb-main"><div class="sb-title">D-1 治愈版</div><div class="sb-meta">healing</div></div></div>
+      <div class="sb-row"><span class="sb-gutter"><span data-glyph="d2"></span></span>
+        <div class="sb-main"><div class="sb-title">D-2 传统版</div><div class="sb-meta">traditional</div></div></div>
+      <div class="sb-row"><span class="sb-gutter"><span data-glyph="hammer"></span></span>
+        <div class="sb-main"><div class="sb-title">锤子（现状）</div><div class="sb-meta">hammer</div></div></div>
+    </div>
+  </div>
+
+  <div class="review-q">
+    <b>需要你拍板的三件事</b>
+    <ol>
+      <li>D-1 治愈版（有脸，我的推荐）还是 D-2 传统版（无脸）</li>
+      <li>节奏：禅意 2.0s / 舒缓 1.4s（我的默认）/ 与现状一致 1.15s</li>
+      <li>「功德 +1」日常控制台全场景启用，还是只在大尺寸场景（如直播会话画廊）启用</li>
+    </ol>
+  </div>
+
+  <h2>落地方式（确认后实施）</h2>
+  <div class="plan">
+    <ol>
+      <li>新增 <code>frontend/src/components/MuyuIcon.tsx</code>，接口与 <code>WorkingHammerIcon</code> 一致（<code>className</code> 单参数）；鳞纹/表情用 <code>var(--bg)</code> 走主题背景色挖线，不硬编码颜色</li>
+      <li>在 <code>index.css</code> 追加木鱼关键帧（<code>muyu-swing / muyu-squash / muyu-tok / muyu-de</code>），含 <code>prefers-reduced-motion</code> 静止姿态；锤子样式视替换范围移除或保留</li>
+      <li>5 处调用点（ChatSidebar、LiveSessionPage、Gallery、LiveSubagentPanel、LiveSessionsList）替换为新组件，<code>data-testid</code> 命名同步更新测试</li>
+      <li><em>不改</em>：typing-dots 输入指示、streaming-cursor 流式光标、状态语义与无障碍标签（title/aria-label 仍为「工作中」）</li>
+    </ol>
+  </div>
+
+  <footer>muyu-mock.html · v2 形象修正版 · 独立 mock，无依赖、不触碰仓库代码 · 手法与 index.css 中 working-hammer 完全同构</footer>
+</div>
+
+<script>
+/* ── 图形定义（与 WorkingHammerIcon.tsx 同构：SVG + currentColor + CSS 关键帧） ──
+   木鱼真实形象（据 Wikipedia）：圆球形木鱼鼓、表面刻鱼鳞纹、置于蒲团软垫、木槌敲击。 */
+const GLYPHS = {
+  hammer: `<svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">
+    <g transform="translate(0,1)">
+      <g class="hm-nail" fill="currentColor" opacity=".7">
+        <rect x="7" y="6.4" width="2" height="1.1" rx=".25"/>
+        <path d="M7.45 7.5h1.1v4.5L8 13.3l-.55-1.3z"/>
+      </g>
+      <g class="hm-swing">
+        <line x1="8.2" y1="5.6" x2="13.1" y2="13.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <rect x="5.7" y="3.9" width="4.6" height="2.3" rx=".5" fill="currentColor"/>
+      </g>
+    </g>
+  </svg>`,
+  d1: `<svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">
+    <defs><clipPath id="muyu-clip-d1"><circle cx="8.5" cy="8.8" r="4.15"/></clipPath></defs>
+    <!-- 蒲团垫 -->
+    <rect x="3.6" y="12.6" width="9.8" height="1.7" rx=".85" fill="currentColor" opacity=".45"/>
+    <!-- 木鱼球：受击压扁回弹 -->
+    <g class="an-ball">
+      <circle cx="8.5" cy="8.8" r="4.3" fill="currentColor"/>
+      <!-- 鱼鳞纹（裁剪在球内，用主题背景色刻线） -->
+      <g clip-path="url(#muyu-clip-d1)" fill="none" stroke="var(--bg)" stroke-width=".55" stroke-linecap="round">
+        <path d="M5.9 11.2q1.3 1.4 2.6 0M8.9 11.2q1.3 1.4 2.6 0"/>
+        <path d="M4.6 9.9q1.1 1.2 2.2 0M10.2 9.9q1.1 1.2 2.2 0"/>
+      </g>
+      <!-- 治愈脸：闭目 + 小嘴 -->
+      <path d="M6.1 8.2q.7.55 1.4 0M9.5 8.2q.7.55 1.4 0" fill="none" stroke="var(--bg)" stroke-width=".6" stroke-linecap="round"/>
+      <circle cx="8.5" cy="9.5" r=".42" fill="var(--bg)"/>
+    </g>
+    <!-- 敲击波纹 -->
+    <circle class="an-tok" cx="9.6" cy="4.7" r="1.5" fill="none" stroke="currentColor" stroke-width=".9"/>
+    <!-- 功德 +1 -->
+    <text class="an-de" x="6.9" y="3.4" font-size="3.2" text-anchor="middle" fill="currentColor">+1</text>
+    <!-- 木槌 -->
+    <g class="an-swing">
+      <line x1="13.2" y1="13.2" x2="10.0" y2="5.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="10.0" cy="5.2" r="1.55" fill="currentColor"/>
+    </g>
+  </svg>`,
+  d2: `<svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">
+    <defs><clipPath id="muyu-clip-d2"><circle cx="8.5" cy="8.8" r="4.15"/></clipPath></defs>
+    <!-- 蒲团垫 -->
+    <rect x="3.6" y="12.6" width="9.8" height="1.7" rx=".85" fill="currentColor" opacity=".45"/>
+    <!-- 木鱼球：受击压扁回弹 -->
+    <g class="an-ball">
+      <circle cx="8.5" cy="8.8" r="4.3" fill="currentColor"/>
+      <!-- 鱼鳞纹铺满球身（传统法器无表情） -->
+      <g clip-path="url(#muyu-clip-d2)" fill="none" stroke="var(--bg)" stroke-width=".55" stroke-linecap="round">
+        <path d="M6.2 11.4q1.15 1.25 2.3 0M8.6 11.4q1.15 1.25 2.3 0"/>
+        <path d="M5.0 10.2q1.1 1.2 2.2 0M7.4 10.2q1.1 1.2 2.2 0M9.8 10.2q1.1 1.2 2.2 0"/>
+        <path d="M4.0 8.9q1.0 1.1 2.0 0M6.2 8.9q1.0 1.1 2.0 0M8.4 8.9q1.0 1.1 2.0 0M10.6 8.9q1.0 1.1 2.0 0"/>
+      </g>
+    </g>
+    <!-- 敲击波纹 -->
+    <circle class="an-tok" cx="9.6" cy="4.7" r="1.5" fill="none" stroke="currentColor" stroke-width=".9"/>
+    <!-- 功德 +1 -->
+    <text class="an-de" x="6.9" y="3.4" font-size="3.2" text-anchor="middle" fill="currentColor">+1</text>
+    <!-- 木槌 -->
+    <g class="an-swing">
+      <line x1="13.2" y1="13.2" x2="10.0" y2="5.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="10.0" cy="5.2" r="1.55" fill="currentColor"/>
+    </g>
+  </svg>`
+};
+
+/* 行高版（26×34，对应 .working-hammer-row） */
+function rowHTML(v){ return GLYPHS[v].replace('class="glyph"', 'class="glyph glyph-row"'); }
+
+document.querySelectorAll('[data-glyph]').forEach(el => {
+  el.innerHTML = el.closest('.sb-gutter') ? rowHTML(el.dataset.glyph) : GLYPHS[el.dataset.glyph];
+});
+
+/* 点击卡片 → 侧边栏运行图标切换为该变体 */
+document.querySelectorAll('.card[data-pick]').forEach(card => {
+  card.addEventListener('click', () => {
+    const v = card.dataset.pick;
+    document.querySelectorAll('.card[data-pick]').forEach(c => c.classList.toggle('picked', c === card));
+    document.querySelectorAll('.demo-run').forEach(el => { el.dataset.glyph = v; el.innerHTML = rowHTML(v); });
+  });
+});
+
+/* 主题 / 节奏 / 减少动效 */
+document.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
+  document.documentElement.dataset.theme = b.dataset.t;
+  document.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', x === b));
+}));
+document.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => {
+  document.documentElement.style.setProperty('--dur', b.dataset.d + 's');
+  document.querySelectorAll('[data-d]').forEach(x => x.classList.toggle('on', x === b));
+}));
+document.getElementById('rm').addEventListener('change', e => {
+  document.body.classList.toggle('sim-reduced', e.target.checked);
+});
+</script>
+</body>
+</html>

@@ -35,7 +35,8 @@ describe('UsageLedger', () => {
     expect(report.total.costUsd).toBeCloseTo(0.06)
     expect(report.models).toHaveLength(1)
     expect(report.models[0].costUsd).toBeCloseTo(0.06)
-    expect(report.models[0].efforts).toBeUndefined()
+    expect(report.models[0].efforts.map(item => [item.key, item.costUsd])).toEqual([['high', 0.03], ['low', 0.02], ['unknown', 0.01]])
+    expect(report.models[0].efforts[0].effectiveUsdPerMillionTokens).toBeCloseTo(0.03 / 110 * 1e6)
   })
 
   it('persists session usage and aggregates daily, model, and session totals', async () => {
