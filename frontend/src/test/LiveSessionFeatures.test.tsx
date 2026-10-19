@@ -149,7 +149,7 @@ describe('LiveSessionFeatures', () => {
       features: {
         btw: {
           status: 'ready',
-          model: 'dashscope/deepseek-v4.1-flash',
+          model: 'dashscope/deepseek-v4.1-flash-1017',
           parentMessageCount: 12,
           conversation: [
             { role: 'user', text: '刚才那个文件叫什么' },

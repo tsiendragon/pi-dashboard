@@ -329,7 +329,7 @@ function SessionRow(p: RowProps) {
           {/* line 1 — title */}
           <div className="flex h-[18px] items-center gap-1.5">
             {p.depth > 0 && <span className="shrink-0 text-2xs leading-none text-accent">↳</span>}
-            {!renaming && p.appearance?.emoji && <span data-session-emoji className="max-w-16 shrink-0 truncate text-base" title={p.appearance.emoji}>{p.appearance.emoji}</span>}
+            {!renaming && p.appearance?.emoji && <span data-session-emoji className="max-w-16 shrink-0 truncate text-meta leading-none" title={p.appearance.emoji}>{p.appearance.emoji}</span>}
             {renaming ? (
               <input
                 autoFocus
