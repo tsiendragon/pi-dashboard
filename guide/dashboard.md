@@ -8,6 +8,22 @@
 
 ---
 
+## 表情包工坊
+
+侧栏「表情包」（`/memes`）用于输入描述、选择画风，可选上传一张 PNG/JPEG/WebP 参考图（最多 8 MiB）。后台通过 DashScope 或 Azure 生成，一次一张；服务进程同时只接收一个生成请求，不自动重试付费调用。用户可以先选服务商，再直接选该服务下的已登记模型。当前接入 Qwen 3.0/3.0 Pro/2.0/2.0 Pro、Z-Image Turbo、GPT Image 2.5 Sunburst/2.5 Flare/2/1.5、FLUX.1 Kontext Pro、FLUX 1.1 Pro、FLUX.2 Pro 和 MAI Image 2e。默认选 Qwen `qwen-image-3.0`（非 Pro）与 Azure `gpt-image-2.5-sunburst`。Qwen、GPT Image、FLUX Kontext 和 FLUX.2 Pro 接入文字生成及参考图加文字生成；Z-Image、FLUX 1.1 Pro、MAI 当前仅接入文字生成。FLUX 1.1 Pro 及 FLUX.2 Pro 使用 Foundry BFL 接口，后者参考图为 `input_image` base64，页面已开放上传。追加实测使用英文描述，页面模型说明提示建议英文；没有验证所有中文描述。FLUX.2 Flex 虽出现在目录但实际未找到部署，未加入列表。切换到未接入参考图的型号会清除已选参考图，并禁用上传。模型目录可见不代表已有部署或真实可调用；自定义部署必须先登记到后端白名单，页面不接受随意填写名称。当前默认以官方 [Qwen 图片接口](https://www.alibabacloud.com/help/en/model-studio/qwen-image-generation-and-editing-api-reference) 和 [Azure 图片生成说明](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/dall-e) 为依据，而不是 Toolkit 的旧默认模型。页面显式提交用户选择的 `model`，不必为切换模型修改 `.env`。环境中的旧模型配置只作为未显式传 `model` 的兼容调用默认；初始页面若无法匹配已登记默认值，会选择 Qwen 3.0 或 GPT Image 2.5 Sunburst。配置项见 [配置总览](config.md) 的图片服务环境变量，密钥只在后端读取；沿用 Toolkit 的请求格式，无需安装 Python SDK。DashScope 默认使用新加坡地址，密钥地域必须匹配；其他地域请设置完整图片接口地址，不要填聊天或语音接口。Azure 基础地址不带 deployment 路径，原生 Azure API key 需设置 `AZURE_OPENAI_IMAGE_AUTH=api-key`；默认 `bearer` 用于 Toolkit 风格网关。
+
+生成页面要求先完成现有浏览器认证；未认证时按页面提示，到在线会话页完成认证。参考图和描述会发送给所选第三方服务，不要上传敏感照片。结果只在当前页面内存暂存，刷新或离开页面会清空。Azure 图片可直接下载；DashScope 返回临时图片链接时需打开原图保存，链接可能过期。不写入会话记录，也不持久化图库。请求超时不等于上游取消，稍后重试可能产生额外费用。
+
+页面在模型名下显示所选模型、模式对应的「费用参考」。按已核实的新加坡标准价：Qwen 3.0 的 1K/2K 输出 US$0.030/张，加一张参考图合计 US$0.033/次；Qwen 3.0 Pro 的 1K/2K 输出分别 US$0.040/0.075，加一张参考图另收 US$0.003；Qwen 2.0/2.0 Pro 分别 US$0.035/0.075 每张输出；Z-Image Turbo 按提示词改写关闭/开启为 US$0.015/0.030 每张。未接入参考图的型号不提供编辑报价。其他地域和 Azure 未核实的资源价格标注待核实，不把 OpenAI API 单价当成 Azure 单价。注明官方来源与核对日期（2026-10-19），不含折扣、免费额度和税费，以账单为准。
+
+后台提供 `GET /api/memes/providers` 与 `POST /api/memes/generate`，均要求浏览器认证。服务列表新增 `models`（标识、名称、`modes`、是否配置、生成/参考图各自的价格和 `verification`）与 `defaultModel`，旧字段保留。`t2i` 表示文字生成图片，`it2i` 表示参考图加文字生成图片。生成接口接收 `provider`、`model`、`prompt`、可选 `style` 和 `referenceImage`（图片 data URL）；后端校验模型白名单、服务商与模式，不会通过不支持的接口偷偷忽略参考图。未传 `model` 的旧调用仍兼容环境默认值。只返回图片、服务名和模型名，不返回密钥或原始上游错误。
+
+下拉菜单和模式说明区分别显示已出图、上次失败或未实测，注明核对日期。状态来自一次性真实测试记录，只证明接口返回图片，不保证质量和未来仍可调用。记录按服务地址指纹匹配，换资源地址会显示未实测，不把本机结果套到其他机器；指纹与实际地址不返回浏览器。测试清单和证据见 `docs/meme-model-validation.md`。
+
+可将不含密钥的图片服务地址和模型写入仓库 `.env`（加载顺序见 [环境配置](env-configuration.md)）；密钥继续由启动环境注入，不要提交到 Git。自检显示「已配置」只表示变量齐全，不代表密钥有效、模型可用或真实出图成功。
+
+此改动需要用户自行执行 `./run.sh` 构建前端并重启后端后生效；agent 不代为部署。重启使用的环境也必须包含相应图片服务密钥。真实接口连通性、计费和出图质量需使用实际配置验证。
+
 ## 品牌图标
 
 左上角使用 `frontend/public/logo.png`（512×512），浏览器标签页使用 `favicon.png`（64×64），兼容图标 `favicon.ico` 包含 16/32/48 像素版本；安装图标为 `icon-192.png`、`icon-512.png`。入口附带 `?v=user-pi-2`，避免沿用旧图缓存。旧 `logo.svg` 不再作为标签页入口。
