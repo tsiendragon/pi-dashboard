@@ -4,8 +4,8 @@
 
 用户可以在会话列表中，为单个会话选择颜色与符号，快速区分用途。沿用现有主题、紧凑行布局、菜单与会话元信息接口；不改变名称、分组、运行状态或权限。
 
-- 颜色使用独立左侧细条，不覆盖运行状态条或整行选中底色。
-- 符号放在标题前；支持常用表情、自定义符号和不设置。
+- 颜色使用独立左侧细条，不覆盖运行状态条或整行选中底色；扩充预设颜色，并用系统颜色选择器支持任意自选颜色。
+- 符号放在标题前，列表与预览使用 12px；增加分类表情快捷选项，保留自定义符号和不设置。可通过 iPhone 系统键盘输入或粘贴其他表情，不把快捷列表称为完整 iPhone 表情库；新表情的字形取决于查看设备的系统和字体。
 - 每行的调色板按钮及菜单打开设置，修改先预览，保存才写入；取消不生效。
 - 恢复默认清空颜色与符号，仍需保存确认。
 - 保存到服务端现有会话元信息，以持久会话标识关联；刷新与重启后保留。属于当前 Dashboard 的共享会话设置，不是独立用户的私有偏好。
@@ -21,10 +21,10 @@
 
 实现完成，尚未部署。由用户运行 `./run.sh` 构建并重启后生效，Agent 不重启服务。
 
-- 前端定向回归：`npm --prefix frontend test -- --run src/test/sessionAppearanceDialog.test.tsx src/test/liveSessionsSidebar.test.tsx src/test/liveSessionsUi.test.tsx`，64 项通过。
+- 前端定向回归：`npm --prefix frontend test -- --run src/test/sessionAppearanceDialog.test.tsx src/test/liveSessionsSidebar.test.tsx src/test/liveSessionsUi.test.tsx`，75 项通过，包含 8 类表情、复杂组合表情、自选颜色和旧操作回归。
 - 后端定向回归：`npm test -- backend/__tests__/live-session-meta.test.js backend/__tests__/live-session-order.test.js backend/__tests__/live-session-restart.test.js`，64 项通过，包括真实临时文件重载、非法输入、存储失败后回滚与重试。
-- `npm run typecheck` 与 `npm run docs:env-check` 通过。
+- 初版 `npm run typecheck` 与 `npm run docs:env-check` 通过；本次纯前端扩充再次通过 `npm --prefix frontend run typecheck`。
 - 使用真实列表组件、模拟接口和隔离的浏览器页面，检查保存、刷新、取消、恢复默认、键盘焦点、明暗主题、390px 窄屏，以及 195px 有效窗口（近似 390px 窗口放大两倍）。截图复查发现的极窄弹窗横向挤压已修复，再次检查通过。
-- 浏览器证据：`/tmp/pi-session-appearance-evidence/result.json` 与同目录 5 张截图；测试页面不连接真实会话，也未修改 `frontend/dist`。检查结束后关闭隔离测试服务。
+- 本次扩充的浏览器证据：`/tmp/pi-session-appearance-expanded-evidence/result.json` 与同目录 5 张截图。检查分类切换保留选择、自选颜色保存后刷新、列表与预览的实际字号均为 12px，以及明暗/窄屏效果；标题与保存按钮在弹窗滚动时保持可用。测试页面不连接真实会话，也未修改 `frontend/dist`，检查结束后关闭隔离测试服务。
 
-尚未验证：用户重启后的真实会话操作。测试机缺少部分表情字体，截图中部分符号显示为方框；字符读写与复合表情保存已验证，实际字形依赖使用者设备的表情字体。未增加远程字体依赖。
+尚未验证：用户重启后的真实会话操作，以及 iPhone 真机和最新系统表情的显示效果。测试机缺少部分表情字体，截图中部分符号显示为方框；字符读写与复合表情保存已验证，实际字形依赖使用者设备的表情字体。未增加远程字体依赖。

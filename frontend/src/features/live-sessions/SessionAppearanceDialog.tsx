@@ -2,18 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { LiveSessionMeta } from '@shared/live-sessions'
 import MaterialIcon from '../../components/MaterialIcon'
-
-export const SESSION_COLORS = [
-  { label: '默认', value: '' },
-  { label: '蓝色', value: '#5287be' },
-  { label: '绿色', value: '#54937d' },
-  { label: '紫色', value: '#9571c4' },
-  { label: '粉色', value: '#c67598' },
-  { label: '橙色', value: '#c97864' },
-  { label: '金色', value: '#b58a35' },
-] as const
-
-const SYMBOLS = ['', '😊', '🤖', '🚀', '🧪', '📖', '🪪', '📦', '🌍', '🔧', '🐱', '⭐']
+import { SESSION_COLORS, SESSION_EMOJI_GROUPS } from './sessionAppearanceOptions'
 export type SessionAppearance = Required<Pick<LiveSessionMeta, 'color' | 'emoji'>>
 
 interface Props {
@@ -26,6 +15,7 @@ interface Props {
 export default function SessionAppearanceDialog({ title, appearance, onSave, onClose }: Props) {
   const [color, setColor] = useState(appearance?.color ?? '')
   const [emoji, setEmoji] = useState(appearance?.emoji ?? '')
+  const [emojiGroup, setEmojiGroup] = useState<keyof typeof SESSION_EMOJI_GROUPS>('常用')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const headingId = useId()
@@ -46,7 +36,7 @@ export default function SessionAppearanceDialog({ title, appearance, onSave, onC
         if (!savingRef.current) onCloseRef.current()
       }
       if (event.key === 'Tab') {
-        const controls = [...(panelRef.current?.querySelectorAll<HTMLElement>('button, input') ?? [])]
+        const controls = [...(panelRef.current?.querySelectorAll<HTMLElement>('button, input, select') ?? [])]
           .filter(control => !control.matches(':disabled'))
         if (!controls?.length) {
           event.preventDefault()
@@ -99,7 +89,7 @@ export default function SessionAppearanceDialog({ title, appearance, onSave, onC
       onKeyDown={event => event.stopPropagation()}
     >
       <div ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={headingId} aria-describedby={descriptionId} aria-busy={saving} className="max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-xl border border-border bg-card text-text shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-4">
           <h2 id={headingId} className="text-sm font-semibold">设置会话装扮</h2>
           <button ref={closeRef} type="button" disabled={saving} aria-label="关闭装扮设置" onClick={onClose} className="rounded p-1 text-muted hover:bg-bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"><MaterialIcon name="close" className="h-4 w-4" /></button>
         </div>
@@ -113,26 +103,36 @@ export default function SessionAppearanceDialog({ title, appearance, onSave, onC
                   {!option.value && <span aria-hidden="true">∅</span>}
                 </button>)}
               </div>
+              <label className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">自定义颜色
+                <input type="color" aria-label="自定义标记颜色" value={color || '#5287be'} onChange={event => setColor(event.target.value)} className="h-8 w-10 cursor-pointer rounded border border-border bg-bg p-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
+                <span className="font-mono text-2xs">{color || '默认'}</span>
+              </label>
             </fieldset>
             <fieldset className="min-w-0">
               <legend className="mb-2 text-xs font-medium">会话符号</legend>
+              <label className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted">表情分类
+                <select value={emojiGroup} onChange={event => setEmojiGroup(event.target.value as keyof typeof SESSION_EMOJI_GROUPS)} className="min-w-0 flex-1 rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                  {Object.keys(SESSION_EMOJI_GROUPS).map(group => <option key={group} value={group}>{group}</option>)}
+                </select>
+              </label>
               <div className="flex flex-wrap gap-2">
-                {SYMBOLS.map(symbol => <button key={symbol} type="button" aria-label={symbol ? `使用符号 ${symbol}` : '不设置符号'} aria-pressed={emoji === symbol} onClick={() => setEmoji(symbol)} className={`flex h-9 w-9 items-center justify-center rounded-md border border-border text-lg hover:bg-bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${emoji === symbol ? 'ring-2 ring-accent' : ''}`}>{symbol || '∅'}</button>)}
+                {['', ...SESSION_EMOJI_GROUPS[emojiGroup]].map(symbol => <button key={symbol} type="button" aria-label={symbol ? `使用符号 ${symbol}` : '不设置符号'} aria-pressed={emoji === symbol} onClick={() => setEmoji(symbol)} className={`flex h-9 w-9 items-center justify-center rounded-md border border-border text-lg hover:bg-bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${emoji === symbol ? 'ring-2 ring-accent' : ''}`}>{symbol || '∅'}</button>)}
               </div>
               <label className="mt-3 flex items-center gap-3 text-xs text-muted">自定义符号
-                <input value={emoji} onChange={event => setEmoji(event.target.value)} maxLength={24} placeholder="如 🐱" className="min-w-0 flex-1 rounded-md border border-border bg-bg px-2 py-1.5 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
+                <input value={emoji} onChange={event => setEmoji(event.target.value)} maxLength={24} placeholder="输入或粘贴，如 🐱" className="min-w-0 flex-1 rounded-md border border-border bg-bg px-2 py-1.5 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
               </label>
+              <p className="mt-2 text-2xs text-muted">也可用 iPhone 表情键盘输入或粘贴；显示样式随设备和系统版本而变。</p>
             </fieldset>
             <div aria-label="装扮预览" className="relative flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-border bg-bg py-3 pl-4 pr-3">
               {color && <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r" style={{ backgroundColor: color }} />}
               <span aria-label="运行状态不变" className="shrink-0 text-muted">○</span>
-              {emoji.trim() && <span data-session-emoji className="max-w-16 shrink-0 truncate text-base">{emoji.trim()}</span>}
+              {emoji.trim() && <span data-session-emoji className="max-w-16 shrink-0 truncate text-meta leading-none">{emoji.trim()}</span>}
               <span className="min-w-0 truncate text-sm">{title}</span>
             </div>
             <p id={descriptionId} className="text-2xs text-muted">仅改变外观，不影响运行状态、分组或标签。此设置保存在当前 Dashboard，其他连接它的浏览器也会看到。</p>
           </fieldset>
           {error && <p role="alert" className="px-5 pb-3 text-xs text-danger">{error}</p>}
-          <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-3 text-xs">
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-border bg-card px-5 py-3 text-xs">
             <button type="button" disabled={saving} onClick={() => { setColor(''); setEmoji(''); setError('') }} className="rounded-md border border-border px-2.5 py-1.5 hover:bg-bg-hover disabled:opacity-40">恢复默认</button>
             <button type="button" disabled={saving} onClick={onClose} className="ml-auto rounded-md border border-border px-2.5 py-1.5 hover:bg-bg-hover disabled:opacity-40">取消</button>
             <button type="submit" disabled={saving} className="rounded-md bg-accent px-3 py-1.5 text-accent-fg disabled:opacity-40">{saving ? '保存中…' : '保存'}</button>
