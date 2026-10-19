@@ -205,14 +205,14 @@ export class DashboardClient {
   }
 
   /** Start a new live session (pi in a fresh tmux session). Returns the raw start result. */
-  async startSession(cwd: string, title?: string): Promise<{ sessionId?: string; tmuxSession?: string }> {
+  async startSession(cwd: string, title?: string): Promise<{ sessionId?: string; processInstanceId?: string; tmuxSession?: string }> {
     const res = await this.requestWithCookie(`${this.cfg.dashboardBaseUrl}/api/live-sessions/start`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ cwd, ...(title ? { title } : {}) }),
     })
     if (res.status !== 200) throw requestError('start_failed', res.status, res.body)
-    const parsed = JSON.parse(res.body) as { result?: { sessionId?: string; tmuxSession?: string } }
+    const parsed = JSON.parse(res.body) as { result?: { sessionId?: string; processInstanceId?: string; tmuxSession?: string } }
     return parsed.result ?? {}
   }
 
