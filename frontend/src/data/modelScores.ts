@@ -6,7 +6,7 @@
  *  - frontierCode：FrontierCode 开源仓库真实工单「维护者会合并」比例（%），智能体软件工程
  *  - terminalBench21：Terminal-Bench 2.1（上一代基准，%）
  * ourModels 关联本机启用的 provider/model（~/.pi/agent/settings.json enabledModels），
- * 用于与真实成本/速度联表；没有分数的模型（如 Qwen3 Coder Plus）表示 AA 未收录。
+ * 用于与真实成本/速度联表；没有分数的模型（如 Qwen3 Coder Plus）表示 AA 未收录，或 AA 已收录但本快照还没抓到可比的分数。
  * ourModels 为空表示本机未启用（旧一代 gpt-5.6-* 与 gpt-6-sol 已从 provider 配置下线）；
  * 键名必须与 provider 配置一致（Azure 组是 azure-gateway / azure-gateway-claude，不是 azure-proxy）。
  * 更新方式：从 AA 模型页抓取（RSC 数据）后重新生成本文件。
@@ -45,7 +45,8 @@ export const MODEL_SCORES: ModelScore[] = [
   { slug: "glm-5-3-flash", name: "GLM-5.3-Flash", creator: "Z AI", releaseDate: "2026-08-26", intelligenceIndex: 41.8, terminalBench40: 32.8, frontierCode: 41.0, terminalBench21: 84.3, ourModels: ["llm-gateway/glm-5.3-flash"] },
   { slug: "qwen3-8-max", name: "Qwen3.8 Max (0902)", creator: "Alibaba", releaseDate: "2026-09-02", intelligenceIndex: 45.4, terminalBench40: 38.9, frontierCode: 43.2, terminalBench21: 88.8, ourModels: ["dashscope/qwen3.8-max"] },
   { slug: "qwen3-8-flash-next", name: "Qwen3.8 Flash (Next)", creator: "Alibaba", releaseDate: "2026-08-26", intelligenceIndex: 39.8, terminalBench40: 25.3, terminalBench21: 86.1, ourModels: ["dashscope/qwen3.8-flash"] },
-  { slug: "deepseek-v4-1-flash", name: "DeepSeek V4.1 Flash", creator: "DeepSeek", releaseDate: "2026-09-10", intelligenceIndex: 39.5, terminalBench40: 26.8, frontierCode: 44.0, ourModels: ["dashscope/deepseek-v4.1-flash", "dsw/deepseek_v41_flash"] },
+  { slug: "deepseek-v4-1-flash", name: "DeepSeek V4.1 Flash", creator: "DeepSeek", releaseDate: "2026-09-10", intelligenceIndex: 39.5, terminalBench40: 26.8, frontierCode: 44.0, ourModels: ["dsw/deepseek_v41_flash"] },
+  { slug: "deepseek-v4-1-flash-1017", name: "DeepSeek V4.1 Flash 1017", creator: "DeepSeek", releaseDate: "2026-10-17", ourModels: ["dashscope/deepseek-v4.1-flash-1017"] },
   { slug: "deepseek-v4-pro", name: "DeepSeek V4 Pro 0813", creator: "DeepSeek", releaseDate: "2026-08-13", intelligenceIndex: 36.0, terminalBench40: 14.1, terminalBench21: 78.7, ourModels: ["dashscope/deepseek-v4-pro-0813"] },
   { slug: "deepseek-v4-flash", name: "DeepSeek V4 Flash 0731", creator: "DeepSeek", releaseDate: "2026-07-31", intelligenceIndex: 34.3, terminalBench40: 12.1, terminalBench21: 78.7, ourModels: ["dashscope/deepseek-v4-flash"] },
   { slug: '', name: "Qwen3 Coder Plus", creator: 'Alibaba', ourModels: ["dashscope/qwen3-coder-plus"] },
