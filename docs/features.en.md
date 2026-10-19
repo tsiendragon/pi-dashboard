@@ -40,9 +40,13 @@ The core is talking to pi, with a few things a terminal does not give you:
 - **Streaming output** — replies arrive token by token; thinking blocks, tool calls, and command output render as distinct blocks, and images are inline.
 - **Visible tool calls** — which file pi read, which command it ran, and what came back, all folded into the transcript.
 - **Slash commands** — built-ins like `/clear`, `/compact`, `/import`, plus commands registered by extensions; type `/` for the menu.
-- **Fork & resume** — branch a new session from any message, or continue an old one.
+- **Fork & resume** — branch a new session from any message, or continue an old one: open the command palette (`⌘K` / `Ctrl+K`) and pick **Resume Session…** (or press `Ctrl/⌘+Shift+H`) to search past sessions by title, project, or transcript text. No full-text index needed — the dashboard reads the session files directly.
 - **Context usage** — live token/context tracking, so you know when to `/compact`.
 - **Voice input** — the composer accepts speech (see Settings → Voice).
+
+![Chat transcript](images/features/01-chat.png)
+
+A real slice of a conversation: thinking blocks collapse, and tool calls are grouped — the group header states how many steps ran and how many succeeded or failed (here "2 done · 1 failed"). Failures are not hidden.
 
 ---
 
@@ -60,6 +64,12 @@ This is where Pi Dashboard is clearly more than "chat in a terminal". Click **�
 - **Conflict handling** — if pi edits a file while you have unsaved changes, a yellow bar offers Reload / Keep Mine / Show Diff. With no unsaved changes, the panel follows pi's edits live.
 
 Comments live in a `.{filename}.comments.json` sidecar next to the file (git-ignored), so pi can read them directly.
+
+![File tree](images/features/02-files.png)
+
+![Document preview](images/features/02-preview.png)
+
+Together they show the whole loop: on the left, the file tree (switch workspaces, filter by name); on the right, the full-screen preview, whose header row is exactly **Preview / Edit toggle, Save, and Download** — you never leave the dashboard to read or change a file. Images, PDFs, spreadsheets, and source files all open in the same window.
 
 Typical loop: pi drafts a document → you open it and comment on the sentences you disagree with → Review Comments sends them in one shot → pi revises → the panel updates and you review the diff.
 
@@ -80,6 +90,39 @@ See the pi sessions that are **currently running**, and take one over.
 - Subagent and background-task status also show up here.
 
 Sessions that are actively working show a small animated glyph at the head of the row — a mallet tapping a wooden fish, with a floating "+1" — so you can tell at a glance which ones are busy.
+
+---
+
+## Subagents
+
+When pi works on something it fans out a batch of subagents. This panel brings their live state into the dashboard, so you do not have to dig through logs or guess:
+
+- **Grouped by state** — running / needs attention / completed / stopped. Whatever needs your decision sits where you will see it.
+- **No pretending work is happening** — a subagent that has lost its session is labelled "currently disconnected" instead of looking busy.
+- **Stop one whenever** — running subagents carry a Stop button (click once more to confirm).
+- **A step-by-step record** — an activity card follows, showing what this activity is doing and when it started, plus an execution log: which step ran, which one failed. Long runs collapse into "show the other N items", and failed steps stay visible.
+
+![Subagents in real time](images/features/04-subagent.png)
+
+That is the real thing above: three subagent tasks marked "needs attention", one activity with its execution log underneath (step 2 failed, the later steps carried on), and 99 more items folded away.
+
+---
+
+## Context inspector (the context command)
+
+The Live Pi session toolbar has a **◲ Context** button that answers a question you would otherwise be guessing at: **what did this session actually send to the model?**
+
+- **The source is labelled honestly** — "real request" means the last payload actually sent to the provider (normalised across OpenAI Responses / Chat Completions, Anthropic Messages, Google and Bedrock Converse). Before the process has sent one, it says "approximate reconstruction" and names what is left out.
+- **Five tabs** — overview, system prompt, tools, messages, request fields. Overview gives estimated tokens and shares per category plus the ten largest messages; the system prompt is split into project docs / skills / guidelines / base prompt; tools are sorted by definition size; messages can be searched and expanded; request fields cover the model, reasoning effort and other non-content fields.
+- **Token counts are estimates** (ASCII ≈4 characters per token, CJK 1 character per token) — useful for comparing blocks, not for billing. pi's own reported usage sits beside them, and a gap between the two is normal. Every row also carries the real character count, so a truncated body still counts.
+- **Copy report** exports a plain-text summary (source, shares, biggest blocks) with no bodies in it, ready to paste to a colleague or hand back to the agent for optimisation.
+- Read-only — no session takeover needed, and it still works while another browser holds control.
+
+![Context inspector](images/features/05-context.png)
+
+That is a real report: tool calls take 50% (120.7k), tool results 23%, user messages 14% — you can see at a glance what the context is being eaten by.
+
+> One gotcha: this comes from a pi extension loaded when the pi process starts, so sessions that are already running need a **reload** before the button does anything; newly started sessions have it from the beginning.
 
 ---
 

@@ -13,9 +13,12 @@
 | `00-nav-overview.png` | `/chat` | ✅ 已生成（已用于 README 与两份导览） |
 | `09-extensions.png` | `/extensions` | ✅ 已生成（本机路径已打码） |
 | `14-settings.png` | `/settings` | ✅ 已生成 |
-| `01-chat.png` | `/chat` | ⏳ 待补：欢迎页拍过了，但**带真实对话**的截图更有说服力 |
-| `02-files.png` | `/chat` + 文件面板 | ⏳ 待补：文件树 + 预览 + 一条行内评论 |
+| `01-chat.png` | `/chat` | ✅ 已生成（用户提供，真实对话：思考过程 + 工具组「2 完成 · 1 失败」；浅色主题） |
+| `02-files.png` | `/chat` + 文件面板 | ✅ 已生成（用户提供，文件树；本机路径已改写成 `~/repos/pi-dashboard`） |
+| `02-preview.png` | 文档全屏预览 | ✅ 已生成（用户提供，Preview / Edit / Save / 下载；已裁到弹窗内，去掉背后的会话文字） |
+| `05-context.png` | Live 会话页「◲ 上下文」 | ✅ 已生成（用户提供，上下文检查面板；已裁到面板内，去掉背后的聊天文字） |
 | `03-terminal.png` | 终端 | ⏳ 待补 |
+| `04-subagent.png` | Live 会话页顶部 | ✅ 已生成（用户提供，子代理状态分组 + 活动执行记录；背景侧栏与右栏已裁掉） |
 | `04-live-sessions.png` | `/live-sessions` | ⛔ 已删除：用户提供的截图里有内部项目名字眼，不适合公开仓库 |
 | `05-supervisor.png` | `/supervisor` | ⛔ 同上（自动截图是红色报错） |
 | `06-tasks.png` | `/tasks` | ⛔ 含内部任务名，需脱敏或换演示数据 |
