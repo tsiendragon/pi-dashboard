@@ -114,8 +114,7 @@ private fun textParts(content: JsonElement?): String = when (content) {
         val obj = part as? JsonObject ?: return@mapNotNull null
         when (obj.str("type")) {
             "text" -> obj.str("text")
-            "image" -> "[图片：请在 WebUI 查看原图]"
-            "toolCall" -> "工具 ${obj.str("name").orEmpty()}\n${obj["arguments"] ?: JsonObject(emptyMap())}"
+            "image" -> null
             else -> null
         }
     }.joinToString("\n")
@@ -160,13 +159,39 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
         val message = (raw as? JsonObject)?.let(::messageOf)
         message?.takeIf { it.str("role") == "toolResult" }?.str("toolCallId")
     }.toSet()
-    return visible.mapIndexedNotNull { index, raw ->
-        val entry = raw as? JsonObject ?: return@mapIndexedNotNull null
-        val type = entry.str("type") ?: return@mapIndexedNotNull null
+    // Arguments belong to the call, not to the prose of the message that issued it.
+    val callArgs = mutableMapOf<String, String?>()
+    visible.forEach { raw ->
+        val message = (raw as? JsonObject)?.let(::messageOf) ?: return@forEach
+        (message["content"] as? JsonArray)?.forEach { part ->
+            val obj = part as? JsonObject ?: return@forEach
+            if (obj.str("type") != "toolCall") return@forEach
+            val id = obj.str("id") ?: return@forEach
+            callArgs[id] = argumentText(obj["arguments"])
+        }
+    }
+    val out = mutableListOf<LiveTimelineItem>()
+    // A call, its result and its execution events are one line, so later rows replace
+    // earlier ones instead of stacking duplicates in the transcript.
+    fun put(item: LiveTimelineItem) {
+        val index = out.indexOfFirst { it.id == item.id }
+        if (index < 0) { out += item; return }
+        val previous = out[index]
+        out[index] = item.copy(
+            toolArgs = item.toolArgs ?: previous.toolArgs,
+            toolName = item.toolName ?: previous.toolName,
+            thinking = item.thinking ?: previous.thinking,
+            images = if (item.images.isEmpty()) previous.images else item.images,
+            forkable = item.forkable || previous.forkable,
+        )
+    }
+    visible.forEachIndexed { index, raw ->
+        val entry = raw as? JsonObject ?: return@forEachIndexed
+        val type = entry.str("type") ?: return@forEachIndexed
         val data = entry.obj("data") ?: buildJsonObject {}
         val message = messageOf(entry)
         if (message != null) {
-            val role = message.str("role") ?: return@mapIndexedNotNull null
+            val role = message.str("role") ?: return@forEachIndexed
             val content = message["content"]
             val text = textParts(content)
             val thoughts = (content as? JsonArray)?.mapNotNull { part ->
@@ -177,37 +202,97 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
             val toolFailed = (message["isError"] as? JsonPrimitive)?.booleanOrNull == true
             val entryId = (if (type == "message") entry.str("id") else data.str("entryId"))?.takeIf { it.isNotBlank() }
             val images = imageParts(content)
-            if (text.isBlank() && thoughts == null && errorMessage.isNullOrBlank() && !toolFailed && images.isEmpty()) return@mapIndexedNotNull null
-            LiveTimelineItem(
-                id = entryId ?: "message-${entry.str("sequence") ?: index}-$role",
-                role = if (role == "toolResult") "tool" else role,
-                text = preview(listOfNotNull(text.takeIf { it.isNotBlank() }, errorMessage).joinToString("\n")
-                    .ifBlank { if (toolFailed) "工具执行失败，未提供详细输出。" else "" }),
-                timestamp = timestamp(message["timestamp"] ?: entry["timestamp"]),
-                thinking = thoughts?.let(::preview),
-                toolName = message.str("toolName"),
-                isError = toolFailed || errorMessage != null,
-                entryId = entryId,
-                forkable = role == "user" && entryId != null,
-                channel = data.str("channel") ?: message.str("channel") ?: entry.str("channel"),
-                status = if (errorMessage != null || toolFailed) "error" else if (type == "message_update") "running" else "done",
-                intermediate = (content as? JsonArray)?.any { (it as? JsonObject)?.str("type") in setOf("thinking", "toolCall") } == true,
-                images = images,
-            )
-        } else if (type.startsWith("tool_execution_")) {
-            if (data.str("toolCallId") in completedTools) return@mapIndexedNotNull null
+            val channel = data.str("channel") ?: message.str("channel") ?: entry.str("channel")
+            val at = timestamp(message["timestamp"] ?: entry["timestamp"])
+            val body = listOfNotNull(text.takeIf { it.isNotBlank() }, errorMessage).joinToString("\n")
+                .ifBlank { if (toolFailed) "工具执行失败，未提供详细输出。" else "" }
+            val toolCallId = message.str("toolCallId")
+            if (role == "toolResult" && toolCallId != null) {
+                // The result completes the call line; it never becomes a second card.
+                put(
+                    LiveTimelineItem(
+                        id = "tool-call-$toolCallId",
+                        role = "tool",
+                        text = preview(body),
+                        timestamp = at,
+                        toolName = message.str("toolName"),
+                        isError = toolFailed || errorMessage != null,
+                        channel = channel,
+                        status = if (toolFailed || errorMessage != null) "error" else "done",
+                        toolCallId = toolCallId,
+                        toolArgs = callArgs[toolCallId],
+                    )
+                )
+                return@forEachIndexed
+            }
+            if (body.isNotBlank() || thoughts != null || images.isNotEmpty()) {
+                put(
+                    LiveTimelineItem(
+                        id = entryId ?: "message-${entry.str("sequence") ?: index}-$role",
+                        role = role,
+                        text = preview(body),
+                        timestamp = at,
+                        thinking = thoughts?.let(::preview),
+                        toolName = message.str("toolName"),
+                        isError = toolFailed || errorMessage != null,
+                        entryId = entryId,
+                        forkable = role == "user" && entryId != null,
+                        channel = channel,
+                        status = if (errorMessage != null || toolFailed) "error" else if (type == "message_update") "running" else "done",
+                        intermediate = (content as? JsonArray)?.any { (it as? JsonObject)?.str("type") in setOf("thinking", "toolCall") } == true,
+                        images = images,
+                    )
+                )
+            }
+            // One collapsed line per tool call, in the order the model issued them.
+            (content as? JsonArray)?.forEach { part ->
+                val obj = part as? JsonObject ?: return@forEach
+                if (obj.str("type") != "toolCall") return@forEach
+                val id = obj.str("id") ?: return@forEach
+                put(
+                    LiveTimelineItem(
+                        id = "tool-call-$id",
+                        role = "tool",
+                        text = "",
+                        timestamp = at,
+                        toolName = obj.str("name") ?: "tool",
+                        channel = channel,
+                        status = if (id in completedTools) "done" else "running",
+                        toolCallId = id,
+                        toolArgs = callArgs[id],
+                    )
+                )
+            }
+            return@forEachIndexed
+        }
+        if (type.startsWith("tool_execution_")) {
+            val toolCallId = data.str("toolCallId")
+            if (toolCallId in completedTools) return@forEachIndexed
             val result = data.obj("result") ?: data.obj("partialResult")
             val output = textParts(result?.get("content"))
-            val args = data["args"]?.toString()
-            val body = listOfNotNull(args, output.takeIf { it.isNotBlank() }).joinToString("\n")
-            LiveTimelineItem(
-                id = "tool-${data.str("toolCallId") ?: entry.str("sequence") ?: index}", role = "tool",
-                text = preview(body.ifBlank { if (type == "tool_execution_end") "已完成" else "执行中…" }),
-                toolName = data.str("toolName") ?: "tool", isError = (data["isError"] as? JsonPrimitive)?.booleanOrNull == true,
-                status = if ((data["isError"] as? JsonPrimitive)?.booleanOrNull == true) "error" else if (type == "tool_execution_end") "done" else "running",
+            val failed = (data["isError"] as? JsonPrimitive)?.booleanOrNull == true
+            put(
+                LiveTimelineItem(
+                    id = "tool-call-${toolCallId ?: entry.str("sequence") ?: index}",
+                    role = "tool",
+                    text = preview(output.ifBlank { if (type == "tool_execution_end") "已完成" else "执行中…" }),
+                    toolName = data.str("toolName") ?: "tool",
+                    isError = failed,
+                    status = if (failed) "error" else if (type == "tool_execution_end") "done" else "running",
+                    toolCallId = toolCallId,
+                    toolArgs = data["args"]?.let(::argumentText) ?: toolCallId?.let { callArgs[it] },
+                )
             )
         } else if (type == "error") {
-            LiveTimelineItem("error-$index", "system", data.str("message") ?: "会话出错", isError = true)
-        } else null
+            out += LiveTimelineItem("error-$index", "system", data.str("message") ?: "会话出错", isError = true)
+        }
     }
+    return out
+}
+
+/** Plain text of a tool argument blob; objects keep one line instead of pretty JSON. */
+private fun argumentText(value: JsonElement?): String? = when (value) {
+    null -> null
+    is JsonPrimitive -> value.contentOrNull
+    else -> value.toString()
 }

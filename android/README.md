@@ -1,9 +1,9 @@
 # PiDash Android（原生 Compose 客户端）
 
-一个 Kotlin + Jetpack Compose 外壳，加上**离线打包的 WebUI 渲染器**。**3.0 / build 11：机器列表 → 本机 Dashboard → Session**；本机默认 Live Pi，普通 Chat 保留在独立标签中，不把旧 Chat slot 假装成 Live 进程。机器列表、Dashboard、设置页显示实际构建版本。
+一个原生 Kotlin + Jetpack Compose 客户端。**3.1 / build 12：机器列表 → 本机 Dashboard → Session**；本机默认 Live Pi，普通 Chat 保留在独立标签中，不把旧 Chat slot 假装成 Live 进程。机器列表、Dashboard、设置页显示实际构建版本。
 
 - **APK 下载与每版更新说明**：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)（当前为预发布版；下载后由用户确认覆盖安装，不是 App 内自动更新）
-- **部署、构建、手机配对与验收**：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi30)
+- **部署、构建、手机配对与验收**：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi31)
 - **当前进度、测试证据与限制**：[`HANDOFF.md`](HANDOFF.md)
 - **功能适配与边界评估**：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)
 - 历史设计：[`docs/android-app-design.md`](../docs/android-app-design.md)
@@ -16,8 +16,8 @@
 | 搜索、工作中/子 Agent 筛选、分组与顺序 | 已实现；共用网页分组/置顶/排序；可新建分组和移动会话；完整分组管理与拖动排序暂用网页 |
 | 活动进度 / 完整对话、只读目标/工作项/阻塞 | 已实现保守投影，不编造百分比，不把工具返回或最终回复等同任务完成 |
 | 默认新建 Live Pi、选择服务器和工作目录 | 已实现：服务器 roots / 项目候选 / 手填绝对路径；服务器最终校验权限 |
-| 文本渲染 | **默认原生**：纯 Kotlin Markdown 解析 + Compose 渲染（标题/代码/列表/引用/表格/行内样式/链接/路径可点），工具一行式步骤且输出默认折叠。「WebUI 渲染」保留给 mermaid、公式等原生无法等价的块 |
-| 流式/思考/工具进度/错误 | 已实现；工具卡显示名称、执行中/失败状态，正文同样走 WebUI 渲染 |
+| 文本渲染 | 纯 Kotlin Markdown 解析 + Compose 渲染（标题/代码/列表/引用/表格/行内样式/链接/路径可点）；工具**一行式**且参数不进正文、输出默认折叠 |
+| 流式/思考/工具进度/错误 | 已实现；一次调用的发起/事件/结果合成同一行，状态与失败可辨 |
 | 输入（与网页、TUI 同时输入） | 已实现：普通消息/改名/切模型/重载**不需要接管**，与 WebUI 规则一致 |
 | 图片附件 | 已实现：相册多选（最多 4 张），本地校验并压缩到协议上限（单张 3 MB、合计 6 MB），失败保留草稿与附件 |
 | 中止、压缩、重启 | 需要显式接管，不抢占他端；他端持有时直接拒绝 |
@@ -39,11 +39,11 @@ Live Cookie 用 AndroidKeyStore AES-GCM 加密，并绑定服务器地址/连接
 
 ## 构建产物与版本
 
-产物：`android/app/build/outputs/apk/debug/app-debug.apk`。构建与安装命令以[部署指南](../guide/dashboard.md#android-live-pi30)为准。**渲染器源码在 `frontend/native-renderer/`，改动后先 `npm --prefix frontend run build:native-renderer` 再构建 APK。**
+产物：`android/app/build/outputs/apk/debug/app-debug.apk`。构建与安装命令以[部署指南](../guide/dashboard.md#android-live-pi31)为准。不依赖 `frontend/` 的任何构建产物（离线渲染页已在 3.1 移除）。
 
 | 组件 | 版本 |
 |---|---|
-| App | 3.0 / versionCode 11 / `com.sam.pidash` |
+| App | 3.1 / versionCode 12 / `com.sam.pidash` |
 | Gradle / AGP | 8.9 / 8.7.3 |
 | Kotlin / Compose BOM | 2.0.21 / 2024.10.01 |
 | compileSdk / targetSdk / minSdk | 35 / 35 / 26 |

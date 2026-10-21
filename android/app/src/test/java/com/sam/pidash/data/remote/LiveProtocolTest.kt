@@ -27,7 +27,9 @@ class LiveProtocolTest {
         ))
         assertEquals("reasoning", items[0].thinking)
         assertEquals("answer", items[0].text)
-        assertTrue(items[1].text.contains("图片"))
+        // Images are real inline parts now, not placeholder prose.
+        assertEquals(1, items[1].images.size)
+        assertEquals("", items[1].text)
     }
     @Test fun streamingReplacesPartialsAndFinal() {
         var state = reduce(detail(), 1, "message_start")
@@ -74,7 +76,8 @@ class LiveProtocolTest {
         var state = reduce(detail(), 1, "tool_execution_start", """{"toolCallId":"t1","toolName":"read","args":{"path":"fixture"}}""")
         state = reduce(state, 2, "tool_execution_update", """{"toolCallId":"t1","toolName":"read","partialResult":{"content":[{"type":"text","text":"partial"}]}}""")
         assertEquals(1, projectLiveTimeline(state).size)
-        assertTrue(projectLiveTimeline(state).single().text.contains("fixture"))
+        // Arguments stay on the step line (`toolArgs`) instead of the output text.
+        assertTrue(projectLiveTimeline(state).single().toolArgs.orEmpty().contains("fixture"))
         assertTrue(projectLiveTimeline(state).single().text.contains("partial"))
         state = reduce(state, 3, "tool_execution_end", """{"toolCallId":"t1","toolName":"read","result":{"content":[{"type":"text","text":"failed"}]},"isError":true}""")
         assertEquals(1, projectLiveTimeline(state).size)

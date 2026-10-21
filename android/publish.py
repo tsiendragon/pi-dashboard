@@ -104,13 +104,10 @@ def prepare(apk):
     name = re.search(r'\bversionName\s*=\s*"([^\"]+)"', gradle)
     if not code or not name or int(code[1]) != metadata["versionCode"] or name[1] != metadata["versionName"]:
         raise RuntimeError("APK 与当前 Gradle 版本不一致，拒绝发布旧包")
-    assets = ANDROID / "app/src/main/assets/native-renderer/index.html"
-    renderer_sources = [*[x for x in (ROOT / "frontend/native-renderer").rglob("*") if x.is_file()],
-                        ROOT / "frontend/src/components/MarkdownRenderer.tsx"]
-    if not assets.is_file():
-        raise RuntimeError("缺少离线渲染器 assets；先运行 npm --prefix frontend run build:native-renderer")
-    if assets.stat().st_mtime_ns < max(x.stat().st_mtime_ns for x in renderer_sources):
-        raise RuntimeError("渲染器 assets 早于源码；请先重建渲染器再构建/发布 APK")
+    # 3.1 起正文由原生渲染，APK 不再携带离线渲染页；此处只确认 assets 目录未被误加回来。
+    stale_assets = ANDROID / "app/src/main/assets/native-renderer"
+    if stale_assets.exists():
+        raise RuntimeError("APK 不应再包含 native-renderer assets；请删除后重新构建")
     reports = sorted((ANDROID / "app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
     metadata["unitTests"] = test_evidence(reports)
     sources = [ROOT / path for path in run("git", "ls-files", "--", *SOURCE_PATHS).stdout.splitlines()]

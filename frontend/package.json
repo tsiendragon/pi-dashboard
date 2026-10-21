@@ -12,8 +12,7 @@
     "lint": "eslint src",
     "check:theme-cvd": "node scripts/check-theme-cvd.mjs",
     "typecheck": "tsc -b --noEmit",
-    "check": "npm run typecheck && npm run lint && npm run test",
-    "build:native-renderer": "vite build --config vite.native-renderer.config.ts"
+    "check": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
