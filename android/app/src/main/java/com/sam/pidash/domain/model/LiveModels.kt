@@ -93,6 +93,9 @@ data class LiveBackendState(
     val needsPairing: Boolean = false,
     val message: String? = null,
 )
+@Serializable
+data class LiveImage(val mimeType: String, val data: String)
+
 data class LiveTimelineItem(
     val id: String,
     val role: String,
@@ -106,6 +109,7 @@ data class LiveTimelineItem(
     val channel: String? = null,
     val status: String = "done",
     val intermediate: Boolean = false,
+    val images: List<LiveImage> = emptyList(),
 )
 
 data class LiveActivity(val id: String, val title: String, val state: String, val items: List<LiveTimelineItem>)

@@ -75,9 +75,9 @@ Live 列表展示桥接已注册的 Pi 进程，不是扫描所有历史 JSONL�
 
 <a id="android-live-pi21"></a>
 
-<a id="android-live-pi23"></a>
+<a id="android-live-pi24"></a>
 
-## Android Live Pi（2.3）
+## Android Live Pi（2.4）
 
 **代码与本地测试就绪，尚未完成手机端到端验收。** 详细状态、限制与测试证据见
 [`android/HANDOFF.md`](../android/HANDOFF.md)。原生支持多服务器列表、cwd 选择/新建、实时文本/思考/工具、
@@ -149,6 +149,14 @@ cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug
 
 发布脚本会校验 assets 比渲染器源码新，避免发出旧渲染器。
 
+### 图片附件
+
+会话输入框左侧的「＋」可从相册多选图片，限制与 `shared/src/live-sessions.ts` 完全一致：
+单张 ≤ 3 MB、最多 4 张、合计 ≤ 6 MB；仅 PNG/JPEG/WebP/GIF。超限图片在本地按长边 2048 缩放并以
+JPEG 重新压缩，仍超限则明确报错而不是静默丢弃；原始大小已合规时保留原始字节（GIF/WebP 不失真）。
+附件与草稿一样，**发送失败时保留**。服务端仍做同样校验，客户端限制只是提前失败。选中的图片会随消息
+发往该 Live 会话，并可在「WebUI 渲染」中以数据 URL 显示。
+
 ### 输入不需要“接管”
 
 与 WebUI 完全一致：普通消息（`input`）、改标题、切模型、重载扩展**都不需要租约**，手机、网页和
@@ -157,7 +165,7 @@ TUI 可以同时对同一会话输入。只有会打断或改写运行中工作�
 
 ### 构建和用户部署
 
-App 版本 2.3 / versionCode 4，包名仍为 `com.sam.pidash`，可覆盖安装。依赖 JDK 17、SDK 35、
+App 版本 2.4 / versionCode 5，包名仍为 `com.sam.pidash`，可覆盖安装。依赖 JDK 17、SDK 35、
 Gradle 8.9、AGP 8.7.3、Kotlin 2.0.21；新增纯 JVM 测试依赖 JUnit 4.13.2，没有升级原有运行依赖。
 
 **2.2 本轮仅修改 Android 与文档；服务端已有 2.1 配对及既有分组接口时，只需覆盖安装新 APK，不需要重建前端或重启后端。**

@@ -30,6 +30,7 @@ interface Item {
   toolName?: string | null
   isError?: boolean
   status?: string
+  images?: { mimeType: string; data: string }[]
 }
 
 interface Payload {
@@ -68,6 +69,18 @@ function Card({ item }: { item: Item }) {
           >{thinkingOpen ? '收起思考' : '查看思考'}</button>
         ) : null}
       </header>
+      {item.images && item.images.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {item.images.map((image, index) => (
+            <img
+              key={`${item.id}-img-${index}`}
+              src={`data:${image.mimeType};base64,${image.data}`}
+              alt={`附件 ${index + 1}`}
+              className="h-28 w-36 rounded border border-border bg-bg-elevated object-contain"
+            />
+          ))}
+        </div>
+      )}
       {item.thinking && thinkingOpen && (
         <pre className="mb-2 whitespace-pre-wrap break-words border-l border-border pl-2 text-2xs leading-5 text-muted">{item.thinking}</pre>
       )}

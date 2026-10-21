@@ -122,6 +122,15 @@ private fun textParts(content: JsonElement?): String = when (content) {
     else -> ""
 }
 
+/** Real image parts of one message; never synthesised. */
+private fun imageParts(content: JsonElement?): List<LiveImage> = (content as? JsonArray).orEmpty().mapNotNull { part ->
+    val obj = part as? JsonObject ?: return@mapNotNull null
+    if (obj.str("type") != "image") return@mapNotNull null
+    val mime = obj.str("mimeType")?.takeIf { it.startsWith("image/") } ?: return@mapNotNull null
+    val data = obj.str("data")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+    LiveImage(mime, data)
+}
+
 private fun preview(value: String): String = if (value.length > 65_536)
     value.take(65_536) + "\n（长内容已截断；完整内容请使用 WebUI）" else value
 
@@ -167,7 +176,8 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                 ?: if (message.str("stopReason") == "error") "模型请求失败，服务端未提供详细原因。" else null
             val toolFailed = (message["isError"] as? JsonPrimitive)?.booleanOrNull == true
             val entryId = (if (type == "message") entry.str("id") else data.str("entryId"))?.takeIf { it.isNotBlank() }
-            if (text.isBlank() && thoughts == null && errorMessage.isNullOrBlank() && !toolFailed) return@mapIndexedNotNull null
+            val images = imageParts(content)
+            if (text.isBlank() && thoughts == null && errorMessage.isNullOrBlank() && !toolFailed && images.isEmpty()) return@mapIndexedNotNull null
             LiveTimelineItem(
                 id = entryId ?: "message-${entry.str("sequence") ?: index}-$role",
                 role = if (role == "toolResult") "tool" else role,
@@ -182,6 +192,7 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                 channel = data.str("channel") ?: message.str("channel") ?: entry.str("channel"),
                 status = if (errorMessage != null || toolFailed) "error" else if (type == "message_update") "running" else "done",
                 intermediate = (content as? JsonArray)?.any { (it as? JsonObject)?.str("type") in setOf("thinking", "toolCall") } == true,
+                images = images,
             )
         } else if (type.startsWith("tool_execution_")) {
             if (data.str("toolCallId") in completedTools) return@mapIndexedNotNull null

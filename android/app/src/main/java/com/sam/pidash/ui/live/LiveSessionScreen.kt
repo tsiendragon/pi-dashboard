@@ -12,7 +12,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import com.sam.pidash.data.remote.ImageAttachments
+import com.sam.pidash.domain.model.LiveImage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -53,9 +65,25 @@ fun LiveSessionScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
+    var attachments by remember(sessionKey) { mutableStateOf(emptyList<LiveImage>()) }
     var deliverAs by remember(sessionKey) { mutableStateOf<String?>(null) }
     var busy by remember(sessionKey) { mutableStateOf(false) }
     var notice by remember(sessionKey) { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    // Same limits as the WebUI; reading/compressing happens off the picker callback's
+    // critical path only because these are local files, and failures keep the draft.
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNotEmpty()) {
+            notice = null
+            val room = (ImageAttachments.MAX_IMAGES - attachments.size).coerceAtLeast(0)
+            val picked = uris.take(room).mapNotNull { uri ->
+                ImageAttachments.read(context, uri).getOrElse { error -> notice = error.message ?: "无法读取图片"; null }
+            }
+            val merged = attachments + picked
+            val problem = ImageAttachments.validate(merged)
+            if (problem != null) notice = problem else attachments = merged
+        }
+    }
     var menu by remember { mutableStateOf(false) }
     var dialog by remember(sessionKey) { mutableStateOf<String?>(null) }
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
@@ -173,6 +201,28 @@ fun LiveSessionScreen(
                     }
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (attachments.isNotEmpty()) Row(
+                    Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    attachments.forEachIndexed { index, image ->
+                        Box {
+                            val preview = remember(image.data) {
+                                runCatching {
+                                    val bytes = android.util.Base64.decode(image.data, android.util.Base64.DEFAULT)
+                                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                                }.getOrNull()
+                            }
+                            if (preview != null) Image(preview, "待发送图片 ${index + 1}", Modifier.size(56.dp),
+                                contentScale = ContentScale.Crop)
+                            else Box(Modifier.size(56.dp).background(MaterialTheme.colorScheme.surfaceVariant))
+                            IconButton(onClick = { attachments = attachments - image },
+                                modifier = Modifier.size(20.dp).align(Alignment.TopEnd)) {
+                                Icon(Icons.Filled.Close, "移除图片 ${index + 1}", Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(enabled = !busy && owned, onClick = {
                         perform("已请求中止") {
@@ -186,14 +236,21 @@ fun LiveSessionScreen(
                     )
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
+                    IconButton(enabled = !busy && attachments.size < ImageAttachments.MAX_IMAGES,
+                        onClick = { picker.launch("image/*") }) {
+                        Icon(Icons.Filled.Add, "附加图片（最多 4 张）")
+                    }
                     OutlinedTextField(value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
                         placeholder = { Text("输入消息（网页、TUI 也可同时输入）…") }, maxLines = 4, enabled = !busy)
-                    FilledIconButton(enabled = !busy && summary != null && draft.isNotBlank(), onClick = {
+                    FilledIconButton(enabled = !busy && summary != null && (draft.isNotBlank() || attachments.isNotEmpty()) && ImageAttachments.validate(attachments) == null,
+                        onClick = {
                         val text = draft
+                        val images = attachments
                         perform("已发送") {
-                            live.send(sessionKey, text, deliverAs).onSuccess {
-                                // Never discard the draft on failed or uncertain delivery.
+                            live.send(sessionKey, text, deliverAs, images).onSuccess {
+                                // Never discard the draft or the attachment on failed/uncertain delivery.
                                 if (draft == text) draft = ""
+                                if (attachments == images) attachments = emptyList()
                             }
                         }
                     }) { Icon(Icons.AutoMirrored.Filled.Send, "发送") }
