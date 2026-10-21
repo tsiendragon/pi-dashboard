@@ -28,6 +28,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -38,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +53,8 @@ import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.ConnectionState
 import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.ui.common.relativeTime
+import com.sam.pidash.ui.live.LiveSessionsPanel
+import com.sam.pidash.ui.live.NewLiveSessionDialog
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,6 +62,7 @@ import kotlinx.coroutines.launch
 fun SessionsScreen(
     repo: PiDashRepository,
     onOpenSlot: (SessionKey) -> Unit,
+    onOpenLive: (SessionKey) -> Unit,
     onOpenBackends: () -> Unit,
 ) {
     val slots by repo.aggregatedSlots.collectAsState()
@@ -65,15 +71,23 @@ fun SessionsScreen(
     val running by repo.running.collectAsState()
     val scope = rememberCoroutineScope()
     var showNew by remember { mutableStateOf(false) }
+    var liveTab by rememberSaveable { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) { repo.refreshAll() }
+    LaunchedEffect(repo) {
+        repo.live.refreshAll()
+        repo.refreshAll()
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("PiDash") },
                 actions = {
-                    IconButton(onClick = { scope.launch { repo.refreshAll() } }) {
+                    IconButton(onClick = {
+                        scope.launch {
+                            if (liveTab) repo.live.refreshAll() else repo.refreshAll()
+                        }
+                    }) {
                         Icon(Icons.Filled.Refresh, contentDescription = "刷新")
                     }
                     IconButton(onClick = onOpenBackends) {
@@ -90,38 +104,53 @@ fun SessionsScreen(
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when {
-                backends.isEmpty() -> Text(
-                    "还没有服务器\n点右上角 ⚙ 添加一台",
-                    modifier = Modifier.align(Alignment.Center),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            TabRow(selectedTabIndex = if (liveTab) 0 else 1) {
+                Tab(selected = liveTab, onClick = { liveTab = true }, text = { Text("Live Pi") })
+                Tab(selected = !liveTab, onClick = { liveTab = false }, text = { Text("Chat") })
+            }
+            if (liveTab) {
+                LiveSessionsPanel(repo = repo, onOpen = onOpenLive)
+            } else Box(Modifier.fillMaxSize()) {
+                when {
+                    backends.isEmpty() -> Text(
+                        "还没有服务器\n点右上角 ⚙ 添加一台",
+                        modifier = Modifier.align(Alignment.Center),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
 
-                slots.isEmpty() -> Text(
-                    "暂无会话",
-                    modifier = Modifier.align(Alignment.Center),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                    slots.isEmpty() -> Text(
+                        "暂无会话",
+                        modifier = Modifier.align(Alignment.Center),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
 
-                else -> LazyColumn(
-                    Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 88.dp),
-                ) {
-                    items(slots, key = { "${it.key.backendId}/${it.key.slotKey}" }) { item ->
-                        SessionRow(
-                            item = item,
-                            isRunning = running.contains(item.key),
-                            onClick = { onOpenSlot(item.key) },
-                        )
-                        HorizontalDivider()
+                    else -> LazyColumn(
+                        Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 88.dp),
+                    ) {
+                        items(slots, key = { "${it.key.backendId}/${it.key.slotKey}" }) { item ->
+                            SessionRow(
+                                item = item,
+                                isRunning = running.contains(item.key),
+                                onClick = { onOpenSlot(item.key) },
+                            )
+                            HorizontalDivider()
+                        }
                     }
                 }
             }
         }
     }
 
-    if (showNew) {
+    if (showNew && liveTab) {
+        NewLiveSessionDialog(
+            repo = repo,
+            backends = backends,
+            onDismiss = { showNew = false },
+            onOpen = { key -> showNew = false; onOpenLive(key) },
+        )
+    } else if (showNew) {
         NewSessionDialog(
             backends = backends,
             connection = connection,

@@ -1,0 +1,262 @@
+package com.sam.pidash.data.remote
+
+import com.sam.pidash.data.local.LiveCookieStore
+import com.sam.pidash.data.local.liveCookieBinding
+import com.sam.pidash.data.repo.LivePiRepository
+import com.sam.pidash.domain.model.Backend
+import com.sam.pidash.domain.model.SessionKey
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+import java.net.InetSocketAddress
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+/** All credentials and traffic here are synthetic, confined to ephemeral loopback listeners. */
+class LiveSessionClientTest {
+    private lateinit var server: LoopbackHttpServer
+    private lateinit var backend: Backend
+    private lateinit var client: LiveSessionClient
+    private val cookies = MemoryCookies()
+    private val calls = CopyOnWriteArrayList<Call>()
+    private val repositories = CopyOnWriteArrayList<LivePiRepository>()
+    @Volatile private var handler: (FixtureExchange) -> Unit = { reply(it, "{}") }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val cookie = "a".repeat(64)
+    private val process = "process-fixture"
+    private val detail = """{"summary":{"processInstanceId":"process-fixture","sessionId":"session-fixture","cwd":"/allowed/project","status":"idle","claim":{"state":"claimed","leaseId":"other-client-lease"}},"entries":[]}"""
+
+    @Before fun setup() {
+        server = LoopbackHttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            calls += Call(exchange.requestMethod, exchange.requestURI.path,
+                exchange.requestHeaders.getFirst("Origin"), exchange.requestHeaders.getFirst("Authorization"),
+                exchange.requestHeaders.getFirst("Cookie"), exchange.requestBody.bufferedReader().readText())
+            handler(exchange)
+        }
+        server.start()
+        backend = Backend("backend-fixture", "test", "http://127.0.0.1:${server.address.port}", "edge-fixture")
+        client = LiveSessionClient(backend, cookies)
+    }
+    @After fun teardown() { scope.cancel(); repositories.forEach { it.close() }; client.close(); server.stop(0) }
+
+    @Test fun pairingUsesOriginAndIndependentCookieWithEdgeAuthorization() = runBlocking {
+        handler = {
+            when (it.requestURI.path) {
+                "/api/live-sessions/pair" -> {
+                    it.responseHeaders.add("Set-Cookie", "pi_live_session=$cookie; Path=/api/live-sessions; HttpOnly; SameSite=Strict")
+                    reply(it, """{"ok":true,"browserClientId":"native-fixture"}""")
+                }
+                else -> reply(it, """{"sessions":[]}""")
+            }
+        }
+        client.pair("b".repeat(32))
+        assertTrue(client.paired)
+        client.list()
+        assertEquals(backend.baseUrl, calls[0].origin)
+        assertEquals("Bearer edge-fixture", calls[0].authorization)
+        assertNull(calls[0].cookie)
+        assertEquals("pi_live_session=$cookie", calls[1].cookie)
+        assertTrue(calls.all { it.path.startsWith("/api/live-sessions") })
+    }
+
+    @Test fun liveStartAndOptionsNeverUseOrdinaryChatSlots() = runBlocking {
+        cookies.save(backend, cookie)
+        handler = { when (it.requestURI.path) {
+            "/api/live-sessions/start-options" -> reply(it, """{"roots":["/allowed"]}""")
+            "/api/live-sessions/start" -> reply(it, """{"ok":true,"result":{"processInstanceId":"process-fixture"}}""")
+            else -> reply(it, "{}", 404)
+        } }
+        assertEquals(listOf("/allowed"), client.startOptions().roots)
+        assertEquals(process, client.start("/allowed/project", "Title", "provider/model", "high"))
+        assertTrue(calls.last().body.contains("\"cwd\":\"/allowed/project\""))
+        assertTrue(calls.last().body.contains("\"thinkingLevel\":\"high\""))
+        assertTrue(calls.none { it.path.contains("/chat/") })
+    }
+
+    @Test fun invalidCodeAndRelativePathFailBeforeNetwork() = runBlocking {
+        assertTrue(runCatching { client.pair("host-control-token-is-not-a-code") }.isFailure)
+        assertTrue(runCatching { client.start("../outside", "", "", "") }.isFailure)
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test fun expiredLiveCookieIsClearedButEdgeFailureDoesNotEraseLiveIdentity() = runBlocking {
+        cookies.save(backend, cookie)
+        handler = { reply(it, """{"error":"edge_unauthorized"}""", 401) }
+        assertTrue(runCatching { client.list() }.isFailure)
+        assertTrue(client.paired)
+        handler = { reply(it, """{"error":"authentication_required"}""", 401) }
+        assertTrue(runCatching { client.list() }.isFailure)
+        assertFalse(client.paired)
+    }
+
+    @Test fun redirectsNeverForwardAnyCredentialOrPairingCode() = runBlocking {
+        val destination = LoopbackHttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val destinationCalls = java.util.concurrent.atomic.AtomicInteger()
+        destination.createContext("/") { destinationCalls.incrementAndGet(); reply(it, "{}") }
+        destination.start()
+        try {
+            cookies.save(backend, cookie)
+            handler = {
+                it.responseHeaders.add("Location", "http://127.0.0.1:${destination.address.port}/stolen")
+                reply(it, "{}", 307)
+            }
+            assertTrue(runCatching { client.pair("b".repeat(32)) }.isFailure)
+            assertEquals(0, destinationCalls.get())
+            assertEquals(1, calls.size)
+        } finally { destination.stop(0) }
+    }
+
+    @Test fun failedLogoutStillDeletesLocalCookie() = runBlocking {
+        cookies.save(backend, cookie)
+        handler = { reply(it, "{}", 500) }
+        assertTrue(runCatching { client.unpair() }.isFailure)
+        assertFalse(client.paired)
+        assertEquals("DELETE", calls.single().method)
+    }
+
+    @Test fun websocketUsesHeadersNotCredentialsInUrl() {
+        cookies.save(backend, cookie)
+        handler = { reply(it, "{}", 401) }
+        val done = CountDownLatch(1)
+        val socket = client.openSocket(object : WebSocketListener() {
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { done.countDown() }
+        })
+        try {
+            assertTrue(done.await(10, TimeUnit.SECONDS))
+            assertEquals("/api/live-sessions/ws", calls.single().path)
+            assertEquals(backend.baseUrl, calls.single().origin)
+            assertEquals("pi_live_session=$cookie", calls.single().cookie)
+            assertEquals("Bearer edge-fixture", calls.single().authorization)
+        } finally { socket.cancel() }
+    }
+
+    @Test fun oversizedResponsesAreRejectedBeforeDecode() = runBlocking {
+        handler = {
+            it.sendResponseHeaders(200, 16L * 1024 * 1024 + 1)
+            it.close()
+        }
+        val error = runCatching { client.list() }.exceptionOrNull()
+        assertTrue(error?.message.orEmpty().contains("大小限制"))
+    }
+
+    @Test fun liveUrlsRequireHttpsAndNeverAcceptEmbeddedCredentials() {
+        listOf("http://192.168.3.46:7777", "http://example.test", "https://user:pass@example.test", "https://example.test?token=x", "https://example.test/#secret").forEach {
+            assertTrue(it, runCatching { validateLiveBaseUrl(it) }.isFailure)
+        }
+        assertEquals("example.test", validateLiveBaseUrl("https://example.test").host)
+        assertTrue(runCatching { client.path("a/../../chat/slots") }.isFailure)
+        assertTrue(runCatching { edgeAuthorization("x\r\nInjected: y") }.isFailure)
+    }
+
+    @Test fun cookieBindingIncludesBackendOriginAndCredentialButNotDisplayName() {
+        assertEquals(liveCookieBinding(backend), liveCookieBinding(backend.copy(name = "renamed")))
+        assertNotEquals(liveCookieBinding(backend), liveCookieBinding(backend.copy(baseUrl = "https://different.test")))
+        assertNotEquals(liveCookieBinding(backend), liveCookieBinding(backend.copy(token = "different-fixture")))
+        assertFalse(liveCookieBinding(backend).contains(backend.token))
+    }
+
+    private suspend fun repository(): LivePiRepository {
+        cookies.save(backend, cookie)
+        handler = { when (it.requestURI.path) {
+            "/api/live-sessions/repo-candidates" -> reply(it, """{"repos":[]}""")
+            "/api/live-sessions/$process" -> reply(it, detail)
+            "/api/live-session-meta" -> reply(it, """{"meta":{}}""")
+            else -> reply(it, "{}", 404)
+        } }
+        val repo = LivePiRepository(MutableStateFlow(listOf(backend)), scope, cookies).also { repositories.add(it) }
+        withTimeout(5000) { while (repo.candidates(backend.id).isFailure) delay(20) }
+        calls.clear()
+        return repo
+    }
+
+    @Test fun openingIsReadOnlyAndPublicLeaseIdDoesNotEstablishOwnership() = runBlocking {
+        val repo = repository()
+        val key = SessionKey(backend.id, process)
+        repo.focus(key)
+        assertTrue(repo.refresh(key).isSuccess)
+        assertEquals("other-client-lease", repo.details.value[key]?.summary?.claim?.leaseId)
+        assertTrue(repo.leases.value.isEmpty())
+        assertTrue(calls.all { it.method == "GET" })
+        assertTrue(calls.none { it.path.endsWith("/claim") || it.path.endsWith("/commands") })
+    }
+
+    @Test fun heldLeasePreventsInputAndNeverRetriesOrSteals() = runBlocking {
+        val repo = repository()
+        handler = { reply(it, """{"error":"lease_held","message":"owned elsewhere"}""", 423) }
+        val result = repo.send(SessionKey(backend.id, process), "synthetic input")
+        assertTrue(result.isFailure)
+        assertEquals(1, calls.size)
+        assertTrue(calls.single().path.endsWith("/claim"))
+        assertTrue(repo.leases.value.isEmpty())
+    }
+
+    @Test fun staleLeaseIsValidatedBeforeSendingAndFailureDoesNotDispatchInput() = runBlocking {
+        val repo = repository()
+        val key = SessionKey(backend.id, process)
+        handler = { if (it.requestURI.path.endsWith("/claim")) reply(it, """{"ok":true,"result":{"leaseId":"lease-fixture","expiresAt":999999}}""")
+            else reply(it, """{"error":"invalid_lease"}""", 423) }
+        assertTrue(repo.claim(key).isSuccess)
+        assertTrue(repo.send(key, "synthetic input").isFailure)
+        assertEquals(listOf("/api/live-sessions/$process/claim", "/api/live-sessions/$process/renew"), calls.map { it.path })
+        assertTrue(repo.leases.value.isEmpty())
+    }
+
+    @Test fun blankInputDoesNotEvenClaim() = runBlocking {
+        val repo = repository()
+        assertTrue(repo.send(SessionKey(backend.id, process), "  ").isFailure)
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test fun backgroundReleasesOnlyLocallyOwnedLease() = runBlocking {
+        val repo = repository()
+        val key = SessionKey(backend.id, process)
+        handler = { if (it.requestURI.path.endsWith("/claim")) reply(it, """{"ok":true,"result":{"leaseId":"lease-fixture"}}""") else reply(it, """{"ok":true}""") }
+        assertTrue(repo.claim(key).isSuccess)
+        repo.setForeground(false)
+        withTimeout(5000) { while (calls.none { it.path.endsWith("/release") }) delay(20) }
+        assertTrue(repo.leases.value.isEmpty())
+        assertEquals(1, calls.count { it.path.endsWith("/release") })
+    }
+
+    @Test fun extensionAnswersAreExplicitWithoutImplicitClaim() = runBlocking {
+        val repo = repository()
+        handler = { reply(it, """{"ok":true,"result":{}}""") }
+        val request = com.sam.pidash.domain.model.LiveUiRequest("request-fixture", "confirm", "Approve?")
+        assertTrue(repo.answer(SessionKey(backend.id, process), request, "true").isSuccess)
+        assertEquals(1, calls.size)
+        assertTrue(calls.single().path.endsWith("/commands"))
+        assertTrue(calls.single().body.contains("\"type\":\"answer_ui\""))
+        assertTrue(repo.leases.value.isEmpty())
+    }
+
+    @Test fun invalidExtensionSelectionDoesNotSendOrClaim() = runBlocking {
+        val repo = repository()
+        val request = com.sam.pidash.domain.model.LiveUiRequest("request-fixture", "select", options = listOf("safe"))
+        assertTrue(repo.answer(SessionKey(backend.id, process), request, "invented-option").isFailure)
+        assertTrue(calls.isEmpty())
+    }
+
+    private data class Call(val method: String, val path: String, val origin: String?, val authorization: String?, val cookie: String?, val body: String)
+    private class MemoryCookies : LiveCookieStore {
+        private val values = ConcurrentHashMap<String, String>()
+        override fun load(backend: Backend): String? = values[liveCookieBinding(backend)]
+        override fun save(backend: Backend, cookie: String?) {
+            if (cookie == null) values.remove(liveCookieBinding(backend)) else values[liveCookieBinding(backend)] = cookie
+        }
+    }
+    private fun reply(exchange: FixtureExchange, body: String, status: Int = 200) {
+        val bytes = body.toByteArray()
+        exchange.responseHeaders.set("Content-Type", "application/json")
+        exchange.sendResponseHeaders(status, bytes.size.toLong())
+        exchange.responseBody.use { it.write(bytes) }
+    }
+}

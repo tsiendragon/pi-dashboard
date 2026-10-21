@@ -266,6 +266,7 @@ if (liveSessionConfig.enabled && !process.env.VITEST) {
     disconnectGraceMs: liveSessionConfig.disconnectGraceMs,
     launcher: livePiLauncher,
     repoRoots: liveSessionConfig.repoRoots,
+    roots: liveSessionConfig.roots,
     registeredRepos: () => repoStore.list(),
   })
   void Promise.all([liveSessionRoutes.start(), liveSessionBroker!.start()]).then(() => {

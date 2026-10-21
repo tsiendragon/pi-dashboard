@@ -9,6 +9,16 @@ import com.sam.pidash.ui.theme.PiDashTheme
 
 /** Single-activity Compose host. */
 class MainActivity : ComponentActivity() {
+    override fun onStart() {
+        super.onStart()
+        (application as PiDashApp).repository.live.setForeground(true)
+    }
+
+    override fun onStop() {
+        (application as PiDashApp).repository.live.setForeground(false)
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
