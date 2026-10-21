@@ -50,6 +50,8 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
   const [sessionSelected, setSessionSelected] = useState(0)
   const sessionListRef = useRef<HTMLDivElement>(null)
   const sessionDebounce = useRef<ReturnType<typeof setTimeout>>()
+  // Set when an opener (e.g. `/resume` in the composer) wants a mode other than root.
+  const requestedMode = useRef<Mode | null>(null)
   const [systemPrompt, setSystemPrompt] = useState<{ static: string; runtime: string; memory: string; memoryStats: { semantic: number; lessons: number } } | null>(null)
   const [systemPromptLoading, setSystemPromptLoading] = useState(false)
   const [systemPromptTab, setSystemPromptTab] = useState<'runtime' | 'static' | 'memory'>('runtime')
@@ -64,16 +66,6 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
       api.models().then((d: { models?: { id: string; name: string; provider: string }[] }) => setModels(d.models || [])).catch(() => {})
     }
   }, [open, mode])
-
-  // Reset mode when opening/closing
-  useEffect(() => {
-    if (open) {
-      setMode('root')
-      setSessionQuery('')
-      setSessionResults([])
-      setTimeout(() => inputRef.current?.focus(), 0)
-    }
-  }, [open])
 
   // Debounced session search
   useEffect(() => {
@@ -125,6 +117,37 @@ export default function CommandPalette({ open, onOpenChange, onToggleSidebar }: 
     }
     setTimeout(() => inputRef.current?.focus(), 0)
   }, [currentSlot, activeSlot])
+
+  // Reset to the root list every time the palette opens — unless the opener asked
+  // for a specific mode. Declared after `enterMode` so it can call it directly.
+  useEffect(() => {
+    if (!open) return
+    const requested = requestedMode.current
+    if (requested) {
+      requestedMode.current = null
+      enterMode(requested)
+      return
+    }
+    setMode('root')
+    setSessionQuery('')
+    setSessionResults([])
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }, [open, enterMode])
+
+  // `/resume` typed in the chat composer opens history search directly: a
+  // headless session has no interactive pi picker, so the dashboard owns it.
+  useEffect(() => {
+    const openSessionSearch = () => {
+      if (open) {
+        enterMode('session-search')
+      } else {
+        requestedMode.current = 'session-search'
+        onOpenChange(true)
+      }
+    }
+    window.addEventListener('pi-dashboard:open-session-search', openSessionSearch)
+    return () => window.removeEventListener('pi-dashboard:open-session-search', openSessionSearch)
+  }, [open, enterMode, onOpenChange])
 
   const goBack = useCallback(() => {
     setMode('root')

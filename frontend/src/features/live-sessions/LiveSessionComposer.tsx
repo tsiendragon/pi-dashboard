@@ -269,7 +269,7 @@ export default function LiveSessionComposer({ status, activity, disabled, models
       }
       insertPastedText(pastedText.trim() ? pastedText : candidate, start, end)
       const name = candidate.split('/').pop() || candidate
-      setFileError(`没能把「${name}」当作附件：剪贴板里只有文件名/路径文本，而 Pi 所在主机上找不到这个文件。请把文件拖到输入框里。`)
+      setFileError(`没能把「${name}」当作附件：剪贴板里只有一个文件名，Pi 所在主机上找不到它。粘路径文字不受影响；想把文件当附件请拖进输入框，或用 📎 选择文件。`)
     })
   }
 

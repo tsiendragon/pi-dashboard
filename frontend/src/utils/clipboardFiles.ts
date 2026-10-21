@@ -43,30 +43,8 @@ export function splitFilesByKind(files: File[]): { images: File[]; documents: Fi
 }
 
 const FILE_URL_RE = /^file:\/\//i
-/** Whitespace means the paste is prose (or a command line), never a lone path. */
-const HAS_WHITESPACE_RE = /\s/
-/** `/abs`, `~/x`, `./x`, `../x` — an explicit path, safe to resolve as a file. */
-const PATH_LIKE_RE = /^(?:[/~]|\.\.?\/)/
-/** A bare file name (`notes.md`) — names with an extension, no spaces or separators. */
+/** A bare file name (`notes.md`) — no separator, so it cannot be a path someone copied. */
 const BARE_NAME_RE = /^[^\s/\\:*?"<>|]+\.[A-Za-z0-9]{1,8}$/
-/** A trailing file extension (`notes.md`, `/tmp/a.json`). */
-const FILE_EXTENSION_RE = /\.[A-Za-z0-9]{1,8}$/
-
-/**
- * Whether a pasted single-line text is worth resolving as a file.
- *
- * Tighter than a bare "starts like a path" check: a pasted slash command such
- * such as `/some-command start …` also begins with `/` but must stay ordinary text, so a
- * leading slash only counts when the rest behaves like a real path (a second
- * separator or a file extension). Whitespace always disqualifies a candidate.
- */
-function looksLikePath(raw: string): boolean {
-  if (HAS_WHITESPACE_RE.test(raw)) return false
-  if (BARE_NAME_RE.test(raw)) return true
-  if (!PATH_LIKE_RE.test(raw)) return false
-  if (raw.startsWith('~/') || raw.startsWith('./') || raw.startsWith('../')) return true
-  return raw.indexOf('/', 1) > 0 || FILE_EXTENSION_RE.test(raw)
-}
 
 /** Turn a `file://` URL into a filesystem path (Windows `file:///C:/…` included). */
 export function decodeFileUrl(value: string): string | null {
@@ -82,11 +60,16 @@ export function decodeFileUrl(value: string): string | null {
 }
 
 /**
- * The file referenced by a text-only paste, or null when the clipboard holds prose.
+ * The file referenced by a text-only paste, or null when the clipboard holds text.
  *
  * macOS browsers put a file copied in Finder on the clipboard as text (a `file://`
- * URL or just the file name) instead of a `kind: 'file'` item, so the composer
- * resolves this candidate against the workspace before falling back to a text paste.
+ * URL, or just the file name) instead of a `kind: 'file'` item, so only those two
+ * shapes are treated as a file here.
+ *
+ * A path with a separator (`/abs/x.md`, `~/x.md`, `./x.md`) is deliberately plain
+ * text: copying a path out of the dashboard or a terminal is a request to paste the
+ * string, not to attach the file. Attaching stays available through drag-drop and
+ * the 📎 picker, and both end up sending the same path string to pi anyway.
  */
 export function pastedFileRef({ uriList, text }: { uriList?: string | null; text?: string | null }): string | null {
   for (const line of (uriList ?? '').split(/\r?\n/)) {
@@ -95,5 +78,5 @@ export function pastedFileRef({ uriList, text }: { uriList?: string | null; text
   }
   const raw = (text ?? '').trim().replace(/^["']|["']$/g, '')
   if (!raw || /[\r\n]/.test(raw)) return null
-  return decodeFileUrl(raw) ?? (looksLikePath(raw) ? raw : null)
+  return decodeFileUrl(raw) ?? (BARE_NAME_RE.test(raw) ? raw : null)
 }

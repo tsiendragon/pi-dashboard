@@ -777,7 +777,7 @@ export default function ChatPage() {
         const name = candidate.split('/').pop() || candidate
         dispatch(appendMessage({
           role: 'error',
-          content: `没能把「${name}」当作附件：剪贴板里只有文件名/路径文本，而 Pi 所在主机上找不到这个文件。请把文件直接拖进输入框，或用 📎 选择文件（这两种会把文件内容传上来）。`,
+          content: `没能把「${name}」当作附件：剪贴板里只有一个文件名，Pi 所在主机上找不到它。粘路径文字不受影响；想把文件当附件请拖进输入框，或用 📎 选择文件。`,
           cls: '',
         }))
       }
@@ -902,6 +902,13 @@ export default function ChatPage() {
       if (!optionText) setInput('')
       wantsNewSession.current = true
       dispatch(switchSlot(null))
+      return
+    }
+    // /resume is dashboard-side: a headless pi session has no interactive session
+    // picker, so open the history-search palette instead of prompting the model.
+    if (txt.trim() === '/resume') {
+      if (!optionText) setInput('')
+      window.dispatchEvent(new CustomEvent('pi-dashboard:open-session-search'))
       return
     }
     setPrefillHint(false)
