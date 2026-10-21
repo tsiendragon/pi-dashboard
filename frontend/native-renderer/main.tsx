@@ -36,6 +36,11 @@ interface Item {
   images?: { mimeType: string; data: string }[]
 }
 
+/** Set by the Android shell; absent in a plain browser, where clicks stay inert. */
+interface NativeBridge {
+  openPath?: (path: string) => void
+}
+
 interface Payload {
   theme?: 'dark' | 'light'
   items?: Item[]
@@ -124,7 +129,7 @@ function Body({ item }: { item: Item }) {
         </div>
       )}
       <div className={`relative min-w-0 ${tool ? 'text-body-s' : 'text-body-s'} ${long && !expanded ? 'max-h-[200px] overflow-hidden' : ''}`}>
-        <MarkdownRenderer content={visible} showRaw={false} streaming={item.status === 'running'} onFileOpen={() => {}} />
+        <MarkdownRenderer content={visible} showRaw={false} streaming={item.status === 'running'} onFileOpen={openPath} />
         {long && !expanded && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-bg to-transparent" />}
       </div>
       {long && (
@@ -137,6 +142,10 @@ function Body({ item }: { item: Item }) {
       )}
     </article>
   )
+}
+
+function openPath(path: string) {
+  ;(window as unknown as { PiDashNative?: NativeBridge }).PiDashNative?.openPath?.(path)
 }
 
 function App() {

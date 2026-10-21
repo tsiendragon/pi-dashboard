@@ -84,6 +84,25 @@ class LiveSessionClient(
         }
     }
 
+    /** Plain-text file preview (`/api/file-read` answers text/plain, not JSON). */
+    suspend fun readTextFile(path: String, limit: Int = 512 * 1024): String = withContext(Dispatchers.IO) {
+        require(path.startsWith('/') && !path.contains('\u0000') && path.length <= 4096) { "无效文件路径" }
+        val query = java.net.URLEncoder.encode(path, "UTF-8")
+        executeText(request("/api/file-read?path=" + query + "&tail=" + limit))
+    }
+    private fun executeText(request: Request): String {
+        http.newCall(request).execute().use { response ->
+            val text = responseText(response)
+            if (!response.isSuccessful) throw LiveApiException(response.code, "file_read_failed",
+                when (response.code) {
+                    404 -> "文件不存在或已被删除"
+                    403 -> "服务器拒绝读取该文件"
+                    else -> "读取文件失败：HTTP ${response.code}"
+                })
+            return text
+        }
+    }
+
     suspend fun get(path: String): JsonObject = withContext(Dispatchers.IO) {
         execute(request(path)).jsonObject
     }

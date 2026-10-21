@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.graphics.Color
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,9 +20,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.sam.pidash.domain.model.LiveTimelineItem
+import com.sam.pidash.data.remote.pathVisibleInTranscript
 import com.sam.pidash.data.remote.transcriptPayload
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Renders the transcript with the WebUI's own React renderer instead of a second
@@ -46,6 +50,23 @@ internal object NativeRenderAssets {
     fun mime(path: String): String = TYPES[path.substringAfterLast('.', "").lowercase()] ?: "application/octet-stream"
 }
 
+/**
+ * The only channel from the renderer page back into the app.
+ *
+ * It can *request* a file preview and nothing else: the request is refused unless
+ * the path already appears in the transcript currently on screen, so rendered
+ * content cannot reach files the reader has not seen.
+ */
+class TranscriptBridge(
+    private val transcript: AtomicReference<String>,
+    private val openPath: (String) -> Unit,
+) {
+    @JavascriptInterface
+    fun openPath(path: String) {
+        if (pathVisibleInTranscript(transcript.get(), path)) openPath(path)
+    }
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 internal fun NativeTranscriptView(
@@ -54,8 +75,12 @@ internal fun NativeTranscriptView(
     emptyText: String,
     modifier: Modifier = Modifier,
     onFailure: (String) -> Unit = {},
+    onOpenPath: ((String) -> Unit)? = null,
 ) {
     val payload = remember(items, dark, emptyText) { transcriptPayload(items, dark, emptyText) }
+    // What the bridge may open is exactly what is rendered right now.
+    val transcriptRef = remember { AtomicReference(payload) }
+    SideEffect { transcriptRef.set(payload) }
     var web by remember { mutableStateOf<WebView?>(null) }
     var pageReady by remember { mutableStateOf(false) }
 
@@ -112,6 +137,9 @@ internal fun NativeTranscriptView(
                         return true
                     }
                 }
+                if (onOpenPath != null) {
+                    addJavascriptInterface(TranscriptBridge(transcriptRef) { path -> onOpenPath(path) }, "PiDashNative")
+                }
                 loadUrl("https://${NativeRenderAssets.HOST}/index.html")
                 web = this
             }
@@ -130,6 +158,7 @@ internal fun NativeTranscriptView(
 
     DisposableEffect(Unit) {
         onDispose {
+            web?.removeJavascriptInterface("PiDashNative")
             web?.destroy()
             web = null
         }

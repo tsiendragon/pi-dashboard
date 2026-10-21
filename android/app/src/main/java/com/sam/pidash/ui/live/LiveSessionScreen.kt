@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.sam.pidash.data.remote.ImageAttachments
 import com.sam.pidash.domain.model.LiveImage
 import androidx.compose.material3.*
@@ -66,6 +67,9 @@ fun LiveSessionScreen(
     val listState = rememberLazyListState()
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
     var attachments by remember(sessionKey) { mutableStateOf(emptyList<LiveImage>()) }
+    // Read-only file preview: path plus loaded text (null while fetching).
+    var preview by remember(sessionKey) { mutableStateOf<Pair<String, String?>?>(null) }
+    var previewError by remember(sessionKey) { mutableStateOf<String?>(null) }
     var deliverAs by remember(sessionKey) { mutableStateOf<String?>(null) }
     var busy by remember(sessionKey) { mutableStateOf(false) }
     var notice by remember(sessionKey) { mutableStateOf<String?>(null) }
@@ -295,6 +299,16 @@ fun LiveSessionScreen(
                 emptyText = if (detail == null) "等待会话详情；可从菜单刷新。" else "暂无消息（只读打开）。",
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 onFailure = { message -> notice = message; viewMode = "timeline" },
+                onOpenPath = { path ->
+                    previewError = null
+                    preview = path to null
+                    scope.launch {
+                        repo.live.readFile(sessionKey.backendId, path).fold(
+                            onSuccess = { text -> preview = path to text },
+                            onFailure = { error -> preview = null; previewError = error.message ?: "无法读取文件" },
+                        )
+                    }
+                },
             ) else if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(if (detail == null) "等待会话详情；可从菜单刷新。" else "暂无消息（只读打开）。")
@@ -365,6 +379,30 @@ fun LiveSessionScreen(
             confirmButton = { TextButton(onClick = { dismiss() }) { Text("知道了") } })
     }
 
+    previewError?.let { message ->
+        AlertDialog(onDismissRequest = { previewError = null }, title = { Text("预览失败") },
+            text = { Text(message) }, confirmButton = { TextButton(onClick = { previewError = null }) { Text("知道了") } })
+    }
+    preview?.let { (path, content) ->
+        Dialog(onDismissRequest = { preview = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().padding(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SelectionContainer { Text(path, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, maxLines = 2) }
+                        TextButton(onClick = { preview = null }) { Text("关闭") }
+                    }
+                    HorizontalDivider()
+                    if (content == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("读取中…") }
+                    else NativeTranscriptView(
+                        items = listOf(LiveTimelineItem(id = "file", role = "assistant", text = content)),
+                        dark = isSystemInDarkTheme(),
+                        emptyText = "这个文件是空的。",
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
     detail?.pendingUi?.firstOrNull { it.id !in answered }?.let { request ->
         // Only an explicit answer invokes the repository; never auto-answer prompts.
         LiveExtensionDialog(request = request, onAnswer = { value, cancelled ->
