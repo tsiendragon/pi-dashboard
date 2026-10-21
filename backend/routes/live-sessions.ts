@@ -28,6 +28,8 @@ export interface LiveSessionRouteOptions {
   launcher?: LivePiLauncher
   /** `liveSessions.repoRoots` — folders whose direct children the start field searches. */
   repoRoots?: readonly string[]
+  /** Launch roots from the same configuration passed to the launcher and broker. */
+  roots?: readonly string[]
   /** Repos registered on the Repos page; merged into the start field's suggestions. */
   registeredRepos?: () => readonly { id: string; path: string }[]
   /** Overridable in tests so the close path never signals a real process. */
@@ -101,6 +103,7 @@ export class LiveSessionRoutes {
   private readonly restarter: LiveSessionRestarter
   private readonly closeSession: typeof closeLiveSession
   private readonly repoRoots: readonly string[]
+  private readonly roots: readonly string[]
   private readonly registeredRepos: () => readonly { id: string; path: string }[]
   private readonly wss = new WebSocketServer({ noServer: true })
   private readonly clients = new Map<WebSocket, LiveSessionBrowserIdentity>()
@@ -124,6 +127,7 @@ export class LiveSessionRoutes {
     this.restarter = new LiveSessionRestarter({ registry: this.registry, metaStore: this.metaStore, launcher: this.launcher })
     this.closeSession = options.closeSession ?? closeLiveSession
     this.repoRoots = options.repoRoots ?? []
+    this.roots = options.roots ?? []
     this.registeredRepos = options.registeredRepos ?? (() => [])
   }
 
@@ -182,6 +186,10 @@ export class LiveSessionRoutes {
   }
 
   private registerHttpRoutes(): void {
+    this.app.use(['/api/live-sessions/auth', '/api/live-sessions/pairing-code', '/api/live-sessions/pair'], (_req, res, next) => {
+      res.setHeader('Cache-Control', 'no-store')
+      next()
+    })
     this.app.post('/api/live-sessions/auth', async (req: Request, res: Response) => {
       if (!this.active) return res.status(503).json({ error: 'live_sessions_unavailable' })
       if (!this.auth.isOriginAllowed(req, true)) {
@@ -214,6 +222,39 @@ export class LiveSessionRoutes {
       }
       next()
     }
+
+    this.app.post('/api/live-sessions/pairing-code', requireMutationOrigin, requireAuth, (req: AuthenticatedRequest, res: Response) => {
+      const result = this.auth.issuePairingCode(req)
+      if (!result) return res.status(401).json({ error: 'authentication_required' })
+      res.json({ ok: true, result })
+    })
+
+    this.app.post('/api/live-sessions/pair', requireMutationOrigin, async (req: Request, res: Response) => {
+      if (!this.active) return res.status(503).json({ error: 'live_sessions_unavailable' })
+      try {
+        const result = await this.auth.redeemPairingCode(req.body?.code, this.auth.isSecure(req) || !!(req.socket as any).encrypted)
+        if (!result) return res.status(401).json({ error: 'authentication_failed' })
+        res.setHeader('Set-Cookie', result.setCookie)
+        res.json({ ok: true, browserClientId: result.browserClientId })
+      } catch (error) { res.status(500).json(errorBody(error)) }
+    })
+
+    this.app.delete('/api/live-sessions/auth', requireMutationOrigin, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+      await this.respond(res, async () => {
+        const browserClientId = req.liveSessionIdentity!.browserClientId
+        res.setHeader('Set-Cookie', `pi_live_session=; Path=/api; HttpOnly; SameSite=Strict; Max-Age=0${this.auth.isSecure(req) ? '; Secure' : ''}`)
+        try { await this.auth.forget(req) } finally {
+          for (const [socket, identity] of this.clients) if (identity.browserClientId === browserClientId) socket.terminate()
+          await this.registry.releaseByBrowser(browserClientId)
+        }
+        return { ok: true }
+      })
+    })
+
+    this.app.get('/api/live-sessions/start-options', requireAuth, (_req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store')
+      res.json({ roots: [...this.roots] })
+    })
 
     this.app.post('/api/live-sessions/ws-ticket', requireMutationOrigin, requireAuth, (req: AuthenticatedRequest, res: Response) => {
       const result = this.auth.issueWebSocketTicket(req)

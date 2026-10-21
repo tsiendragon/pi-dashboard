@@ -2,6 +2,7 @@ package com.sam.pidash
 
 import android.app.Application
 import com.sam.pidash.data.local.BackendStore
+import com.sam.pidash.data.local.EncryptedLiveCookieStore
 import com.sam.pidash.data.repo.PiDashRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,6 @@ class PiDashApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        repository = PiDashRepository(BackendStore(this), appScope)
+        repository = PiDashRepository(BackendStore(this), appScope, EncryptedLiveCookieStore(this))
     }
 }

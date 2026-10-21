@@ -1,72 +1,45 @@
 # PiDash Android（原生 Compose 客户端）
 
-一个 **Kotlin + Jetpack Compose** 的原生 Android 客户端，用一个界面**汇总多台机器**上的 pi agent 会话。
+Kotlin + Jetpack Compose，多服务器聚合。**2.1 版默认打开 Live Pi**；普通 Chat 保留在独立标签中，不会把旧 Chat slot 假装成 Live 进程。
 
-> 设计见 [`../docs/android-app-design.md`](../docs/android-app-design.md)。
-> 网络接入见 [`../guide/remote-access-deployment.md`](../guide/remote-access-deployment.md)。
-> **进度 / 交接 / 验证证据 / 已修问题清单见 [`HANDOFF.md`](./HANDOFF.md)**（唯一权威来源）。
+- **部署、构建、手机配对与验收**：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi21)
+- **当前进度、测试证据与限制**：[`HANDOFF.md`](HANDOFF.md)
+- 历史设计：[`docs/android-app-design.md`](../docs/android-app-design.md)
 
-## 与旧版的关系
+## 当前功能（代码已实现，未做真机端到端验收）
 
-本目录原先是一个 **WebView 壳**（把 dashboard 的 web 前端套进 WebView，面向 Boox 墨水屏）。
-现已改为**纯原生 Compose** 实现（旧实现保留在 git 历史 `b00f94b`，可回退）。
+| 功能 | Live Pi 2.1 |
+|---|---|
+| 多服务器列表、与网页共享在线会话 | 已实现，专用 REST + WS |
+| 默认新建 Live Pi、选择服务器和工作目录 | 已实现：服务器 roots / 项目候选 / 手填绝对路径；服务器最终校验权限 |
+| 文本、流式、思考、工具进度/结果、错误 | 已实现；原生可选中文本，不是 WebUI 的完整 Markdown/活动图形视图 |
+| 接管/释放、中止、引导/排队输入 | 已实现；打开只读，不抢占其他端 |
+| 标题、模型、思考等级、置顶/标签 | 已实现 |
+| 压缩、重载、重启 Pi、真实用户条目分叉 | 已实现；危险操作需确认，服务器可拒绝 |
+| 扩展确认/选择/输入/编辑请求 | 已实现，必须明确回答，不自动确认 |
+| 上下文/会话树 | 只读 JSON 预览，不是完整图谱 |
+| 文件/上传、PTY、工作流/目标管理、用量、图片附件、语音、后台通知 | 尚未实现，请用 WebUI |
 
-## 移动端远程接入（未完成）
+普通 Chat 仍使用原来的 `/api/chat/slots`、`/api/ws` 与独立对话页。Live Pi 使用 `/api/live-sessions`，不会回退创建普通 Chat。
 
-实验性远程接入客户端已移出本仓库；现有 Android 客户端仍使用常规 Dashboard 连接。远程接入尚未完成，不能作为远程控制方案部署，仍需重新设计与真机验收。
+## 授权与网络
 
-## 当前进度
+服务器原有连接凭据仍用于入口认证。**Live Pi 另需网页生成的一次性手机配对码**；不要把主机控制 token 填进 App。配对身份相互独立，打开列表/会话不会接管。
 
-| 里程碑 | 内容 | 状态 |
-|---|---|---|
-| A1 | 工程骨架（Compose + 主题 + 导航） | ✅ 代码就绪 |
-| A2 | 后端管理（增删改 + 连通性测试） | ✅ 代码就绪 |
-| A3 | 普通 Chat slot 列表（REST + WS 实时刷新） | ✅ 代码就绪 |
-| A4 | 会话页（消息流 + 输入 + 停止 + 流式） | ✅ 代码就绪 |
-| A5 | 多后端聚合 + 机器标签 | ✅ 代码就绪 |
-| A6 | 重连（已有指数退避）/ 去重 / 通知 | 🟡 重连已有；通知未做 |
-| — | Live Pi 列表、详情、实时消息及接管/租约控制 | ⬜ 未做（不是普通 Chat slot） |
-| — | 文件 / 终端 / 任务 / 用量 页面 | ⬜ 未做 |
-| — | 模型切换、图片附件、标签编辑 | ⬜ 未做 |
+Live 要求 HTTPS（仅本机回环测试可用 HTTP），没有跳过证书校验。可沿用现有私有 VPN 和域名；不会自动配置隧道、公网入口或 DNS。已退休的实验性远程接入客户端不在本应用内。
 
-详细进度、验证证据、已修问题清单与剩余缺口 → **[`HANDOFF.md`](./HANDOFF.md)**。
+Live Cookie 用 AndroidKeyStore AES-GCM 加密，并绑定服务器地址/连接凭据；不迁移到其他设备。App 禁止云备份及设备迁移备份；直接覆盖安装 APK 则保留原有 App 数据。原有服务器配置仍由 `BackendStore` 管理，不宣称全部凭据已迁移到硬件密钥库。
 
-> **验证状态**：已在本机用 kotlinc（Kotlin 2.0.21 + Compose 编译器插件 + 序列化插件 + 完整依赖）
-> 对全部 15 个 `.kt` 文件做过**纯 Kotlin 编译**：**0 error / 216 class**，仅剩 3 条精简 classpath 造成的假警。
->
-> **本轮验证**：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过；**仍未验证**真机运行和远程接入端到端互通。
+## 构建产物与版本
 
-## 版本
+产物：`android/app/build/outputs/apk/debug/app-debug.apk`。构建与安装命令以[部署指南](../guide/dashboard.md#android-live-pi21)为准。
 
 | 组件 | 版本 |
 |---|---|
-| Gradle | 8.9 |
-| AGP | 8.7.3 |
-| Kotlin | 2.0.21 |
-| Compose BOM | 2024.10.01 |
+| App | 2.1 / versionCode 2 / `com.sam.pidash` |
+| Gradle / AGP | 8.9 / 8.7.3 |
+| Kotlin / Compose BOM | 2.0.21 / 2024.10.01 |
 | compileSdk / targetSdk / minSdk | 35 / 35 / 26 |
-| JDK | 17 |
+| JDK / JUnit（测试） | 17 / 4.13.2 |
 
-> ⚠️ 注意：旧工程的 wrapper 曾是 Gradle 9.5.0 而 AGP 是 8.5.2（互不兼容，构建不了）。
-> 现已统一到上表版本。若 Android Studio 提示升级 AGP/Gradle，可接受其建议。
-
-## 构建
-
-用 Android Studio（含 JDK 17 + SDK 35）打开 `android/` 目录，或命令行：
-
-```bash
-cd android
-./gradlew assembleDebug          # 产物：app/build/outputs/apk/debug/app-debug.apk
-```
-
-安装：
-
-```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
-
-## 看的东西
-
-- 服务器地址与凭据在 App 内配置（A2 起）
-- 认证：只需**边缘（nginx）凭据**一个，REST 与 WebSocket 都会带上 `Authorization` 头（token 留空则不带）
-- 多台机器：每台一个独立连接，列表里用标签区分来源
+不要为了部署本功能随意升级构建工具；本机已完成离线 Gradle 单元测试与 APK 构建，但这不等于手机安装、TLS/入口认证、实时会话控制都已验收。
