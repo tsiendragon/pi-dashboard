@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.projectLiveTimeline
+import com.sam.pidash.data.remote.projectLiveActivities
+import com.sam.pidash.data.remote.liveGoalAnchor
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.SessionKey
@@ -45,6 +47,8 @@ fun LiveSessionScreen(
     val owned = leases.containsKey(sessionKey)
     val heldElsewhere = summary?.claim?.state == "claimed" && !owned
     val timeline = remember(detail) { detail?.let { projectLiveTimeline(it) }.orEmpty() }
+    val activities = remember(detail) { detail?.let { projectLiveActivities(it) }.orEmpty() }
+    val goal = remember(detail) { detail?.let { liveGoalAnchor(it) } }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
@@ -55,6 +59,8 @@ fun LiveSessionScreen(
     var dialog by remember(sessionKey) { mutableStateOf<String?>(null) }
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
     var answered by remember(sessionKey) { mutableStateOf(emptySet<String>()) }
+    var activityView by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf(true) }
+    val visibleCount = if (activityView) activities.size else timeline.size
 
     // Opening/subscribing is strictly read-only. Repository owns foreground handling
     // and releasing our lease when the focused screen is disposed.
@@ -65,10 +71,10 @@ fun LiveSessionScreen(
 
     // Follow streaming only while the reader is already near the bottom; do not
     // pull them away from reading old messages.
-    LaunchedEffect(timeline.size, timeline.lastOrNull()) {
+    LaunchedEffect(visibleCount, activityView, if (activityView) activities.lastOrNull() else timeline.lastOrNull()) {
         val visible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-        if (timeline.isNotEmpty() && (visible >= timeline.size - 3 || visible < 0)) {
-            listState.scrollToItem(timeline.lastIndex)
+        if (visibleCount > 0 && (visible >= visibleCount - 3 || visible < 0)) {
+            listState.scrollToItem(visibleCount - 1)
         }
     }
 
@@ -219,13 +225,22 @@ fun LiveSessionScreen(
                 }
             }
             HorizontalDivider()
+            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(activityView, { activityView = true }, label = { Text("活动进度") })
+                FilterChip(!activityView, { activityView = false }, label = { Text("完整对话") })
+            }
+            if (activityView) goal?.let { LiveGoalCard(it) }
             if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(if (detail == null) "等待会话详情；可从菜单刷新。" else "暂无消息（只读打开）。")
                 }
             } else LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(timeline, key = { it.id }) { item ->
+                if (activityView) items(activities, key = { "activity:${it.id}" }) { activity ->
+                    LiveActivityCard(activity, enabled = !busy && !heldElsewhere, onFork = { entryId ->
+                        notice = null; forkEntry = entryId; dialog = "fork"
+                    })
+                } else items(timeline, key = { it.id }) { item ->
                     LiveTimelineCard(item, enabled = !busy && !heldElsewhere, onFork = { entryId ->
                         notice = null; forkEntry = entryId; dialog = "fork"
                     })
@@ -281,7 +296,7 @@ fun LiveSessionScreen(
             )
         }
         "remaining" -> AlertDialog(onDismissRequest = { dismiss() }, title = { Text("原生 Live Pi 范围") },
-            text = { Text("已支持实时对话与会话控制。文件浏览/上传、PTY 终端、工作流与复杂图形仍请使用 WebUI；此处不宣称完整功能对齐。") },
+            text = { Text("已支持实时对话与会话控制。文件浏览/上传、PTY 终端、完整工作流图谱和复杂编辑仍请使用 WebUI；此处不宣称完整功能对齐。") },
             confirmButton = { TextButton(onClick = { dismiss() }) { Text("知道了") } })
     }
 
@@ -294,7 +309,7 @@ fun LiveSessionScreen(
 }
 
 @Composable
-private fun LiveTimelineCard(item: LiveTimelineItem, enabled: Boolean, onFork: (String) -> Unit) {
+internal fun LiveTimelineCard(item: LiveTimelineItem, enabled: Boolean, onFork: (String) -> Unit) {
     val tool = item.toolName != null || item.role == "tool" || item.role == "toolResult"
     var showThinking by remember(item.id) { mutableStateOf(false) }
     val background = when {

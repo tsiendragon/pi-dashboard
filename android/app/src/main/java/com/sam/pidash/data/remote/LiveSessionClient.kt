@@ -110,6 +110,27 @@ class LiveSessionClient(
         MapSerializer(String.serializer(), LiveMeta.serializer()), get("/api/live-session-meta")["meta"] ?: buildJsonObject {})
     suspend fun candidates(): List<LiveRepoCandidate> = pidashJson.decodeFromJsonElement(
         ListSerializer(LiveRepoCandidate.serializer()), get("/api/live-sessions/repo-candidates")["repos"] ?: JsonArray(emptyList()))
+    private fun decodeGroups(response: JsonObject): List<LiveGroup> = try {
+        pidashJson.decodeFromJsonElement(ListSerializer(LiveGroup.serializer()),
+            response["groups"] ?: throw IOException("服务器未提供分组结果"))
+    } catch (error: kotlinx.serialization.SerializationException) { throw IOException("无法确认服务器分组结果", error) }
+    suspend fun organization(): LiveOrganization {
+        val groups = decodeGroups(get("/api/live-session-groups"))
+        val order = pidashJson.decodeFromJsonElement(LiveOrder.serializer(), get("/api/live-session-order"))
+        return LiveOrganization(groups, order, loaded = true)
+    }
+    suspend fun createGroup(name: String): List<LiveGroup> = decodeGroups(
+        post("/api/live-session-groups", buildJsonObject { put("name", name) }))
+    suspend fun moveGroup(process: String, groupId: String, removeSessionId: String? = null): List<LiveGroup> = withContext(Dispatchers.IO) {
+        require(groupId.matches(Regex("[A-Za-z0-9_-]{1,160}"))) { "无效分组标识" }
+        val path = "/api/live-session-groups/$groupId/members"
+        val response = if (removeSessionId == null) execute(request(path, "POST", buildJsonObject { put("processInstanceId", process) }))
+            else {
+                require(removeSessionId.matches(Regex("[A-Za-z0-9_-]{1,160}"))) { "无效会话标识" }
+                execute(request("$path/$removeSessionId", "DELETE"))
+            }
+        decodeGroups(response.jsonObject)
+    }
     suspend fun startOptions(): LiveStartOptions = pidashJson.decodeFromJsonElement(
         LiveStartOptions.serializer(), get("/api/live-sessions/start-options"))
     suspend fun start(cwd: String, title: String, model: String, thinkingLevel: String): String? {
