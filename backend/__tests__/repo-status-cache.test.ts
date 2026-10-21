@@ -7,7 +7,7 @@ import type { RepoGitStatus } from '../../shared/src/repos.js'
 
 const status = (branch: string, slow = false): RepoGitStatus => ({
   isGit: true, branch, detached: false, ahead: 0, behind: 0, staged: 0, modified: 0, untracked: 0,
-  conflicted: 0, stash: 0, worktrees: 1, localBranches: 1, slow, webUrl: null, last: null,
+  conflicted: 0, stash: 0, worktrees: 1, localBranches: 1, slow, origin: null, webUrl: null, identity: null, last: null,
 })
 
 const dirs: string[] = []

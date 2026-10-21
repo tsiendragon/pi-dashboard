@@ -25,7 +25,10 @@ export class StatusCache {
     try {
       const raw = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, CachedStatus>
       for (const [dir, entry] of Object.entries(raw)) {
-        if (entry && typeof entry.at === 'number' && entry.value && !entry.value.slow) this.entries.set(dir, entry)
+        // Entries written before `origin` / `identity` existed carry no such fields and would read as
+        // "missing remote / missing identity"; drop them so the next read recomputes.
+        const complete = entry?.value && 'origin' in entry.value && 'identity' in entry.value
+        if (entry && typeof entry.at === 'number' && entry.value && !entry.value.slow && complete) this.entries.set(dir, entry)
       }
     } catch { /* first run or unreadable cache: start empty */ }
   }

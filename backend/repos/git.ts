@@ -42,7 +42,7 @@ export function webUrlFromRemote(remote: string): string | null {
 const EMPTY_STATUS: RepoGitStatus = {
   isGit: false, branch: null, detached: false, ahead: null, behind: null,
   staged: 0, modified: 0, untracked: 0, conflicted: 0, stash: 0, worktrees: 0,
-  localBranches: 0, slow: false, webUrl: null, last: null,
+  localBranches: 0, slow: false, origin: null, webUrl: null, identity: null, last: null,
 }
 
 /** Parses `git status --porcelain=v2 --branch` into counts. Exported for tests. */
@@ -79,15 +79,19 @@ export async function repoStatus(cwd: string): Promise<RepoGitStatus> {
   } catch {
     return { ...EMPTY_STATUS }
   }
-  const [porcelain, stash, worktrees, branches, remote, last] = await Promise.all([
+  const [porcelain, stash, worktrees, branches, remote, userName, userEmail, last] = await Promise.all([
     git(cwd, ['status', '--porcelain=v2', '--branch'], STATUS_TIMEOUT_MS).catch(() => null),
     git(cwd, ['stash', 'list']).catch(() => ''),
     git(cwd, ['worktree', 'list', '--porcelain']).catch(() => ''),
     git(cwd, ['for-each-ref', '--format=%(refname)', 'refs/heads']).catch(() => ''),
     git(cwd, ['remote', 'get-url', 'origin']).catch(() => ''),
+    git(cwd, ['config', '--get', 'user.name']).catch(() => ''),
+    git(cwd, ['config', '--get', 'user.email']).catch(() => ''),
     git(cwd, ['log', '-1', `--format=%h${SEP}%an${SEP}%ct${SEP}%s`]).catch(() => ''),
   ])
   const [hash, author, time, ...subject] = last.trim().split(SEP)
+  const identityName = userName.trim() || null
+  const identityEmail = userEmail.trim() || null
   return {
     ...EMPTY_STATUS,
     ...parsePorcelainV2(porcelain ?? ''),
@@ -96,7 +100,9 @@ export async function repoStatus(cwd: string): Promise<RepoGitStatus> {
     stash: stash.split('\n').filter(Boolean).length,
     worktrees: worktrees.split('\n').filter(line => line.startsWith('worktree ')).length,
     localBranches: branches.split('\n').filter(Boolean).length,
+    origin: remote.trim() || null,
     webUrl: webUrlFromRemote(remote),
+    identity: (identityName || identityEmail) ? { name: identityName, email: identityEmail } : null,
     last: hash ? { hash, subject: subject.join(SEP), author: author ?? '', time: Number(time) || 0 } : null,
   }
 }

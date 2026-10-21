@@ -28,8 +28,12 @@ export interface RepoGitStatus {
   localBranches: number
   /** `git status` did not finish in time (cold or huge checkout); counts above are unknown. */
   slow: boolean
+  /** Raw `remote.origin.url` as written in the repo, e.g. `git@github.com:a/b.git`. */
+  origin: string | null
   /** Browser-openable form of `origin`, when it can be derived. */
   webUrl: string | null
+  /** Commit identity in effect here: `user.name` / `user.email` after repo and global config merge. */
+  identity: { name: string | null; email: string | null } | null
   last: { hash: string; subject: string; author: string; time: number } | null
 }
 

@@ -111,7 +111,18 @@ describe('git helpers', () => {
     await expect(repoCommit(dir, '--output=x')).rejects.toThrow('invalid_sha')
   })
 
+  it('reads origin url and commit identity, null when unset', async () => {
+    const dir = gitRepo()
+    const before = await repoStatus(dir)
+    expect(before.origin).toBeNull()
+    expect(before.identity).toEqual({ name: 'T', email: 't@t' })
+    execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', 'git@github.com:a/b.git'])
+    const after = await repoStatus(dir)
+    expect(after.origin).toBe('git@github.com:a/b.git')
+    expect(after.webUrl).toBe('https://github.com/a/b')
+  })
+
   it('reports a plain directory as not-git', async () => {
-    expect((await repoStatus(tmp())).isGit).toBe(false)
+    expect(await repoStatus(tmp())).toMatchObject({ isGit: false, origin: null, identity: null })
   })
 })
