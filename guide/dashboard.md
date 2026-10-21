@@ -141,8 +141,35 @@ cd android
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-安装也可用用户自己的私有本地传输方式；不把 APK 发布为未经授权的公网下载入口。服务器原有配置可保留，首次 Live 使用需短期配对。
+安装可使用下述用户已授权的 GitHub Release，或私有本地传输。公开发布的只是通用 App 产物，不包含设备配置/登录身份，也不开放私有 Dashboard 服务。服务器原有配置可保留，首次 Live 使用需短期配对。
 若提示签名不一致，先核对签名来源，不要通过卸载旧 App 绕过，以免丢失本地配置与配对身份。
+
+### Android GitHub 发布（每个新可安装版本）
+
+下载入口：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)。仓库为公开仓库，APK、校验值和更新说明均可公开下载；访问服务器仍需既有入口授权与 Live 配对。
+这不是 App 内自动升级，不会自动安装 APK、上传手机数据或变更服务网络。
+
+以后每次 Android 新可安装版本交付均同步发布：
+
+1. 递增 Gradle 中的版本名和 build code；先完成 Android 测试与 APK 构建。发布工具复用已有产物，不擅自重编译/部署服务器。
+2. 使用同一签名生成 APK；`android/release-signing-cert.sha256` 仅固定当前公有证书 SHA-256 摘要，**不是私钥**。随机 CI runner 不能重新生成 debug key，否则无法覆盖安装。当前保留原签名，不将私钥上传 GitHub/GitHub Secrets；真正迁移正式签名需另外批准。
+3. 编写 `android/releases/android-v<versionName>-build<versionCode>.md`，提交本版本变更，不混入无关在途修改。
+4. 使用 Python 3.9+、已登录且有仓库写权限的 `gh`、Git、JDK 17 和 Android Build Tools；`ANDROID_HOME` / `JAVA_HOME` 指向用户已配置的 SDK/JDK。仓库根目录执行：
+
+   ```bash
+   # 默认只核验本地 APK、版本、固定证书、源码/测试新鲜度和更新说明，不联网发布
+   python3 android/publish.py
+   # 明确发布；默认使用 app-debug.apk，可通过 --apk 指定已验证产物
+   python3 android/publish.py --publish
+   ```
+
+脚本验证包名/Gradle 版本、签名、测试结果、产物与源码时间以及构建源码无未提交变更。先推不可改写的版本 tag（如 `android-v2.2-build3`），再建立预发布草稿；上传版本化 APK、`SHA256SUMS` 与 `build-info.json`，全部成功才公开。
+脚本只推版本 tag，不自动推 master、不强推、不删除 tag，不覆盖已公开的同版 APK。中断后保持草稿；重跑只补缺失附件，已有附件须逐字节摘要一致。生产服务和其他工作区文件不受影响。
+
+当前发布仍是 Debug APK **预发布版**，需要真机验收；不能以 59 项 JVM 测试当作手机验收。`build-info.json` 记录版本、来源提交、公有证书摘要、APK SHA-256、单测统计与未完成真机验收标记，不包含主机路径、Cookie、token 或私钥。
+未配置无人值守 CI：有新版本时按上述命令同步发布，不承诺每次 commit 自动生成 APK。不要为此在公共 runner 中创建临时签名。
+
+可校验下载文件后覆盖安装；签名冲突时先核对，不能卸载绕过。脚本出错时不得把未公开草稿说成已发布。
 
 ### 手机验收顺序
 

@@ -21,4 +21,13 @@
 - 代码改动的生效方式：
   - 后端（`backend/**`）：必须重启服务进程才生效。
   - 前端（`frontend/**`）：服务静态托管 `frontend/dist`，构建后即生效，但构建与重启仍属用户控制的部署步骤。
+
 - agent 完成代码修改后，把「需要用户执行 `./run.sh`（或按用户自己的启动方式）生效」写入交接说明，而不是自行重启服务。
+
+## Android 交付 / GitHub 发布
+
+- 用户要求：每次交付新的可安装 Android 版本，同时发布到 `tsiendragon/pi-dashboard` 的 GitHub Releases，不只提供本机路径。权威操作说明在 `guide/dashboard.md` 的 Android GitHub 发布小节。
+- 新版递增 `versionName` / `versionCode`，通过测试和 APK/签名核验，提交本版本文件后运行 `python3 android/publish.py --publish`。脚本默认仅本地校验，显式 `--publish` 才推版本 tag 和上传 APK、SHA256SUMS、build-info.json。
+- 使用现有稳定签名；公有证书摘要固定在 `android/release-signing-cert.sha256`。不得为了 CI/覆盖安装重新生成密钥、上传签名私钥或把私钥放进仓库；更换签名须先获得用户确认并规划迁移。
+- 当前 APK 属 Debug 预发布版，未完成真机验收，不标为正式稳定版。已经发布的同版附件/tag 不覆盖、不强推；失败保留草稿，同内容可继续上传。
+- 发布只涉及 App 产物，不开放 Dashboard 服务；不得打包/上传后端状态目录、设备配置、token、Cookie、配对码。不要纳入其他用户在途修改，也不要为发布重启 Dashboard。
