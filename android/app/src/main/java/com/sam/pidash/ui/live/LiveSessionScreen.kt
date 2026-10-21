@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,8 +60,9 @@ fun LiveSessionScreen(
     var dialog by remember(sessionKey) { mutableStateOf<String?>(null) }
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
     var answered by remember(sessionKey) { mutableStateOf(emptySet<String>()) }
-    var activityView by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf(true) }
-    val visibleCount = if (activityView) activities.size else timeline.size
+    var viewMode by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("web") }
+    val activityMode = viewMode == "activity"
+    val visibleCount = if (activityMode) activities.size else timeline.size
 
     // Opening/subscribing is strictly read-only. Repository owns foreground handling
     // and releasing our lease when the focused screen is disposed.
@@ -71,7 +73,10 @@ fun LiveSessionScreen(
 
     // Follow streaming only while the reader is already near the bottom; do not
     // pull them away from reading old messages.
-    LaunchedEffect(visibleCount, activityView, if (activityView) activities.lastOrNull() else timeline.lastOrNull()) {
+    LaunchedEffect(visibleCount, viewMode, if (activityMode) activities.lastOrNull() else timeline.lastOrNull()) {
+        // The WebUI renderer page follows its own scroll position; only the native
+        // lists are driven from here.
+        if (viewMode == "web") return@LaunchedEffect
         val visible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         if (visibleCount > 0 && (visible >= visibleCount - 3 || visible < 0)) {
             listState.scrollToItem(visibleCount - 1)
@@ -169,33 +174,29 @@ fun LiveSessionScreen(
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(enabled = !busy && (owned || !heldElsewhere), onClick = {
-                        perform(if (owned) "已释放控制权" else "已取得控制权") {
-                            if (owned) live.release(sessionKey) else live.claim(sessionKey)
-                        }
-                    }) { Text(if (owned) "释放控制权" else "取得控制权") }
                     TextButton(enabled = !busy && owned, onClick = {
                         perform("已请求中止") {
                             if (live.leases.value.containsKey(sessionKey)) live.abort(sessionKey)
                             else Result.failure(IllegalStateException("本机已不再持有控制权，未发送中止。"))
                         }
                     }) { Text("中止") }
-                    Text(if (owned) "本机控制" else if (heldElsewhere) "其他端控制" else "只读",
-                        style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        if (owned) "本机接管中 · 仅中止/压缩需要" else "可直接输入 · 与网页、TUI 同步",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
                     OutlinedTextField(value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
-                        placeholder = { Text("发送时尝试取得控制权…") }, maxLines = 4, enabled = !busy)
-                    FilledIconButton(enabled = !busy && !heldElsewhere && summary != null && draft.isNotBlank(), onClick = {
+                        placeholder = { Text("输入消息（网页、TUI 也可同时输入）…") }, maxLines = 4, enabled = !busy)
+                    FilledIconButton(enabled = !busy && summary != null && draft.isNotBlank(), onClick = {
                         val text = draft
                         perform("已发送") {
-                            val claimed = ensureLease()
-                            if (claimed.isFailure) claimed else live.send(sessionKey, text, deliverAs).onSuccess {
+                            live.send(sessionKey, text, deliverAs).onSuccess {
                                 // Never discard the draft on failed or uncertain delivery.
                                 if (draft == text) draft = ""
                             }
                         }
-                    }) { Icon(Icons.AutoMirrored.Filled.Send, "发送（取得控制权，不会抢占）") }
+                    }) { Icon(Icons.AutoMirrored.Filled.Send, "发送") }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf(null to "默认", "steer" to "引导", "followUp" to "排队").forEach { (value, label) ->
@@ -226,17 +227,24 @@ fun LiveSessionScreen(
             }
             HorizontalDivider()
             Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(activityView, { activityView = true }, label = { Text("活动进度") })
-                FilterChip(!activityView, { activityView = false }, label = { Text("完整对话") })
+                FilterChip(viewMode == "web", { viewMode = "web" }, label = { Text("WebUI 渲染") })
+                FilterChip(viewMode == "timeline", { viewMode = "timeline" }, label = { Text("原生文本") })
+                FilterChip(activityMode, { viewMode = "activity" }, label = { Text("活动进度") })
             }
-            if (activityView) goal?.let { LiveGoalCard(it) }
-            if (timeline.isEmpty()) {
+            if (activityMode) goal?.let { LiveGoalCard(it) }
+            if (viewMode == "web") NativeTranscriptView(
+                items = timeline,
+                dark = isSystemInDarkTheme(),
+                emptyText = if (detail == null) "等待会话详情；可从菜单刷新。" else "暂无消息（只读打开）。",
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                onFailure = { message -> notice = message; viewMode = "timeline" },
+            ) else if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(if (detail == null) "等待会话详情；可从菜单刷新。" else "暂无消息（只读打开）。")
                 }
             } else LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (activityView) items(activities, key = { "activity:${it.id}" }) { activity ->
+                if (activityMode) items(activities, key = { "activity:${it.id}" }) { activity ->
                     LiveActivityCard(activity, enabled = !busy && !heldElsewhere, onFork = { entryId ->
                         notice = null; forkEntry = entryId; dialog = "fork"
                     })

@@ -1,0 +1,41 @@
+/* The app shell pins html/body to the viewport and hides overflow; inside the
+   WebView the page itself is the scroll container instead. */
+html,
+body,
+#root {
+  height: auto;
+  min-height: 100%;
+}
+
+body.pdr-body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 14px/1.55 var(--font-body);
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: contain;
+}
+
+body.pdr-body * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Phone width: keep long paths/output inside the card instead of scrolling the page. */
+body.pdr-body pre,
+body.pdr-body code,
+body.pdr-body table {
+  max-width: 100%;
+}
+
+body.pdr-body img,
+body.pdr-body svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Code blocks stay readable on a narrow screen rather than wrapping every line. */
+body.pdr-body pre {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}

@@ -1,13 +1,15 @@
 # PiDash Android · 当前交接
 
-> 当前实现：2.2 / versionCode 3。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
-> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi22)。
+> 当前实现：2.3 / versionCode 4。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
+> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi23)。
 > 功能适配评估与后续范围：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)。
 
 ## 1. 当前状态
 
 - **机器列表 → 本机 Dashboard → Session**；本机默认 Live Pi，Chat 单独保留。旧 App 新建的 home 会话仍是 Chat，历史 JSONL 不会自动转换为 Live。
 - 2.2 加入可见版本、Live/Chat 状态分离、机器范围搜索/分组/网页顺序、保守活动视图、只读目标/工作项/阻塞。
+- 2.3 正文改用**与 WebUI 同一套 React 渲染器**（离线打包 assets，无网络无凭据），并把普通输入改回
+  与 WebUI 一致：只有中止/压缩/重启需要接管。
 - 真正接入 Live 启动、列表、详情、实时事件与租约，不是重命名 Chat slot。
 - 本轮仅 Android/文档，不需为 2.2 重启服务；只读检查已证实新配对接口与网页按钮在运行，但不能据此认定手机已安装/配对。**未做手机端到端验收，未代用户重启 Dashboard、启动/接管/停止任何生产会话。**
 - 原有五个前端在途文件不属于本轮：`MarkdownRenderer.tsx`、`LiveSessionsList.tsx` 及对应两个测试、`modelScores.ts`；不要把它们顺手纳入提交。
@@ -64,6 +66,9 @@
 | `ui/live/LiveSessionScreen.kt`、`LiveActivityView.kt`、`LiveDialogs.kt` | 活动/对话、只读目标、设置、检查、危险操作确认、扩展请求 |
 | `ui/sessions/MachinesScreen.kt`、`SessionsScreen.kt`、`ui/nav/AppNav.kt` | 机器 → 本机 Dashboard → Live/Chat 详情导航 |
 | `ui/common/AppInfo.kt` | 构建版本与 Live 状态文案；不使用普通 Chat 状态替代 Live 授权 |
+| `ui/live/NativeTranscriptView.kt` | 用虚拟源从 assets 供给离线渲染页；拒绝其他一切请求 |
+| `data/remote/TranscriptPayload.kt` | 推给渲染器的纯数据契约（可单测，无凭据） |
+| `frontend/native-renderer/`、`frontend/vite.native-renderer.config.ts` | 复用 `MarkdownRenderer` + 主题 CSS 的离线渲染入口，输出到 APK assets |
 | `MainActivity.kt` | 前台/后台 Live 生命周期 |
 
 服务端：`backend/live-sessions/auth.ts`、`backend/routes/live-sessions.ts`、`backend/server.ts`。
@@ -73,10 +78,12 @@
 
 ## 5. 验证证据与剩余风险
 
-- Android：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过，**59 项单元测试通过**；JUnit 为纯 JVM 合成数据/临时回环 HTTP，无手机、无生产会话操作。
+- Android：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过，**66 项单元测试通过**；JUnit 为纯 JVM 合成数据/临时回环 HTTP，无手机、无生产会话操作。
 - `LiveProtocolTest`：流式替换、工具合并、序列缺口/陈旧事件、真实 entryId、遥测/扩展 UI、重复合法输入、坏数据、上限。
 - 本轮 APK 包元数据核验：`com.sam.pidash` / versionName `2.2` / versionCode `3`；APK 签名验证通过。带版本名副本：`app/build/outputs/apk/debug/pidash-2.2-build3-debug.apk`，与标准 `app-debug.apk` 相同。
   SHA-256：`acc2f932aa5a953debdfed81cea736ba59214e70b8202b757a8e4ae14c2e9031`。
+- `TranscriptPayloadTest`：渲染契约只含投影字段，不带 lease/Cookie/Authorization；主题随设备而非硬编码。
+- 输入语义回归：他端持租约时仍可普通输入；中止/压缩仍需并校验租约；陈旧租约失败不派发命令。
 - `MachineDashboardTest`：本机隔离、同 ID 不串机、网页分组/置顶/Hold/排序、sessionId 重启稳定性、搜索/子 Agent 筛选、版本/连接状态文案。
 - `LiveActivitiesTest`：真实工具状态、失败不掩盖、部分/中间消息不冒充最终回复、历史窗口、真实 fork ID、只读目标解析。
 - `LiveSessionClientTest`：两层凭据/Origin、Cookie、重定向阻断、HTTPS、路径、启动/只读/租约/后台/答复，以及分组接口凭据、无 claim、写入不重试、未确认回执、分组失败不隐藏 Live、认证失效清理组织缓存。
@@ -90,7 +97,7 @@
 
 ## 6. 用户部署和手机验收
 
-只按[权威部署指南](../guide/dashboard.md#android-live-pi22)操作。当前已有配对服务，本轮只需用户覆盖安装新 APK，首页确认 `v2.2 · build 3`，选正确机器并按需使用短期配对码；**不要为本轮再重启 Dashboard**。
+只按[权威部署指南](../guide/dashboard.md#android-live-pi23)操作。当前已有配对服务，本轮只需用户覆盖安装新 APK，首页确认 `v2.2 · build 3`，选正确机器并按需使用短期配对码；**不要为本轮再重启 Dashboard**。
 2.0 不支持 Live，2.1 有 Live 但无醒目版本与逐机器 Dashboard；服务器是否更新不能替代确认手机实际安装版本。
 
 推荐先以新建的测试 Live 验证发送/接管/释放，再验证多端互斥与后台恢复，不拿正在工作的会话做中止/重启试验。
