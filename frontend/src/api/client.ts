@@ -46,6 +46,8 @@ export const api = {
   memoryChanges: (limit = 40) => get('/api/memory/changes?limit=' + limit).then(j),
   memoryReviewQueue: (limit = 30) => get('/api/memory/review?limit=' + limit).then(j),
   memoryUsage: (days = 7) => get('/api/memory/usage?days=' + days).then(j),
+  memoryPromotions: (limit = 50) => get('/api/memory/promotions?limit=' + limit).then(j),
+  memoryNightly: () => get('/api/memory/nightly').then(j),
   restartSessions: () => post('/api/sessions/restart').then(j),
   sessionsContext: () => get('/api/sessions/context').then(j),
   sessionsUsage: () => get('/api/sessions/usage').then(j),

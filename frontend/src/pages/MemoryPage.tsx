@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 
-type Tab = 'overview' | 'review' | 'active' | 'changes' | 'usage'
+type Tab = 'overview' | 'review' | 'active' | 'changes' | 'usage' | 'promotions'
 
 interface MemoryOverviewResponse {
   available: boolean
@@ -57,12 +57,30 @@ interface MemoryUsageResponse {
   topUsed: Array<{ id: string; content: string; injected: number; verified: number }>
 }
 
+interface PromotionProposal {
+  id: string
+  memoryId: string
+  suggestedType: string
+  status: string
+  strength?: string
+  content: string
+  createdAt: number
+}
+
+interface NightlyReview {
+  available: boolean
+  generatedAt?: string
+  windowDays?: number
+  markdown?: string
+}
+
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'review', label: '待确认' },
   { id: 'active', label: '生效记忆' },
   { id: 'changes', label: '最近变化' },
   { id: 'usage', label: '使用与效果' },
+  { id: 'promotions', label: '升级建议' },
 ]
 
 function timeAgo(ts?: number): string {
@@ -118,6 +136,8 @@ export default function MemoryPage() {
   const [review, setReview] = useState<MemoryItem[]>([])
   const [changes, setChanges] = useState<MemoryChange[]>([])
   const [usage, setUsage] = useState<MemoryUsageResponse | null>(null)
+  const [proposals, setProposals] = useState<PromotionProposal[]>([])
+  const [nightly, setNightly] = useState<NightlyReview | null>(null)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -129,6 +149,11 @@ export default function MemoryPage() {
         if (target === 'active') setItems((await api.memoryItems({ status: 'active', search: search || undefined, limit: 100 })).items as MemoryItem[])
         if (target === 'changes') setChanges((await api.memoryChanges(80)).changes as MemoryChange[])
         if (target === 'usage') setUsage((await api.memoryUsage(7)) as MemoryUsageResponse)
+      if (target === 'promotions') {
+        const promotionPayload = (await api.memoryPromotions(50)) as { proposals?: PromotionProposal[] }
+        setProposals(Array.isArray(promotionPayload?.proposals) ? promotionPayload.proposals : [])
+        setNightly((await api.memoryNightly()) as NightlyReview)
+      }
       } catch (error) {
         setErrorText(error instanceof Error ? error.message : String(error))
       } finally {
@@ -261,6 +286,37 @@ export default function MemoryPage() {
                 {change.contentPreview && <div className="mt-1 break-words text-body-s text-text">{change.contentPreview}</div>}
               </div>
             ))}
+          </div>
+        )}
+
+        {tab === 'promotions' && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-card px-4 py-3 text-body-s text-text">
+              {nightly?.available
+                ? `最近一次自动总结：${nightly.generatedAt ? new Date(nightly.generatedAt).toLocaleString() : '时间未知'}（看近 ${nightly.windowDays ?? 30} 天的使用信号）`
+                : '夜里还没有跑过总结。定时任务每天 03:30 生成，也可以手动执行一次。'}
+              <div className="mt-1 text-2xs text-muted">总结只给建议，不会自己改记忆、也不会自动生成技能。</div>
+            </div>
+            <div className="space-y-2">
+              <div className="text-2xs text-muted">值得沉淀的候选（{proposals.length}）</div>
+              {proposals.length === 0 && <div className="text-body-s text-muted">暂时没有建议。使用证据不足时不会硬凑。</div>}
+              {proposals.map((proposal) => (
+                <div key={proposal.id} className="rounded-lg border border-border bg-card px-4 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2 text-2xs text-muted">
+                    <span className="rounded bg-bg-hover px-1.5 py-0.5">{proposal.suggestedType}</span>
+                    <span className={proposal.strength === '强' ? 'text-success' : 'text-warning'}>证据{proposal.strength ?? '未知'}</span>
+                    <span>{timeAgo(proposal.createdAt)}</span>
+                  </div>
+                  <div className="mt-1 break-words text-body-s text-text">{proposal.content}</div>
+                </div>
+              ))}
+            </div>
+            {nightly?.markdown && (
+              <details className="rounded-lg border border-border bg-card px-4 py-3">
+                <summary className="cursor-pointer text-body-s text-text">查看完整总结</summary>
+                <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-2xs text-muted">{nightly.markdown}</pre>
+              </details>
+            )}
           </div>
         )}
 
