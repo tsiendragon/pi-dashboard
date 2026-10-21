@@ -28,4 +28,14 @@ class TranscriptPathsTest {
     @Test fun leadingDotSlashIsTolerated() {
         assertTrue(pathVisibleInTranscript("docs/system.md", "./docs/system.md"))
     }
+
+    @Test fun onlyHttpLinksLeaveTheApp() {
+        assertTrue(externalUrlAllowed("https://example.test/docs?x=1"))
+        assertTrue(externalUrlAllowed("http://example.test"))
+        assertFalse(externalUrlAllowed("javascript:alert(1)"))
+        assertFalse(externalUrlAllowed("intent://scan/#Intent;scheme=zxing;end"))
+        assertFalse(externalUrlAllowed("file:///etc/passwd"))
+        assertFalse(externalUrlAllowed("https://example.test/a b"))
+        assertFalse(externalUrlAllowed("https://example.test/\nInjected: x"))
+    }
 }

@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.sam.pidash.domain.model.LiveTimelineItem
+import com.sam.pidash.data.remote.externalUrlAllowed
 import com.sam.pidash.data.remote.pathVisibleInTranscript
 import com.sam.pidash.data.remote.transcriptPayload
 import org.json.JSONObject
@@ -60,10 +61,20 @@ internal object NativeRenderAssets {
 class TranscriptBridge(
     private val transcript: AtomicReference<String>,
     private val openPath: (String) -> Unit,
+    private val openUrl: (String) -> Unit,
 ) {
     @JavascriptInterface
     fun openPath(path: String) {
         if (pathVisibleInTranscript(transcript.get(), path)) openPath(path)
+    }
+
+    /** Only http(s) leaves the app; the caller re-validates before starting an Intent. */
+    @JavascriptInterface
+    fun openUrl(url: String) {
+        val candidate = url.trim()
+        if (candidate.length in 1..4096 && externalUrlAllowed(candidate) && transcript.get().contains(candidate)) {
+            openUrl(candidate)
+        }
     }
 }
 
@@ -76,6 +87,7 @@ internal fun NativeTranscriptView(
     modifier: Modifier = Modifier,
     onFailure: (String) -> Unit = {},
     onOpenPath: ((String) -> Unit)? = null,
+    onOpenUrl: ((String) -> Unit)? = null,
 ) {
     val payload = remember(items, dark, emptyText) { transcriptPayload(items, dark, emptyText) }
     // What the bridge may open is exactly what is rendered right now.
@@ -137,8 +149,11 @@ internal fun NativeTranscriptView(
                         return true
                     }
                 }
-                if (onOpenPath != null) {
-                    addJavascriptInterface(TranscriptBridge(transcriptRef) { path -> onOpenPath(path) }, "PiDashNative")
+                if (onOpenPath != null || onOpenUrl != null) {
+                    addJavascriptInterface(
+                        TranscriptBridge(transcriptRef, { path -> onOpenPath?.invoke(path) }, { url -> onOpenUrl?.invoke(url) }),
+                        "PiDashNative",
+                    )
                 }
                 loadUrl("https://${NativeRenderAssets.HOST}/index.html")
                 web = this
