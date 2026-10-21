@@ -110,6 +110,10 @@ data class LiveTimelineItem(
     val status: String = "done",
     val intermediate: Boolean = false,
     val images: List<LiveImage> = emptyList(),
+    /** Tool call identity so one call and its result stay a single transcript line. */
+    val toolCallId: String? = null,
+    /** Raw arguments of that call; rendered as one collapsed line, never as prose. */
+    val toolArgs: String? = null,
 )
 
 data class LiveActivity(val id: String, val title: String, val state: String, val items: List<LiveTimelineItem>)

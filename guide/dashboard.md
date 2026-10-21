@@ -77,7 +77,7 @@ Live 列表展示桥接已注册的 Pi 进程，不是扫描所有历史 JSONL�
 
 <a id="android-live-pi24"></a>
 
-## Android Live Pi（2.4）
+## Android Live Pi（3.1）
 
 **代码与本地测试就绪，尚未完成手机端到端验收。** 详细状态、限制与测试证据见
 [`android/HANDOFF.md`](../android/HANDOFF.md)。原生支持多服务器列表、cwd 选择/新建、实时文本/思考/工具、
@@ -85,7 +85,7 @@ Live 列表展示桥接已注册的 Pi 进程，不是扫描所有历史 JSONL�
 2.2 的首页为**机器列表 → 本机 Dashboard → Session**：本机支持标题/路径/模型/分组/标签搜索、工作中/子 Agent 筛选，复用网页分组、置顶和保存的区块/会话顺序；支持新建分组、移动/移出会话。分组重命名/合并/删除与拖动排序暂用网页。
 会话可切换保守的活动进度与完整对话，并只读展示目标、阶段、真实工作项计数和阻塞；不推测完成百分比，不把工具返回/已回复说成任务验收通过。
 
-机器列表、本机 Dashboard、设置页固定显示由构建元数据生成的 **`v2.2 · build 3`**；它不同于后端 `/api/status` 的服务版本。
+机器列表、本机 Dashboard、设置页固定显示由构建元数据生成的 **`v3.1 · build 12`**；它不同于后端 `/api/status` 的服务版本。
 普通 Chat 的连接状态和 Live 配对/连接状态分别显示，未授权/断连不当成真正空列表。
 上下文与会话树仍为只读 JSON 预览；文件/上传、PTY、完整工作流与目标编辑、图片附件、用量、语音、后台通知及完整图形视图仍使用 WebUI。
 完整适配评估、已实现与后续范围见[逐机器 Dashboard 设计](../docs/android-machine-dashboard.md)。
@@ -124,47 +124,36 @@ Android 的 Live Cookie 用 AndroidKeyStore AES-GCM 加密并绑定服务器地�
 若复制过，剪贴板由用户清理，码仍由服务端限制有效期和单次消费。选择目录还会合并既有项目候选，
 **候选不等于授权**；启动时继续 realpath/roots 校验，roots 为空仍默认拒绝，不自动把目录设为 home。
 
-### 渲染：复用 WebUI，而不是再造一套
+### 渲染：原生实现，按 WebUI 规则对齐
 
-**默认改用原生渲染**（3.0 起）：`ui/markdown/` 里的纯 Kotlin Markdown 解析器（`MarkdownParser`，有单测）
-加大 `MarkdownBody` Compose 渲染，覆盖标题、段落、围栏代码（自带横滚与复制）、列表、引用、表格、分隔线，
-以及粗体/斜体/删除线/行内代码/链接；裸链接与本地路径同样可点。视图仍可在「原生渲染 / WebUI 渲染 / 活动进度」间切换。
+3.0 起会话正文由原生渲染，不再内嵌 WebView（3.1 彻底移除离线渲染页与 APK 里的 assets）。
 
-**WebUI 渲染保留为兜底**：mermaid 图、KaTeX 公式这类原生无法等价的块仍需用它，渲染失败时也会自动回退。
-此前该视图是默认项，正文默认由 **WebUI 自己的 React 渲染器**渲染：`frontend/native-renderer/` 复用
-`src/components/MarkdownRenderer.tsx`（react-markdown + remark-gfm + rehype-raw + DOMPurify +
-highlight.js + mermaid + DiffBlock）与真实主题 CSS，经 Vite 打包进
-`android/app/src/main/assets/native-renderer/`。所以代码块、表格、公式、图形、diff、图片在手机上
-与网页同一套渲染与配色，而不是 Kotlin 的近似实现。
+- `ui/markdown/MarkdownParser.kt`：纯 Kotlin Markdown 解析，覆盖标题、围栏代码、有序/无序列表（含层级）、
+  引用、表格（含对齐）、分隔线；行内支持粗体、斜体、删除线、行内代码、链接与反斜杠转义。纯函数，有单测。
+- `ui/markdown/MarkdownBody.kt`：Compose 渲染。代码块**不换行、块内横滚**并带「复制」；表格块内横滚；
+  裸链接与本地路径可点。整页**只允许纵向滚动**，超长代码或宽表格不会把页面横向拖走。
+- `ui/live/NativeTranscriptCards.kt`：步骤卡与消息卡遵循 WebUI 的呈现规则：
+  - **每次工具调用只有一行**：状态图标（● 进行中 / ✓ 已完成 / ! 失败）+ 工具名 + 参数单行摘要；
+    参数**不会**以 JSON 形式灌进正文。完整输出默认折叠在「展开输出」后，`run_code` 归为「Run Code」。
+  - 一次调用的「发起 + 执行事件 + 结果」合并为同一行（`toolCallId` 作为键），不会叠出第二张卡。
+  - 正文超过 12 行或 1200 字先截断，显示「展开全部正文（N 行）」，阈值与 WebUI `ActivityReplyBody` 一致。
+  - 助手正文无气泡、用户消息靠右着色、错误用 error 容器；思考内容需显式「查看思考」。
+- 路径与链接：
+  - 正文中的本地路径可点击预览。解析由渲染层产生，路径来自已绘制的正文；预览走 App 自己的已授权客户端
+    `GET /api/file-read`（只读，最多 512 KB 尾部），不新增服务端权限。`.md` 用 Markdown 渲染，
+    其他文件按纯文本等宽显示。
+  - `http(s)` 链接交给**系统浏览器**（`ACTION_VIEW`）；`externalUrlAllowed` 只放行 `http(s)`，
+    `javascript:`/`intent://`/`file://` 与含空格/控制字符的一律拒绝。
 
-- 页面从虚拟源 `https://renderer.pidash.local/` 由 `shouldInterceptRequest` 从 assets 读取；
-  其他任何请求（网络、`file://`、越界路径）一律拒绝。**页面不含 Cookie、不发请求、不持有凭据**，
-  正文数据由 App 通过 `window.PiDashRenderer.render(...)` 推入。
-- 手机尺寸差异只在 CSS 层处理：页面自身滚动、卡片左右留白、代码块横向滚动而不换行、
-  图片/表格限宽；流式跟随只在读者已贴近底部时生效。
-- **只允许纵向滚动**：`html/body/#root` 禁横向溢出，表格/代码块各自内部横滚，mermaid SVG 限宽；
-  WebView 关闭 `overScrollMode` 与横向滚动条。否则一行超长代码会让整页被向左拖走。
-- 步骤与正文遵循 WebUI `ActivityTimeline` 的规则，而不是把所有输出铺开：**工具是一行式步骤条**
-  （状态图标 + 已完成/进行中/失败 + 工具名 + 单行摘要），参数和完整输出**默认折叠**在「展开输出」后；
-  `run_code` 等归为「Run Code」单独展开。正文超过 12 行或 1200 字先截断，底部渐变 + 「展开全部正文（N 行）」，
-  阈値与 `ActivityReplyBody` 一致。
-- 正文中的本地路径可点击预览（2.7+）。点击解析是**委托到页面根部**的：代码片段、本地链接、以及普通正文里
-  形如 `路径/文件名.扩展名` 的片段都可点（`MarkdownRenderer` 自身只认 code/link，prose 里的路径以前点不动）。渲染页只把路径交给原生：`window.PiDashNative.openPath(path)`，
-  原生校验该路径**必须出现在当前已渲染的正文里**，否则丢弃——渲染内容无法诱导 App 读取读者没看见的文件。
-  预览走 App 自己的已授权客户端 `GET /api/file-read`（只读，最多 512 KB 尾部），不新增服务端权限。
-- 正文里的 `http(s)` 链接交给**系统浏览器**打开（`ACTION_VIEW`）：渲染页永不导航，只上报链接；
-  仅允许 `http(s)`，`javascript:`/`intent://`/`file://` 与含空格/控制字符的一律拒绝。
-- 无法加载时自动回退到「原生文本」，也可手动切换「WebUI 渲染 / 原生文本 / 活动进度」。
-- 只有渲染被复用，**写入仍由原生外壳控制**：输入框、菜单、租约与确认逻辑都不在 WebView 里。
+已知差距（有意保留）：原生渲染**不做代码语法高亮配色、不渲染 mermaid 图与 KaTeX 公式**，
+也不解析原始 HTML。这些块会以等宽文本出现在正文里。
 
-改动渲染器源码后必须先重建 assets，再构建 APK：
+改动渲染规则时同时改网页与 App，两边的阈值和文案要保持一致：
 
-```bash
-npm --prefix frontend run build:native-renderer
-cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug
 ```
-
-发布脚本会校验 assets 比渲染器源码新，避免发出旧渲染器。
+frontend/src/features/live-sessions/ActivityTimeline.tsx   # 网页规则
+android/app/src/main/java/com/sam/pidash/ui/live/NativeTranscriptCards.kt  # App 同规则
+```
 
 ### 图片附件
 
@@ -172,7 +161,7 @@ cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug
 单张 ≤ 3 MB、最多 4 张、合计 ≤ 6 MB；仅 PNG/JPEG/WebP/GIF。超限图片在本地按长边 2048 缩放并以
 JPEG 重新压缩，仍超限则明确报错而不是静默丢弃；原始大小已合规时保留原始字节（GIF/WebP 不失真）。
 附件与草稿一样，**发送失败时保留**。服务端仍做同样校验，客户端限制只是提前失败。选中的图片会随消息
-发往该 Live 会话，并可在「WebUI 渲染」中以数据 URL 显示。
+发往该 Live 会话，并在正文中原位显示（最多 140 dp 预览）。
 
 ### 输入不需要“接管”
 
@@ -230,7 +219,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ### 手机验收顺序
 
 1. VPN 与原有 HTTPS 域名能正常访问，App 服务器连接信息保持正确；网页有 Live 登录状态。
-2. 覆盖安装 APK，首页必须看到 `v2.2 · build 3`。服务已具备配对接口时不重启；在机器列表选择正确 Dashboard，必要时网页生成一次性码并在本机配对，不复制主机控制 token。
+2. 覆盖安装 APK，首页必须看到 `v3.1 · build 12`。服务已具备配对接口时不重启；在机器列表选择正确 Dashboard，必要时网页生成一次性码并在本机配对，不复制主机控制 token。
 3. 本机 Live 应看到与网页相同的在线进程及分组/置顶/顺序；验证搜索、Hold 收起/展开、子 Agent 筛选；另一台机器不能混入本机结果。旧 Chat 在本机的单独标签，未配对/断连不是空列表。
    查看活动进度、完整对话和只读目标记录，核对工具失败/未确认状态没有变成“全部完成”；分组变更只在专用测试会话上验证。
 4. 「＋」选择服务器和允许的 cwd，新建一个专用于测试的 Live；网页 Live 列表出现同一会话和目录，不新增普通 Chat slot。
