@@ -39,6 +39,7 @@ interface Item {
 /** Set by the Android shell; absent in a plain browser, where clicks stay inert. */
 interface NativeBridge {
   openPath?: (path: string) => void
+  openUrl?: (url: string) => void
 }
 
 interface Payload {
@@ -159,6 +160,12 @@ function openPath(path: string) {
  */
 const PATH_TOKEN = /(?:~|\.{0,2})?\/[\w.@~+-]+(?:\/[\w.@~+-]+)*\.[A-Za-z0-9]{1,8}/g
 
+/** External links leave the app for the user's browser; the page never navigates. */
+function urlFromTap(target: HTMLElement): string | undefined {
+  const href = target.closest('a')?.getAttribute('href')?.trim()
+  return href && /^https?:\/\//i.test(href) ? href : undefined
+}
+
 function pathFromTap(target: HTMLElement): string | undefined {
   const anchor = target.closest('a')
   const href = anchor?.getAttribute('href')?.trim()
@@ -181,6 +188,12 @@ function usePathTaps() {
       if (event.defaultPrevented) return
       const target = event.target as HTMLElement | null
       if (!target) return
+      const url = urlFromTap(target)
+      if (url) {
+        event.preventDefault()
+        ;(window as unknown as { PiDashNative?: NativeBridge }).PiDashNative?.openUrl?.(url)
+        return
+      }
       const path = pathFromTap(target)
       if (!path) return
       event.preventDefault()

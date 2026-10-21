@@ -16,3 +16,9 @@ internal fun pathVisibleInTranscript(transcript: String, path: String): Boolean 
     if (candidate.startsWith("http://") || candidate.startsWith("https://")) return false
     return transcript.contains(candidate) || candidate.removePrefix("./").let { transcript.contains(it) }
 }
+
+/** External links are opened by the system browser; only these schemes are allowed. */
+internal fun externalUrlAllowed(url: String): Boolean =
+    (url.startsWith("https://") || url.startsWith("http://")) &&
+        url.length <= 4096 &&
+        url.none { it == '\u0000' || it == '\n' || it == '\r' || it == '\t' || it == ' ' }
