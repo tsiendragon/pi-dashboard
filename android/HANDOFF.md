@@ -1,7 +1,7 @@
 # PiDash Android · 当前交接
 
-> 当前实现：2.9 / versionCode 10。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
-> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi29)。
+> 当前实现：3.0 / versionCode 11。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
+> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi30)。
 > 功能适配评估与后续范围：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)。
 
 ## 1. 当前状态
@@ -66,6 +66,8 @@
 | `ui/live/LiveSessionScreen.kt`、`LiveActivityView.kt`、`LiveDialogs.kt` | 活动/对话、只读目标、设置、检查、危险操作确认、扩展请求 |
 | `ui/sessions/MachinesScreen.kt`、`SessionsScreen.kt`、`ui/nav/AppNav.kt` | 机器 → 本机 Dashboard → Live/Chat 详情导航 |
 | `ui/common/AppInfo.kt` | 构建版本与 Live 状态文案；不使用普通 Chat 状态替代 Live 授权 |
+| `ui/markdown/MarkdownParser.kt`、`MarkdownBody.kt` | 纯 Kotlin Markdown 解析（可单测）+ Compose 渲染；默认会话正文 |
+| `ui/live/NativeTranscriptCards.kt` | 原生步骤卡/消息卡，规则同 WebUI（折叠、12 行截断、Run Code） |
 | `ui/live/NativeTranscriptView.kt` | 用虚拟源从 assets 供给离线渲染页；拒绝其他一切请求 |
 | `data/remote/TranscriptPayload.kt` | 推给渲染器的纯数据契约（可单测，无凭据） |
 | `frontend/native-renderer/`、`frontend/vite.native-renderer.config.ts` | 复用 `MarkdownRenderer` + 主题 CSS 的离线渲染入口，输出到 APK assets |
@@ -78,7 +80,7 @@
 
 ## 5. 验证证据与剩余风险
 
-- Android：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过，**78 项单元测试通过**；JUnit 为纯 JVM 合成数据/临时回环 HTTP，无手机、无生产会话操作。
+- Android：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过，**87 项单元测试通过**；JUnit 为纯 JVM 合成数据/临时回环 HTTP，无手机、无生产会话操作。
 - `LiveProtocolTest`：流式替换、工具合并、序列缺口/陈旧事件、真实 entryId、遥测/扩展 UI、重复合法输入、坏数据、上限。
 - 本轮 APK 包元数据核验：`com.sam.pidash` / versionName `2.2` / versionCode `3`；APK 签名验证通过。带版本名副本：`app/build/outputs/apk/debug/pidash-2.2-build3-debug.apk`，与标准 `app-debug.apk` 相同。
   SHA-256：`acc2f932aa5a953debdfed81cea736ba59214e70b8202b757a8e4ae14c2e9031`。
@@ -98,7 +100,7 @@
 
 ## 6. 用户部署和手机验收
 
-只按[权威部署指南](../guide/dashboard.md#android-live-pi29)操作。当前已有配对服务，本轮只需用户覆盖安装新 APK，首页确认 `v2.2 · build 3`，选正确机器并按需使用短期配对码；**不要为本轮再重启 Dashboard**。
+只按[权威部署指南](../guide/dashboard.md#android-live-pi30)操作。当前已有配对服务，本轮只需用户覆盖安装新 APK，首页确认 `v2.2 · build 3`，选正确机器并按需使用短期配对码；**不要为本轮再重启 Dashboard**。
 2.0 不支持 Live，2.1 有 Live 但无醒目版本与逐机器 Dashboard；服务器是否更新不能替代确认手机实际安装版本。
 
 推荐先以新建的测试 Live 验证发送/接管/释放，再验证多端互斥与后台恢复，不拿正在工作的会话做中止/重启试验。
