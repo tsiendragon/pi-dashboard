@@ -1,7 +1,7 @@
 # PiDash Android · 当前交接
 
-> 当前实现：2.4 / versionCode 5。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
-> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi24)。
+> 当前实现：2.5 / versionCode 6。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
+> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi25)。
 > 功能适配评估与后续范围：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)。
 
 ## 1. 当前状态
@@ -98,7 +98,7 @@
 
 ## 6. 用户部署和手机验收
 
-只按[权威部署指南](../guide/dashboard.md#android-live-pi24)操作。当前已有配对服务，本轮只需用户覆盖安装新 APK，首页确认 `v2.2 · build 3`，选正确机器并按需使用短期配对码；**不要为本轮再重启 Dashboard**。
+只按[权威部署指南](../guide/dashboard.md#android-live-pi25)操作。当前已有配对服务，本轮只需用户覆盖安装新 APK，首页确认 `v2.2 · build 3`，选正确机器并按需使用短期配对码；**不要为本轮再重启 Dashboard**。
 2.0 不支持 Live，2.1 有 Live 但无醒目版本与逐机器 Dashboard；服务器是否更新不能替代确认手机实际安装版本。
 
 推荐先以新建的测试 Live 验证发送/接管/释放，再验证多端互斥与后台恢复，不拿正在工作的会话做中止/重启试验。
