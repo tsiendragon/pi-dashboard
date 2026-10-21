@@ -5,7 +5,14 @@ import os from 'os'
 import path from 'path'
 
 export const LIVE_SESSION_COOKIE_NAME = 'pi_live_session'
+/**
+ * A browser that logged in with the host control token is a short-lived session.
+ * A phone that went through the one-use pairing code is a *device*: re-pairing it
+ * every 12 hours made the step feel permanent, so it keeps its own, longer window.
+ * Revoking it is still explicit (unpair / logout) and it is bound to one backend.
+ */
 const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000
+const DEVICE_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 const WEBSOCKET_TICKET_TTL_MS = 30_000
 const PAIRING_CODE_TTL_MS = 3 * 60_000
 const PAIRING_CODE_CAPACITY = 32
@@ -16,6 +23,8 @@ export interface LiveSessionBrowserIdentity {
   browserClientId: string
   createdAt: number
   lastSeenAt: number
+  /** True only for an identity created by redeeming a pairing code. */
+  paired?: boolean
 }
 
 export interface BrowserAuthenticationResult extends LiveSessionBrowserIdentity {
@@ -100,6 +109,10 @@ function urlMatchesRequest(url: URL, request: HeaderSource): boolean {
   return isDswGatewayOrigin(url, request)
 }
 
+function maxAgeOf(identity: { paired?: boolean }): number {
+  return identity.paired === true ? DEVICE_SESSION_MAX_AGE_MS : SESSION_MAX_AGE_MS
+}
+
 export class LiveSessionBrowserAuth {
   readonly tokenPath: string
   private readonly sessionsPath: string
@@ -147,13 +160,14 @@ export class LiveSessionBrowserAuth {
     return this.createSession(secure)
   }
 
-  private async createSession(secure: boolean): Promise<BrowserAuthenticationResult> {
+  private async createSession(secure: boolean, paired = false): Promise<BrowserAuthenticationResult> {
     const cookieValue = randomBytes(32).toString('hex')
     const now = this.now()
     const identity: LiveSessionBrowserIdentity = {
       browserClientId: randomBytes(16).toString('hex'),
       createdAt: now,
       lastSeenAt: now,
+      ...(paired ? { paired: true } : {}),
     }
     this.sessions.set(cookieValue, identity)
     try { await this.persistSessions() } catch {
@@ -210,7 +224,7 @@ export class LiveSessionBrowserAuth {
     this.pairingCodes.delete(hash)
     if (!record || record.expiresAt <= this.now()) return undefined
     if (![...this.sessions.values()].some(identity => identity.browserClientId === record.browserClientId)) return undefined
-    return this.createSession(secure)
+    return this.createSession(secure, true)
   }
 
   issueWebSocketTicket(request: HeaderSource): BrowserWebSocketTicket | undefined {
@@ -298,8 +312,14 @@ export class LiveSessionBrowserAuth {
       const parsed = JSON.parse(raw) as Record<string, LiveSessionBrowserIdentity>
       const now = this.now()
       for (const [cookie, identity] of Object.entries(parsed)) {
-        if (identity && typeof identity.browserClientId === 'string' && typeof identity.lastSeenAt === 'number' && now - identity.lastSeenAt < SESSION_MAX_AGE_MS) {
-          this.sessions.set(cookie, { browserClientId: identity.browserClientId, createdAt: typeof identity.createdAt === 'number' ? identity.createdAt : now, lastSeenAt: identity.lastSeenAt })
+        if (identity && typeof identity.browserClientId === 'string' && typeof identity.lastSeenAt === 'number' &&
+          now - identity.lastSeenAt < maxAgeOf(identity)) {
+          this.sessions.set(cookie, {
+            browserClientId: identity.browserClientId,
+            createdAt: typeof identity.createdAt === 'number' ? identity.createdAt : now,
+            lastSeenAt: identity.lastSeenAt,
+            ...(identity.paired === true ? { paired: true } : {}),
+          })
         }
       }
     } catch { /* missing or corrupt sessions file -> start empty */ }
@@ -320,11 +340,10 @@ export class LiveSessionBrowserAuth {
   }
 
   private prune(): void {
-    const cutoff = this.now() - SESSION_MAX_AGE_MS
-    for (const [cookie, identity] of this.sessions) {
-      if (identity.lastSeenAt < cutoff) this.sessions.delete(cookie)
-    }
     const now = this.now()
+    for (const [cookie, identity] of this.sessions) {
+      if (now - identity.lastSeenAt >= maxAgeOf(identity)) this.sessions.delete(cookie)
+    }
     for (const [ticket, value] of this.websocketTickets) {
       if (value.expiresAt < now) this.websocketTickets.delete(ticket)
     }
