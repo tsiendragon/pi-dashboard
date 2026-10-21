@@ -15,7 +15,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -24,6 +23,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.data.remote.ImageAttachments
 import com.sam.pidash.domain.model.LiveImage
 import androidx.compose.material3.*
@@ -33,9 +33,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.sam.pidash.data.remote.externalUrlAllowed
 import com.sam.pidash.data.remote.projectLiveTimeline
-import com.sam.pidash.data.remote.projectLiveActivities
-import com.sam.pidash.data.remote.liveGoalAnchor
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.SessionKey
@@ -61,8 +60,6 @@ fun LiveSessionScreen(
     val owned = leases.containsKey(sessionKey)
     val heldElsewhere = summary?.claim?.state == "claimed" && !owned
     val timeline = remember(detail) { detail?.let { projectLiveTimeline(it) }.orEmpty() }
-    val activities = remember(detail) { detail?.let { projectLiveActivities(it) }.orEmpty() }
-    val goal = remember(detail) { detail?.let { liveGoalAnchor(it) } }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
@@ -92,9 +89,7 @@ fun LiveSessionScreen(
     var dialog by remember(sessionKey) { mutableStateOf<String?>(null) }
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
     var answered by remember(sessionKey) { mutableStateOf(emptySet<String>()) }
-    var viewMode by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("native") }
-    val activityMode = viewMode == "activity"
-    val visibleCount = if (activityMode) activities.size else timeline.size
+    val visibleCount = timeline.size
 
     // Opening/subscribing is strictly read-only. Repository owns foreground handling
     // and releasing our lease when the focused screen is disposed.
@@ -105,10 +100,7 @@ fun LiveSessionScreen(
 
     // Follow streaming only while the reader is already near the bottom; do not
     // pull them away from reading old messages.
-    LaunchedEffect(visibleCount, viewMode, if (activityMode) activities.lastOrNull() else timeline.lastOrNull()) {
-        // The WebUI renderer page follows its own scroll position; only the native
-        // lists are driven from here.
-        if (viewMode == "web") return@LaunchedEffect
+    LaunchedEffect(visibleCount, timeline.lastOrNull()) {
         val visible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         if (visibleCount > 0 && (visible >= visibleCount - 3 || visible < 0)) {
             listState.scrollToItem(visibleCount - 1)
@@ -160,7 +152,8 @@ fun LiveSessionScreen(
     }
 
     fun openExternalUrl(url: String) {
-        // Leaves the app for the user's browser; the bridge already validated the scheme.
+        // Leaves the app for the user's browser; only plain web links are accepted.
+        if (!externalUrlAllowed(url)) { notice = "不支持的链接类型"; return }
         runCatching {
             context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
         }.onFailure { notice = "无法打开链接：${it.message}" }
@@ -305,31 +298,17 @@ fun LiveSessionScreen(
                 }
             }
             HorizontalDivider()
-            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(viewMode == "native", { viewMode = "native" }, label = { Text("原生渲染") })
-                FilterChip(viewMode == "web", { viewMode = "web" }, label = { Text("WebUI 渲染") })
-                FilterChip(activityMode, { viewMode = "activity" }, label = { Text("活动进度") })
-            }
-            if (activityMode) goal?.let { LiveGoalCard(it) }
-            if (viewMode == "web") NativeTranscriptView(
-                items = timeline,
-                dark = isSystemInDarkTheme(),
-                emptyText = if (detail == null) "等待会话详情；可从菜单刷新。" else "暂无消息（只读打开）。",
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                onFailure = { message -> notice = message; viewMode = "timeline" },
-                onOpenUrl = { url -> openExternalUrl(url) },
-                onOpenPath = { path -> openPathPreview(path) },
-            ) else if (timeline.isEmpty()) {
+            if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(if (detail == null) "等待会话详情；可从菜单刷新。" else "暂无消息（只读打开）。")
                 }
-            } else LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (activityMode) items(activities, key = { "activity:${it.id}" }) { activity ->
-                    LiveActivityCard(activity, enabled = !busy && !heldElsewhere, onFork = { entryId ->
-                        notice = null; forkEntry = entryId; dialog = "fork"
-                    })
-                } else items(timeline, key = { it.id }) { item ->
+            } else LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(timeline, key = { it.id }) { item ->
                     NativeTimelineCard(
                         item = item,
                         onOpenPath = ::openPathPreview,
@@ -407,12 +386,23 @@ fun LiveSessionScreen(
                     }
                     HorizontalDivider()
                     if (content == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("读取中…") }
-                    else NativeTranscriptView(
-                        items = listOf(LiveTimelineItem(id = "file", role = "assistant", text = content)),
-                        dark = isSystemInDarkTheme(),
-                        emptyText = "这个文件是空的。",
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                    )
+                    else if (path.endsWith(".md", true) || path.endsWith(".markdown", true)) {
+                        SelectionContainer {
+                            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                MarkdownBody(content, onOpenPath = ::openPathPreview, onOpenUrl = ::openExternalUrl)
+                            }
+                        }
+                    } else {
+                        // Plain files are shown verbatim: monospace, no markdown guessing.
+                        SelectionContainer {
+                            Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                Text(
+                                    content.ifBlank { "（空文件）" },
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
