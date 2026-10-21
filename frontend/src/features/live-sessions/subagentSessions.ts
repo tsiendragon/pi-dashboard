@@ -66,6 +66,10 @@ export function projectSubagentSessions(
   return result
 }
 
+export function isFailedSubagent(status: string): boolean {
+  return ['failed', 'failure', 'error'].includes(status.trim().toLowerCase())
+}
+
 export function subagentGroups(items: readonly SubagentSessionItem[]) {
   return {
     active: items.filter(item => item.bucket === 'active'),

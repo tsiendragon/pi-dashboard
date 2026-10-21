@@ -40,6 +40,33 @@ describe('ActivityTimeline', () => {
     expect(longBody.className).not.toContain('line-clamp-3')
   })
 
+  it('interleaves follow-ups and replies by when they actually happened', () => {
+    render(<ActivityTimeline activities={[{
+      id: 'activity-1',
+      title: '补齐三个模型的状态',
+      sourceLabel: '用户请求',
+      status: 'done',
+      steps: [],
+      replies: [
+        { id: 'reply-1', text: '模型文件都齐了，但服务还没真跑通。', kind: 'final', entryIndex: 4, related: [] },
+        { id: 'reply-2', text: '服务已起，冒烟测试通过。', kind: 'final', entryIndex: 12, related: [] },
+      ],
+      followUps: [
+        { id: 'follow-up-8', kind: 'quote', text: '引用（来自 Agent 回复）：\n> 模型文件都齐了\n\n那先把服务起来验证？', entryIndex: 8 },
+        { id: 'follow-up-20', kind: 'comment', text: 'Please review and address the comment in docs/plan.md:', entryIndex: 20 },
+      ],
+    }]} />)
+
+    const activity = screen.getByRole('article')
+    // 两种内容合成一条时间线：标题只报总数，不再各自分段。
+    expect(within(activity).getByText('Agent 回复 · 2 条')).toBeInTheDocument()
+    expect(within(activity).getByText(/引用 \/ 批注追问 · 2 条（并入本活动，不另开一个）/)).toBeInTheDocument()
+    const text = activity.textContent ?? ''
+    const order = ['模型文件都齐了', '那先把服务起来验证？', '服务已起，冒烟测试通过。', 'docs/plan.md'].map(needle => text.indexOf(needle))
+    expect(order.every(position => position >= 0)).toBe(true)
+    expect(order).toEqual([...order].sort((left, right) => left - right))
+  })
+
   it('renders activities in chronological order with explicit step completion states', () => {
     render(<ActivityTimeline activities={[
       {

@@ -105,9 +105,11 @@ function planLines(plan: ActivityPlan): ActivityNote[] {
 }
 
 /** “接着做了：…”——把简短标题补成具体动作，避免用户看不懂在干什么。 */
-function RelatedNote({ related }: { related: string[] }) {
+function RelatedNote({ related, inline }: { related: string[]; inline?: boolean }) {
   if (related.length === 0) return null
-  return <div className="mt-1 text-2xs text-muted" title={related.join('、')}>接着做了：{related.join('、')}</div>
+  // 紧凑模式：跟「进度说明」挤在同一行，行尾省略，不再单独占一行。
+  if (inline) return <span className="min-w-0 truncate font-normal" title={related.join('、')}>接着做了：{related.join('、')}</span>
+  return <div className="mt-0.5 text-2xs text-muted" title={related.join('、')}>接着做了：{related.join('、')}</div>
 }
 
 function StepList({ steps, numbered, className, onFileOpen }: { steps: ActivityStep[]; numbered: boolean; className: string; onFileOpen?: (path: string) => void }) {
@@ -144,35 +146,37 @@ function QuoteAnchor({ entryId, className, children }: { entryId?: string; class
   return <div className={className} data-msg-anchor="" data-msg-role="assistant" data-msg-id={entryId}>{children}</div>
 }
 
-function ActivityReplyBody({ reply, onFileOpen }: { reply: ActivityReply; onFileOpen?: (path: string) => void }) {
-  const [expanded, setExpanded] = useState(false)
+/** 正文超过这个量就值得单独展开，不必整块铺满一屏。 */
+const REPLY_PREVIEW_LINES = 12
+const REPLY_PREVIEW_CHARS = 1_200
+
+function replyLineCount(reply: ActivityReply): number {
+  return reply.text.split('\n').length
+}
+
+function replyIsLong(reply: ActivityReply): boolean {
+  return replyLineCount(reply) > REPLY_PREVIEW_LINES || reply.text.length > REPLY_PREVIEW_CHARS
+}
+
+function ActivityReplyBody({ reply, onFileOpen, expanded }: { reply: ActivityReply; onFileOpen?: (path: string) => void; expanded: boolean }) {
   const lines = reply.text.split('\n')
-  const previewLines = 12
-  const previewChars = 1_200
-  const long = lines.length > previewLines || reply.text.length > previewChars
-  const visible = long && !expanded ? lines.slice(0, previewLines).join('\n').slice(0, previewChars) : reply.text
+  const long = replyIsLong(reply)
+  const visible = long && !expanded ? lines.slice(0, REPLY_PREVIEW_LINES).join('\n').slice(0, REPLY_PREVIEW_CHARS) : reply.text
   return (
-    <div className="min-w-0">
-      <QuoteAnchor entryId={reply.entryId} className={`min-w-0 text-body-s leading-5 text-text [&_h1]:my-1 [&_h1]:text-base [&_h2]:my-1 [&_h2]:text-sm [&_h3]:my-1 [&_h3]:text-sm [&_li]:text-body-s [&_li]:leading-5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1 ${long && !expanded ? 'relative max-h-[200px] overflow-hidden' : ''}`}>
-        <MarkdownRenderer content={visible} onFileOpen={onFileOpen} />
-        {long && !expanded && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-bg to-transparent" />}
-      </QuoteAnchor>
-      {long && <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded(value => !value)}
-        className="mt-1 cursor-pointer border-0 bg-transparent p-0 text-2xs text-accent hover:underline"
-      >{expanded ? '收起正文' : `展开全部正文（${lines.length} 行）`}</button>}
-    </div>
+    <QuoteAnchor entryId={reply.entryId} className={`min-w-0 text-meta text-text [&_h1]:my-1 [&_h1]:text-base [&_h2]:my-1 [&_h2]:text-sm [&_h3]:my-1 [&_h3]:text-sm [&_li]:text-meta [&_li]:leading-[18px] [&_ol]:my-0.5 [&_p]:my-0.5 [&_p]:leading-[18px] [&_ul]:my-0.5 ${long && !expanded ? 'relative max-h-[180px] overflow-hidden' : ''}`}>
+      <MarkdownRenderer content={visible} onFileOpen={onFileOpen} />
+      {long && !expanded && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-bg to-transparent" />}
+    </QuoteAnchor>
   )
 }
 
 export default function ActivityTimeline({ activities, onFileOpen }: { activities: LiveActivity[]; onFileOpen?: (path: string) => void }) {
   const [expandedActivities, setExpandedActivities] = useState<Record<string, boolean>>({})
   const [expandedFollowUps, setExpandedFollowUps] = useState<Record<string, boolean>>({})
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({})
 
   return (
-    <section className="space-y-3" aria-label="会话活动时间线">
+    <section className="space-y-2" aria-label="会话活动时间线">
       {activities.length === 0
         ? <p className="py-10 text-center text-sm text-muted">暂无可归纳的活动。</p>
         : activities.map((activity, activityIndex) => {
@@ -180,19 +184,33 @@ export default function ActivityTimeline({ activities, onFileOpen }: { activitie
           const expanded = expandedActivities[activity.id] === true
           const visibleSteps = expanded ? activity.steps : activity.steps.slice(0, 5)
           const hiddenSteps = Math.max(0, activity.steps.length - visibleSteps.length)
+          // 回复与追问按真实发生顺序排在同一条时间线上，避免「先回再引」看起来像「先引再回」。
+          const followUps = activity.followUps || []
+          const timeline: Array<{ key: string; entryIndex: number; reply?: ActivityReply; followUp?: ActivityFollowUp }> = [
+            ...followUps.map(item => ({ key: `follow-up-${item.id}`, entryIndex: item.entryIndex, followUp: item })),
+            ...activity.replies.map(reply => ({ key: `reply-${reply.id}`, entryIndex: reply.entryIndex, reply })),
+          ].sort((left, right) => left.entryIndex - right.entryIndex)
+          const replyCount = activity.replies.length
+          const followUpCount = followUps.length
+          const timelineLabel = replyCount > 0
+            ? `Agent 回复${replyCount > 1 ? ` · ${replyCount} 条` : ''}`
+            : `引用 / 批注追问${followUpCount > 1 ? ` · ${followUpCount} 条` : ''}`
+          const timelineExtra = replyCount > 0 && followUpCount > 0
+            ? `引用 / 批注追问${followUpCount > 1 ? ` · ${followUpCount} 条` : ''}（并入本活动，不另开一个）`
+            : replyCount === 0 && followUpCount > 0 ? '（并入本活动，不另开一个）' : undefined
           return (
-            <article key={activity.id} className="rounded-md border border-border bg-card px-3 py-3">
+            <article key={activity.id} className="rounded-md border border-border bg-card px-2.5 py-2">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="shrink-0 text-xs font-semibold text-accent">活动 {activityIndex + 1}</span>
                 {activity.startedAt && <time className="shrink-0 text-2xs text-muted">{activity.startedAt}</time>}
                 <span className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-2xs font-medium ${activityStatus.className}`}>{activityStatus.label}</span>
               </div>
-              <h2 className="mt-1 truncate text-body-s font-semibold leading-5 text-text-strong" title={activity.title}>{activity.title}</h2>
+              <h2 className="mt-0.5 truncate text-body-s font-semibold leading-5 text-text-strong" title={activity.title}>{activity.title}</h2>
               <div className="mt-0.5 flex min-w-0 items-center gap-2 text-2xs text-muted">
                 <span className="shrink-0">{activity.sourceLabel}</span>
                 {activity.lastSummary && <span className="truncate" title={activity.lastSummary}>· {activity.lastSummary}</span>}
               </div>
-              {(activity.images?.length || 0) > 0 && <div className="mt-2 flex flex-wrap gap-2" aria-label="用户发送的图片">
+              {(activity.images?.length || 0) > 0 && <div className="mt-1.5 flex flex-wrap gap-2" aria-label="用户发送的图片">
                 {activity.images!.map((image, imageIndex) => <img
                   key={`${activity.id}-image-${imageIndex}`}
                   src={`data:${image.mimeType};base64,${image.data}`}
@@ -208,62 +226,77 @@ export default function ActivityTimeline({ activities, onFileOpen }: { activitie
 
               {activity.steps.length === 0
                 ? <p className="mt-2 text-2xs text-muted">尚无可确认的执行步骤</p>
-                : <StepList steps={visibleSteps} numbered className="ml-1 mt-2 space-y-2 border-l border-border pl-3" onFileOpen={onFileOpen} />}
+                : <StepList steps={visibleSteps} numbered className="ml-1 mt-1 space-y-[3px] border-l border-border pl-3" onFileOpen={onFileOpen} />}
                 {activity.steps.length > 5 && <button
                   type="button"
                   onClick={() => setExpandedActivities(previous => ({ ...previous, [activity.id]: !expanded }))}
-                  className="ml-8 mt-2 cursor-pointer border-0 bg-transparent p-0 text-2xs text-accent hover:underline"
+                  className="ml-8 mt-1 cursor-pointer border-0 bg-transparent p-0 text-2xs text-accent hover:underline"
                 >{expanded ? '收起步骤' : `展开其余 ${hiddenSteps} 项`}</button>}
 
-              {(activity.followUps?.length || 0) > 0 && <div className="ml-1 mt-3 space-y-1.5 border-l border-border pl-3">
-                <div className="text-2xs font-semibold text-muted">
-                  引用 / 批注追问{activity.followUps!.length > 1 ? ` · ${activity.followUps!.length} 条` : ''}
-                  <span className="ml-1 font-normal">（并入本活动，不另开一个）</span>
-                </div>
-                {activity.followUps!.map(item => (
-                  <div key={item.id} className="rounded border border-border bg-bg-elevated px-2.5 py-1.5">
-                    <div className="flex min-w-0 items-center gap-2 text-2xs text-muted">
-                      <span className="shrink-0 rounded bg-accent-subtle px-1.5 text-accent">{FOLLOW_UP_KIND[item.kind]}</span>
-                      {item.queued && <span className="shrink-0 text-warn">排队中，等 Pi 接手</span>}
-                      <span className="ml-auto shrink-0 font-mono">{item.text.length.toLocaleString()} 字符</span>
-                    </div>
-                    <p className={`mt-1 whitespace-pre-wrap break-words text-2xs leading-5 text-text ${expandedFollowUps[item.id] ? '' : 'line-clamp-3'}`} title={item.text}>{item.text}</p>
-                    {followUpIsLong(item.text) && <button
-                      type="button"
-                      aria-expanded={expandedFollowUps[item.id] === true}
-                      aria-label={expandedFollowUps[item.id] ? `收起${FOLLOW_UP_KIND[item.kind]}追问` : `展开${FOLLOW_UP_KIND[item.kind]}追问全文`}
-                      onClick={() => setExpandedFollowUps(previous => ({ ...previous, [item.id]: previous[item.id] !== true }))}
-                      className="mt-1 cursor-pointer border-0 bg-transparent p-0 text-2xs text-accent hover:underline"
-                    >{expandedFollowUps[item.id] ? '收起' : '展开全文'}</button>}
-                  </div>
-                ))}
-              </div>}
-
-              {activity.plan && (planLines(activity.plan).length > 0 || activity.plan.items.length > 0) && <div className="mt-2 rounded-md border border-accent/30 bg-accent-subtle/30 px-2.5 py-2">
+              {activity.plan && (planLines(activity.plan).length > 0 || activity.plan.items.length > 0) && <div className="mt-1.5 rounded-md border border-accent/30 bg-accent-subtle/30 px-2 py-1.5">
                 <div className="text-2xs font-semibold text-accent">Agent 计划</div>
                 {planLines(activity.plan).map((line, lineIndex) => (
                   <div key={`plan-line-${lineIndex}`}>
-                    <QuoteAnchor entryId={line.entryId} className="mt-1 line-clamp-4 whitespace-pre-wrap break-words text-2xs leading-5 text-text">
+                    <QuoteAnchor entryId={line.entryId} className="mt-0.5 line-clamp-4 whitespace-pre-wrap break-words text-2xs leading-5 text-text">
                       <span title={line.text}>{line.text}</span>
                     </QuoteAnchor>
                     <RelatedNote related={line.related} />
                   </div>
                 ))}
-                {activity.plan.items.length > 0 && <StepList steps={activity.plan.items} numbered={false} className="mt-1.5 space-y-1" onFileOpen={onFileOpen} />}
+                {activity.plan.items.length > 0 && <StepList steps={activity.plan.items} numbered={false} className="mt-1 space-y-1" onFileOpen={onFileOpen} />}
               </div>}
 
-              {activity.replies.length > 0 && <div className="ml-1 mt-3 space-y-2 border-l border-border pl-3">
-                <div className="text-2xs font-semibold text-muted">Agent 回复{activity.replies.length > 1 ? ` · ${activity.replies.length} 条` : ''}</div>
-                {activity.replies.map(reply => (
-                  <div key={reply.id} className="rounded border border-border bg-bg px-2.5 py-2">
-                    <div className="flex items-center gap-2 text-2xs text-muted">
-                      <span className="shrink-0">{REPLY_KIND[reply.kind]}</span>
-                      <span className="ml-auto shrink-0 font-mono">{reply.text.length.toLocaleString()} 字符</span>
+              {timeline.length > 0 && <div className="ml-0.5 mt-1.5 space-y-1 border-l border-border pl-2.5">
+                <div className="mb-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs font-semibold text-muted">
+                  <span>{timelineLabel}</span>
+                  {timelineExtra && <span className="font-normal">· {timelineExtra}</span>}
+                  <span className="ml-auto shrink-0 font-normal text-muted">按发生顺序</span>
+                </div>
+                {timeline.map(entry => {
+                  if (entry.reply) {
+                    const reply = entry.reply
+                    const open = expandedReplies[reply.id] === true
+                    const long = replyIsLong(reply)
+                    return (
+                      <div key={entry.key} className="rounded-sm border border-border bg-bg px-2 py-0.5">
+                        <div className="flex min-w-0 items-center gap-1.5 text-2xs text-muted">
+                          <span className="shrink-0">{REPLY_KIND[reply.kind]}</span>
+                          <RelatedNote inline related={reply.related} />
+                          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                            {long && <button
+                              type="button"
+                              aria-expanded={open}
+                              onClick={() => setExpandedReplies(previous => ({ ...previous, [reply.id]: previous[reply.id] !== true }))}
+                              className="cursor-pointer border-0 bg-transparent p-0 text-2xs text-accent hover:underline"
+                            >{open ? '收起正文' : `展开全部正文（${replyLineCount(reply)} 行）`}</button>}
+                            <span className="font-mono">{reply.text.length.toLocaleString()} 字符</span>
+                          </span>
+                        </div>
+                        <div className="mt-px"><ActivityReplyBody reply={reply} expanded={open} onFileOpen={onFileOpen} /></div>
+                      </div>
+                    )
+                  }
+                  const followUp = entry.followUp
+                  if (!followUp) return null
+                  const followUpOpen = expandedFollowUps[followUp.id] === true
+                  return (
+                    <div key={entry.key} className="rounded-sm border border-border bg-bg-elevated px-2 py-0.5">
+                      <div className="flex min-w-0 items-center gap-1.5 text-2xs text-muted">
+                        <span className="shrink-0 rounded bg-accent-subtle px-1.5 text-accent">{FOLLOW_UP_KIND[followUp.kind]}</span>
+                        {followUp.queued && <span className="shrink-0 text-warn">排队中，等 Pi 接手</span>}
+                        <span className="ml-auto shrink-0 font-mono">{followUp.text.length.toLocaleString()} 字符</span>
+                      </div>
+                      <p className={`mt-0.5 whitespace-pre-wrap break-words text-2xs text-text ${followUpOpen ? '' : 'line-clamp-3'}`} title={followUp.text}>{followUp.text}</p>
+                      {followUpIsLong(followUp.text) && <button
+                        type="button"
+                        aria-expanded={followUpOpen}
+                        aria-label={followUpOpen ? `收起${FOLLOW_UP_KIND[followUp.kind]}追问` : `展开${FOLLOW_UP_KIND[followUp.kind]}追问全文`}
+                        onClick={() => setExpandedFollowUps(previous => ({ ...previous, [followUp.id]: previous[followUp.id] !== true }))}
+                        className="mt-0.5 cursor-pointer border-0 bg-transparent p-0 text-2xs text-accent hover:underline"
+                      >{followUpOpen ? '收起' : '展开全文'}</button>}
                     </div>
-                    <RelatedNote related={reply.related} />
-                    <div className="mt-1"><ActivityReplyBody reply={reply} onFileOpen={onFileOpen} /></div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>}
             </article>
           )
