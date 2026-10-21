@@ -17,7 +17,6 @@ import { SessionDiscardError, cleanupSessionDiscard, commitSessionDiscard, prepa
 import { SessionTreeError, buildSessionFamilyGraph, readSessionCompactions } from '../live-sessions/session-tree.js'
 import { readSessionGoalAnchor } from '../live-sessions/session-goal.js'
 import { listRepoCandidates } from '../live-sessions/repo-candidates.js'
-
 export interface LiveSessionRouteOptions {
   app: Express
   registry: LiveSessionRegistry
@@ -46,6 +45,7 @@ function errorStatus(error: unknown): number {
     return 409
   }
   const code = error instanceof LiveSessionRegistryError || error instanceof LiveSessionProtocolError || error instanceof SessionTreeError || error instanceof SessionForkError || error instanceof SessionDiscardError || error instanceof LiveSessionCloseError ? error.code : ''
+if (error instanceof SessionTreeError && error.code === 'session_file_unavailable') return 400
   if (code === 'live_session_not_found') return 404
   if (code === 'not_a_subagent') return 403
   if (code === 'live_session_pid_invalid') return 400
@@ -56,6 +56,7 @@ function errorStatus(error: unknown): number {
   if (code === 'invalid_lease' || code === 'deliver_as_required' || code === 'live_session_unavailable') return 409
   if (code === 'session_file_out_of_scope') return 403
   if (code === 'session_file_not_found' || code === 'session_file_unavailable') return 404
+if (code === 'session_file_not_found') return 404
   if (code === 'session_entry_not_found' || code === 'entry_not_user_message' || code === 'invalid_entry_id') return 400
   if (code === 'discard_restart_failed' || code === 'withdraw_restart_failed') return 503
   if (code === 'session_operation_in_progress' || code === 'session_changed' || code === 'entry_not_on_active_branch' || code === 'not_latest_user_message' || code === 'rewind_root_has_other_branches' || code === 'nothing_to_discard' || code === 'discard_failed' || code === 'withdraw_failed') return 409

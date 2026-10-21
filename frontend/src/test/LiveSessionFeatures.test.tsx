@@ -97,20 +97,14 @@ describe('LiveSessionFeatures', () => {
     expect(idleHandlers.onBtwRefreshParent).toHaveBeenCalledOnce()
   })
 
-  it('lets the user ask straight away even while BTW is closed', () => {
+  it('keeps the composer disabled while BTW is closed', () => {
     const { handlers } = renderFeatures({ features: { btw: { status: 'closed', conversation: [] } } })
 
-    // Sending itself opens the side chat (the extension's submit opens it), so the
-    // panel must not make the user click 打开 BTW first.
-    expect(btwPanel().getByText(/BTW 未打开：在下面输入问题发送/)).toBeInTheDocument()
-    const box = btwPanel().getByLabelText('BTW 提问') as HTMLTextAreaElement
-    expect(box).toBeEnabled()
-    fireEvent.change(box, { target: { value: '刚才那个报错是什么' } })
-    fireEvent.click(btwPanel().getByText('发送'))
-    expect(handlers.onBtwSubmit).toHaveBeenCalledWith('刚才那个报错是什么')
-
+    expect(btwPanel().getByLabelText('BTW 提问')).toBeDisabled()
+    expect(btwPanel().getByText('发送')).toBeDisabled()
     fireEvent.click(btwPanel().getByText('打开 BTW'))
     expect(handlers.onOpenBtw).toHaveBeenCalledOnce()
+    expect(handlers.onBtwSubmit).not.toHaveBeenCalled()
   })
 
   it('keeps the side chat askable while the main session is working', () => {
