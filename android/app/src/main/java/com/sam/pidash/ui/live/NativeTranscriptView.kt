@@ -112,6 +112,8 @@ internal fun NativeTranscriptView(
                     allowFileAccess = false
                     allowContentAccess = false
                     setSupportZoom(false)
+                    useWideViewPort = false
+                    loadWithOverviewMode = false
                     builtInZoomControls = false
                     displayZoomControls = false
                     textZoom = 100
@@ -120,6 +122,11 @@ internal fun NativeTranscriptView(
                 }
                 // Long-press selection is wanted; contextual menus could leak a URL.
                 isLongClickable = true
+                // The transcript only scrolls vertically. Without this a wide code
+                // block lets the WebView pan the whole page sideways.
+                overScrollMode = android.view.View.OVER_SCROLL_NEVER
+                isHorizontalScrollBarEnabled = false
+                isVerticalScrollBarEnabled = false
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
 
