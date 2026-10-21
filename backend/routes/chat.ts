@@ -667,6 +667,7 @@ export function registerChatRoutes(deps: RouteDeps): void {
     { name: '/session', description: 'Show session info and stats', source: 'builtin' },
     { name: '/fork', description: 'Create a new fork from a previous message', source: 'builtin' },
     { name: '/new', description: 'Start a new session', source: 'builtin' },
+    { name: '/resume', description: 'Resume a past session (pick from history)', source: 'builtin' },
     { name: '/reload', description: 'Reload extensions, skills, prompts, themes', source: 'builtin' },
     { name: '/tools', description: 'Show available tools', source: 'builtin' },
     { name: '/mcp', description: 'Show configured MCP servers', source: 'builtin' },

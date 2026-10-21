@@ -44,10 +44,12 @@ describe('pastedFileRef', () => {
     expect(pastedFileRef({ text: 'Pi_Skill_Forge_Design_2026-09-21.md' })).toBe('Pi_Skill_Forge_Design_2026-09-21.md')
   })
 
-  it('accepts absolute, home and relative paths', () => {
-    expect(pastedFileRef({ text: '/tmp/config.json' })).toBe('/tmp/config.json')
-    expect(pastedFileRef({ text: '~/notes/todo.md' })).toBe('~/notes/todo.md')
-    expect(pastedFileRef({ text: './docs/a.md' })).toBe('./docs/a.md')
+  it('keeps copied paths as plain text instead of attaching them', () => {
+    expect(pastedFileRef({ text: '/tmp/config.json' })).toBeNull()
+    expect(pastedFileRef({ text: '~/notes/todo.md' })).toBeNull()
+    expect(pastedFileRef({ text: './docs/a.md' })).toBeNull()
+    expect(pastedFileRef({ text: '/home/tsien/repos/lilong-task/tasks/vision/xdoc-visual-ssl/xdoc-visual-ssl-pretrain' })).toBeNull()
+    expect(pastedFileRef({ text: '~/workspace' })).toBeNull()
   })
 
   it('prefers a file:// entry from text/uri-list', () => {
@@ -69,6 +71,5 @@ describe('pastedFileRef', () => {
     expect(pastedFileRef({ text: '/compact' })).toBeNull()
     expect(pastedFileRef({ text: '/goal ship the fix' })).toBeNull()
     expect(pastedFileRef({ text: './some-command start x' })).toBeNull()
-    expect(pastedFileRef({ text: '~/workspace' })).toBe('~/workspace')
   })
 })

@@ -433,6 +433,91 @@ describe('activity timeline', () => {
     expect(activities.map(activity => activity.status)).toEqual(['done', 'done'])
   })
 
+  it('keeps the user request when turn_start arrives before its message', () => {
+    // 实测顺序：桥先推 agent_start / turn_start，用户消息紧随其后。
+    // 旧逻辑把这条请求当成「排队输入」塞进占位活动，等工作跑完才另开活动，
+    // 于是时间线上多出一条只有执行记录的「正在处理会话任务」。
+    const activities = buildLiveActivities([
+      { type: 'agent_start' },
+      { type: 'turn_start' },
+      { type: 'message', message: { role: 'user', content: '帮我 pull 最新代码' } },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'g-1', name: 'bash', arguments: { command: 'git status' } }] } },
+      { type: 'message', message: { role: 'toolResult', toolCallId: 'g-1', toolName: 'bash', content: 'clean' } },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: '拉取完成。' }] } },
+      { type: 'agent_settled' },
+    ], 'idle', null)
+
+    expect(activities.map(activity => activity.title)).toEqual(['帮我 pull 最新代码'])
+    expect(activities[0]?.steps.map(step => step.label)).toEqual(['检查代码变更'])
+    expect(activities[0]?.replies.map(reply => reply.text)).toEqual(['拉取完成。'])
+    expect(activities[0]?.queuedInputs).toBeUndefined()
+  })
+
+  it('still treats a follow-up sent into a running activity as queued', () => {
+    const activities = buildLiveActivities([
+      { type: 'message', message: { role: 'user', content: '核对近期订单' } },
+      { type: 'agent_start' },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'r-1', name: 'read', arguments: { path: '/repo/orders.csv' } }] } },
+      { type: 'message', message: { role: 'toolResult', toolCallId: 'r-1', toolName: 'read', content: '3 rows' } },
+      { type: 'message', pendingDelivery: true, message: { role: 'user', content: '顺便把渠道表也更新' } },
+      { type: 'turn_end' },
+      { type: 'agent_start' },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: '两件事都做完了。' }] } },
+    ], 'idle', null)
+
+    expect(activities.map(activity => activity.title)).toEqual(['核对近期订单', '顺便把渠道表也更新'])
+    expect(activities[0]?.steps.map(step => step.label)).toEqual(['读取文件'])
+  })
+
+  it('marks an activity done when a single command failed but the turn wrapped up', () => {
+    const activities = buildLiveActivities([
+      { type: 'message', message: { role: 'user', content: '看看仓库状态' } },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'g-1', name: 'bash', arguments: { command: 'git status' } }] } },
+      { type: 'message', message: { role: 'toolResult', toolCallId: 'g-1', toolName: 'bash', content: 'fatal: not a repo', isError: true } },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: '仓库是干净的，刚才那条命令本来就该失败。' }] } },
+    ], 'idle', null)
+
+    expect(activities[0]?.status).toBe('done')
+    expect(activities[0]?.steps.map(step => step.status)).toEqual(['error'])
+  })
+
+  it('marks a stopped session activity done without a settle signal', () => {
+    const activities = buildLiveActivities([
+      { type: 'message', message: { role: 'user', content: '看下日志' } },
+      { type: 'agent_start' },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'r-1', name: 'read', arguments: { path: '/repo/a.log' } }] } },
+      { type: 'message', message: { role: 'toolResult', toolCallId: 'r-1', toolName: 'read', content: 'ok' } },
+    ], 'idle', null)
+
+    expect(activities.map(activity => activity.status)).toEqual(['done'])
+  })
+
+  it('closes the previous activity once a new request is running', () => {
+    const activities = buildLiveActivities([
+      { type: 'message', message: { role: 'user', content: '先检查依赖' } },
+      { type: 'agent_start' },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'd-1', name: 'bash', arguments: { command: 'npm ls' } }] } },
+      { type: 'message', message: { role: 'toolResult', toolCallId: 'd-1', toolName: 'bash', content: 'ok' } },
+      { type: 'message', message: { role: 'user', content: '再跑一遍测试' } },
+      { type: 'agent_start' },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 't-1', name: 'bash', arguments: { command: 'npm test' } }] } },
+      { type: 'tool_execution_start', data: { toolCallId: 't-1', toolName: 'bash', args: { command: 'npm test' } } },
+    ], 'running', null)
+
+    expect(activities.map(activity => activity.status)).toEqual(['done', 'running'])
+  })
+
+  it('keeps an interrupted run incomplete once the session stopped', () => {
+    const activities = buildLiveActivities([
+      { type: 'message', message: { role: 'user', content: '跑个长任务' } },
+      { type: 'agent_start' },
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'l-1', name: 'bash', arguments: { command: 'sleep 100' } }] } },
+      { type: 'tool_execution_start', data: { toolCallId: 'l-1', toolName: 'bash', args: { command: 'sleep 100' } } },
+    ], 'idle', null)
+
+    expect(activities.map(activity => activity.status)).toEqual(['incomplete'])
+  })
+
   it('keeps the agent reply body on the activity that produced it', () => {
     const activities = buildLiveActivities([
       { type: 'message', message: { role: 'user', content: '检查出金记录' } },
