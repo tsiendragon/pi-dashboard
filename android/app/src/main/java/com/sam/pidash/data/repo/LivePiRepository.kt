@@ -354,6 +354,8 @@ class LivePiRepository(
             synchronized(lock) { jobs.remove(id)?.cancel(); clearBackend(id); if (foreground) startLoop(id) }
         }
     }
+    /** Read-only preview of a file the transcript already references. */
+    suspend fun readFile(id: String, path: String): Result<String> = result { client(id).readTextFile(path) }
     suspend fun candidates(id: String): Result<List<LiveRepoCandidate>> = result { client(id).candidates() }
     suspend fun startOptions(id: String): Result<LiveStartOptions> = result { client(id).startOptions() }
     suspend fun start(id: String, cwd: String, title: String = "", model: String = "", thinkingLevel: String = ""): Result<SessionKey?> {
