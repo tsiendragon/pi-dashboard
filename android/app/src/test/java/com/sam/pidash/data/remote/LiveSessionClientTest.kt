@@ -260,6 +260,44 @@ class LiveSessionClientTest {
         assertTrue(repo.backendStates.value[backend.id]!!.needsPairing)
     }
 
+    @Test fun plainInputSucceedsWithoutTakingControlEvenWhenAnotherClientHoldsIt() = runBlocking {
+        val repo = repository()
+        val key = SessionKey(backend.id, process)
+        repo.focus(key)
+        assertTrue(repo.refresh(key).isSuccess)
+        // The fixture session is already claimed by another client.
+        assertEquals("other-client-lease", repo.details.value[key]?.summary?.claim?.leaseId)
+        handler = {
+            if (it.requestURI.path.endsWith("/commands")) reply(it, """{"ok":true,"result":{}}""")
+            else reply(it, detail)
+        }
+        calls.clear()
+        // Same rule as the WebUI: typing, renaming and switching model are shared;
+        // they neither need nor take exclusive control.
+        assertTrue(repo.send(key, "hello from the phone").isSuccess)
+        assertTrue(repo.rename(key, "Title").isSuccess)
+        val bodies = calls.filter { it.path.endsWith("/commands") }.map { it.body }
+        assertEquals(2, bodies.size)
+        assertTrue(bodies.first().contains("\"type\":\"input\""))
+        assertTrue(bodies.none { it.contains("leaseId") })
+        assertTrue(calls.none { it.path.endsWith("/claim") || it.path.endsWith("/renew") })
+        assertTrue(repo.leases.value.isEmpty())
+    }
+
+    @Test fun abortStillRequiresAnExplicitLease() = runBlocking {
+        val repo = repository()
+        val key = SessionKey(backend.id, process)
+        handler = {
+            if (it.requestURI.path.endsWith("/commands")) reply(it, """{"ok":true,"result":{}}""")
+            else reply(it, detail)
+        }
+        calls.clear()
+        // The fixture never returns a lease for /claim, so an interrupt cannot proceed.
+        assertTrue(repo.abort(key).isFailure)
+        assertTrue(calls.any { it.path.endsWith("/claim") })
+        assertTrue(calls.none { it.path.endsWith("/commands") })
+    }
+
     @Test fun openingIsReadOnlyAndPublicLeaseIdDoesNotEstablishOwnership() = runBlocking {
         val repo = repository()
         val key = SessionKey(backend.id, process)
@@ -271,24 +309,30 @@ class LiveSessionClientTest {
         assertTrue(calls.none { it.path.endsWith("/claim") || it.path.endsWith("/commands") })
     }
 
-    @Test fun heldLeasePreventsInputAndNeverRetriesOrSteals() = runBlocking {
+    @Test fun anotherClientsLeaseBlocksInterruptButNeverBlocksPlainInput() = runBlocking {
         val repo = repository()
+        val key = SessionKey(backend.id, process)
+        // Interrupting running work still needs exclusive control and must never steal it.
         handler = { reply(it, """{"error":"lease_held","message":"owned elsewhere"}""", 423) }
-        val result = repo.send(SessionKey(backend.id, process), "synthetic input")
-        assertTrue(result.isFailure)
-        assertEquals(1, calls.size)
-        assertTrue(calls.single().path.endsWith("/claim"))
+        assertTrue(repo.abort(key).isFailure)
+        assertTrue(calls.isNotEmpty() && calls.all { it.path.endsWith("/claim") })
         assertTrue(repo.leases.value.isEmpty())
+        // Typing is shared, exactly like the WebUI: no claim, no retry, no lease.
+        handler = { reply(it, """{"ok":true,"result":{}}""") }
+        calls.clear()
+        assertTrue(repo.send(key, "synthetic input").isSuccess)
+        assertTrue(calls.none { it.path.endsWith("/claim") || it.path.endsWith("/renew") })
     }
 
-    @Test fun staleLeaseIsValidatedBeforeSendingAndFailureDoesNotDispatchInput() = runBlocking {
+    @Test fun staleLeaseIsRevalidatedBeforeAnInterruptAndNothingIsDispatchedOnFailure() = runBlocking {
         val repo = repository()
         val key = SessionKey(backend.id, process)
         handler = { if (it.requestURI.path.endsWith("/claim")) reply(it, """{"ok":true,"result":{"leaseId":"lease-fixture","expiresAt":999999}}""")
             else reply(it, """{"error":"invalid_lease"}""", 423) }
         assertTrue(repo.claim(key).isSuccess)
-        assertTrue(repo.send(key, "synthetic input").isFailure)
+        assertTrue(repo.abort(key).isFailure)
         assertEquals(listOf("/api/live-sessions/$process/claim", "/api/live-sessions/$process/renew"), calls.map { it.path })
+        assertTrue(calls.none { it.path.endsWith("/commands") })
         assertTrue(repo.leases.value.isEmpty())
     }
 
