@@ -92,7 +92,7 @@ fun LiveSessionScreen(
     var dialog by remember(sessionKey) { mutableStateOf<String?>(null) }
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
     var answered by remember(sessionKey) { mutableStateOf(emptySet<String>()) }
-    var viewMode by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("web") }
+    var viewMode by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("native") }
     val activityMode = viewMode == "activity"
     val visibleCount = if (activityMode) activities.size else timeline.size
 
@@ -156,6 +156,24 @@ fun LiveSessionScreen(
                 if (key != null) onOpenLive(key)
                 else notice = "请求已接受，等待新进程注册；请返回列表刷新，不要重复执行。"
             }, onFailure = { notice = "${it.message ?: "操作失败"}；若结果不确定，请先刷新列表确认，勿立即重试。" })
+        }
+    }
+
+    fun openExternalUrl(url: String) {
+        // Leaves the app for the user's browser; the bridge already validated the scheme.
+        runCatching {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+        }.onFailure { notice = "无法打开链接：${it.message}" }
+    }
+
+    fun openPathPreview(path: String) {
+        previewError = null
+        preview = path to null
+        scope.launch {
+            repo.live.readFile(sessionKey.backendId, path).fold(
+                onSuccess = { text -> preview = path to text },
+                onFailure = { error -> preview = null; previewError = error.message ?: "无法读取文件" },
+            )
         }
     }
 
@@ -288,8 +306,8 @@ fun LiveSessionScreen(
             }
             HorizontalDivider()
             Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(viewMode == "native", { viewMode = "native" }, label = { Text("原生渲染") })
                 FilterChip(viewMode == "web", { viewMode = "web" }, label = { Text("WebUI 渲染") })
-                FilterChip(viewMode == "timeline", { viewMode = "timeline" }, label = { Text("原生文本") })
                 FilterChip(activityMode, { viewMode = "activity" }, label = { Text("活动进度") })
             }
             if (activityMode) goal?.let { LiveGoalCard(it) }
@@ -299,22 +317,8 @@ fun LiveSessionScreen(
                 emptyText = if (detail == null) "等待会话详情；可从菜单刷新。" else "暂无消息（只读打开）。",
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 onFailure = { message -> notice = message; viewMode = "timeline" },
-                onOpenUrl = { url ->
-                    // Leaves the app for the user's browser; validated in the bridge first.
-                    runCatching {
-                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
-                    }.onFailure { notice = "无法打开链接：${it.message}" }
-                },
-                onOpenPath = { path ->
-                    previewError = null
-                    preview = path to null
-                    scope.launch {
-                        repo.live.readFile(sessionKey.backendId, path).fold(
-                            onSuccess = { text -> preview = path to text },
-                            onFailure = { error -> preview = null; previewError = error.message ?: "无法读取文件" },
-                        )
-                    }
-                },
+                onOpenUrl = { url -> openExternalUrl(url) },
+                onOpenPath = { path -> openPathPreview(path) },
             ) else if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(if (detail == null) "等待会话详情；可从菜单刷新。" else "暂无消息（只读打开）。")
@@ -326,9 +330,13 @@ fun LiveSessionScreen(
                         notice = null; forkEntry = entryId; dialog = "fork"
                     })
                 } else items(timeline, key = { it.id }) { item ->
-                    LiveTimelineCard(item, enabled = !busy && !heldElsewhere, onFork = { entryId ->
-                        notice = null; forkEntry = entryId; dialog = "fork"
-                    })
+                    NativeTimelineCard(
+                        item = item,
+                        onOpenPath = ::openPathPreview,
+                        onOpenUrl = ::openExternalUrl,
+                        enabled = !busy && !heldElsewhere,
+                        onFork = { entryId -> notice = null; forkEntry = entryId; dialog = "fork" },
+                    )
                 }
             }
         }
