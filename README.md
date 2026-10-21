@@ -53,10 +53,45 @@ Feature tour: [English](docs/features.en.md) · [中文](docs/features.md)
 
 More, in detail: [English feature tour](docs/features.en.md) · [中文功能导览](docs/features.md).
 
+## What a complete install needs
+
+This repo alone is not enough. A complete install is **three layers**, and two of them live in other
+repositories:
+
+| Layer | What it is | Where it comes from | Why a complete install needs it |
+|---|---|---|---|
+| ① pi host | the `pi` executable that actually runs the agent | `github.com/tsiendragon/pi`, GitHub Release tag **`v0.85.1-tsien.1`** (10 npm tarballs) | the upstream `@earendil-works/pi-coding-agent` lacks `executeTool` / `extension_ui` / `aboveStatus`, which breaks `run_code`, live sessions and full-screen subagents |
+| ② extensions | `pi-tsien-extension` (26 packages / 25 extension entries) | `github.com/tsiendragon/pi-tsien-extension` | live session bridge, subagent workbench, Code Mode, long-term memory, RTK tool-result filtering, schedule, … |
+| ③ dashboard | this repo: Express + WebSocket server, web frontend, iOS app | `github.com/tsiendragon/pi-dashboard` | the UI, and one `pi` child process per chat slot |
+
+Install all three with the script in this repo (it fetches the extension repo, syncs the ordered
+extension list into `~/.pi/agent/settings.json`, installs the fork pi build into `<install root>/pi`,
+then installs dashboard deps and builds the frontend):
+
+```bash
+git clone https://github.com/tsiendragon/pi-dashboard.git
+cd pi-dashboard
+bash scripts/install-standalone.sh -y           # --start to launch in background, --service for systemd
+```
+
+Start or restart afterwards:
+
+```bash
+./run.sh                                        # builds the frontend, then serves on :7777
+```
+
+Where the details live:
+
+- Install script options, prerequisites, manual step-by-step, systemd, troubleshooting: [`guide/standalone-install.md`](guide/standalone-install.md)
+- The three layers, one document each: [`guide/README.md`](guide/README.md)
+- Why the pi **fork** is required and how to verify the installed build: [`guide/pi-runtime.md`](guide/pi-runtime.md)
+- Extension install paths, version expectations, and when a source change takes effect: [`guide/extensions.md`](guide/extensions.md)
+- Config map and every environment variable: [`guide/config.md`](guide/config.md)
+
 ## Quick Start
 
 ```bash
-git clone https://github.com/samfoy/pi-dashboard.git
+git clone https://github.com/tsiendragon/pi-dashboard.git
 cd pi-dashboard
 npm run setup    # installs deps + builds frontend
 npm start        # starts server with auto-restart
@@ -83,8 +118,11 @@ Step-by-step manual equivalent, prerequisites, service setup, and troubleshootin
 
 ### Requirements
 
-- Node.js 18+
-- [pi](https://github.com/mariozechner/pi-coding-agent) installed and on PATH
+- Node.js 22+
+- A `pi` executable. Use the fork build (`v0.85.1-tsien.1`) — see [`guide/pi-runtime.md`](guide/pi-runtime.md).
+  The upstream package still chats, but `run_code`, live sessions and full-screen subagents degrade.
+- For the full feature set, the companion extensions in [`guide/extensions.md`](guide/extensions.md);
+  `scripts/install-standalone.sh` installs them together with this dashboard.
 
 ### Run as a Service (macOS)
 

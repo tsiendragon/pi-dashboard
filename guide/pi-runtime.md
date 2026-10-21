@@ -40,6 +40,12 @@ grep -rl "respondExtensionUi" "$PI_PREFIX/lib/node_modules/@earendil-works/pi-co
   `pi-server`、`pi-session-backend-sqlite-node`、`pi-telemetry`、`pi-tui`
   （资产名形如 `earendil-works-pi-coding-agent-0.85.1-tsien.1.tgz`）
 
+**安装路径只有 Release tag，没有"从源码分支构建"这一条。** `scripts/install-standalone.sh` 的
+`--pi-release <repo@tag>` 只从 Release 下 tgz，不 clone 仓库、不跑构建；本文档也不提供源码构建
+步骤。开发机若自己 clone fork 源码并 build，那份构建不受本套脚本和文档约束，需要自己保证
+`executeTool` / `respondExtensionUi` / `aboveStatus` 这几个 API 在本套 release 对应的范围内
+（`guide/stack-update.md` 的 `branch` policy 就是给这类开发机用的，生产机不要用分支）。
+
 ---
 
 ## 3. 安装方式
