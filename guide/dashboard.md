@@ -21,17 +21,82 @@
 | 类型 | 网页入口 | 数据接口 | 当前原生 Android |
 |---|---|---|---|
 | 普通 Chat slot | `/chat` | `/api/chat/slots`、`/api/ws` | 已实现列表、新建、消息与停止 |
-| Live Pi | `/live-sessions` | `/api/live-sessions` 及专用 Live WS | 尚未实现 |
+| Live Pi | `/live-sessions` | `/api/live-sessions` 及专用 Live WS | 2.1 已实现，默认入口；需独立手机配对 |
 
-Android 的「新建会话」目前创建普通 Chat slot，不是启动 Live Pi。其会话文件即使存放在
-`~/.pi/agent/sessions/`，工作目录也在 `liveSessions.roots` 内，仍不会自动变成 Live 会话；
-应在网页 **Chat** 入口查看，而不是据 Live Pi 列表判定“未识别”。Live 列表展示的是桥接已注册的
-Pi 进程，不是所有历史 JSONL 文件。
+旧 Android（2.0）新建的是普通 Chat slot；2.1 默认 Live Pi，并保留独立 Chat 标签。历史 Chat
+不会因 cwd 位于 `liveSessions.roots` 或文件位于 `~/.pi/agent/sessions/` 就自动转成 Live。
+Live 列表展示桥接已注册的 Pi 进程，不是扫描所有历史 JSONL。新 App 必须接入真实 Live
+协议、认证和租约，不能改标签冒充，也不能因网络已通就放宽权限。
 
-反过来，网页已有的 Live 会话也不会进入当前 Android 的普通 Chat 列表。这是客户端尚未对接
-Live 协议的功能缺口，不是 VPN、DNS 或目录权限问题；重启或重新安装同一版本不能补齐。
-后续接入必须复用 Live 的身份验证、接管/释放与租约机制，不可移除鉴权、关闭目录限制，
-也不可仅把普通 Chat 数据改名为 Live。Android 当前状态以 [`android/HANDOFF.md`](../android/HANDOFF.md) 为准。
+<a id="android-live-pi21"></a>
+
+## Android Live Pi（2.1）
+
+**代码与本地测试就绪，尚未完成手机端到端验收。** 详细状态、限制与测试证据见
+[`android/HANDOFF.md`](../android/HANDOFF.md)。原生支持多服务器列表、cwd 选择/新建、实时文本/思考/工具、
+接管/释放/中止、引导/排队、模型/思考等级、标题、置顶/标签、明确确认后的压缩/重载/重启/分叉，以及扩展确认请求。
+上下文与会话树为只读 JSON 预览；文件/上传、PTY、工作流/目标管理、图片附件、用量、语音、后台通知及完整图形视图仍使用 WebUI。
+
+### 网络与两层授权
+
+沿用原有**私有 HTTPS 入口**与 VPN。手机在家需要 VPN 的现有路线不变，不新增公网入口、Tunnel、DNS 或防火墙规则。
+Live 必须 HTTPS，仅本机回环测试允许 HTTP；不跳过证书验证。普通 Chat 的旧 HTTP 兼容设置不能用于传输 Live 配对身份。
+
+1. 服务器连接设置里的原有入口凭据仍负责 `Authorization`；VPN 和 Cookie 不替代逐设备入口授权。本轮没有改 edge 的 DPoP/WS 票据策略。
+2. Live 另外使用独立 `pi_live_session` Cookie。先在已登录的网页 `/live-sessions` 点击 **「手机配对」→「生成一次性配对码」**；App 对应服务器点「配对」，粘贴短期码。
+3. 不把主机控制 token、Cookie、入口 token 发到聊天或填入配对码栏。配对只授予该 Dashboard 原有 Live 控制身份，不是新增目录授权，也不会创建、接管或停止会话。
+
+码为随机 32 位 hex、最多 3 分钟、单次使用，服务端仅内存保存 SHA-256，容量 32；新码使同一签发者旧码失效。
+签发者注销/过期后，其未使用码失效。手机兑换后拥有**独立身份**，注销网页不会连带注销已配对手机；
+手机「解除配对」只注销该手机 Live 身份、关闭其 WS、释放其租约，不撤销普通 Chat/入口凭据。
+网络失败仍清理本地身份，但不能声称已确认服务端吊销。手机丢失需另按设备授权体系吊销入口访问。
+
+Android 的 Live Cookie 用 AndroidKeyStore AES-GCM 加密并绑定服务器地址/连接凭据；改地址/凭据或密钥丢失后重新配对。
+云备份与设备迁移均排除 App 数据；普通覆盖安装保留数据。原有服务器凭据仍由 `BackendStore` 保存，不能把此改动说成全部凭据都已硬件加密。
+服务端身份沿用 12 小时空闲过期；Cookie 状态文件使用 0600 串行原子写，防止并发旧写恢复已注销身份。
+
+新增接口（仍受原有入口鉴权，路径不放入公网例外）：
+
+| 接口 | 限制 |
+|---|---|
+| `POST /api/live-sessions/pairing-code` | 已有 Live Cookie + 匹配 Origin；返回 `result.code/expiresAt` |
+| `POST /api/live-sessions/pair` | 匹配 Origin + 一次性码；兑换独立 Cookie，不需要先有 Cookie |
+| `DELETE /api/live-sessions/auth` | 已有 Cookie + 匹配 Origin；仅注销当前身份 |
+| `GET /api/live-sessions/start-options` | 已有 Cookie；仅返回与 launcher/broker 相同来源的 `liveSessions.roots` |
+
+认证/配对响应使用 `Cache-Control: no-store`；配对码不进入 URL、日志或存储。网页关闭配对窗口会清除显示；
+若复制过，剪贴板由用户清理，码仍由服务端限制有效期和单次消费。选择目录还会合并既有项目候选，
+**候选不等于授权**；启动时继续 realpath/roots 校验，roots 为空仍默认拒绝，不自动把目录设为 home。
+
+### 构建和用户部署
+
+App 版本 2.1 / versionCode 2，包名仍为 `com.sam.pidash`，可覆盖安装。依赖 JDK 17、SDK 35、
+Gradle 8.9、AGP 8.7.3、Kotlin 2.0.21；新增纯 JVM 测试依赖 JUnit 4.13.2，没有升级原有运行依赖。
+
+本次包含后端与网页改动，**需要用户选择维护窗口**，按已有启动方式重建前端并重启后端；标准入口是仓库根目录的 `./run.sh`。
+重启会影响活跃会话，agent 不代执行、不 kill 服务；不要为手机排查反复重启，也不要同时启动两个 Dashboard。
+
+构建/安装（从仓库根目录开始；首次需正常获取构建依赖，缓存齐全时可在 Gradle 命令末尾加 `--offline`）：
+
+```bash
+cd android
+./gradlew :app:testDebugUnitTest :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+安装也可用用户自己的私有本地传输方式；不把 APK 发布为未经授权的公网下载入口。服务器原有配置可保留，首次 Live 使用需短期配对。
+
+### 手机验收顺序
+
+1. VPN 与原有 HTTPS 域名能正常访问，App 服务器连接信息保持正确；网页有 Live 登录状态。
+2. 更新后端/网页和 APK，网页生成一次性码，App 完成配对；确认不复制主机控制 token。
+3. 默认 Live 标签应看到与网页相同的在线进程；旧 Chat 仍在单独标签，未配对/断连不是空列表。
+4. 「＋」选择服务器和允许的 cwd，新建一个专用于测试的 Live；网页 Live 列表出现同一会话和目录，不新增普通 Chat slot。
+5. 发一条测试消息，验证流式/最终正文、工具/思考、模型与输入法；失败应保留草稿，不盲目重复创建。
+6. 用测试会话验证明确接管/释放和他端互斥。App 后台会断开 Live 并尽力释放租约，不停 Pi；恢复不自动抢回控制。
+7. 验证扩展请求必须明确回答、Cookie 失效后重新配对。压缩/重启等仅在测试会话上按需确认，别拿工作中的会话测试中止。
+
+这些是**待做的真机验收**，本地合成协议/HTTP 测试和 APK 编译不能替代。
 
 ## 在线会话重启
 

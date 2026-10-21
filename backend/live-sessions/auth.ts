@@ -1,5 +1,5 @@
-import { randomBytes, timingSafeEqual } from 'crypto'
-import { chmod, lstat, mkdir, open, readFile, writeFile } from 'fs/promises'
+import { createHash, randomBytes, timingSafeEqual } from 'crypto'
+import { chmod, lstat, mkdir, open, readFile, rename, unlink } from 'fs/promises'
 import type { IncomingHttpHeaders, IncomingMessage } from 'http'
 import os from 'os'
 import path from 'path'
@@ -7,6 +7,8 @@ import path from 'path'
 export const LIVE_SESSION_COOKIE_NAME = 'pi_live_session'
 const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000
 const WEBSOCKET_TICKET_TTL_MS = 30_000
+const PAIRING_CODE_TTL_MS = 3 * 60_000
+const PAIRING_CODE_CAPACITY = 32
 
 type HeaderSource = { headers: IncomingHttpHeaders }
 
@@ -18,6 +20,11 @@ export interface LiveSessionBrowserIdentity {
 
 export interface BrowserAuthenticationResult extends LiveSessionBrowserIdentity {
   setCookie: string
+}
+
+export interface BrowserPairingCode {
+  code: string
+  expiresAt: number
 }
 
 export interface BrowserWebSocketTicket {
@@ -100,6 +107,9 @@ export class LiveSessionBrowserAuth {
   private startPromise?: Promise<void>
   private readonly sessions = new Map<string, LiveSessionBrowserIdentity>()
   private readonly websocketTickets = new Map<string, { browserClientId: string; expiresAt: number }>()
+  // Short-lived secrets are hashed and never written to disk. No pairing creates a lease.
+  private readonly pairingCodes = new Map<string, { browserClientId: string; expiresAt: number }>()
+  private persistence: Promise<void> = Promise.resolve()
   private readonly allowedOrigins: Set<string>
   private readonly now: () => number
 
@@ -117,8 +127,10 @@ export class LiveSessionBrowserAuth {
   }
 
   async stop(): Promise<void> {
+    await this.persistence.catch(() => {})
     this.sessions.clear()
     this.websocketTickets.clear()
+    this.pairingCodes.clear()
     this.token = undefined
     this.startPromise = undefined
   }
@@ -132,6 +144,10 @@ export class LiveSessionBrowserAuth {
     if (typeof controlToken !== 'string' || !this.token) return undefined
     const supplied = Buffer.from(controlToken.trim(), 'utf8')
     if (supplied.length !== this.token.length || !timingSafeEqual(supplied, this.token)) return undefined
+    return this.createSession(secure)
+  }
+
+  private async createSession(secure: boolean): Promise<BrowserAuthenticationResult> {
     const cookieValue = randomBytes(32).toString('hex')
     const now = this.now()
     const identity: LiveSessionBrowserIdentity = {
@@ -140,7 +156,10 @@ export class LiveSessionBrowserAuth {
       lastSeenAt: now,
     }
     this.sessions.set(cookieValue, identity)
-    this.persistSessions()
+    try { await this.persistSessions() } catch {
+      this.sessions.delete(cookieValue)
+      throw new Error('failed to persist Live authorization')
+    }
     return {
       ...identity,
       setCookie: `${LIVE_SESSION_COOKIE_NAME}=${cookieValue}; Path=/api; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`,
@@ -157,9 +176,41 @@ export class LiveSessionBrowserAuth {
     return { ...identity }
   }
 
-  forget(request: HeaderSource): void {
+  async forget(request: HeaderSource): Promise<void> {
     const cookie = parseCookies(request.headers.cookie).get(LIVE_SESSION_COOKIE_NAME)
-    if (cookie) { this.sessions.delete(cookie); this.persistSessions() }
+    if (!cookie) return
+    const identity = this.sessions.get(cookie)
+    this.sessions.delete(cookie)
+    if (identity) {
+      for (const [hash, code] of this.pairingCodes) if (code.browserClientId === identity.browserClientId) this.pairingCodes.delete(hash)
+      for (const [ticket, value] of this.websocketTickets) if (value.browserClientId === identity.browserClientId) this.websocketTickets.delete(ticket)
+    }
+    await this.persistSessions()
+  }
+
+  issuePairingCode(request: HeaderSource): BrowserPairingCode | undefined {
+    const identity = this.getIdentity(request)
+    if (!identity) return undefined
+    // A newly generated code replaces this browser's previous unused code.
+    for (const [hash, value] of this.pairingCodes) if (value.browserClientId === identity.browserClientId) this.pairingCodes.delete(hash)
+    while (this.pairingCodes.size >= PAIRING_CODE_CAPACITY) this.pairingCodes.delete(this.pairingCodes.keys().next().value!)
+    const code = randomBytes(16).toString('hex')
+    const expiresAt = this.now() + PAIRING_CODE_TTL_MS
+    this.pairingCodes.set(createHash('sha256').update(code).digest('hex'), { browserClientId: identity.browserClientId, expiresAt })
+    return { code, expiresAt }
+  }
+
+  async redeemPairingCode(code: unknown, secure: boolean): Promise<BrowserAuthenticationResult | undefined> {
+    await this.start()
+    this.prune()
+    if (typeof code !== 'string' || !/^[a-f0-9]{32}$/.test(code)) return undefined
+    const hash = createHash('sha256').update(code).digest('hex')
+    const record = this.pairingCodes.get(hash)
+    // Consumption precedes all async persistence: concurrent redemption cannot win twice.
+    this.pairingCodes.delete(hash)
+    if (!record || record.expiresAt <= this.now()) return undefined
+    if (![...this.sessions.values()].some(identity => identity.browserClientId === record.browserClientId)) return undefined
+    return this.createSession(secure)
   }
 
   issueWebSocketTicket(request: HeaderSource): BrowserWebSocketTicket | undefined {
@@ -254,10 +305,18 @@ export class LiveSessionBrowserAuth {
     } catch { /* missing or corrupt sessions file -> start empty */ }
   }
 
-  private persistSessions(): void {
-    const data: Record<string, LiveSessionBrowserIdentity> = {}
-    for (const [cookie, identity] of this.sessions) data[cookie] = identity
-    void writeFile(this.sessionsPath, JSON.stringify(data), { encoding: 'utf8', mode: 0o600 }).catch(() => {})
+  private persistSessions(): Promise<void> {
+    const data = JSON.stringify(Object.fromEntries(this.sessions))
+    // Serialize atomic writes so a slower pre-logout write cannot resurrect a revoked cookie.
+    this.persistence = this.persistence.catch(() => {}).then(async () => {
+      const temporary = `${this.sessionsPath}.pending-${process.pid}-${randomBytes(8).toString('hex')}`
+      try {
+        const handle = await open(temporary, 'wx', 0o600)
+        try { await handle.writeFile(data, 'utf8'); await handle.sync() } finally { await handle.close() }
+        await rename(temporary, this.sessionsPath)
+      } finally { await unlink(temporary).catch(() => {}) }
+    })
+    return this.persistence
   }
 
   private prune(): void {
@@ -268,6 +327,9 @@ export class LiveSessionBrowserAuth {
     const now = this.now()
     for (const [ticket, value] of this.websocketTickets) {
       if (value.expiresAt < now) this.websocketTickets.delete(ticket)
+    }
+    for (const [hash, value] of this.pairingCodes) {
+      if (value.expiresAt <= now) this.pairingCodes.delete(hash)
     }
   }
 }
