@@ -15,6 +15,7 @@ import { runPackageOperation } from '../ext-packages.js'
 import { resolvePiScript } from '../pi-manager.js'
 import { requireBrowserAuth } from './require-browser-auth.js'
 import * as piEnv from '../pi-env.js'
+import * as memoryStore from '../memory-store.js'
 
 const execAsync = promisify(exec)
 const PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || join(os.homedir(), '.pi', 'agent')
@@ -220,13 +221,6 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
   app.get('/api/mcp/probe', (_req: Request, res: Response) => res.json({ results: {} }))
   app.post('/api/mcp/probe', (_req: Request, res: Response) => res.json({ results: {} }))
 
-  // Memory
-  app.get('/api/memory/preferences', (_req: Request, res: Response) => res.json({ content: JSON.stringify(piEnv.getFacts(), null, 2) }))
-  app.get('/api/memory/projects', (_req: Request, res: Response) => res.json({ content: '' }))
-  app.get('/api/memory/history', (_req: Request, res: Response) => res.json({ content: '' }))
-  app.get('/api/memory/settings', (_req: Request, res: Response) => res.json({}))
-  app.get('/api/memory/stats', (_req: Request, res: Response) => res.json(piEnv.getMemoryStats()))
-  app.get('/api/memory/embedding-status', (_req: Request, res: Response) => res.json({ enabled: false }))
   // Writes require the Live Session browser auth. Without an injected auth object we fail closed.
   const requireAuth = (handler: (req: Request, res: Response) => unknown | Promise<unknown>) =>
     (req: Request, res: Response) => {
@@ -235,9 +229,41 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
     }
   const authOf = (req: Request): string | null => auth?.getIdentity(req)?.browserClientId ?? null
 
-  app.put('/api/memory/preferences', (_req: Request, res: Response) => res.json({ ok: true }))
-  app.put('/api/memory/projects', (_req: Request, res: Response) => res.json({ ok: true }))
-  app.put('/api/memory/history', (_req: Request, res: Response) => res.json({ ok: true }))
+  // Memory — read-only view of the database owned by the pi-tsien-memory extension.
+  // Memory content is private, so reads are gated exactly like writes.
+  app.get('/api/memory/overview', requireAuth((_req: Request, res: Response) => {
+    res.json({ ...memoryStore.getMemoryOverview(), updatedAt: memoryStore.memoryDatabaseUpdatedAt() })
+  }))
+  app.get('/api/memory/items', requireAuth((req: Request, res: Response) => {
+    res.json({
+      items: memoryStore.listMemoryItems({
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        search: typeof req.query.search === 'string' ? req.query.search : undefined,
+        limit: Number(req.query.limit) || 50,
+      }),
+    })
+  }))
+  app.get('/api/memory/changes', requireAuth((req: Request, res: Response) => {
+    res.json({ changes: memoryStore.listMemoryChanges(Number(req.query.limit) || 40) })
+  }))
+  app.get('/api/memory/review', requireAuth((req: Request, res: Response) => {
+    res.json({ items: memoryStore.getReviewQueue(Number(req.query.limit) || 30) })
+  }))
+  app.get('/api/memory/usage', requireAuth((req: Request, res: Response) => {
+    res.json(memoryStore.getMemoryUsage(Number(req.query.days) || 7))
+  }))
+  // These legacy endpoints read a database that no longer exists and answered writes with a fake
+  // `{ok:true}`. They now fail loudly instead of reporting success they did not achieve.
+  const retiredMemoryEndpoint = (_req: Request, res: Response) =>
+    res.status(410).json({
+      error: 'memory_endpoint_retired',
+      hint: '请改用 /api/memory/overview|items|changes|review|usage。记忆由 pi-tsien-memory 扩展负责写入。',
+    })
+  for (const legacyName of ['preferences', 'projects', 'history', 'settings', 'stats', 'embedding-status', 'semantic', 'episodic']) {
+    app.get(`/api/memory/${legacyName}`, retiredMemoryEndpoint)
+    app.put(`/api/memory/${legacyName}`, retiredMemoryEndpoint)
+    app.post(`/api/memory/${legacyName}`, retiredMemoryEndpoint)
+  }
 
   // Agent config (stubs)
   app.get('/api/agent/config', (_req: Request, res: Response) => res.json({}))
@@ -271,10 +297,17 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
   })
   app.get('/api/pi/crontab', (_req: Request, res: Response) => res.json(piEnv.getCrontab()))
   app.get('/api/pi/memory', (_req: Request, res: Response) => {
+    // Same pages as before, now sourced from the live memory database instead of the retired one.
+    const overview = memoryStore.getMemoryOverview()
     res.json({
-      stats: piEnv.getMemoryStats(),
-      facts: piEnv.getFacts(),
-      lessons: piEnv.getLessons(50),
+      stats: {
+        facts: overview.counts.active,
+        lessons: overview.counts.candidate,
+        events: overview.usage.recallRuns,
+        episodic: overview.counts.superseded + overview.counts.forgotten,
+      },
+      facts: memoryStore.listMemoryItems({ status: 'active', limit: 50 }),
+      lessons: memoryStore.listMemoryChanges(50),
     })
   })
 

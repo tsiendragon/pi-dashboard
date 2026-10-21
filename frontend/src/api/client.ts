@@ -33,31 +33,19 @@ const afetch = (url: string, opts?: RequestInit) => {
 export const api = {
   status: () => get('/api/status').then(j),
   system: () => get('/api/system').then(j),
-  // Memory
-  memoryPreferences: () => get('/api/memory/preferences').then(j),
-  saveMemoryPreferences: (content: string) => put('/api/memory/preferences', { content }),
-  memoryProjects: () => get('/api/memory/projects').then(j),
-  saveMemoryProjects: (content: string) => put('/api/memory/projects', { content }),
-  memoryHistory: () => get('/api/memory/history').then(j),
-  saveMemoryHistory: (content: string) => put('/api/memory/history', { content }),
-  memorySettings: () => get('/api/memory/settings').then(j),
-  saveMemorySettings: (s: {history_idle_hours?: number; history_max_days?: number}) => put('/api/memory/settings', s),
-  // Vector memory
-  vectorSemantic: () => get('/api/memory/semantic').then(j),
-  vectorSemanticWrite: (key: string, value: string) => put('/api/memory/semantic', { key, value, source: 'user_explicit' }).then(j),
-  vectorSemanticDelete: (key: string) => del('/api/memory/semantic/' + encodeURIComponent(key)),
-  vectorEpisodic: (limit = 50, offset = 0, tags?: string) => get('/api/memory/episodic?limit=' + limit + '&offset=' + offset + (tags ? '&tags=' + encodeURIComponent(tags) : '')).then(j),
-  vectorEpisodicSearch: (q: string, tags?: string) => afetch('/api/memory/episodic/search?q=' + encodeURIComponent(q) + (tags ? '&tags=' + encodeURIComponent(tags) : '')).then(j),
-  vectorEpisodicDelete: (id: string) => del('/api/memory/episodic/' + encodeURIComponent(id)),
-  vectorStats: () => get('/api/memory/stats').then(j),
-  vectorEvents: (limit = 50, offset = 0) => afetch('/api/memory/events?limit=' + limit + '&offset=' + offset).then(j),
-  vectorEmbeddingStatus: () => get('/api/memory/embedding-status').then(j),
-  vectorEnableEmbeddings: () => post('/api/memory/enable-embeddings').then(j),
-  vectorDisableEmbeddings: () => post('/api/memory/disable-embeddings').then(j),
-  vectorMigrate: () => post('/api/memory/migrate').then(j),
-  vectorImport: (data: object) => post('/api/memory/import', data).then(j),
-  vectorContextPreview: (query?: string) => afetch('/api/memory/context-preview' + (query ? '?q=' + encodeURIComponent(query) : '')).then(j),
-  consolidateMemory: (key: string, includeHistory: boolean) => post('/api/memory/consolidate', { key, include_history: includeHistory }).then(j),
+  // Memory — read-only views of the pi-tsien-memory database owned by the Pi extension.
+  memoryOverview: () => get('/api/memory/overview').then(j),
+  memoryItems: (params: { status?: string; search?: string; limit?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.status) query.set('status', params.status)
+    if (params.search) query.set('search', params.search)
+    if (params.limit) query.set('limit', String(params.limit))
+    const suffix = query.toString()
+    return get('/api/memory/items' + (suffix ? '?' + suffix : '')).then(j)
+  },
+  memoryChanges: (limit = 40) => get('/api/memory/changes?limit=' + limit).then(j),
+  memoryReviewQueue: (limit = 30) => get('/api/memory/review?limit=' + limit).then(j),
+  memoryUsage: (days = 7) => get('/api/memory/usage?days=' + days).then(j),
   restartSessions: () => post('/api/sessions/restart').then(j),
   sessionsContext: () => get('/api/sessions/context').then(j),
   sessionsUsage: () => get('/api/sessions/usage').then(j),
