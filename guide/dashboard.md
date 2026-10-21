@@ -16,6 +16,23 @@
 
 图标属于前端静态资源，用户执行 `./run.sh` 后生效；本次未构建或重启服务，部署后的浏览器效果待用户检查。
 
+## 普通 Chat 与 Live Pi 是不同会话入口
+
+| 类型 | 网页入口 | 数据接口 | 当前原生 Android |
+|---|---|---|---|
+| 普通 Chat slot | `/chat` | `/api/chat/slots`、`/api/ws` | 已实现列表、新建、消息与停止 |
+| Live Pi | `/live-sessions` | `/api/live-sessions` 及专用 Live WS | 尚未实现 |
+
+Android 的「新建会话」目前创建普通 Chat slot，不是启动 Live Pi。其会话文件即使存放在
+`~/.pi/agent/sessions/`，工作目录也在 `liveSessions.roots` 内，仍不会自动变成 Live 会话；
+应在网页 **Chat** 入口查看，而不是据 Live Pi 列表判定“未识别”。Live 列表展示的是桥接已注册的
+Pi 进程，不是所有历史 JSONL 文件。
+
+反过来，网页已有的 Live 会话也不会进入当前 Android 的普通 Chat 列表。这是客户端尚未对接
+Live 协议的功能缺口，不是 VPN、DNS 或目录权限问题；重启或重新安装同一版本不能补齐。
+后续接入必须复用 Live 的身份验证、接管/释放与租约机制，不可移除鉴权、关闭目录限制，
+也不可仅把普通 Chat 数据改名为 Live。Android 当前状态以 [`android/HANDOFF.md`](../android/HANDOFF.md) 为准。
+
 ## 在线会话重启
 
 列表的重启按钮需要二次确认。仅允许空闲、无在线子 Agent、由 dashboard 管理的 TUI 会话：向原 tmux pane 输入 Pi 内置 `/quit`（按 `keybindings.json` 的 `app.clear` 清空整个输入框，再按 `tui.input.submit` 提交；未配置时分别使用 Ctrl+C、Enter），确认旧进程退出、tmux 消失且在线登记移除后，用 `pi --session <原会话文件>` 恢复。Linux 僵尸进程视为已退出；30 秒内未退出则报错且不启动替代进程，不强杀。无需 bridge 的 `session_shutdown` 能力。支持提交键 Enter、Ctrl+字母和 F1–F12；配置没有可用键时在发送输入前报错，不把 Enter 写死为提交键。此改动需用户执行 `./run.sh` 构建前端并重启后端生效。
