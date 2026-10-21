@@ -26,6 +26,9 @@ class LivePiRepository(
     private val jobs = mutableMapOf<String, Job>()
     private val mutationLocks = mutableMapOf<SessionKey, Mutex>()
     private val starting = mutableSetOf<String>()
+    private val organizationFetchedAt = mutableMapOf<String, Long>()
+    private val _organization = MutableStateFlow<Map<String, LiveOrganization>>(emptyMap())
+    val organization: StateFlow<Map<String, LiveOrganization>> = _organization
     @Volatile private var foreground = false
     @Volatile private var focused: SessionKey? = null
     private val rows = MutableStateFlow<Map<String, List<LiveSummary>>>(emptyMap())
@@ -68,6 +71,7 @@ class LivePiRepository(
 
     private fun client(id: String): LiveSessionClient = synchronized(lock) { clients[id] }
         ?: throw IOException("服务器未配置或地址无效")
+    private fun isCurrentClient(id: String, api: LiveSessionClient): Boolean = synchronized(lock) { clients[id] === api }
     private fun sync(list: List<Backend>) {
         synchronized(lock) {
             clients.keys.toList().forEach { id ->
@@ -95,6 +99,7 @@ class LivePiRepository(
     }
     private fun clearBackend(id: String) {
         rows.update { it - id }; metadata.update { it - id }
+        _organization.update { it - id }; organizationFetchedAt.remove(id)
         _details.update { it.filterKeys { key -> key.backendId != id } }
         _leases.update { it.filterKeys { key -> key.backendId != id } }
         _errors.update { it.filterKeys { key -> key.backendId != id } }
@@ -237,9 +242,10 @@ class LivePiRepository(
         updateSummary(id, detail.summary)
         if (focused == key) _details.update { it + (key to detail) }
     }
-    private suspend fun refreshBackend(id: String) {
+    private suspend fun refreshBackend(id: String, forceOrganization: Boolean = false) {
         val api = client(id)
         val list = api.list()
+        if (!isCurrentClient(id, api)) return
         rows.update { it + (id to list) }
         _states.update { it + (id to LiveBackendState(connected = true)) }
         _leases.value.filterKeys { it.backendId == id }.forEach { (key, lease) ->
@@ -247,7 +253,29 @@ class LivePiRepository(
             if (live == null || live.claim.state != "claimed" || live.claim.leaseId != lease.leaseId) _leases.update { it - key }
         }
         val meta = api.meta()
+        if (!isCurrentClient(id, api)) return
         metadata.update { it + (id to meta) }
+        refreshOrganization(id, forceOrganization)
+    }
+    private suspend fun refreshOrganization(id: String, force: Boolean) {
+        val now = System.nanoTime()
+        val fresh = synchronized(lock) { organizationFetchedAt[id]?.let { now - it < 30_000_000_000L } == true }
+        if (fresh && !force) return
+        val api = client(id)
+        synchronized(lock) {
+            if (clients[id] !== api) return
+            organizationFetchedAt[id] = now // Rate-limit failed reads too; an explicit refresh bypasses this cache.
+        }
+        try {
+            val loaded = api.organization()
+            if (!isCurrentClient(id, api)) return
+            _organization.update { it + (id to loaded) }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            if (!isCurrentClient(id, api)) return
+            if (error is LiveApiException && error.status == 401) throw error
+            _organization.update { it + (id to (it[id] ?: LiveOrganization()).copy(error = error.message ?: "分组加载失败")) }
+        }
     }
     private suspend fun reconcile(id: String) {
         try { refreshBackend(id) }
@@ -258,6 +286,8 @@ class LivePiRepository(
         val paired = runCatching { client(id).paired }.getOrDefault(false)
         _states.update { it + (id to LiveBackendState(needsPairing = !paired, message = error.message ?: "Live 连接失败")) }
         if (error is LiveApiException && error.status == 401) {
+            _organization.update { it - id }
+            synchronized(lock) { organizationFetchedAt.remove(id) }
             rows.update { it - id }
             _details.update { it.filterKeys { key -> key.backendId != id } }
             _leases.update { it.filterKeys { key -> key.backendId != id } }
@@ -287,6 +317,30 @@ class LivePiRepository(
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { backendFailure(id, error) }
         } }.joinAll()
+    }
+    suspend fun refreshMachine(id: String): Result<Unit> = result {
+        try { refreshBackend(id, forceOrganization = true) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { backendFailure(id, error); throw error }
+    }
+    suspend fun createGroup(id: String, name: String): Result<Unit> = mutation {
+        require(name.isNotBlank() && name.length <= 120) { "分组名需为 1–120 个字符" }
+        val api = client(id)
+        val groups = api.createGroup(name.trim())
+        if (!isCurrentClient(id, api)) throw IOException("机器配置已更改，请先核对原机器的操作结果")
+        _organization.update { it + (id to (it[id] ?: LiveOrganization()).copy(groups = groups, loaded = true, error = null)) }
+    }
+    suspend fun moveGroup(key: SessionKey, groupId: String?): Result<Unit> = mutation(key) {
+        val org = _organization.value[key.backendId] ?: throw IOException("请先加载本机分组")
+        val summary = rows.value[key.backendId]?.find { it.processInstanceId == key.slotKey } ?: throw IOException("会话已离线，请刷新")
+        val previous = org.groups.find { summary.sessionId in it.sessionIds }
+        if (groupId == null && previous == null) return@mutation
+        if (groupId != null) require(org.groups.any { it.id == groupId }) { "分组不属于当前机器" }
+        val api = client(key.backendId)
+        val groups = api.moveGroup(key.slotKey, groupId ?: previous!!.id,
+            if (groupId == null) summary.sessionId else null)
+        if (!isCurrentClient(key.backendId, api)) throw IOException("机器配置已更改，请先核对原机器的操作结果")
+        _organization.update { it + (key.backendId to (it[key.backendId] ?: org).copy(groups = groups, loaded = true, error = null)) }
     }
     suspend fun refresh(key: SessionKey): Result<Unit> = result(key) { acceptDetail(key.backendId, client(key.backendId).detail(key.slotKey)) }
     suspend fun pair(id: String, code: String): Result<Unit> = result {

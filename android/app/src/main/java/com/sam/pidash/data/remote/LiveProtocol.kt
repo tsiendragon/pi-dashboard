@@ -179,6 +179,9 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                 isError = toolFailed || errorMessage != null,
                 entryId = entryId,
                 forkable = role == "user" && entryId != null,
+                channel = data.str("channel") ?: message.str("channel") ?: entry.str("channel"),
+                status = if (errorMessage != null || toolFailed) "error" else if (type == "message_update") "running" else "done",
+                intermediate = (content as? JsonArray)?.any { (it as? JsonObject)?.str("type") in setOf("thinking", "toolCall") } == true,
             )
         } else if (type.startsWith("tool_execution_")) {
             if (data.str("toolCallId") in completedTools) return@mapIndexedNotNull null
@@ -190,6 +193,7 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                 id = "tool-${data.str("toolCallId") ?: entry.str("sequence") ?: index}", role = "tool",
                 text = preview(body.ifBlank { if (type == "tool_execution_end") "已完成" else "执行中…" }),
                 toolName = data.str("toolName") ?: "tool", isError = (data["isError"] as? JsonPrimitive)?.booleanOrNull == true,
+                status = if ((data["isError"] as? JsonPrimitive)?.booleanOrNull == true) "error" else if (type == "tool_execution_end") "done" else "running",
             )
         } else if (type == "error") {
             LiveTimelineItem("error-$index", "system", data.str("message") ?: "会话出错", isError = true)

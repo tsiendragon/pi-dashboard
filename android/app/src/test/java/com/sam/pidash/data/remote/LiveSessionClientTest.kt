@@ -68,6 +68,38 @@ class LiveSessionClientTest {
         assertTrue(calls.all { it.path.startsWith("/api/live-sessions") })
     }
 
+    @Test fun organizationAndGroupEditsUseExistingProtectedEndpointsWithoutClaiming() = runBlocking {
+        cookies.save(backend, cookie)
+        handler = { if (it.requestURI.path == "/api/live-session-order") reply(it, """{"order":["session-fixture"],"sectionOrder":["work"]}""")
+            else reply(it, """{"groups":[{"id":"work","name":"Work","sessionIds":["session-fixture"],"createdAt":"fixture"}]}""") }
+        val org = client.organization()
+        assertTrue(org.loaded)
+        assertEquals("Work", org.groups.single().name)
+        assertEquals(listOf("session-fixture"), org.order.order)
+        client.createGroup("Another")
+        client.moveGroup(process, "work")
+        client.moveGroup(process, "work", "session-fixture")
+        assertEquals(listOf("GET", "GET", "POST", "POST", "DELETE"), calls.map { it.method })
+        assertTrue(calls.all { it.origin == backend.baseUrl && it.cookie == "pi_live_session=$cookie" && it.authorization == "Bearer edge-fixture" })
+        assertTrue(calls.none { it.path.endsWith("/claim") || it.path.endsWith("/commands") || it.path.contains("/chat/") })
+        assertTrue(calls[3].body.contains("\"processInstanceId\":\"$process\""))
+        assertEquals("/api/live-session-groups/work/members/session-fixture", calls.last().path)
+    }
+
+    @Test fun malformedGroupPathsFailBeforeSendingCredentials() = runBlocking {
+        cookies.save(backend, cookie)
+        assertTrue(runCatching { client.moveGroup(process, "../../auth") }.isFailure)
+        assertTrue(runCatching { client.moveGroup(process, "work", "../../auth") }.isFailure)
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test fun failedGroupCreationIsNeverRetried() = runBlocking {
+        cookies.save(backend, cookie)
+        handler = { reply(it, "{}", 503) }
+        assertTrue(runCatching { client.createGroup("Work") }.isFailure)
+        assertEquals(1, calls.size)
+    }
+
     @Test fun liveStartAndOptionsNeverUseOrdinaryChatSlots() = runBlocking {
         cookies.save(backend, cookie)
         handler = { when (it.requestURI.path) {
@@ -176,6 +208,56 @@ class LiveSessionClientTest {
         withTimeout(5000) { while (repo.candidates(backend.id).isFailure) delay(20) }
         calls.clear()
         return repo
+    }
+
+    @Test fun machineOrganizationFailureDoesNotTurnConnectedLiveRowsIntoAnEmptyList() = runBlocking {
+        val repo = repository()
+        handler = { when (it.requestURI.path) {
+            "/api/live-sessions" -> reply(it, """{"sessions":[{"processInstanceId":"$process","sessionId":"session-fixture","cwd":"/allowed"}]}""")
+            "/api/live-session-meta" -> reply(it, """{"meta":{}}""")
+            "/api/live-session-groups" -> reply(it, "{}", 500)
+            else -> reply(it, "{}", 404)
+        } }
+        assertTrue(repo.refreshMachine(backend.id).isSuccess)
+        withTimeout(5000) { while (repo.sessions.value.isEmpty()) delay(20) }
+        assertTrue(repo.backendStates.value[backend.id]!!.connected)
+        assertNotNull(repo.organization.value[backend.id]!!.error)
+        assertFalse(repo.organization.value[backend.id]!!.loaded)
+        assertEquals(process, repo.sessions.value.single().key.slotKey)
+        assertTrue(calls.all { it.method == "GET" })
+        val groupReads = calls.count { it.path == "/api/live-session-groups" }
+        repo.refreshAll()
+        assertEquals(groupReads, calls.count { it.path == "/api/live-session-groups" })
+    }
+
+    @Test fun malformedGroupWriteAcknowledgementIsUnconfirmedAndNeverRetried() = runBlocking {
+        val repo = repository()
+        handler = { reply(it, "{}") }
+        val result = repo.createGroup(backend.id, "Work")
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("未确认"))
+        assertEquals(1, calls.size)
+    }
+
+    @Test fun groupMovesAreScopedToTheMachineAndExpiredAuthPurgesOrganization() = runBlocking {
+        val repo = repository()
+        handler = { when (it.requestURI.path) {
+            "/api/live-sessions" -> reply(it, """{"sessions":[{"processInstanceId":"$process","sessionId":"session-fixture","cwd":"/allowed"}]}""")
+            "/api/live-session-meta" -> reply(it, """{"meta":{}}""")
+            "/api/live-session-order" -> reply(it, """{"order":[],"sectionOrder":[]}""")
+            else -> reply(it, """{"groups":[{"id":"work","name":"Work","sessionIds":["session-fixture"]}]}""")
+        } }
+        assertTrue(repo.refreshMachine(backend.id).isSuccess)
+        val key = SessionKey(backend.id, process)
+        val before = calls.size
+        assertTrue(repo.moveGroup(key, "group-from-another-machine").isFailure)
+        assertEquals(before, calls.size)
+        assertTrue(repo.moveGroup(key, "work").isSuccess)
+        assertTrue(calls.none { it.path.endsWith("/claim") || it.path.endsWith("/commands") })
+        handler = { reply(it, """{"error":"authentication_required"}""", 401) }
+        assertTrue(repo.refreshMachine(backend.id).isFailure)
+        assertTrue(repo.organization.value.isEmpty())
+        assertTrue(repo.backendStates.value[backend.id]!!.needsPairing)
     }
 
     @Test fun openingIsReadOnlyAndPublicLeaseIdDoesNotEstablishOwnership() = runBlocking {

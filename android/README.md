@@ -1,16 +1,19 @@
 # PiDash Android（原生 Compose 客户端）
 
-Kotlin + Jetpack Compose，多服务器聚合。**2.1 版默认打开 Live Pi**；普通 Chat 保留在独立标签中，不会把旧 Chat slot 假装成 Live 进程。
+Kotlin + Jetpack Compose。**2.2 / build 3：机器列表 → 本机 Dashboard → Session**；本机默认 Live Pi，普通 Chat 保留在独立标签中，不把旧 Chat slot 假装成 Live 进程。机器列表、Dashboard、设置页显示实际构建版本。
 
-- **部署、构建、手机配对与验收**：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi21)
+- **部署、构建、手机配对与验收**：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi22)
 - **当前进度、测试证据与限制**：[`HANDOFF.md`](HANDOFF.md)
+- **功能适配与边界评估**：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)
 - 历史设计：[`docs/android-app-design.md`](../docs/android-app-design.md)
 
 ## 当前功能（代码已实现，未做真机端到端验收）
 
-| 功能 | Live Pi 2.1 |
+| 功能 | Live Pi 2.2 |
 |---|---|
-| 多服务器列表、与网页共享在线会话 | 已实现，专用 REST + WS |
+| 机器列表、本机 Dashboard、与网页共享在线会话 | 已实现，专用 REST + WS；分开显示 Live 配对/连接与普通 Chat 连接 |
+| 搜索、工作中/子 Agent 筛选、分组与顺序 | 已实现；共用网页分组/置顶/排序；可新建分组和移动会话；完整分组管理与拖动排序暂用网页 |
+| 活动进度 / 完整对话、只读目标/工作项/阻塞 | 已实现保守投影，不编造百分比，不把工具返回或最终回复等同任务完成 |
 | 默认新建 Live Pi、选择服务器和工作目录 | 已实现：服务器 roots / 项目候选 / 手填绝对路径；服务器最终校验权限 |
 | 文本、流式、思考、工具进度/结果、错误 | 已实现；原生可选中文本，不是 WebUI 的完整 Markdown/活动图形视图 |
 | 接管/释放、中止、引导/排队输入 | 已实现；打开只读，不抢占其他端 |
@@ -18,7 +21,7 @@ Kotlin + Jetpack Compose，多服务器聚合。**2.1 版默认打开 Live Pi**�
 | 压缩、重载、重启 Pi、真实用户条目分叉 | 已实现；危险操作需确认，服务器可拒绝 |
 | 扩展确认/选择/输入/编辑请求 | 已实现，必须明确回答，不自动确认 |
 | 上下文/会话树 | 只读 JSON 预览，不是完整图谱 |
-| 文件/上传、PTY、工作流/目标管理、用量、图片附件、语音、后台通知 | 尚未实现，请用 WebUI |
+| 文件/上传、PTY、完整工作流、目标编辑、用量、图片附件、语音、后台通知 | 尚未实现，请用 WebUI；目标只读摘要不等于管理能力 |
 
 普通 Chat 仍使用原来的 `/api/chat/slots`、`/api/ws` 与独立对话页。Live Pi 使用 `/api/live-sessions`，不会回退创建普通 Chat。
 
@@ -32,11 +35,11 @@ Live Cookie 用 AndroidKeyStore AES-GCM 加密，并绑定服务器地址/连接
 
 ## 构建产物与版本
 
-产物：`android/app/build/outputs/apk/debug/app-debug.apk`。构建与安装命令以[部署指南](../guide/dashboard.md#android-live-pi21)为准。
+产物：`android/app/build/outputs/apk/debug/app-debug.apk`。构建与安装命令以[部署指南](../guide/dashboard.md#android-live-pi22)为准。
 
 | 组件 | 版本 |
 |---|---|
-| App | 2.1 / versionCode 2 / `com.sam.pidash` |
+| App | 2.2 / versionCode 3 / `com.sam.pidash` |
 | Gradle / AGP | 8.9 / 8.7.3 |
 | Kotlin / Compose BOM | 2.0.21 / 2024.10.01 |
 | compileSdk / targetSdk / minSdk | 35 / 35 / 26 |

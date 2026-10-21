@@ -13,10 +13,13 @@ import com.sam.pidash.ui.backends.BackendsScreen
 import com.sam.pidash.ui.chat.ChatScreen
 import com.sam.pidash.ui.live.LiveSessionScreen
 import com.sam.pidash.ui.sessions.SessionsScreen
+import com.sam.pidash.ui.sessions.MachinesScreen
 
 object Routes {
     const val SESSIONS = "sessions"
     const val BACKENDS = "backends"
+    const val DASHBOARD = "dashboard/{backendId}"
+    fun dashboard(backendId: String): String = "dashboard/${Uri.encode(backendId)}"
     const val CHAT = "chat/{backendId}/{slotKey}"
     const val LIVE = "live/{backendId}/{processId}"
 
@@ -33,8 +36,13 @@ fun AppNav(repo: PiDashRepository) {
 
     NavHost(navController = nav, startDestination = Routes.SESSIONS) {
         composable(Routes.SESSIONS) {
+            MachinesScreen(repo, onOpen = { nav.navigate(Routes.dashboard(it)) }, onSettings = { nav.navigate(Routes.BACKENDS) })
+        }
+        composable(Routes.DASHBOARD, arguments = listOf(navArgument("backendId") { type = NavType.StringType })) { entry ->
             SessionsScreen(
                 repo = repo,
+                backendId = entry.arguments?.getString("backendId").orEmpty(),
+                onBack = { nav.popBackStack() },
                 onOpenSlot = { key -> nav.navigate(Routes.chat(key)) },
                 onOpenLive = { key -> nav.navigate(Routes.live(key)) },
                 onOpenBackends = { nav.navigate(Routes.BACKENDS) },
@@ -61,7 +69,7 @@ fun AppNav(repo: PiDashRepository) {
                 onBack = { nav.popBackStack() },
                 onOpenLive = { key ->
                     nav.navigate(Routes.live(key)) {
-                        popUpTo(Routes.SESSIONS)
+                        popUpTo(Routes.DASHBOARD)
                         launchSingleTop = true
                     }
                 },
