@@ -47,6 +47,45 @@ export function relativeTime(seconds: number, now = Date.now()): string {
   return `${Math.floor(diff / (86400 * 365))} 年前`
 }
 
+/** Remotes may embed credentials (`https://user:token@host/...`); never render them verbatim. */
+export function scrubRemote(remote: string): string {
+  return remote
+    .replace(/\/\/[^/@]+@/, '//***@')
+    .replace(/(?:github_pat_|ghp_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]+/g, '***')
+}
+
+/** SSH and HTTPS forms of one remote, so either can be copied without editing the URL by hand. */
+export interface RemoteForms { ssh: string | null; https: string | null }
+
+const NO_FORMS: RemoteForms = { ssh: null, https: null }
+
+function remotePath(raw: string): string | null {
+  const path = raw.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.git$/, '')
+  return path.includes('/') ? path : null
+}
+
+export function remoteForms(remote: string): RemoteForms {
+  const text = remote.trim()
+  if (!text) return NO_FORMS
+  if (text.includes('://')) {
+    const url = /^(?:https?|ssh|git):\/\/(?:[^@/]+@)?([^/:]+)(?::(\d+))?\/(.+)$/.exec(text)
+    if (!url) return NO_FORMS
+    const [, host, port, raw] = url
+    const path = remotePath(raw ?? '')
+    if (!host || !path) return NO_FORMS
+    return {
+      ssh: port ? `ssh://git@${host}:${port}/${path}.git` : `git@${host}:${path}.git`,
+      https: `https://${host}/${path}.git`,
+    }
+  }
+  const scp = /^(?:[\w.-]+@)?([\w.-]+):(.+)$/.exec(text)
+  if (!scp) return NO_FORMS
+  const [, host, raw] = scp
+  const path = remotePath(raw ?? '')
+  if (!host || !path) return NO_FORMS
+  return { ssh: `git@${host}:${path}.git`, https: `https://${host}/${path}.git` }
+}
+
 /** Reasons a repo deserves a look; the "需要处理" filter is simply "any reason". */
 export function attentionReasons(repo: RepoView): string[] {
   if (!repo.exists) return ['路径不存在']
@@ -55,6 +94,7 @@ export function attentionReasons(repo: RepoView): string[] {
   const reasons: string[] = []
   if (s.conflicted) reasons.push('有冲突')
   if (s.detached) reasons.push('游离 HEAD')
+  if (!s.identity) reasons.push('缺提交身份')
   if (s.ahead) reasons.push(`未推送 ${s.ahead}`)
   if (s.behind) reasons.push(`落后 ${s.behind}`)
   if (repo.defaultBranch && s.branch && s.branch !== repo.defaultBranch) reasons.push(`不在 ${repo.defaultBranch}`)

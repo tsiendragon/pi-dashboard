@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import type { RepoView } from '@shared/repos'
 import { Badge, PageHeader, SearchInput } from '../../components/ui'
 import { liveSessionApi } from '../live-sessions/api'
-import { attentionReasons, relativeTime, repoApi, type RepoInputBody } from './api'
+import { attentionReasons, relativeTime, remoteForms, repoApi, scrubRemote, type RepoInputBody } from './api'
+import { copyText } from '../../utils/clipboard'
 
 type Filter = 'all' | 'attention' | 'pinned'
 
@@ -29,6 +30,24 @@ function GitState({ repo }: { repo: RepoView }) {
       </div>
       <div className={dirty.length ? 'text-warn' : 'text-muted'}>{dirty.length ? dirty.join(' · ') : '工作区干净'}</div>
       {repo.statusAt && <div className="text-2xs text-muted">{repo.refreshing ? '更新中… · ' : ''}状态读取于 {relativeTime(repo.statusAt / 1000)}</div>}
+    </div>
+  )
+}
+
+/** One copyable remote form: `ssh git@host:a/b.git` or `https https://host/a/b.git`. */
+function RemoteLine({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    if (!await copyText(value)) return
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="font-mono">{label} {value}</span>
+      <button type="button" title={`复制 ${value}`}
+        className="px-1.5 py-0.5 rounded border border-border bg-transparent text-2xs text-muted cursor-pointer hover:text-accent hover:border-accent"
+        onClick={() => void copy()}>{copied ? '已复制' : '复制'}</button>
     </div>
   )
 }
@@ -200,6 +219,7 @@ export default function ReposPage() {
             const s = repo.status
             const reasons = attentionReasons(repo)
             const busy = busyId === repo.id
+            const forms = s?.isGit && s.origin ? remoteForms(s.origin) : null
             return (
               <div key={repo.id} className={`rounded-lg border bg-card px-4 py-3 flex flex-wrap items-start gap-x-6 gap-y-2 ${!repo.exists ? 'border-danger' : 'border-border'}`}>
                 <div className="min-w-0 flex-1 basis-72">
@@ -211,6 +231,16 @@ export default function ReposPage() {
                     {repo.liveSessions > 0 && <Badge variant="ok">{repo.liveSessions} Live Pi</Badge>}
                   </div>
                   <div className="font-mono text-body-s text-muted break-all mt-0.5">{repo.path}</div>
+                  {s?.isGit && (
+                    <div className="mt-0.5 flex flex-col gap-0.5 text-2xs break-all">
+                      <div className="font-mono text-muted">origin {s.origin ? scrubRemote(s.origin) : '无远端（只在本地使用）'}</div>
+                      {forms?.ssh && <RemoteLine label="ssh" value={forms.ssh} />}
+                      {forms?.https && <RemoteLine label="https" value={forms.https} />}
+                      <div className={s.identity ? 'text-muted' : 'text-warn'}>
+                        提交身份 {s.identity ? `${s.identity.name ?? '未设姓名'} <${s.identity.email ?? '未设邮箱'}>` : '未配置（git config user.name / user.email）'}
+                      </div>
+                    </div>
+                  )}
                   {s?.last && <div className="text-body-s text-muted mt-1 truncate" title={s.last.subject}>{s.last.hash} · {s.last.subject} · {relativeTime(s.last.time)}</div>}
                   {reasons.length > 0 && <div className="text-body-s text-warn mt-1">⚠ {reasons.join(' · ')}</div>}
                 </div>
