@@ -1061,7 +1061,6 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
   }
 
   const activities: LiveActivity[] = []
-  const phaseClosed = new Set<string>()
   const settled = new Set<string>()
   let current: LiveActivity | undefined
   let pendingCommentary: ActivityReport | undefined
@@ -1160,6 +1159,16 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
     sourceLabel: '执行记录',
     index,
   })
+  /**
+   * 占位活动只装「还归不到请求头上」的执行记录，没有真实请求标题。
+   *
+   * 它不是正在进行的请求，所以新请求不能被它当成「排队输入」吞进去：`agent_start` /
+   * `turn_start` 常常比用户消息先到一步，照旧判断会把用户请求挂成排队输入，等工作跑完
+   * 才在下一个回合边界另开活动，留下一条孤零零的「正在处理会话任务」。
+   */
+  const isPlaceholderActivity = (activity: LiveActivity | undefined): boolean => !!activity
+    && activity.title === '正在处理会话任务'
+    && activity.sourceLabel === '执行记录'
   const startUserActivity = (report: ActivityReport): LiveActivity => {
     const fallback = current
     const hasPlan = (fallback?.plan?.lines.length || 0) > 0 || (fallback?.plan?.items.length || 0) > 0
@@ -1175,7 +1184,6 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
       fallback.startedAt ||= entryTimestamp(entries[report.index])
       if (report.images?.length) fallback.images = [...(fallback.images || []), ...report.images]
       settled.delete(fallback.id)
-      phaseClosed.delete(fallback.id)
       mergePlan(fallback, report)
       current = fallback
       return fallback
@@ -1228,7 +1236,7 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
       if (userInput?.images.length) target.images = [...(target.images || []), ...userInput.images]
       // 后续执行也要留在同一个活动里，否则等于又拆开了。
       current = target
-    } else if (message?.role === 'user' && message.text && (queuedDelivery || agentBusy)) {
+    } else if (message?.role === 'user' && message.text && (queuedDelivery || agentBusy) && !!current && !isPlaceholderActivity(current)) {
       // 排队输入：先挂在当前活动上，等 Pi 真正接手（下一次 agent_start）再单独成活动。
       if (pendingCommentary && current) current.lastSummary = pendingCommentary.title
       pendingCommentary = undefined
@@ -1260,7 +1268,6 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
       else if (current.title === goalReport.title) updateActivity(current, goalReport)
       else if (current.steps.length === 0) updateActivity(current, goalReport)
       else {
-        phaseClosed.add(current.id)
         startActivity(goalReport)
       }
       if (goalReport.completed && current) settled.add(current.id)
@@ -1285,7 +1292,6 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
     const steps = evidenceByIndex.get(index) || []
     if (steps.length > 0) {
       if (pendingCommentary && current && pendingCommentary.title !== current.title) {
-        phaseClosed.add(current.id)
         startActivity(pendingCommentary)
       } else if (pendingCommentary && current) {
         flushCommentaryAsReply(pendingCommentary)
@@ -1389,18 +1395,19 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
 
   for (const activity of activities) {
     const planItems = activity.plan?.items || []
-    const hasError = activity.steps.some(step => step.status === 'error')
-    const hasPending = activity.steps.some(step => step.status === 'pending' || step.status === 'blocked')
+    const hasPendingWork = activity.steps.some(step => step.status === 'pending' || step.status === 'blocked')
       || planItems.some(item => item.status === 'pending' || item.status === 'blocked')
     const hasRunning = activity.steps.some(step => step.status === 'running') || planItems.some(item => item.status === 'running')
-    const allStepsDone = activity.steps.length > 0 && activity.steps.every(step => step.status === 'done')
-    if (hasError) activity.status = 'incomplete'
-    else if (hasRunning || (activity === current && (sessionStatus === 'running' || sessionStatus === 'reconnecting'))) activity.status = 'running'
-    else if (hasPending) activity.status = 'incomplete'
-    else if (settled.has(activity.id) || (phaseClosed.has(activity.id) && allStepsDone) || (activity === current && sessionStatus === 'idle' && allStepsDone)) activity.status = 'done'
-    else if (activity.steps.length === 0 && settled.has(activity.id)) activity.status = 'done'
-    else if (activity.steps.length === 0) activity.status = 'pending'
-    else activity.status = 'incomplete'
+    const sessionActive = sessionStatus === 'running' || sessionStatus === 'reconnecting'
+    if (hasRunning && sessionActive) activity.status = 'running'
+    else if (activity === current && sessionActive) activity.status = 'running'
+    // 会话都停了、步骤还停在“运行中”：那是被打断，不是还在跑。
+    else if (hasRunning) activity.status = 'incomplete'
+    else if (hasPendingWork) activity.status = 'incomplete'
+    else if (activity.steps.length === 0 && !settled.has(activity.id)) activity.status = 'pending'
+    // 单步报错（命令退出码非 0、工具被中断）只标红那一步，不等于这件事没做完：
+    // 会话停下、已经被新活动接替、或拿到了收尾信号，都说明这一轮已经结束。
+    else activity.status = 'done'
   }
   return activities
 }
