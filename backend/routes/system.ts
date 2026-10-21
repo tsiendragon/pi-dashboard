@@ -252,6 +252,12 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
   app.get('/api/memory/usage', requireAuth((req: Request, res: Response) => {
     res.json(memoryStore.getMemoryUsage(Number(req.query.days) || 7))
   }))
+  app.get('/api/memory/promotions', requireAuth((req: Request, res: Response) => {
+    res.json({ proposals: memoryStore.listPromotionProposals(Number(req.query.limit) || 50) })
+  }))
+  app.get('/api/memory/nightly', requireAuth((_req: Request, res: Response) => {
+    res.json(memoryStore.getNightlyReview())
+  }))
   // These legacy endpoints read a database that no longer exists and answered writes with a fake
   // `{ok:true}`. They now fail loudly instead of reporting success they did not achieve.
   const retiredMemoryEndpoint = (_req: Request, res: Response) =>

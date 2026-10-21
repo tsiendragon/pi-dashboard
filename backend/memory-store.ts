@@ -8,7 +8,7 @@
  * The legacy `~/.pi/memory/memory.db` used by earlier dashboard builds is intentionally ignored.
  */
 import { DatabaseSync } from 'node:sqlite'
-import { existsSync, statSync } from 'fs'
+import { existsSync, readFileSync, statSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
@@ -377,5 +377,90 @@ export function memoryDatabaseUpdatedAt(): number | undefined {
     return info.mtimeMs
   } catch {
     return undefined
+  }
+}
+
+export interface PromotionProposalView {
+  id: string
+  memoryId: string
+  suggestedType: string
+  status: string
+  strength?: string
+  content: string
+  createdAt: number
+}
+
+export function listPromotionProposals(limit = 50): PromotionProposalView[] {
+  const db = openReadOnly()
+  if (!db) return []
+  try {
+    const rows = db
+      .prepare(
+        `SELECT p.id, p.memory_id, p.suggested_type, p.status, p.bundle_json, p.created_at,
+                v.content
+           FROM promotion_proposals p
+           LEFT JOIN memory_items i ON i.id = p.memory_id
+           LEFT JOIN memory_revisions v ON v.id = i.current_revision_id
+          WHERE p.status = 'proposed'
+          ORDER BY p.created_at DESC LIMIT ?`,
+      )
+      .all(Math.min(Math.max(limit, 1), 200)) as unknown as Array<{
+      id: string
+      memory_id: string
+      suggested_type: string
+      status: string
+      bundle_json: string
+      created_at: number
+      content: string | null
+    }>
+    return rows.map((row) => {
+      let strength: string | undefined
+      try {
+        const bundle = JSON.parse(row.bundle_json) as { strength?: string }
+        strength = bundle.strength
+      } catch {
+        strength = undefined
+      }
+      return {
+        id: row.id,
+        memoryId: row.memory_id,
+        suggestedType: row.suggested_type,
+        status: row.status,
+        strength,
+        content: (row.content ?? '').slice(0, 400),
+        createdAt: Number(row.created_at),
+      }
+    })
+  } catch {
+    return []
+  } finally {
+    db.close()
+  }
+}
+
+export interface NightlyReviewView {
+  generatedAt?: string
+  markdown?: string
+  windowDays?: number
+  available: boolean
+}
+
+/** The nightly job writes a digest; the page shows it verbatim so nothing is re-interpreted. */
+export function getNightlyReview(): NightlyReviewView {
+  const dir = join(memoryDataDir(), 'nightly')
+  try {
+    const markdown = readFileSync(join(dir, 'latest.md'), 'utf8')
+    let generatedAt: string | undefined
+    let windowDays: number | undefined
+    try {
+      const digest = JSON.parse(readFileSync(join(dir, 'latest.json'), 'utf8')) as { generatedAt?: string; windowDays?: number }
+      generatedAt = digest.generatedAt
+      windowDays = digest.windowDays
+    } catch {
+      generatedAt = undefined
+    }
+    return { available: true, markdown, generatedAt, windowDays }
+  } catch {
+    return { available: false }
   }
 }
