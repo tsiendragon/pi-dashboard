@@ -17,6 +17,7 @@ import MarkdownRenderer from './components/MarkdownRenderer'
 import ErrorBoundary from './components/ErrorBoundary'
 import ConnectionOverlay from './components/ConnectionOverlay'
 import SystemPage from './pages/SystemPage'
+import MemoryPage from './pages/MemoryPage'
 import LogsPage from './pages/LogsPage'
 import JobsPage from './pages/JobsPage'
 import MemeStudioPage from './pages/MemeStudioPage'
@@ -53,6 +54,7 @@ const NAV_ITEMS = [
   { path: '/supervisor', id: 'supervisor', label: '工作监督台', group: 'Main', icon: <><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></> },
   { path: '/insights', id: 'insights', label: 'Cost · Time', group: 'Main', icon: <><path d="M4 19V5" /><path d="M4 19h17" /><path d="m7 15 3-4 3 2 5-7" /></> },
   { path: '/system', id: 'system', label: 'System', group: 'Main', icon: <><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></> },
+  { path: '/memory', id: 'memory', label: 'Memory', group: 'Tools', icon: <><path d="M12 3a9 9 0 1 0 9 9" /><path d="M12 3v9l6 3" /><circle cx="12" cy="12" r="2" /></> },
   { path: '/repos', id: 'repos', label: 'Repos', group: 'Tools', icon: <><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="9" r="2" /><path d="M6 7v10" /><path d="M18 11c0 4-6 3-12 6" /></> },
   { path: '/extensions', id: 'extensions', label: 'Extensions', group: 'Tools', icon: <><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h10" /><circle cx="18" cy="17" r="2" /></> },
   { path: '/logs', id: 'logs', label: 'Logs', group: 'Tools', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></> },
@@ -373,6 +375,7 @@ export default function App() {
             <Route path="/repos/:id/graph" element={<RepoGraphPage />} />
             <Route path="/extensions" element={<ExtensionsPage />} />
             <Route path="/system" element={<SystemPage />} />
+            <Route path="/memory" element={<MemoryPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/memes" element={<MemeStudioPage />} />
