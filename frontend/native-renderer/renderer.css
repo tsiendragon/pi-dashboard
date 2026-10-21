@@ -39,3 +39,8 @@ body.pdr-body pre {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+/* Paths and links are tappable now, so they must look tappable. */
+body.pdr-body code,
+body.pdr-body a {
+  cursor: pointer;
+}

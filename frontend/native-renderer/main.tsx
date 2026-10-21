@@ -148,7 +148,51 @@ function openPath(path: string) {
   ;(window as unknown as { PiDashNative?: NativeBridge }).PiDashNative?.openPath?.(path)
 }
 
+/**
+ * Path discovery for taps.
+ *
+ * `MarkdownRenderer` only treats `<code>` spans and local links as openable, so a
+ * path written in ordinary prose was inert. This delegated handler runs for every
+ * tap: code/link first, then the first path-looking token inside the tapped
+ * element. Anything already handled is skipped (`defaultPrevented`), and the
+ * native side still refuses paths that are not on screen.
+ */
+const PATH_TOKEN = /(?:~|\.{0,2})?\/[\w.@~+-]+(?:\/[\w.@~+-]+)*\.[A-Za-z0-9]{1,8}/g
+
+function pathFromTap(target: HTMLElement): string | undefined {
+  const anchor = target.closest('a')
+  const href = anchor?.getAttribute('href')?.trim()
+  if (href) {
+    if (/^(?:https?:|mailto:|#)/i.test(href)) return undefined
+    return decodeURIComponent(href)
+  }
+  const code = target.closest('code')
+  const scopes = [code?.textContent, target.textContent].filter((value): value is string => !!value)
+  for (const scope of scopes) {
+    const found = scope.match(PATH_TOKEN)
+    if (found && found.length > 0) return found[0].replace(/[.,;:)]+$/, '')
+  }
+  return undefined
+}
+
+function usePathTaps() {
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented) return
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      const path = pathFromTap(target)
+      if (!path) return
+      event.preventDefault()
+      openPath(path)
+    }
+    document.addEventListener('click', onClick)
+    return () => document.removeEventListener('click', onClick)
+  }, [])
+}
+
 function App() {
+  usePathTaps()
   const [payload, setPayload] = useState<Payload>({})
   const nearBottom = useRef(true)
 
