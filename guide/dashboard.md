@@ -100,6 +100,8 @@ highlight.js + mermaid + DiffBlock）与真实主题 CSS，经 Vite 打包进
   形如 `路径/文件名.扩展名` 的片段都可点（`MarkdownRenderer` 自身只认 code/link，prose 里的路径以前点不动）。渲染页只把路径交给原生：`window.PiDashNative.openPath(path)`，
   原生校验该路径**必须出现在当前已渲染的正文里**，否则丢弃——渲染内容无法诱导 App 读取读者没看见的文件。
   预览走 App 自己的已授权客户端 `GET /api/file-read`（只读，最多 512 KB 尾部），不新增服务端权限。
+- 正文里的 `http(s)` 链接交给**系统浏览器**打开（`ACTION_VIEW`）：渲染页永不导航，只上报链接；
+  仅允许 `http(s)`，`javascript:`/`intent://`/`file://` 与含空格/控制字符的一律拒绝。
 - 无法加载时自动回退到「原生文本」，也可手动切换「WebUI 渲染 / 原生文本 / 活动进度」。
 - 只有渲染被复用，**写入仍由原生外壳控制**：输入框、菜单、租约与确认逻辑都不在 WebView 里。
 
