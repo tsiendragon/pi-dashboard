@@ -39,7 +39,7 @@ The core is talking to pi, with a few things a terminal does not give you:
 - **Multiple sessions** — each session is its own slot with its own working directory, model, and context. The left list manages them.
 - **Streaming output** — replies arrive token by token; thinking blocks, tool calls, and command output render as distinct blocks, and images are inline.
 - **Visible tool calls** — which file pi read, which command it ran, and what came back, all folded into the transcript.
-- **Slash commands** — built-ins like `/clear`, `/compact`, `/import`, plus commands registered by extensions; type `/` for the menu.
+- **Slash commands** — built-ins like `/clear`, `/compact`, `/import`, plus commands registered by extensions; type `/` for the menu. `/resume` is handled by the dashboard itself: it opens history search and continues whichever session you pick (a web chat has no pi picker to defer to).
 - **Fork & resume** — branch a new session from any message, or continue an old one: open the command palette (`⌘K` / `Ctrl+K`) and pick **Resume Session…** (or press `Ctrl/⌘+Shift+H`) to search past sessions by title, project, or transcript text. No full-text index needed — the dashboard reads the session files directly.
 - **Context usage** — live token/context tracking, so you know when to `/compact`.
 - **Voice input** — the composer accepts speech (see Settings → Voice).
@@ -164,11 +164,27 @@ There is also a **Codex / Claude Code limits** panel showing the local account's
 
 ---
 
+## Memory
+
+The sidebar **Memory** page (`/memory`) answers four questions: what pi actually remembers, what it changed on its own, what is still waiting for you, and whether recalled memory really reached the context. The data comes from the local memory database written by the `pi-tsien-memory` extension, and the page is **read-only** — accepting, correcting, and forgetting still go through the extension's `/memory` command and the `memory_*` tools; there is no edit button here.
+
+- **Overview** — counts per status (active / candidate / stale / superseded / rejected / forgotten), the three review problems (conflicts, unverified sources, global scope), pending and failed index jobs, and self-management counts such as “auto-accepted by the system” and “created by the agent”.
+- **Items** — filter by status or search the content; each row shows whether the source is verified, who the source belongs to, conflict count, and how often the memory was observed and applied.
+- **Changes** — a newest-first log of who (user / agent / system) moved which memory from one status to another, when, and why, with a content preview.
+- **Review queue** — candidates only, ranked conflicts first, then unverified source, then global scope, then the rest, so the highest-impact ones come first.
+- **Recall effect** — over the last 7 days (adjustable): recall runs, candidate count, how many actually entered the context, how many were verified or corrected, average latency, and the most-used memories.
+
+If the extension auto-accepts a candidate on evidence (verified tool result, confidence above the threshold, no unresolved conflict), it shows up here: the overview's “auto-accepted by the system” counter goes up and the change log records a system action. Vague or conflicting candidates still wait for a human. When the database does not exist yet the page says “start one pi session so the extension can create it” instead of reporting zero memories. Reading requires the browser auth first.
+
+---
+
 ## Repos
 
 Register the repositories you work in. Each entry stores an absolute path, kept in `~/.pi/dashboard.json`.
 
 Each row shows branch, ahead/behind counts, and uncommitted/unpushed change counts, with quick actions: Graph (commit graph), Live Pi, GitHub, Fetch. Filter by tag (e.g. #platform, #task, #xdoc).
+
+Each card also shows the raw `origin` URL plus its derived `ssh` and `https` forms (each with a copy button), and the commit identity in effect (`user.name` / `user.email`), highlighted when missing. A repo with no remote reads “无远端（只在本地使用）” and is not counted as needing attention.
 
 ---
 
