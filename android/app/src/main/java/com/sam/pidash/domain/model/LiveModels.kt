@@ -69,6 +69,17 @@ data class LiveModelOption(
     val thinkingLevels: List<String> = emptyList(),
 )
 @Serializable
+data class LiveGroup(val id: String, val name: String, val sessionIds: List<String> = emptyList())
+@Serializable
+data class LiveOrder(val order: List<String> = emptyList(), val sectionOrder: List<String> = emptyList())
+data class LiveOrganization(
+    val groups: List<LiveGroup> = emptyList(),
+    val order: LiveOrder = LiveOrder(),
+    val loaded: Boolean = false,
+    val error: String? = null,
+)
+
+@Serializable
 data class LiveLease(val leaseId: String, val expiresAt: Long? = null)
 
 data class AggregatedLiveSession(
@@ -92,4 +103,24 @@ data class LiveTimelineItem(
     val isError: Boolean = false,
     val entryId: String? = null,
     val forkable: Boolean = false,
+    val channel: String? = null,
+    val status: String = "done",
+    val intermediate: Boolean = false,
+)
+
+data class LiveActivity(val id: String, val title: String, val state: String, val items: List<LiveTimelineItem>)
+@Serializable
+data class LiveGoalProgress(val current: String? = null, val lastSummary: String? = null)
+@Serializable
+data class LiveGoalItem(val id: String, val title: String, val state: String? = null)
+@Serializable
+data class LiveGoalBlocker(val title: String, val reason: String? = null)
+@Serializable
+data class LiveGoalAnchor(
+    val objective: String,
+    val status: String? = null,
+    val progress: LiveGoalProgress = LiveGoalProgress(),
+    val workItems: List<LiveGoalItem> = emptyList(),
+    val blockers: List<LiveGoalBlocker> = emptyList(),
+    val messagesSinceUpdate: Int = 0,
 )

@@ -9,77 +9,127 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.repo.PiDashRepository
+import com.sam.pidash.domain.model.AggregatedLiveSession
+import com.sam.pidash.domain.model.LiveOrganization
+import com.sam.pidash.domain.model.machineSessionSections
+import com.sam.pidash.ui.common.liveConnectionLabel
 import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.LiveRepoCandidate
 import com.sam.pidash.domain.model.SessionKey
 import kotlinx.coroutines.launch
 
 @Composable
-fun LiveSessionsPanel(repo: PiDashRepository, onOpen: (SessionKey) -> Unit) {
-    val backends by repo.backends.collectAsState()
+fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (SessionKey) -> Unit) {
+    val allBackends by repo.backends.collectAsState()
+    val backends = allBackends.filter { it.id == backendId }
     val sessions by repo.live.sessions.collectAsState()
     val states by repo.live.backendStates.collectAsState()
+    val organizations by repo.live.organization.collectAsState()
+    val org = organizations[backendId] ?: LiveOrganization()
     val scope = rememberCoroutineScope()
     var pairing by remember { mutableStateOf<Backend?>(null) }
     var unpairing by remember { mutableStateOf<Backend?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
-
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
-        item {
-            Text("连接运行中的 Pi；打开时只读，不会抢占控制权。", Modifier.padding(16.dp),
-                style = MaterialTheme.typography.bodySmall)
-        }
-        items(backends, key = { "backend:${it.id}" }) { backend ->
-            val state = states[backend.id]
-            ListItem(
-                headlineContent = { Text(backend.name) },
-                supportingContent = {
-                    Column {
-                        Text(when {
-                            state == null -> "正在检查 Live Pi 连接…"
-                            state.needsPairing -> "未配对 · 需要 WebUI 手机配对码"
-                            !state.connected -> "Live Pi 未连接（不是空会话列表）"
-                            else -> "Live Pi 已连接"
-                        })
-                        state?.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    }
-                },
-                trailingContent = {
-                    TextButton(onClick = {
-                        if (state?.needsPairing != false) pairing = backend else unpairing = backend
-                    }) { Text(if (state?.needsPairing != false) "配对" else "解除配对") }
-                },
-            )
-            HorizontalDivider()
-        }
-        if (backends.isEmpty()) item { Text("还没有服务器，请从右上角设置添加。", Modifier.padding(16.dp)) }
-        notice?.let { message -> item { Text(message, Modifier.padding(16.dp)) } }
-        if (sessions.isEmpty() && backends.isNotEmpty()) item {
-            val ready = backends.all { states[it.id]?.let { s -> s.connected && !s.needsPairing && s.message.isNullOrBlank() } == true }
-            Text(if (ready) "暂无运行中的 Live Pi，点 + 选择工作目录并启动。"
-                else "尚未取得完整列表；请先处理上方配对、连接或错误，再刷新。", Modifier.padding(16.dp))
-        }
-        items(sessions, key = { "live:${it.key.backendId}/${it.key.slotKey}" }) { item ->
-            ListItem(
-                modifier = Modifier.clickable { onOpen(item.key) },
-                headlineContent = { Text((if (item.meta.pinned) "★ " else "") + item.summary.title) },
-                supportingContent = {
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("${item.backendName} · ${item.summary.status} · ${item.summary.claim.state}")
-                        Text(item.summary.cwd, style = MaterialTheme.typography.bodySmall)
-                        item.summary.model?.let { Text("${it.provider}/${it.id}", style = MaterialTheme.typography.labelSmall) }
-                        if (item.meta.tags.isNotEmpty()) Text(item.meta.tags.joinToString("  ") { "#$it" })
-                    }
-                },
-            )
-            HorizontalDivider()
+    var query by rememberSaveable(backendId) { mutableStateOf("") }
+    var runningOnly by rememberSaveable(backendId) { mutableStateOf(false) }
+    var children by rememberSaveable(backendId) { mutableStateOf(false) }
+    var toggled by remember(backendId) { mutableStateOf(emptySet<String>()) }
+    var managing by remember { mutableStateOf(false) }
+    var moving by remember { mutableStateOf<AggregatedLiveSession?>(null) }
+    var groupName by remember { mutableStateOf("") }
+    var groupBusy by remember { mutableStateOf(false) }
+    var groupError by remember { mutableStateOf<String?>(null) }
+    val sections = remember(sessions, org, query, runningOnly, children, backendId) {
+        machineSessionSections(backendId, sessions, org, query, runningOnly, children)
+    }
+    fun move(row: AggregatedLiveSession, target: String?) {
+        groupBusy = true; groupError = null
+        scope.launch {
+            repo.live.moveGroup(row.key, target).fold(onSuccess = { moving = null }, onFailure = { groupError = it.message })
+            groupBusy = false
         }
     }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+        items(backends, key = { "backend:${it.id}" }) { backend ->
+            val state = states[backend.id]
+            ListItem(headlineContent = { Text(liveConnectionLabel(state)) }, supportingContent = {
+                Column {
+                    Text("打开只读，不会抢占现有会话。", style = MaterialTheme.typography.bodySmall)
+                    state?.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            }, trailingContent = { TextButton(onClick = {
+                if (state?.needsPairing != false) pairing = backend else unpairing = backend
+            }) { Text(if (state?.needsPairing != false) "配对" else "解除配对") } })
+        }
+        item {
+            Column(Modifier.padding(horizontal = 12.dp)) {
+                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("搜索标题 / 路径 / 模型 / 分组 / #标签") }, singleLine = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(runningOnly, { runningOnly = !runningOnly }, label = { Text("工作中") })
+                    FilterChip(children, { children = !children }, label = { Text("子 Agent") })
+                    TextButton(enabled = org.loaded, onClick = { groupError = null; managing = true }) { Text("分组") }
+                }
+                org.error?.let { Text("分组/排序未刷新：$it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+        if (backends.isEmpty()) item { Text("机器配置已删除，请返回机器列表。", Modifier.padding(16.dp)) }
+        notice?.let { message -> item { Text(message, Modifier.padding(16.dp)) } }
+        if (sections.isEmpty() && backends.isNotEmpty()) item {
+            val ready = states[backendId]?.connected == true
+            Text(when {
+                !ready -> "尚未取得 Live 列表，请先完成配对/连接；这不代表服务器没有会话。"
+                query.isNotBlank() || runningOnly -> "没有匹配的会话，请清除搜索或筛选。"
+                else -> "本机暂无主 Live 会话；可显示子 Agent，或点 + 选择目录启动。"
+            }, Modifier.padding(16.dp))
+        }
+        sections.forEach { section ->
+            val collapsed = query.isBlank() && (section.collapsedByDefault != (section.id in toggled))
+            item(key = "section:${section.id}") {
+                TextButton(onClick = { toggled = if (section.id in toggled) toggled - section.id else toggled + section.id }) {
+                    Text("${if (collapsed) "▸" else "▾"} ${section.name} (${section.sessions.size})")
+                }
+            }
+            if (!collapsed) items(section.sessions, key = { "${section.id}:${it.key.slotKey}" }) { row ->
+                ListItem(modifier = Modifier.clickable { onOpen(row.key) },
+                    headlineContent = { Text((if (row.meta.pinned) "★ " else "") + row.summary.title) },
+                    supportingContent = { Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("${row.summary.status} · ${row.summary.claim.state}")
+                        Text(row.summary.cwd, style = MaterialTheme.typography.bodySmall)
+                        row.summary.model?.let { Text("${it.provider}/${it.id}", style = MaterialTheme.typography.labelSmall) }
+                        if (row.meta.tags.isNotEmpty()) Text(row.meta.tags.joinToString("  ") { "#$it" })
+                    } },
+                    trailingContent = { TextButton(enabled = org.loaded, onClick = { groupError = null; moving = row }) { Text("分组") } })
+                HorizontalDivider()
+            }
+        }
+    }
+    if (managing) AlertDialog(onDismissRequest = { if (!groupBusy) managing = false }, title = { Text("本机分组") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            org.groups.forEach { Text("${it.name} · ${it.sessionIds.size} 个会话") }
+            Text("与网页共用分组和排序。点击会话右侧「分组」可移动；重命名、合并、删除和拖动排序暂用网页。", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(groupName, { groupName = it }, label = { Text("新分组名") }, enabled = !groupBusy)
+            groupError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }, confirmButton = { TextButton(enabled = !groupBusy && groupName.isNotBlank(), onClick = {
+        groupBusy = true; groupError = null
+        scope.launch {
+            repo.live.createGroup(backendId, groupName).fold(onSuccess = { groupName = "" }, onFailure = { groupError = it.message })
+            groupBusy = false
+        }
+    }) { Text(if (groupBusy) "提交中…" else "新建分组") } }, dismissButton = { TextButton(enabled = !groupBusy, onClick = { managing = false }) { Text("关闭") } })
+    moving?.let { row -> AlertDialog(onDismissRequest = { if (!groupBusy) moving = null }, title = { Text("移动「${row.summary.title}」") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            TextButton(enabled = !groupBusy, onClick = { move(row, null) }) { Text("未分组") }
+            org.groups.forEach { group -> TextButton(enabled = !groupBusy, onClick = { move(row, group.id) }) { Text(group.name) } }
+            groupError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }, confirmButton = {}, dismissButton = { TextButton(enabled = !groupBusy, onClick = { moving = null }) { Text("取消") } }) }
     pairing?.let { backend ->
         LivePairingDialog(repo, backend, onDismiss = { pairing = null })
     }

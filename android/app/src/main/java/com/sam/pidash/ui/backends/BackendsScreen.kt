@@ -47,6 +47,9 @@ import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.DashboardClient
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.ConnectionState
+import com.sam.pidash.ui.common.AppVersionLabel
+import com.sam.pidash.ui.common.backendOriginLabel
+import com.sam.pidash.ui.common.liveConnectionLabel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,13 +57,14 @@ import kotlinx.coroutines.launch
 fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     val backends by repo.backends.collectAsState()
     val connection by repo.connection.collectAsState()
+    val liveStates by repo.live.backendStates.collectAsState()
     val scope = rememberCoroutineScope()
     var showAdd by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("服务器") },
+                title = { Column { Text("服务器"); AppVersionLabel() } },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -91,15 +95,19 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                             headlineContent = { Text(backend.name) },
                             supportingContent = {
                                 Column {
-                                    Text(backend.baseUrl, style = MaterialTheme.typography.bodySmall)
+                                    Text(backendOriginLabel(backend.baseUrl), style = MaterialTheme.typography.bodySmall)
                                     Text(
-                                        connectionLabel(connection[backend.id]),
+                                        "普通 Chat：" + connectionLabel(connection[backend.id]),
                                         style = MaterialTheme.typography.labelSmall,
                                     )
+                                    Text(liveConnectionLabel(liveStates[backend.id]), style = MaterialTheme.typography.labelSmall)
                                 }
                             },
                             leadingContent = {
-                                ConnectionDot(connection[backend.id] ?: ConnectionState.Disconnected)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Chat", style = MaterialTheme.typography.labelSmall)
+                                    ConnectionDot(connection[backend.id] ?: ConnectionState.Disconnected)
+                                }
                             },
                             trailingContent = {
                                 IconButton(onClick = { scope.launch { repo.removeBackend(backend.id) } }) {

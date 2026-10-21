@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -53,6 +54,7 @@ import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.ConnectionState
 import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.ui.common.relativeTime
+import com.sam.pidash.ui.common.AppVersionLabel
 import com.sam.pidash.ui.live.LiveSessionsPanel
 import com.sam.pidash.ui.live.NewLiveSessionDialog
 import kotlinx.coroutines.launch
@@ -61,31 +63,36 @@ import kotlinx.coroutines.launch
 @Composable
 fun SessionsScreen(
     repo: PiDashRepository,
+    backendId: String,
+    onBack: () -> Unit,
     onOpenSlot: (SessionKey) -> Unit,
     onOpenLive: (SessionKey) -> Unit,
     onOpenBackends: () -> Unit,
 ) {
-    val slots by repo.aggregatedSlots.collectAsState()
-    val backends by repo.backends.collectAsState()
+    val allSlots by repo.aggregatedSlots.collectAsState()
+    val allBackends by repo.backends.collectAsState()
+    val slots = allSlots.filter { it.key.backendId == backendId }
+    val backends = allBackends.filter { it.id == backendId }
     val connection by repo.connection.collectAsState()
     val running by repo.running.collectAsState()
     val scope = rememberCoroutineScope()
     var showNew by remember { mutableStateOf(false) }
     var liveTab by rememberSaveable { mutableStateOf(true) }
 
-    LaunchedEffect(repo) {
-        repo.live.refreshAll()
+    LaunchedEffect(repo, backendId) {
+        repo.live.refreshMachine(backendId)
         repo.refreshAll()
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("PiDash") },
+                title = { Column { Text(backends.firstOrNull()?.name ?: "机器 Dashboard", maxLines = 1); AppVersionLabel() } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回机器列表") } },
                 actions = {
                     IconButton(onClick = {
                         scope.launch {
-                            if (liveTab) repo.live.refreshAll() else repo.refreshAll()
+                            if (liveTab) repo.live.refreshMachine(backendId) else repo.refreshAll()
                         }
                     }) {
                         Icon(Icons.Filled.Refresh, contentDescription = "刷新")
@@ -110,7 +117,7 @@ fun SessionsScreen(
                 Tab(selected = !liveTab, onClick = { liveTab = false }, text = { Text("Chat") })
             }
             if (liveTab) {
-                LiveSessionsPanel(repo = repo, onOpen = onOpenLive)
+                LiveSessionsPanel(repo = repo, backendId = backendId, onOpen = onOpenLive)
             } else Box(Modifier.fillMaxSize()) {
                 when {
                     backends.isEmpty() -> Text(
