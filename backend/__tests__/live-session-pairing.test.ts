@@ -41,6 +41,30 @@ describe('one-use native Live authorization (isolated temporary state)', () => {
     await auth.forget(request(cookieOf(browser)))
     expect(auth.getIdentity(request(cookieOf(phone)))).toBeDefined()
   })
+  it('keeps a paired phone idle for 30 days while a token login expires after 12h', async () => {
+    const browser = await login()
+    const phone = (await auth.redeemPairingCode(auth.issuePairingCode(request(cookieOf(browser)))!.code, true))!
+    now += 12 * 60 * 60 * 1000 + 1
+    // Idle expiry: the browser session is gone, the paired device is not.
+    expect(auth.getIdentity(request(cookieOf(browser)))).toBeUndefined()
+    expect(auth.getIdentity(request(cookieOf(phone)))).toBeDefined()
+    now += 25 * 24 * 60 * 60 * 1000
+    expect(auth.getIdentity(request(cookieOf(phone)))).toBeDefined()
+    // 30 days of real inactivity still ends it — long-lived is not eternal.
+    now += 30 * 24 * 60 * 60 * 1000 + 1
+    expect(auth.getIdentity(request(cookieOf(phone)))).toBeUndefined()
+  })
+  it('persists the device flag so a restart does not shorten a paired phone', async () => {
+    const browser = await login()
+    const phone = (await auth.redeemPairingCode(auth.issuePairingCode(request(cookieOf(browser)))!.code, true))!
+    now += 20 * 24 * 60 * 60 * 1000
+    await auth.stop()
+    const reopened = new LiveSessionBrowserAuth({ tokenPath: auth.tokenPath, now: () => now })
+    await reopened.start()
+    try {
+      expect(reopened.getIdentity(request(cookieOf(phone)))).toBeDefined()
+    } finally { await reopened.stop() }
+  })
   it('consumes once, atomically, including concurrent redemption', async () => {
     const browser = await login()
     const code = auth.issuePairingCode(request(cookieOf(browser)))!
