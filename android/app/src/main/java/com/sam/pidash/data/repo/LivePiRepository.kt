@@ -391,21 +391,34 @@ class LivePiRepository(
             Unit
         }
     }
+    /**
+     * Commands the server accepts without a lease — the same whitelist the WebUI
+     * uses for plain input, rename, model switch and reload. Two clients (phone,
+     * web, TUI) can therefore type into one session; only `abort`/`compact` need
+     * exclusive control, because they interrupt or rewrite running work.
+     */
+    private suspend fun shared(key: SessionKey, command: suspend () -> JsonObject): Result<Unit> = withSessionLock(key) {
+        mutation(key) {
+            client(key.backendId).command(key.slotKey, command())
+            refresh(key)
+            Unit
+        }
+    }
     suspend fun send(key: SessionKey, text: String, deliverAs: String? = null): Result<Unit> {
         if (text.isBlank()) return Result.failure(IOException("消息不能为空"))
         if (text.toByteArray().size > 128 * 1024) return Result.failure(IOException("消息超出大小限制"))
         if (deliverAs != null && deliverAs !in setOf("steer", "followUp")) return Result.failure(IOException("无效投递方式"))
-        return controlled(key) {
+        return shared(key) {
             buildJsonObject { put("type", "input"); put("text", text); put("channel", "mobile"); deliverAs?.let { put("deliverAs", it) } }
         }
     }
     suspend fun abort(key: SessionKey): Result<Unit> = controlled(key) { buildJsonObject { put("type", "abort"); put("leaseId", it.leaseId) } }
-    suspend fun rename(key: SessionKey, name: String): Result<Unit> = controlled(key) { buildJsonObject { put("type", "set_session_name"); put("name", name) } }
+    suspend fun rename(key: SessionKey, name: String): Result<Unit> = shared(key) { buildJsonObject { put("type", "set_session_name"); put("name", name) } }
     suspend fun models(key: SessionKey): Result<List<LiveModelOption>> = result(key) {
         val response = client(key.backendId).command(key.slotKey, buildJsonObject { put("type", "get_models") })
         pidashJson.decodeFromJsonElement(ListSerializer(LiveModelOption.serializer()), response.jsonObject["models"] ?: JsonArray(emptyList()))
     }
-    suspend fun setModel(key: SessionKey, provider: String, id: String): Result<Unit> = controlled(key) {
+    suspend fun setModel(key: SessionKey, provider: String, id: String): Result<Unit> = shared(key) {
         buildJsonObject { put("type", "set_model"); put("provider", provider); put("modelId", id) }
     }
     suspend fun setThinking(key: SessionKey, level: String): Result<Unit> {
@@ -413,7 +426,7 @@ class LivePiRepository(
         return send(key, "/effort $level")
     }
     suspend fun compact(key: SessionKey): Result<Unit> = controlled(key) { buildJsonObject { put("type", "compact"); put("leaseId", it.leaseId) } }
-    suspend fun reload(key: SessionKey): Result<Unit> = controlled(key) { buildJsonObject { put("type", "reload") } }.also {
+    suspend fun reload(key: SessionKey): Result<Unit> = shared(key) { buildJsonObject { put("type", "reload") } }.also {
         if (it.isSuccess) _leases.update { map -> map - key }
     }
     suspend fun patchMeta(key: SessionKey, tags: List<String>? = null, pinned: Boolean? = null): Result<Unit> = mutation(key) {

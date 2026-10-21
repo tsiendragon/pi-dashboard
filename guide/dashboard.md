@@ -30,9 +30,9 @@ Live 列表展示桥接已注册的 Pi 进程，不是扫描所有历史 JSONL�
 
 <a id="android-live-pi21"></a>
 
-<a id="android-live-pi22"></a>
+<a id="android-live-pi23"></a>
 
-## Android Live Pi（2.2）
+## Android Live Pi（2.3）
 
 **代码与本地测试就绪，尚未完成手机端到端验收。** 详细状态、限制与测试证据见
 [`android/HANDOFF.md`](../android/HANDOFF.md)。原生支持多服务器列表、cwd 选择/新建、实时文本/思考/工具、
@@ -79,9 +79,40 @@ Android 的 Live Cookie 用 AndroidKeyStore AES-GCM 加密并绑定服务器地�
 若复制过，剪贴板由用户清理，码仍由服务端限制有效期和单次消费。选择目录还会合并既有项目候选，
 **候选不等于授权**；启动时继续 realpath/roots 校验，roots 为空仍默认拒绝，不自动把目录设为 home。
 
+### 渲染：复用 WebUI，而不是再造一套
+
+会话正文默认由 **WebUI 自己的 React 渲染器**渲染：`frontend/native-renderer/` 复用
+`src/components/MarkdownRenderer.tsx`（react-markdown + remark-gfm + rehype-raw + DOMPurify +
+highlight.js + mermaid + DiffBlock）与真实主题 CSS，经 Vite 打包进
+`android/app/src/main/assets/native-renderer/`。所以代码块、表格、公式、图形、diff、图片在手机上
+与网页同一套渲染与配色，而不是 Kotlin 的近似实现。
+
+- 页面从虚拟源 `https://renderer.pidash.local/` 由 `shouldInterceptRequest` 从 assets 读取；
+  其他任何请求（网络、`file://`、越界路径）一律拒绝。**页面不含 Cookie、不发请求、不持有凭据**，
+  正文数据由 App 通过 `window.PiDashRenderer.render(...)` 推入。
+- 手机尺寸差异只在 CSS 层处理：页面自身滚动、卡片左右留白、代码块横向滚动而不换行、
+  图片/表格限宽；流式跟随只在读者已贴近底部时生效。
+- 无法加载时自动回退到「原生文本」，也可手动切换「WebUI 渲染 / 原生文本 / 活动进度」。
+- 只有渲染被复用，**写入仍由原生外壳控制**：输入框、菜单、租约与确认逻辑都不在 WebView 里。
+
+改动渲染器源码后必须先重建 assets，再构建 APK：
+
+```bash
+npm --prefix frontend run build:native-renderer
+cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug
+```
+
+发布脚本会校验 assets 比渲染器源码新，避免发出旧渲染器。
+
+### 输入不需要“接管”
+
+与 WebUI 完全一致：普通消息（`input`）、改标题、切模型、重载扩展**都不需要租约**，手机、网页和
+TUI 可以同时对同一会话输入。只有会打断或改写运行中工作的操作——**中止、压缩上下文、重启进程**——
+才要求显式接管；他端持有时直接拒绝，绝不抢占。此前手机端对所有输入都强制先接管，是本轮修正的偏差。
+
 ### 构建和用户部署
 
-App 版本 2.2 / versionCode 3，包名仍为 `com.sam.pidash`，可覆盖安装。依赖 JDK 17、SDK 35、
+App 版本 2.3 / versionCode 4，包名仍为 `com.sam.pidash`，可覆盖安装。依赖 JDK 17、SDK 35、
 Gradle 8.9、AGP 8.7.3、Kotlin 2.0.21；新增纯 JVM 测试依赖 JUnit 4.13.2，没有升级原有运行依赖。
 
 **2.2 本轮仅修改 Android 与文档；服务端已有 2.1 配对及既有分组接口时，只需覆盖安装新 APK，不需要重建前端或重启后端。**
