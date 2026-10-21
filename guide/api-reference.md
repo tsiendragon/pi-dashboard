@@ -662,41 +662,54 @@ Stub — returns `[]`.
 
 ### Memory
 
-#### `GET /api/memory/preferences`
+Memory is owned by the `pi-tsien-memory` Pi extension: it writes `memory.db` under `PI_TSIEN_MEMORY_DIR` (default `~/.pi/tsien-memory`). The dashboard opens that database **read-only** — it never writes to it — and every endpoint below requires the Live Session browser auth (missing auth answers `authentication_required`). All five endpoints return whatever they can read even when the database is absent: `overview` reports `available: false` with a hint, the list endpoints return empty arrays.
 
-**Response:** `{ "content": "<JSON string of facts>" }`
+#### `GET /api/memory/overview`
 
-#### `GET /api/memory/projects`
+**Response:**
 
-Stub — `{ "content": "" }`
+```json
+{
+  "available": true,
+  "databasePath": "~/.pi/tsien-memory/memory.db",
+  "counts": { "active": 12, "candidate": 3, "stale": 0, "superseded": 1, "rejected": 2, "forgotten": 0, "total": 18 },
+  "review": { "total": 3, "conflicts": 1, "unverified": 1, "scopeEscalation": 1 },
+  "usage": { "recallRuns": 40, "recallCandidates": 120, "contextInjected": 90, "verified": 6, "corrected": 1, "lastActivityAt": 1790000000000 },
+  "health": { "pendingIndexJobs": 0, "failedIndexJobs": 0, "lastEventAt": 1790000000000 },
+  "selfManagement": { "autoAccepted": 4, "agentCreated": 9, "userDecided": 5, "rejectedByAgent": 2 },
+  "updatedAt": 1790000000123
+}
+```
 
-#### `GET /api/memory/history`
+`hint` is present when `available` is `false` (no database yet, unreadable file, or an unrecognized schema). `updatedAt` is the database file mtime.
 
-Stub — `{ "content": "" }`
+#### `GET /api/memory/items`
 
-#### `GET /api/memory/settings`
+**Query params:** `status` (`active` | `candidate` | `stale` | `superseded` | `rejected` | `forgotten`, anything else is ignored), `search` (substring match on content), `limit` (default `50`, clamped to `200`)
 
-Stub — `{}`
+**Response:** `{ "items": [...] }` — each item carries `id`, `kind`, `status`, `scopeType`, `scopeKey`, `content`, `confidence`, `version`, `observedCount`, `verifiedCount`, `appliedCount`, `correctedCount`, `createdAt`, `updatedAt`, `conflicts`, and an optional `source` block (`authority`, `verified`, `sourceType`, `sourceUri`).
 
-#### `GET /api/memory/stats`
+#### `GET /api/memory/changes`
 
-**Response:** `{ "facts": 50, "lessons": 20, "events": 100, "episodic": 30 }`
+**Query params:** `limit` (default `40`, clamped to `200`)
 
-#### `GET /api/memory/embedding-status`
+**Response:** `{ "changes": [{ "id", "memoryId", "eventType", "fromStatus?", "toStatus?", "actor", "reasonCode", "createdAt", "contentPreview" }] }` — newest first; `contentPreview` is the current revision text cut to 200 characters.
 
-Stub — `{ "enabled": false }`
+#### `GET /api/memory/review`
 
-#### `PUT /api/memory/preferences`
+**Query params:** `limit` (default `30`, clamped to `200`)
 
-Stub — `{ "ok": true }`
+**Response:** `{ "items": [...] }` — candidates only, ranked conflicts first, then unverified source, then global scope, then the rest; newest first inside each group.
 
-#### `PUT /api/memory/projects`
+#### `GET /api/memory/usage`
 
-Stub — `{ "ok": true }`
+**Query params:** `days` (default `7`)
 
-#### `PUT /api/memory/history`
+**Response:** `{ "windowDays": 7, "recallRuns": 40, "recallCandidates": 120, "contextInjected": 90, "verified": 6, "corrected": 1, "averageLatencyMs": 18, "lastContextInjectionAt": 1790000000000, "topUsed": [{ "id", "content", "injected", "verified" }] }` — `topUsed` holds at most 10 memories.
 
-Stub — `{ "ok": true }`
+#### Retired memory endpoints
+
+`GET` / `PUT` / `POST` on `/api/memory/{preferences,projects,history,settings,stats,embedding-status,semantic,episodic}` answer **410** with `{ "error": "memory_endpoint_retired", "hint": "..." }`. These used to return stubs — the write variants answered `{ "ok": true }` without storing anything — so a 200 there never meant the change happened. Use the extension's `/memory` command and `memory_*` tools to change memory.
 
 ---
 

@@ -137,6 +137,7 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `PI_TRACE_DIR` | `trajectory-recorder` trace 落点 | `<agent dir>/pi-traces`（可移植） |
 | `PI_TIMING_DIR` | `trajectory-recorder` 计时账本 | `<agent dir>/pi-timing`（可移植） |
 | `PI_OBSERVATION_DIR` | `observation-pack` 大结果归档 | `<agent dir>/archiv`（可移植） |
+| `PI_TSIEN_MEMORY_DIR` | `pi-tsien-memory` 扩展的记忆数据目录；dashboard 的 `/memory` 页面只读同一路径下的 `memory.db`，两端读同一个变量名 | `~/.pi/tsien-memory` |
 | `DASHSCOPE_API_KEY` / `ANTHROPIC_API_KEY` 等 | 模型 provider 凭证 | 无 |
 | `DASHSCOPE_BASE_URL` / `DASHSCOPE_TTS_BASE_URL` | DashScope 端点覆盖（ASR/TTS） | 官方端点 |
 | `DASHSCOPE_IMAGE_ENDPOINT` | 表情包图片生成/编辑的完整 HTTPS 地址，不复用语音端点 | `https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` |
