@@ -162,3 +162,32 @@ node scripts/pi-extension-sync.mjs --config config/extensions.standalone.json --
 5. 升级 `pi-tsien-live-session` 后，live 会话页顶部出现「◲ 上下文」按钮（bridge 声明 `context_view` 能力）。已经跑着的 Pi 会话需要重载才会认新命令：开着旧版的会话看不到这个按钮，强行请求会得到明确的 `unsupported_command`，而不是静默失败。
 
 外部用户视角的完整步骤与踩坑：扩展仓库 `pi-tsien-extension/docs/quickstart.md`。
+
+---
+
+## 9. 生效条件与 dashboard 功能的依赖
+
+**扩展代码在 Pi 进程启动时加载。** 所以：
+
+- 新装或更新扩展后，只有**新启动的** Pi 进程用新代码；已经跑着的会话（dashboard 每个 slot 都是一个
+  `pi --mode rpc` 子进程）需要重启该会话，或在 Pi 里 `/reload`。
+- 在 dashboard 的 `/extensions` 页启停、排序、安装后同理：同步器只改 `settings.json`，已加载的
+  进程不会热替换。
+- dashboard 自己不用重启也能读到扩展新写的数据（例如记忆库）：它直接读这些文件，不加载扩展代码。
+
+缺哪个扩展，dashboard 上对应功能会怎样：
+
+| dashboard 功能 | 需要的扩展包 | 缺了 / 版本不匹配时 |
+|---|---|---|
+| `/live-sessions` 接管、会话树、分叉、reload；会话页顶部「◲ 上下文」 | `pi-tsien-live-session`（还要求 fork 版 pi 的 `extension_ui`） | 无法远程接管，指令返回 `unsupported_command`；官方 pi 上直接断桥 |
+| Workbench 子 Agent 与 Workflow 面板 | `pi-tsien-subagent-workbench`（全屏布局还要求 fork pi 的 `aboveStatus` / `fullscreen`） | 面板没有内容，或降级成非全屏 |
+| `run_code` / Code Mode | `pi-tsien-code-mode`（还要求 fork pi 的 `executeTool`） | 报 `Code Mode requires a Pi runtime with executeTool support` |
+| Background commands 面板与会话命令条 | `pi-tsien-running-commands` | 面板空，`background_command_*` 工具不存在 |
+| `/memory` 记忆页 | `pi-tsien-memory`（包版本 `0.1.0` 起具备页面上用到的表；库在 `~/.pi/tsien-memory/memory.db`） | 页面提示「没有找到记忆数据库」或「结构无法识别」，不是页面 bug |
+| 成本 / 耗时与轨迹分析 | `pi-tsien-trajectory-recorder`、`pi-tsien-usage-analytics` | 对应图表无数据 |
+| Jobs 定时任务 | `pi-tsien-schedule` | 页面用不了 |
+| 工具结果过滤与 digest | `pi-tsien-rtk-fork`（`tool_result` 钩子的唯一入口） | 过滤不生效，行为等同于不改写 |
+
+版本口径：扩展伞形包当前 `0.1.0`（tag `v0.1.0`）。dashboard **不锁扩展版本**——它不 import 扩展代码，
+只在运行时用 `PI_SCRIPT` 起 `pi` 子进程，所以版本不一致不会在安装阶段报错，只在功能上暴露。
+排错先看 `pi list` 与 dashboard `/extensions` 页的装载事实。
