@@ -404,12 +404,28 @@ class LivePiRepository(
             Unit
         }
     }
-    suspend fun send(key: SessionKey, text: String, deliverAs: String? = null): Result<Unit> {
-        if (text.isBlank()) return Result.failure(IOException("消息不能为空"))
+    suspend fun send(key: SessionKey, text: String, deliverAs: String? = null, images: List<LiveImage> = emptyList()): Result<Unit> {
+        if (text.isBlank() && images.isEmpty()) return Result.failure(IOException("消息不能为空"))
         if (text.toByteArray().size > 128 * 1024) return Result.failure(IOException("消息超出大小限制"))
         if (deliverAs != null && deliverAs !in setOf("steer", "followUp")) return Result.failure(IOException("无效投递方式"))
+        // Same limits as the WebUI: reject locally instead of letting the bridge refuse it.
+        ImageAttachments.validate(images)?.let { return Result.failure(IOException(it)) }
         return shared(key) {
-            buildJsonObject { put("type", "input"); put("text", text); put("channel", "mobile"); deliverAs?.let { put("deliverAs", it) } }
+            buildJsonObject {
+                put("type", "input")
+                put("text", text)
+                put("channel", "mobile")
+                deliverAs?.let { put("deliverAs", it) }
+                if (images.isNotEmpty()) put("images", buildJsonArray {
+                    images.forEach { image ->
+                        add(buildJsonObject {
+                            put("type", "image")
+                            put("mimeType", image.mimeType)
+                            put("data", image.data)
+                        })
+                    }
+                })
+            }
         }
     }
     suspend fun abort(key: SessionKey): Result<Unit> = controlled(key) { buildJsonObject { put("type", "abort"); put("leaseId", it.leaseId) } }
