@@ -126,7 +126,12 @@ Android 的 Live Cookie 用 AndroidKeyStore AES-GCM 加密并绑定服务器地�
 
 ### 渲染：复用 WebUI，而不是再造一套
 
-会话正文默认由 **WebUI 自己的 React 渲染器**渲染：`frontend/native-renderer/` 复用
+**默认改用原生渲染**（3.0 起）：`ui/markdown/` 里的纯 Kotlin Markdown 解析器（`MarkdownParser`，有单测）
+加大 `MarkdownBody` Compose 渲染，覆盖标题、段落、围栏代码（自带横滚与复制）、列表、引用、表格、分隔线，
+以及粗体/斜体/删除线/行内代码/链接；裸链接与本地路径同样可点。视图仍可在「原生渲染 / WebUI 渲染 / 活动进度」间切换。
+
+**WebUI 渲染保留为兜底**：mermaid 图、KaTeX 公式这类原生无法等价的块仍需用它，渲染失败时也会自动回退。
+此前该视图是默认项，正文默认由 **WebUI 自己的 React 渲染器**渲染：`frontend/native-renderer/` 复用
 `src/components/MarkdownRenderer.tsx`（react-markdown + remark-gfm + rehype-raw + DOMPurify +
 highlight.js + mermaid + DiffBlock）与真实主题 CSS，经 Vite 打包进
 `android/app/src/main/assets/native-renderer/`。所以代码块、表格、公式、图形、diff、图片在手机上
@@ -177,7 +182,7 @@ TUI 可以同时对同一会话输入。只有会打断或改写运行中工作�
 
 ### 构建和用户部署
 
-App 版本 2.9 / versionCode 10，包名仍为 `com.sam.pidash`，可覆盖安装。依赖 JDK 17、SDK 35、
+App 版本 3.0 / versionCode 11，包名仍为 `com.sam.pidash`，可覆盖安装。依赖 JDK 17、SDK 35、
 Gradle 8.9、AGP 8.7.3、Kotlin 2.0.21；新增纯 JVM 测试依赖 JUnit 4.13.2，没有升级原有运行依赖。
 
 **2.2 本轮仅修改 Android 与文档；服务端已有 2.1 配对及既有分组接口时，只需覆盖安装新 APK，不需要重建前端或重启后端。**
