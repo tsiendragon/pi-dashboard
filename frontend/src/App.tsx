@@ -25,13 +25,14 @@ import SettingsPage from './pages/SettingsPage'
 import LiveSessionPage from './features/live-sessions/LiveSessionPage'
 import LiveSessionExtensionUiModal from './features/live-sessions/LiveSessionExtensionUiModal'
 import SessionOverviewPage from './features/live-sessions/SessionOverviewPage'
+import SessionGraphPage from './features/live-sessions/graph/SessionGraphPage'
 import InsightsPage from './pages/InsightsPage'
 import ExtensionsPage from './pages/ExtensionsPage'
 import ReposPage from './features/repos/ReposPage'
 import RepoGraphPage from './features/repos/RepoGraphPage'
 import CommandPalette from './components/CommandPalette'
 import SessionPicker from './components/SessionPicker'
-import { PluginContextProvider, CommandRouteSlot } from './plugins'
+import { PluginContextProvider, CommandRouteSlot, SidebarPanelSlot } from './plugins'
 import { createSlotRegistry } from './plugins/slot-registry'
 import { PLUGIN_REGISTRY } from './generated/plugin-registry'
 
@@ -344,6 +345,9 @@ export default function App() {
         ))}
 
         <SupervisorAgentSidebarButton className={`mt-2 flex items-center rounded-md p-2 text-body-s text-accent hover:bg-bg-hover ${navCollapsed ? 'justify-center' : ''}`} />
+        {/* Plugin sidebar panels (contributed through the `sidebar-panel` slot) */}
+        <SidebarPanelSlot />
+        <SupervisorAgentSidebarButton className={`mt-2 flex items-center rounded-md p-2 text-body-s text-accent hover:bg-bg-hover ${navCollapsed ? 'justify-center' : ''}`} />
         {/* Watermark */}
         <div className={`mt-auto pt-4 pb-2 border-t border-border transition duration-[350ms] ${navCollapsed ? 'opacity-0 h-0 overflow-hidden p-0 m-0' : ''}`}>
           <div className="px-1">
@@ -360,7 +364,7 @@ export default function App() {
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/live-sessions" element={<LiveSessionPage />} />
             <Route path="/live-sessions/gallery" element={<SessionOverviewPage />} />
-            <Route path="/live-sessions/graph" element={<SessionOverviewPage />} />
+            <Route path="/live-sessions/graph" element={<SessionGraphPage />} />
             <Route path="/live-sessions/:processInstanceId" element={<LiveSessionPage />} />
             <Route path="/insights" element={<InsightsPage />} />
             <Route path="/usage" element={<Navigate to="/insights?tab=cost" replace />} />

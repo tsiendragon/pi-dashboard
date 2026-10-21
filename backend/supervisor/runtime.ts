@@ -231,8 +231,7 @@ export class SupervisorRuntime {
       }
       fail('未能确认空白主会话已重新连接，请刷新状态后检查，不要连续重试。', 504)
     } finally { this.clearing = false }
-  }
-  detail(): LiveSessionDetail { const detail = this.currentDetail(); if (!detail) fail('主 Agent 未连接。', 503); return detail }
+  }  detail(): LiveSessionDetail { const detail = this.currentDetail(); if (!detail) fail('主 Agent 未连接。', 503); return detail }
   private async send(detail: LiveSessionDetail, text: string, images?: unknown[], beforeDispatch?: () => void): Promise<void> {
     if (detail.summary.status !== 'idle' || detail.pendingUi?.length) fail('主 Agent 正在工作或等待确认，请稍后发送。')
     if (detail.summary.claim.state === 'claimed') fail('该会话正在被用户控制，不抢控制权。')
@@ -300,8 +299,7 @@ export class SupervisorRuntime {
         if (this.clearing && typeof payload.sessionId === 'string' && payload.sessionId !== this.record.sessionId) {
           this.record = { ...this.record, sessionId: payload.sessionId, sessionFile: undefined, processInstanceId: undefined, pid: undefined }
           this.grants.clear(); this.activeGrant = undefined
-        }
-        this.loaded = true; this.record.loaded = true; await this.persist(); return send(200, { ok: true })
+        }        this.loaded = true; this.record.loaded = true; await this.persist(); return send(200, { ok: true })
       }
       if (req.method !== 'POST' || req.url !== '/execute') return send(404, { error: 'not_found' })
       await this.ensureResourcesCurrent()

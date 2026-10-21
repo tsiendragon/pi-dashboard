@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Session · 活动视图预览</title>
+  <style>
+    /* 颜色与圆角取自 frontend/src/themes/light.css，尽量贴近真实 Dashboard。 */
+    :root {
+      --bg:#fafafa; --bg-elevated:#ffffff; --bg-hover:#f0f0f0;
+      --card:#ffffff; --text:#3f3f46; --text-strong:#18181b; --muted:#71717a;
+      --border:#e4e4e7; --border-strong:#d4d4d8;
+      --accent:#1d5aaf; --accent-subtle:rgba(29,90,175,.12);
+      --ok:#11695e; --ok-subtle:rgba(17,105,94,.1);
+      --warn:#935b06; --warn-subtle:rgba(147,91,6,.1);
+      --danger:#c8196a; --danger-subtle:rgba(200,25,106,.1);
+      --radius-sm:6px; --radius-md:8px; --radius-lg:12px;
+      --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; background:var(--bg); color:var(--text);
+      font:13px/20px 'Space Grotesk',-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    }
+    .topbar {
+      position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:12px;
+      border-bottom:1px solid var(--border); background:rgba(250,250,250,.95);
+      padding:9px 16px; backdrop-filter:blur(8px);
+    }
+    .topbar .name { font-weight:600; color:var(--text-strong); }
+    .topbar .hint { color:var(--muted); font-size:11px; }
+    .seg { margin-left:auto; display:flex; gap:6px; }
+    .seg-btn {
+      border:1px solid var(--border); border-radius:999px; background:var(--card);
+      color:var(--text); padding:3px 11px; font:inherit; font-size:11px; cursor:pointer;
+    }
+    .seg-btn.active { border-color:var(--accent); background:var(--accent-subtle); color:var(--accent); font-weight:600; }
+    main { width:calc(100% - 32px); margin:18px auto 40px; transition:width .15s ease; }
+    body[data-width="capped"] main { width:min(1024px,calc(100% - 32px)); }
+    .timeline { display:grid; gap:12px; }
+    article { border:1px solid var(--border); border-radius:var(--radius-md); background:var(--card); padding:12px; }
+    .meta { display:flex; align-items:center; gap:8px; }
+    .meta .number { color:var(--accent); font-size:12px; font-weight:600; }
+    .meta time { color:var(--muted); font-size:11px; }
+    .badge { margin-left:auto; border-radius:999px; padding:2px 8px; font-size:11px; font-weight:500; }
+    .badge.pending { color:var(--muted); background:var(--bg-hover); }
+    .badge.running { color:var(--accent); background:var(--accent-subtle); }
+    .badge.done { color:var(--ok); background:var(--ok-subtle); }
+    .badge.incomplete { color:var(--warn); background:var(--warn-subtle); }
+    h2 { margin:4px 0 2px; font-size:13px; line-height:20px; font-weight:600; color:var(--text-strong);
+         overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .source { display:flex; gap:8px; color:var(--muted); font-size:11px; }
+    .source .summary { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .empty-steps { margin:8px 0 0; color:var(--muted); font-size:11px; }
+    ol.steps { list-style:none; margin:8px 0 0; padding:0 0 0 12px; border-left:1px solid var(--border); display:grid; gap:8px; }
+    ol.steps li { display:flex; align-items:flex-start; gap:8px; min-width:0; font-size:11px; }
+    .step-number { width:16px; flex:0 0 16px; text-align:right; color:var(--muted); font-family:var(--mono); }
+    .state { flex:0 0 auto; font-weight:600; }
+    .step-status { flex:0 0 auto; }
+    .step-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
+    .step-fill { min-width:0; flex:1; }
+    .step-file { border:0; background:none; padding:0; color:var(--accent); font:inherit; font-size:11px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .step-file:hover { text-decoration:underline; }
+    .queued { margin-top:4px; font-size:11px; color:var(--muted); }
+    .queued b { color:var(--warn); }
+    .file-preview { margin-top:8px; border:1px dashed var(--border-strong); border-radius:var(--radius-sm); background:var(--bg-elevated); padding:6px 9px; font-size:11px; color:var(--muted); }
+    .step-detail { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
+    .done-t { color:var(--ok); } .running-t { color:var(--accent); } .pending-t { color:var(--muted); }
+    .error-t { color:var(--danger); } .blocked-t { color:var(--warn); }
+    .toggle {
+      margin:8px 0 0 28px; border:0; background:none; padding:0; color:var(--accent);
+      font:inherit; font-size:11px; cursor:pointer;
+    }
+    .toggle:hover { text-decoration:underline; }
+    .plan { margin-top:8px; border:1px solid rgba(29,90,175,.3); border-radius:var(--radius-sm); background:rgba(29,90,175,.06); padding:8px 10px; }
+    .plan-title { color:var(--accent); font-size:11px; font-weight:600; }
+    .plan-line { margin-top:4px; font-size:11px; line-height:16px; color:var(--text); }
+    .plan-items { list-style:none; margin:6px 0 0; padding:0; display:grid; gap:4px; }
+    .plan-items li { display:flex; align-items:flex-start; gap:8px; min-width:0; font-size:11px; }
+    .related { margin-top:4px; color:var(--muted); font-size:11px; }
+    .replies { margin:12px 0 0; padding:0 0 0 12px; border-left:1px solid var(--border); display:grid; gap:8px; }
+    .replies-title { color:var(--muted); font-size:11px; font-weight:600; }
+    .reply { border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg); padding:8px 10px; }
+    .reply-meta { display:flex; gap:8px; color:var(--muted); font-size:11px; }
+    .reply-chars { margin-left:auto; font-family:var(--mono); }
+    .reply-body { margin-top:4px; font-size:13px; line-height:20px; color:var(--text); }
+    .reply-body.clamped { position:relative; max-height:200px; overflow:hidden; }
+    .reply-body.clamped::after {
+      content:''; position:absolute; inset:auto 0 0 0; height:32px;
+      background:linear-gradient(to top,var(--bg),transparent);
+    }
+    .reply-body p { margin:4px 0; } .reply-body ul { margin:4px 0; padding-left:20px; }
+    .reply-body code { background:rgba(0,0,0,.06); border-radius:4px; padding:0 4px; font-family:var(--mono); font-size:12px; }
+    .reply-toggle { margin-top:4px; border:0; background:none; padding:0; color:var(--accent); font:inherit; font-size:11px; cursor:pointer; }
+    .reply-toggle:hover { text-decoration:underline; }
+    .full-view { border:1px solid var(--border); border-radius:var(--radius-md); background:var(--card); padding:14px; color:var(--muted); font-size:12px; }
+    .hidden { display:none; }
+    footer { margin:16px 2px 0; color:var(--muted); font-size:11px; }
+  </style>
+</head>
+<body data-width="capped">
+  <header class="topbar">
+    <span class="name">Live Session · 活动视图预览</span>
+    <span class="hint">静态原型 · 数据为示例</span>
+    <span class="seg">
+      <button class="seg-btn active" data-width="capped">1024px 窄列</button>
+      <button class="seg-btn" data-width="full">占满宽度</button>
+    </span>
+    <span class="seg">
+      <button class="seg-btn active" data-view="activity">活动视图</button>
+      <button class="seg-btn" data-view="full">完整对话</button>
+    </span>
+  </header>
+
+  <main>
+    <section id="activity-view" class="timeline" aria-label="会话活动时间线"></section>
+    <section id="full-view" class="full-view hidden">
+      完整对话仍是一行行的原始聊天与工具记录（此处只做占位，真实页面点“完整对话”即可看到）。
+    </section>
+    <footer>
+      活动按会话事件顺序排列；步骤状态来自实际工具调用或 Agent 阶段记录，Agent 回复正文来自其可见输出（不含思考过程）。
+      回复默认最多展示 12 行，展开可看全文；步骤默认展示前 5 项。Agent 的计划与回复正文都可以直接选中文字，引用或批注给 Agent（与完整对话一致）。
+    </footer>
+  </main>
+
+  <script>
+    const ACTIVITY_STATUS = {
+      pending: { label: '未完成', className: 'pending' },
+      running: { label: '进行中', className: 'running' },
+      done: { label: '已完成', className: 'done' },
+      incomplete: { label: '未完成', className: 'incomplete' },
+    }
+    const STEP_STATUS = {
+      pending: { icon: '○', label: '未完成', className: 'pending-t' },
+      running: { icon: '●', label: '进行中', className: 'running-t' },
+      done: { icon: '✓', label: '已完成', className: 'done-t' },
+      error: { icon: '!', label: '失败', className: 'error-t' },
+      blocked: { icon: '!', label: '受阻', className: 'blocked-t' },
+    }
+    const REPLY_KIND = { commentary: '进度说明', final: '回复正文' }
+    const STEP_PREVIEW = 5
+    const REPLY_PREVIEW_LINES = 12
+    const REPLY_PREVIEW_CHARS = 1200
+
+    const activities = [
+      {
+        startedAt: '2026-10-08 14:41:05',
+        status: 'done',
+        title: '目前什么状态了？',
+        sourceLabel: '用户请求',
+        lastSummary: '先确认三件事：数据、门禁、审计。',
+        plan: {
+          lines: [{ text: '先把三件事各查一遍：数据生成、门禁结果、审计差异，再给结论。', related: ['执行命令：git status', '检查代码变更：git'] }],
+          items: [],
+        },
+        steps: [
+          { label: '执行命令', detail: 'git status --short', status: 'done' },
+          { label: '检查代码变更', detail: 'git', status: 'done' },
+          { label: '执行命令', detail: 'ls -la data/', status: 'done' },
+          { label: '调用外部工具', detail: 'git', status: 'done' },
+          { label: '读取文件', detail: 'journal-delivery.md', path: '/repo/tasks/xdoc/journal-delivery.md', status: 'done' },
+          { label: '整理遗留问题', detail: '2 条', status: 'done' },
+        ],
+        replies: [
+          {
+            kind: 'final',
+            related: [],
+            text: '<p><strong>当前状态</strong>：三块工作都停在收尾阶段。</p>'
+              + '<ul><li>数据：26 国候选已生成，临时 review 集已上传 DataHub。</li>'
+              + '<li>门禁：机器与 API 两道都没有阻断，A/B 双审还剩 4 条未过。</li>'
+              + '<li>审计：108 个缺失的预测文件集中在 14 个国家，需要重跑补齐。</li></ul>'
+              + '<p>下一步建议先重跑缺失预测，再一次性 review。</p>',
+          },
+        ],
+      },
+      {
+        startedAt: '2026-10-08 14:46:19',
+        status: 'running',
+        title: '引用（来自你的回复）：> 26 国候选生成 + 机器/API 门禁 + A/B 双审都已完成；26 个临时 review 集已上传 DataHub（eu27_<cc>_carddesc_user_review_tmp，610 行）…',
+        sourceLabel: '用户请求',
+        lastSummary: '先核对 DataHub 上的 26 个临时 review 集。',
+        plan: {
+          lines: [{ text: '先逐个比对本地 review 集和 DataHub 上的登记记录，确认没有漏传；缺哪个补哪个。', related: ['搜索代码或文件：carddesc_user_review', '运行脚本：audit_review_sets.py'] }],
+          items: [],
+        },
+        steps: [
+          { label: '执行命令', detail: 'rg --files -g "eu27_*"', status: 'done' },
+          { label: '搜索代码或文件', detail: 'carddesc_user_review', status: 'done' },
+          { label: '执行命令', detail: 'wc -l review/*.csv', status: 'done' },
+          { label: '运行脚本', detail: 'audit_review_sets.py', status: 'done' },
+          { label: '执行命令', detail: 'git status --short', status: 'done' },
+          { label: '搜索代码或文件', detail: 'user_review_tmp', status: 'done' },
+          { label: '调用外部工具', detail: 'DataHub', status: 'running' },
+          { label: '调用外部工具', detail: 'DataHub', status: 'running' },
+        ],
+        replies: [
+          {
+            kind: 'commentary',
+            related: ['搜索代码或文件：carddesc_user_review', '运行脚本：audit_review_sets.py', '调用外部工具：DataHub'],
+            text: '<p>26 个临时 review 集都在本地，行数合计 610；现在逐国比对 DataHub 的登记记录，确认没有漏传。</p>',
+          },
+        ],
+      },
+      {
+        startedAt: '2026-10-08 15:02:40',
+        status: 'incomplete',
+        title: '引用（来自你的回复）：> 先补机器门禁，再补 A/B 双审的 4 条未过项，最后统一重传',
+        sourceLabel: '用户请求',
+        lastSummary: '一个活动里会连续有多条回复。',
+        queuedInputs: ['另外把步骤里的文件和操作放在一起'],
+        plan: {
+          lines: [{ text: '按你给的顺序来：补门禁 → 补 4 条未过项 → dry-run 重传。', related: [] }],
+          items: [
+            { label: '补齐机器门禁缺样本', status: 'done' },
+            { label: '修复 A/B 双审未过项', status: 'running' },
+            { label: 'dry-run 重传', status: 'pending' },
+          ],
+        },
+        steps: [
+          { label: '运行脚本', detail: 'gate_check.py', status: 'done' },
+          { label: '搜索代码或文件', detail: 'review_pending.json', status: 'done' },
+          { label: '执行命令', detail: 'python fix_review.py --ids 4', status: 'running' },
+          { label: '执行命令', detail: 'python reupload.py --dry-run', status: 'pending' },
+        ],
+        replies: [
+          { kind: 'commentary', related: ['运行脚本：gate_check.py'], text: '<p>机器门禁先跑一遍，确认哪些国家会被拦。</p>' },
+          { kind: 'commentary', related: ['搜索代码或文件：review_pending.json'], text: '<p>门禁结果：只有 2 个国家命中行数下限，先补这两国的样本。</p>' },
+          { kind: 'commentary', related: ['执行命令：python fix_review.py --ids 4'], text: '<p>A/B 双审还剩 4 条未过，已在 <code>review_pending.json</code> 里逐条定位。</p>' },
+          { kind: 'commentary', related: ['执行命令：python reupload.py --dry-run'], text: '<p>Docs 同步：</p>' },
+          {
+            kind: 'final',
+            related: [],
+            text: '<p><strong>阶段结论</strong></p>'
+              + '<ul><li>机器门禁：2 国需补样本，其余通过。</li>'
+              + '<li>A/B 双审：4 条未过项已定位到具体字段。</li>'
+              + '<li>重传：等修完这 4 条再执行，避免二次污染。</li></ul>'
+              + '<p>下一步：修完未过项后跑一次 dry-run 重传。</p>',
+          },
+        ],
+      },
+      {
+        startedAt: '2026-10-08 15:20:10',
+        status: 'done',
+        title: '把这次的实现同步进文档',
+        sourceLabel: '用户请求',
+        lastSummary: '短句“Docs 同步：”会被补上具体同步了哪些文档。',
+        plan: {
+          lines: [{ text: '实现已通过测试，接下来把这次改动写进文档，方便后面的人看懂为什么这么改。', related: ['修改文件：activity-view.md'] }],
+          items: [],
+        },
+        steps: [
+          { label: '修改文件', detail: 'activity-view.md', path: '/repo/docs/design/activity-view.md', status: 'done' },
+          { label: '修改文件', detail: 'README.md', path: '/repo/guide/README.md', status: 'done' },
+          { label: '运行回归测试', detail: 'vitest · 28 项通过', status: 'done' },
+        ],
+        replies: [
+          {
+            kind: 'commentary',
+            related: ['修改文件：activity-view.md', '修改文件：README.md'],
+            text: '<p>Docs 同步：</p>',
+          },
+          {
+            kind: 'final',
+            related: [],
+            text: '<p>文档已同步：<code>docs/design/activity-view.md</code> 记录本次实现思路，<code>guide/README.md</code> 补上入口；测试 23 项通过。</p>',
+          },
+        ],
+      },
+    ]
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]))
+    }
+
+    function stepHtml(step, index, numbered) {
+      const status = STEP_STATUS[step.status] || STEP_STATUS.pending
+      return `<li>`
+        + (numbered ? `<span class="step-number">${index + 1}</span>` : '')
+        + `<span class="state ${status.className}" aria-label="${status.label}">${status.icon}</span>`
+        + `<span class="step-status ${status.className}">${status.label}</span>`
+        + `<span class="step-label" title="${escapeHtml(step.detail ? step.label + ' · ' + step.detail : step.label)}">${escapeHtml(step.label)}</span>`
+        + (step.detail
+          ? (step.path
+            ? `<button class="step-file" data-path="${escapeHtml(step.path)}" title="在 Dashboard 里打开 ${escapeHtml(step.path)}">${escapeHtml(step.detail)}</button>`
+            : `<span class="step-detail" title="${escapeHtml(step.detail)}">${escapeHtml(step.detail)}</span>`)
+          : '')
+        + `<span class="step-fill"></span>`
+        + `</li>`
+    }
+
+    function relatedHtml(related) {
+      return related && related.length > 0
+        ? `<div class="related" title="${escapeHtml(related.join('、'))}">接着做了：${escapeHtml(related.join('、'))}</div>`
+        : ''
+    }
+
+    function replyHtml(reply) {
+      const lines = reply.text.split('\n')
+      const long = lines.length > REPLY_PREVIEW_LINES || reply.text.length > REPLY_PREVIEW_CHARS
+      return `<div class="reply">`
+        + `<div class="reply-meta"><span>${REPLY_KIND[reply.kind]}</span><span class="reply-chars">${reply.text.length.toLocaleString()} 字符</span></div>`
+        + relatedHtml(reply.related)
+        + `<div class="reply-body${long ? ' clamped' : ''}">${reply.text}</div>`
+        + (long ? `<button class="reply-toggle" aria-expanded="false">展开全部正文（${lines.length} 行）</button>` : '')
+        + `</div>`
+    }
+
+    function planHtml(plan) {
+      if (!plan) return ''
+      const lines = plan.lines.filter(line => line.text.trim().length > 0)
+      const items = plan.items || []
+      if (lines.length === 0 && items.length === 0) return ''
+      return `<div class="plan">`
+        + `<div class="plan-title">Agent 计划</div>`
+        + lines.map(line => `<div><div class="plan-line" title="${escapeHtml(line.text)}">${escapeHtml(line.text)}</div>${relatedHtml(line.related)}</div>`).join('')
+        + (items.length > 0 ? `<ul class="plan-items">${items.map(stepHtml).join('')}</ul>` : '')
+        + `</div>`
+    }
+
+    function activityHtml(activity, index) {
+      const status = ACTIVITY_STATUS[activity.status] || ACTIVITY_STATUS.pending
+      const hiddenSteps = Math.max(0, activity.steps.length - STEP_PREVIEW)
+      return `<article>`
+        + `<div class="meta"><span class="number">活动 ${index + 1}</span>`
+        + (activity.startedAt ? `<time>${activity.startedAt}</time>` : '')
+        + `<span class="badge ${status.className}">${status.label}</span></div>`
+        + `<h2 title="${escapeHtml(activity.title)}">${escapeHtml(activity.title)}</h2>`
+        + `<div class="source"><span>${activity.sourceLabel}</span>`
+        + (activity.lastSummary ? `<span class="summary" title="${escapeHtml(activity.lastSummary)}">· ${escapeHtml(activity.lastSummary)}</span>` : '')
+        + `</div>`
+        + (activity.queuedInputs && activity.queuedInputs.length
+          ? `<div class="queued"><b>排队中的输入</b> · ${escapeHtml(activity.queuedInputs.join(' / '))}（等 Pi 接手后单独成为一个活动）</div>`
+          : '')
+        + planHtml(activity.plan)
+        + (activity.steps.length === 0
+          ? `<p class="empty-steps">尚无可确认的执行步骤</p>`
+          : `<ol class="steps">${activity.steps.slice(0, STEP_PREVIEW).map((step, i) => stepHtml(step, i, true)).join('')}</ol>`
+            + (hiddenSteps > 0 ? `<button class="toggle" aria-expanded="false">展开其余 ${hiddenSteps} 项</button>` : ''))
+        + (activity.replies.length > 0
+          ? `<div class="replies"><div class="replies-title">Agent 回复${activity.replies.length > 1 ? ' · ' + activity.replies.length + ' 条' : ''}</div>${activity.replies.map(replyHtml).join('')}</div>`
+          : '')
+        + `</article>`
+    }
+
+    const timeline = document.getElementById('activity-view')
+    timeline.innerHTML = activities.map(activityHtml).join('')
+
+    // 展开/收起：步骤与回复都只改本活动内的 DOM，行为与 ActivityTimeline 一致。
+    timeline.addEventListener('click', event => {
+      const file = event.target.closest('.step-file')
+      if (file) {
+        const article = file.closest('article')
+        let preview = article.querySelector('.file-preview')
+        if (!preview) {
+          preview = document.createElement('div')
+          preview.className = 'file-preview'
+          article.appendChild(preview)
+        }
+        preview.innerHTML = `已在 Dashboard 打开：<code>${file.dataset.path}</code>（真实页面会弹出文件内容）`
+        return
+      }
+      const toggle = event.target.closest('.toggle')
+      if (toggle) {
+        const article = toggle.closest('article')
+        const list = article.querySelector('ol.steps')
+        const expanded = toggle.getAttribute('aria-expanded') === 'true'
+        const activity = activities[[...timeline.children].indexOf(article)]
+        list.innerHTML = (expanded ? activity.steps.slice(0, STEP_PREVIEW) : activity.steps).map((step, i) => stepHtml(step, i, true)).join('')
+        toggle.setAttribute('aria-expanded', String(!expanded))
+        toggle.textContent = expanded ? `展开其余 ${activity.steps.length - STEP_PREVIEW} 项` : '收起步骤'
+        return
+      }
+      const replyToggle = event.target.closest('.reply-toggle')
+      if (replyToggle) {
+        const body = replyToggle.previousElementSibling
+        const expanded = replyToggle.getAttribute('aria-expanded') === 'true'
+        body.classList.toggle('clamped', expanded)
+        replyToggle.setAttribute('aria-expanded', String(!expanded))
+        replyToggle.textContent = expanded
+          ? `展开全部正文（${body.textContent.split('\n').length} 行）`
+          : '收起正文'
+      }
+    })
+
+    document.querySelectorAll('.seg-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        const group = button.closest('.seg')
+        group.querySelectorAll('.seg-btn').forEach(other => other.classList.toggle('active', other === button))
+        if (button.dataset.width) {
+          document.body.dataset.width = button.dataset.width
+          return
+        }
+        const full = button.dataset.view === 'full'
+        document.getElementById('activity-view').classList.toggle('hidden', full)
+        document.getElementById('full-view').classList.toggle('hidden', !full)
+      })
+    })
+  </script>
+</body>
+</html>

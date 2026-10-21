@@ -5,12 +5,16 @@ import path from 'path'
 import { TimingLedger } from '../timing-ledger.js'
 
 const at = (iso) => Date.parse(iso)
+const FIXTURE_DATE = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+const FIXTURE_MONTH = FIXTURE_DATE.slice(0, 7)
+const [fixtureYear, fixtureMonth] = FIXTURE_MONTH.split('-').map(Number)
+const FIXTURE_DAYS_IN_MONTH = new Date(Date.UTC(fixtureYear, fixtureMonth, 0)).getUTCDate()
 
 function modelLine(overrides = {}) {
   return JSON.stringify({
     v: 1,
     id: `m-${Math.random().toString(16).slice(2)}`,
-    at: at('2026-09-03T10:00:00.000Z'),
+    at: at(`${FIXTURE_DATE}T10:00:00.000Z`),
     kind: 'model',
     sessionId: 'session-a',
     scope: 'root',
@@ -34,27 +38,27 @@ describe('TimingLedger', () => {
       modelLine({ id: 'm-2', ttftMs: 1500, totalMs: 3000, outputTokens: 400 }),
       modelLine({ id: 'm-child', scope: 'child', ttftMs: 400, totalMs: 800, outputTokens: 100, model: 'claude-test' }),
       JSON.stringify({
-        v: 1, id: 't-1', at: at('2026-09-03T10:05:00.000Z'), kind: 'tool', sessionId: 'session-a',
+        v: 1, id: 't-1', at: at(`${FIXTURE_DATE}T10:05:00.000Z`), kind: 'tool', sessionId: 'session-a',
         scope: 'root', toolName: 'bash', durationMs: 60_000, isError: false, cwd: '/tmp/task-a',
       }),
       JSON.stringify({
-        v: 1, id: 't-2', at: at('2026-09-03T10:06:00.000Z'), kind: 'tool', sessionId: 'session-a',
+        v: 1, id: 't-2', at: at(`${FIXTURE_DATE}T10:06:00.000Z`), kind: 'tool', sessionId: 'session-a',
         scope: 'root', toolName: 'read', durationMs: 100, isError: false, cwd: '/tmp/task-a',
       }),
       JSON.stringify({
-        v: 1, id: 'r-1', at: at('2026-09-03T10:10:00.000Z'), kind: 'run', sessionId: 'session-a',
+        v: 1, id: 'r-1', at: at(`${FIXTURE_DATE}T10:10:00.000Z`), kind: 'run', sessionId: 'session-a',
         scope: 'root', durationMs: 120_000, cwd: '/tmp/task-a',
       }),
       JSON.stringify({
-        v: 1, id: 'r-child', at: at('2026-09-03T10:11:00.000Z'), kind: 'run', sessionId: 'session-b',
+        v: 1, id: 'r-child', at: at(`${FIXTURE_DATE}T10:11:00.000Z`), kind: 'run', sessionId: 'session-b',
         scope: 'child', durationMs: 30_000, cwd: '/tmp/task-a',
       }),
       '{"v":1,"id":"broken"',
     ].join('\n') + '\n')
 
     const ledger = new TimingLedger(timingDir, 'UTC', 0)
-    const report = await ledger.getReport('month', '2026-09', 'UTC')
-    expect(report.daily).toHaveLength(30)
+    const report = await ledger.getReport('month', FIXTURE_MONTH, 'UTC')
+    expect(report.daily).toHaveLength(FIXTURE_DAYS_IN_MONTH)
     expect(report.total.modelCalls).toBe(3)
     expect(report.total.toolCalls).toBe(2)
     expect(report.total.runs).toBe(1)
@@ -93,21 +97,21 @@ describe('TimingLedger', () => {
     await writeFile(sessionFile, `${modelLine()}\n`)
 
     const ledger = new TimingLedger(timingDir, 'UTC', 0)
-    expect((await ledger.getReport('month', '2026-09', 'UTC')).total.modelCalls).toBe(1)
+    expect((await ledger.getReport('month', FIXTURE_MONTH, 'UTC')).total.modelCalls).toBe(1)
 
     await appendFile(sessionFile, `${modelLine({ id: 'm-appended' })}\n`)
-    expect((await ledger.getReport('month', '2026-09', 'UTC')).total.modelCalls).toBe(2)
+    expect((await ledger.getReport('month', FIXTURE_MONTH, 'UTC')).total.modelCalls).toBe(2)
 
     await appendFile(sessionFile, '{"v":1,"id":"partial-line"')
-    expect((await ledger.getReport('month', '2026-09', 'UTC')).total.modelCalls).toBe(2)
+    expect((await ledger.getReport('month', FIXTURE_MONTH, 'UTC')).total.modelCalls).toBe(2)
 
     // Completing the partial line yields an invalid record; it is skipped and the
     // offset still advances, so the next valid line is ingested exactly once.
     await appendFile(sessionFile, '}\n')
-    expect((await ledger.getReport('month', '2026-09', 'UTC')).total.modelCalls).toBe(2)
+    expect((await ledger.getReport('month', FIXTURE_MONTH, 'UTC')).total.modelCalls).toBe(2)
     await appendFile(sessionFile, `${modelLine({ id: 'm-after-partial' })}\n`)
-    expect((await ledger.getReport('month', '2026-09', 'UTC')).total.modelCalls).toBe(3)
-    expect((await ledger.getReport('month', '2026-09', 'UTC')).recordCount).toBe(3)
+    expect((await ledger.getReport('month', FIXTURE_MONTH, 'UTC')).total.modelCalls).toBe(3)
+    expect((await ledger.getReport('month', FIXTURE_MONTH, 'UTC')).recordCount).toBe(3)
   })
 
   it('supports rolling 7d and 30d windows', async () => {
