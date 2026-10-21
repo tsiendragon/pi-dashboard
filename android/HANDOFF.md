@@ -6,6 +6,17 @@
 
 ---
 
+## 2026-10-21 核查：会话类型边界
+
+当前 App 的会话列表、新建与对话仅对应**普通 Chat slot**（`/api/chat/slots`、`/api/ws`），
+并未对接 Live Sessions 的列表、详情、专用 WS 或接管/租约控制。下文 A3/A4 的“会话”不能理解为
+网页的全部 Live Pi。普通 Chat 应在网页 `/chat` 查看；网页 `/live-sessions` 是独立入口。
+
+本机新建的 home 工作目录会话已经被后端 Chat slot 状态关联到对应 JSONL 文件，不能因 Live
+列表没有它就诊断为目录扫描失败。用户已反馈 VPN 能连接，但网络连通并不等于原生 Live
+功能已完成。不要因此放宽 roots/认证，或让用户反复重启、重新安装同版本 App；下一步需补齐真正的
+Live 协议与授权集成，不能只改标签冒充支持。部署边界见 [`guide/dashboard.md`](../guide/dashboard.md)。
+
 ## 远程接入状态
 
 实验性移动端接入代码已移至私有归档，不在本应用中提供；现有 A1–A5 常规客户端不变。远程接入尚未完成，不得作为已验证方案部署。`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 已通过；未做真机验收。以下 A1–A5 为历史记录，其中“尚未跑真实 Gradle 构建”已过时。
