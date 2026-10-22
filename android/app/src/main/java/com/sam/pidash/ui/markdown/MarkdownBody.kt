@@ -1,7 +1,7 @@
 package com.sam.pidash.ui.markdown
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -134,33 +135,32 @@ private fun CodeBlock(block: MdBlock.Code) {
             if (cursor < block.code.length) append(block.code.substring(cursor))
         }
     }
-    // A thin border instead of a filled slab: keeps code blocks from reading as cards.
-    Column(
-        Modifier.fillMaxWidth()
-            .border(1.dp, scheme.outline.copy(alpha = 0.7f), Radii.chip)
-            .background(scheme.surfaceVariant.copy(alpha = 0.45f), Radii.chip),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = Spacing.sm, end = Spacing.xs, top = 2.dp, bottom = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    // Minimal: no border, no header rule. The language sits above in 11 sp grey and
+    // "复制" only appears as text on the same line.
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 (block.language ?: "code").lowercase(),
-                style = PiType.micro.copy(fontFamily = FontFamily.Monospace),
-                color = scheme.onSurfaceVariant,
+                style = PiType.action.copy(fontFamily = FontFamily.Monospace),
+                color = scheme.onSurfaceVariant.copy(alpha = 0.75f),
                 modifier = Modifier.weight(1f),
             )
-            TextButton(
-                onClick = { clipboard.setText(AnnotatedString(block.code)) },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                modifier = Modifier.height(26.dp),
-            ) {
-                Text("复制", style = PiType.micro, color = scheme.onSurfaceVariant)
-            }
+            Text(
+                "复制",
+                style = PiType.action,
+                color = scheme.onSurfaceVariant.copy(alpha = 0.75f),
+                modifier = Modifier
+                    .clip(Radii.chip)
+                    .clickable { clipboard.setText(AnnotatedString(block.code)) }
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+            )
         }
-        HorizontalDivider(color = scheme.outline.copy(alpha = 0.5f))
-        // Same rule as the WebUI: code keeps its own horizontal scroll, no wrapping.
-        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(Spacing.sm)) {
+        Box(
+            Modifier.fillMaxWidth()
+                .background(scheme.surfaceVariant.copy(alpha = 0.55f), Radii.chip)
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = Spacing.sm, vertical = 6.dp),
+        ) {
             Text(highlighted, style = PiType.mono)
         }
     }
@@ -169,32 +169,24 @@ private fun CodeBlock(block: MdBlock.Code) {
 @Composable
 private fun TableBlock(block: MdBlock.Table, style: TextStyle, onOpenPath: (String) -> Unit, onOpenUrl: (String) -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Column(
-        Modifier.fillMaxWidth()
-            .border(1.dp, scheme.outline.copy(alpha = 0.7f), Radii.chip)
-            .horizontalScroll(rememberScrollState()),
-    ) {
-        Row(Modifier.background(scheme.surfaceVariant.copy(alpha = 0.6f))) {
+    // Minimal table: no outer box; a single hairline under the header does the work.
+    Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+        Row {
             block.header.forEach { cell ->
-                Box(Modifier.widthIn(min = 112.dp, max = 240.dp).padding(horizontal = Spacing.sm, vertical = 6.dp)) {
-                    InlineText(
-                        MarkdownParser.inline(cell),
-                        PiType.strong,
-                        onOpenPath, onOpenUrl,
-                    )
+                Box(Modifier.widthIn(min = 112.dp, max = 240.dp).padding(horizontal = Spacing.sm, vertical = 4.dp)) {
+                    InlineText(MarkdownParser.inline(cell), PiType.strong, onOpenPath, onOpenUrl)
                 }
             }
         }
         HorizontalDivider(color = scheme.outline.copy(alpha = 0.6f))
-        block.rows.forEachIndexed { index, row ->
+        block.rows.forEach { row ->
             Row {
                 row.forEach { cell ->
-                    Box(Modifier.widthIn(min = 112.dp, max = 240.dp).padding(horizontal = Spacing.sm, vertical = 6.dp)) {
+                    Box(Modifier.widthIn(min = 112.dp, max = 240.dp).padding(horizontal = Spacing.sm, vertical = 4.dp)) {
                         InlineText(MarkdownParser.inline(cell), style, onOpenPath, onOpenUrl)
                     }
                 }
             }
-            if (index < block.rows.lastIndex) HorizontalDivider(color = scheme.outline.copy(alpha = 0.35f))
         }
     }
 }

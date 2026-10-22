@@ -3,195 +3,142 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PiDash 视觉方案预览（3.9 设计稿）</title>
+<title>PiDash 极简版设计稿（4.1）</title>
 <!--
-  这是「设计稿预览」，不是 App 截图：
-  它用 Tokens.kt 里的同一套颜色/字号/间距重画了会话页的五个部分，
-  用于在改代码前后快速对齐视觉，不参与构建、也不进 APK。
-  真机效果以 Android 上的实际渲染为准（字体度量、系统字号缩放会有差异）。
+  设计稿预览，不是 App 截图。
+  它与 ui/theme/Tokens.kt 使用同一批色值/字号/间距，用来在改代码前后对齐视觉。
+  真机字体度量（尤其中文行高）会有差异。
 -->
 <style>
   :root {
-    --bg: #0F1115; --surface: #15181E; --surface-variant: #1C2027; --outline: #2A3038;
-    --on: #E6E8EC; --muted: #9AA3B0; --accent: #6FA8FF; --accent-bg: #17253A;
-    --ok: #4ECB9A; --error: #FF7A7A; --error-bg: #2A1416;
+    --bg: #0E1013; --sv: #191C21; --outline: #24282E;
+    --on: #EDEFF2; --muted: #8E96A2; --accent: #7FB0FF; --ok: #57C79A; --error: #FF7B7B;
     --kw: #C792EA; --str: #C3E88D; --com: #7F8C98; --num: #F78C6C; --typ: #82AAFF; --fn: #89DDFF;
   }
   html[data-theme="light"] {
-    --bg: #FFFFFF; --surface: #FFFFFF; --surface-variant: #F4F6F8; --outline: #E2E6EB;
-    --on: #14161A; --muted: #5B6472; --accent: #1F6FEB; --accent-bg: #E8F1FF;
-    --ok: #1A7F5A; --error: #D93A3A; --error-bg: #FFF0F0;
+    --bg: #FFFFFF; --sv: #F6F7F9; --outline: #E6E9ED;
+    --on: #16181C; --muted: #6B7280; --accent: #1F6FEB; --ok: #1A7F5A; --error: #CE3B3B;
     --kw: #7C3AED; --str: #047857; --com: #6B7280; --num: #B45309; --typ: #1D4ED8; --fn: #0E7490;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 24px; background: var(--bg); color: var(--on);
-    font: 15px/23px -apple-system, "Noto Sans SC", "PingFang SC", Roboto, sans-serif;
+    margin: 0; padding: 28px 20px 40px; background: var(--bg); color: var(--on);
+    font: 15px/24px -apple-system, "Noto Sans SC", "PingFang SC", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 720px; margin: 0 auto; }
-  h1 { font-size: 16px; line-height: 22px; font-weight: 600; margin: 0 0 2px; }
-  .sub { font-size: 11px; color: var(--muted); margin-bottom: 16px; }
-  .theme-switch { display: flex; gap: 8px; margin-bottom: 20px; }
-  .theme-switch button {
-    font: 11px/15px inherit; color: var(--muted); background: var(--surface-variant);
-    border: 1px solid var(--outline); border-radius: 6px; padding: 4px 10px; cursor: pointer;
-  }
-  .theme-switch button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+  .wrap { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 16px; line-height: 23px; font-weight: 600; margin: 0; }
+  .meta { font-size: 12px; line-height: 18px; color: var(--muted); }
+  .action { font-size: 11px; line-height: 16px; color: var(--muted); padding: 4px; cursor: pointer; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: none; }
 
-  /* ---- header: title + pills + one cwd line (was 3 stacked log lines) ---- */
-  .appbar { display: flex; align-items: center; gap: 12px; padding: 14px 0 10px; }
-  .appbar .back { font-size: 20px; color: var(--muted); }
-  .appbar .title { font-size: 16px; line-height: 22px; font-weight: 600; flex: 1; }
-  .pills { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 6px; }
-  .pill {
-    font-size: 11px; line-height: 15px; letter-spacing: .2px; color: var(--muted);
-    background: var(--surface-variant); border-radius: 6px; padding: 3px 8px; white-space: nowrap;
+  .switch { display: flex; gap: 12px; margin: 18px 0 32px; }
+  .switch button {
+    font: 11px/16px inherit; color: var(--muted); background: none; border: 0; padding: 0 0 2px;
+    cursor: pointer; border-bottom: 1px solid transparent;
   }
-  .pill.accent { color: var(--accent); }
-  .cwd { font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-bottom: 10px; }
-  hr.rule { border: 0; border-top: 1px solid var(--outline); opacity: .5; margin: 0 0 12px; }
+  .switch button[aria-pressed="true"] { color: var(--on); border-bottom-color: var(--outline); }
 
-  /* ---- user bubble ---- */
-  .user-row { display: flex; justify-content: flex-end; margin-bottom: 12px; }
-  .bubble {
-    max-width: 560px; background: color-mix(in srgb, var(--accent) 12%, transparent);
-    border-radius: 16px; padding: 8px 12px; font-size: 15px; line-height: 23px;
-  }
-  .meta { font-size: 11px; line-height: 15px; color: var(--muted); margin-top: 4px; }
-  .meta a { color: inherit; text-decoration: none; padding: 3px 6px; border-radius: 6px; }
+  /* header: title, one muted line, cwd. No pills, no rule. */
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  header .back { font-size: 18px; color: var(--muted); }
+  header h1 { flex: 1; }
+  header .more { color: var(--muted); }
+  .facts { margin-bottom: 28px; }
+  .facts .cwd { font: 12px/18px ui-monospace, Menlo, monospace; color: var(--muted); }
 
-  /* ---- assistant prose ---- */
-  .answer { margin-bottom: 14px; }
-  .answer p { margin: 0 0 8px; }
-  .answer code.inline {
-    font: 13px/20px ui-monospace, monospace; background: var(--surface-variant);
-    padding: 1px 4px; border-radius: 4px;
-  }
+  /* user message: right aligned, hairline on the left, no bubble */
+  .user { display: flex; justify-content: flex-end; margin-bottom: 28px; }
+  .user .inner { display: flex; gap: 8px; max-width: 560px; }
+  .user .rule { width: 2px; background: var(--outline); border-radius: 4px; }
+  .user .body { text-align: right; }
+  .user .acts { display: flex; gap: 12px; justify-content: flex-end; margin-top: 4px; }
 
-  /* ---- code block: hairline border, compact header, own horizontal scroll ---- */
-  .code {
-    border: 1px solid color-mix(in srgb, var(--outline) 70%, transparent);
-    background: color-mix(in srgb, var(--surface-variant) 45%, transparent);
-    border-radius: 6px; margin: 8px 0; overflow: hidden;
-  }
-  .code .head {
-    display: flex; align-items: center; padding: 2px 6px 2px 8px;
-    font: 11px/15px ui-monospace, monospace; color: var(--muted);
-    border-bottom: 1px solid color-mix(in srgb, var(--outline) 50%, transparent);
-  }
-  .code .head span { flex: 1; }
-  .code .head button {
-    font: 11px/15px inherit; color: var(--muted); background: none; border: 0; cursor: pointer; padding: 2px 6px;
-  }
+  /* assistant prose */
+  .answer { margin-bottom: 26px; }
+  .answer p { margin: 0 0 12px; }
+  code.inline { font: 13px/21px ui-monospace, Menlo, monospace; background: var(--sv); padding: 1px 5px; border-radius: 4px; }
+
+  /* code: language label above, subtle fill, no border */
+  .code { margin: 14px 0 18px; }
+  .code .cap { display: flex; font: 11px/16px ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 4px; }
+  .code .cap span { flex: 1; }
+  .code .cap b { font-weight: 400; cursor: pointer; }
   .code pre {
-    margin: 0; padding: 8px; overflow-x: auto;
-    font: 13px/20px ui-monospace, SFMono-Regular, Menlo, monospace;
+    margin: 0; padding: 8px 10px; background: var(--sv); border-radius: 4px; overflow-x: auto;
+    font: 13px/21px ui-monospace, Menlo, monospace;
   }
   .k { color: var(--kw); } .s { color: var(--str); } .c { color: var(--com); }
   .n { color: var(--num); } .t { color: var(--typ); } .f { color: var(--fn); }
 
-  /* ---- step group: one row, chevron, hairline rail when open ---- */
-  .group { margin-bottom: 10px; }
-  .group .head { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex: none; }
-  .dot.run { background: var(--accent); } .dot.bad { background: var(--error); } .dot.ok { background: var(--ok); }
-  .group .count { font-size: 13px; line-height: 19px; font-weight: 600; }
-  .group .state { font-size: 11px; color: var(--muted); }
-  .group .names { font: 12px/18px ui-monospace, monospace; color: var(--muted); flex: 1;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .steps { border-left: 1px solid color-mix(in srgb, var(--outline) 50%, transparent);
-    margin-left: 2px; padding-left: 8px; }
-  .step { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 11px; }
-  .step .name { font: 12px/18px ui-monospace, monospace; font-weight: 600; color: var(--on); }
-  .step .arg { font: 12px/18px ui-monospace, monospace; color: var(--muted); flex: 1;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* steps: one muted line; dot only while something is running */
+  .steps { margin-bottom: 22px; }
+  .steps .head { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 18px; cursor: pointer; }
+  .steps .head .count { font-weight: 600; font-size: 12px; }
+  .steps .head .names { color: var(--muted); font: 12px/18px ui-monospace, Menlo, monospace; }
+  .steps .list { padding-left: 16px; margin-top: 6px; }
+  .step { display: flex; gap: 8px; align-items: center; font: 12px/18px ui-monospace, Menlo, monospace; padding: 3px 0; }
+  .step .name { color: var(--on); }
+  .step .arg { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .step .chev { color: var(--muted); }
-  .step .out {
-    margin: 2px 0 6px; border: 1px solid color-mix(in srgb, var(--outline) 60%, transparent);
-    background: color-mix(in srgb, var(--surface-variant) 40%, transparent); border-radius: 6px;
-    padding: 8px; font: 13px/20px ui-monospace, monospace; white-space: pre-wrap; color: var(--on);
+  .out {
+    margin: 4px 0 8px; padding: 8px 10px; background: var(--sv); border-radius: 4px;
+    font: 13px/21px ui-monospace, Menlo, monospace; white-space: pre-wrap;
   }
 
-  /* ---- error block ---- */
-  .error {
-    border: 1px solid color-mix(in srgb, var(--error) 50%, transparent);
-    background: color-mix(in srgb, var(--error) 6%, transparent);
-    border-radius: 12px; padding: 12px; color: var(--error); font-size: 15px; margin-bottom: 12px;
-  }
+  /* error: colour only, no box */
+  .error { color: var(--error); margin-bottom: 22px; }
 
-  /* ---- composer: two rows, not four ---- */
-  .composer {
-    border-top: 1px solid var(--outline); margin-top: 20px; padding-top: 8px;
-  }
-  .composer .status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
-  .composer .status .abort { margin-left: auto; color: var(--error); padding: 3px 6px; border-radius: 6px; }
-  .composer .row { display: flex; align-items: flex-end; gap: 6px; margin-top: 6px; }
+  /* composer: one row + one quiet line */
+  .composer { border-top: 1px solid var(--outline); padding-top: 14px; margin-top: 32px; }
+  .composer .row { display: flex; align-items: center; gap: 10px; }
+  .composer .plus { font-size: 18px; color: var(--muted); }
   .composer .field {
-    flex: 1; border: 1px solid var(--outline); border-radius: 12px; padding: 10px 12px;
-    font-size: 14px; line-height: 21px; color: var(--muted);
+    flex: 1; border: 1px solid var(--outline); border-radius: 8px; padding: 11px 12px;
+    font-size: 14px; line-height: 22px; color: var(--muted);
   }
-  .composer .send {
-    width: 40px; height: 40px; border-radius: 20px; background: var(--accent); color: #08111F;
-    display: grid; place-items: center; font-size: 16px; flex: none;
-  }
-  .composer .foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .composer .send { width: 34px; height: 34px; border-radius: 17px; background: var(--accent); color: #0E1013;
+    display: grid; place-items: center; font-size: 14px; }
+  .composer .foot { display: flex; gap: 12px; margin-top: 8px; }
 
-  /* ---- machine card + session rows ---- */
-  .card {
-    border: 1px solid color-mix(in srgb, var(--outline) 60%, transparent);
-    border-radius: 12px; padding: 16px; margin-bottom: 12px; background: var(--surface);
-  }
-  .card .head { display: flex; align-items: center; gap: 8px; }
-  .card .name { font-size: 16px; line-height: 22px; font-weight: 600; flex: 1; }
-  .card .origin { font: 12px/18px ui-monospace, monospace; color: var(--muted); margin: 6px 0 8px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card .open { text-align: right; font-size: 11px; color: var(--accent); margin-top: 10px; }
-  .row {
-    display: flex; align-items: center; gap: 8px; padding: 9px 8px 9px 16px;
-    border-bottom: 1px solid color-mix(in srgb, var(--outline) 30%, transparent);
-  }
-  .row .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-  .row .t { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 21px; font-weight: 500; }
-  .row .p { font: 12px/18px ui-monospace, monospace; color: var(--muted);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .row .pills { display: flex; gap: 4px; }
-  .section-head { display: flex; align-items: center; gap: 6px; padding: 8px 16px;
-    font-size: 13px; font-weight: 600; }
-  .section-head .n { font-size: 11px; font-weight: 400; color: var(--muted); }
-  .note { font-size: 11px; line-height: 16px; color: var(--muted); margin-top: 24px;
-    border-top: 1px dashed var(--outline); padding-top: 12px; }
+  /* lists */
+  .list-title { font-size: 12px; font-weight: 600; color: var(--muted); margin: 32px 0 10px; }
+  .machine { padding: 10px 0 18px; }
+  .machine .name { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 23px; font-weight: 600; }
+  .machine .origin { font: 12px/18px ui-monospace, Menlo, monospace; color: var(--muted); margin: 4px 0 6px; }
+  .sess { display: flex; align-items: center; gap: 10px; padding: 12px 0; }
+  .sess .body { flex: 1; min-width: 0; }
+  .sess .t { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 22px; }
+  .sess .p { font: 12px/18px ui-monospace, Menlo, monospace; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+  .note { font-size: 11px; line-height: 17px; color: var(--muted); margin-top: 40px;
+    border-top: 1px solid var(--outline); padding-top: 14px; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>会话页视觉方案</h1>
-  <div class="sub">3.9 设计稿 · 与 Tokens.kt 同色值/字号/间距 · 非 App 截图</div>
-  <div class="theme-switch">
+  <h1>极简版会话页</h1>
+  <div class="switch" style="margin-top:8px">
     <button id="t-dark" aria-pressed="true">暗色</button>
     <button id="t-light" aria-pressed="false">亮色</button>
   </div>
 
-  <div class="appbar">
+  <header>
     <div class="back">←</div>
-    <div class="title">简化 Live 自动授权、共享输入与原生命令渲染</div>
-    <div style="color:var(--muted);font-size:18px">⋮</div>
+    <h1>简化 Live 自动授权、共享输入与原生命令渲染</h1>
+    <div class="more">⋮</div>
+  </header>
+  <div class="facts">
+    <div class="meta">running · dashscope/deepseek-v4.1-flash · 默认思考 · 4.2% · 目标进行中</div>
+    <div class="cwd">/home/you/apps/pi-dashboard</div>
   </div>
-  <div class="pills">
-    <span class="pill accent">running</span>
-    <span class="pill">dashscope/deepseek-v4.1-flash</span>
-    <span class="pill">默认思考</span>
-    <span class="pill">4.2% 上下文</span>
-    <span class="pill accent">目标 进行中</span>
-  </div>
-  <div class="cwd">/home/you/apps/pi-dashboard</div>
-  <hr class="rule" />
 
-  <div class="user-row">
-    <div class="bubble">
-      把附件里的 CSV 按月份汇总一下，顺便看看日志里有没有 5xx。
-      <div class="meta" style="text-align:right">
-        <a href="#">引用</a><a href="#">批注</a>
+  <div class="user">
+    <div class="inner">
+      <div class="rule"></div>
+      <div class="body">
+        把附件里的 CSV 按月份汇总一下，顺便看看日志里有没有 5xx。
+        <div class="acts"><span class="action">引用</span><span class="action">批注</span></div>
       </div>
     </div>
   </div>
@@ -199,110 +146,73 @@
   <div class="answer">
     <p>先看目录结构，再按月聚合 <code class="inline">rows.csv</code>。</p>
     <div class="code">
-      <div class="head"><span>kotlin</span><button>复制</button></div>
+      <div class="cap"><span>kotlin</span><b>复制</b></div>
       <pre><span class="k">fun</span> <span class="f">monthly</span>(rows: <span class="t">List</span>&lt;<span class="t">Row</span>&gt;) =
   rows.<span class="f">groupBy</span> { it.date.<span class="f">take</span>(<span class="n">7</span>) }   <span class="c">// 2026-08</span></pre>
     </div>
   </div>
 
-  <div class="group">
+  <div class="steps">
     <div class="head">
-      <div class="dot ok"></div>
-      <div class="count">3 个步骤</div>
-      <div class="state">已完成</div>
-      <div class="names">bash · read · write</div>
-      <div class="chev" style="color:var(--muted);font-size:11px">⌃</div>
+      <span>⌃</span><span class="count">3 个步骤</span><span class="meta">已完成</span>
+      <span class="names">bash · read · write</span>
     </div>
-    <div class="steps">
-      <div class="step">
-        <div class="dot ok"></div>
-        <div class="name">bash</div>
-        <div class="arg">du -sh android/app/src/main/assets</div>
-        <div class="chev">⌄</div>
-      </div>
+    <div class="list">
+      <div class="step"><span class="name">bash</span><span class="arg">du -sh android/app/src/main/assets</span><span class="chev">⌄</span></div>
       <div class="out">16K	android/app/src/main/assets</div>
-      <div class="step">
-        <div class="dot run"></div>
-        <div class="name">read</div>
-        <div class="arg">app/src/main/assets/native-renderer/index.html</div>
-        <div class="chev">⌄</div>
-      </div>
-      <div class="step">
-        <div class="dot bad"></div>
-        <div class="name">bash</div>
-        <div class="arg">grep -c " 5[0-9][0-9] " access.log</div>
-        <div class="chev">⌄</div>
-      </div>
+      <div class="step"><span class="dot"></span><span class="name">read</span><span class="arg">app/src/main/assets/native-renderer/index.html</span><span class="chev">⌄</span></div>
+      <div class="step"><span class="name">bash</span><span class="arg">grep -c " 5[0-9][0-9] " access.log</span><span class="chev">⌄</span></div>
     </div>
   </div>
 
   <div class="error">读取 access.log 失败：文件不存在或已被删除</div>
 
   <div class="composer">
-    <div class="status">
-      <div class="dot run"></div>
-      运行中
-      <span class="abort">中止</span>
-    </div>
     <div class="row">
-      <div style="width:22px;text-align:center;color:var(--muted);font-size:18px">＋</div>
+      <div class="plus">＋</div>
       <div class="field">输入消息…</div>
       <div class="send">➤</div>
     </div>
-    <div class="foot">
-      <span>投递：默认 ▾</span>
-      <span style="margin-left:auto">0 字</span>
-    </div>
+    <div class="foot meta"><span>投递：默认</span></div>
   </div>
 
-
-  <h2 style="font-size:13px;margin:28px 0 10px;color:var(--muted)">机器列表</h2>
-  <div class="card">
-    <div class="head">
-      <div class="name">家里的 Pi</div>
-      <div class="dot run" style="width:8px;height:8px"></div>
-    </div>
+  <div class="list-title">机器</div>
+  <div class="machine">
+    <div class="name">家里的 Pi <span class="dot"></span></div>
     <div class="origin">https://pi.tsien.space</div>
-    <div class="pills">
-      <span class="pill" style="color:var(--ok)">Live 已连接</span>
-      <span class="pill">3 个主会话</span>
-      <span class="pill accent">1 工作中</span>
-      <span class="pill">Chat 已连接</span>
-    </div>
-    <div class="open">打开 Dashboard →</div>
+    <div class="meta">Live 已连接 · 3 个主会话 · 1 工作中 · Chat 已连接</div>
   </div>
 
-  <h2 style="font-size:13px;margin:28px 0 10px;color:var(--muted)">本机会话</h2>
-  <div class="section-head">▾ 进行中 <span class="n">2</span></div>
-  <div class="row">
+  <div class="list-title">本机会话</div>
+  <div class="sess">
     <div class="body">
-      <div class="t"><div class="dot run"></div>简化 Live 自动授权、共享输入与原生命令渲染 <span style="font-size:11px;color:var(--accent)">★</span></div>
+      <div class="t"><span class="dot"></span>简化 Live 自动授权、共享输入与原生命令渲染</div>
       <div class="p">/home/you/apps/pi-dashboard</div>
-      <div class="pills"><span class="pill accent">已接管</span><span class="pill">dashscope/deepseek-v4.1-flash</span></div>
+      <div class="meta">已接管 · dashscope/deepseek-v4.1-flash</div>
     </div>
-    <a class="meta" href="#" style="color:var(--muted);font-size:11px">分组</a>
+    <span class="action">分组</span>
   </div>
-  <div class="row">
+  <div class="sess">
     <div class="body">
-      <div class="t"><div class="dot"></div>手机端会话树查看</div>
+      <div class="t">手机端会话树查看</div>
       <div class="p">/home/you/apps/my-app</div>
-      <div class="pills"><span class="pill">anthropic/claude</span><span class="pill">#infra</span></div>
+      <div class="meta">anthropic/claude · #infra</div>
     </div>
-    <a class="meta" href="#" style="color:var(--muted);font-size:11px">分组</a>
+    <span class="action">分组</span>
   </div>
+
   <div class="note">
-    设计要点：强调色只有一个（蓝），用户气泡用 12% 强调色底 + 16dp 圆角；助手正文 15/23 无底色；
-    工具行压到 11–12px mono，状态用 6px 圆点而不是文字 ✓；代码块是细边框而非填充块，头部 24px 高；
-    输入区从四行压到两行 + 一行元信息。真机上的字体度量与系统字号缩放会让行高略有差异。
+    极简规则：背景与表面同色（无 elevation）；只有一个强调色，且只用于可操作项与运行中状态；
+    其余信息一律靠字号（15/13/12/11）与不透明度（100/85/75%）分层；没有 pill 底色、没有卡片边框、
+    几乎没有分隔线；状态点只在「运行中 / 失败」时出现，静态状态只用一个字。
   </div>
 </div>
 <script>
-  const dark = document.getElementById('t-dark');
-  const light = document.getElementById('t-light');
-  const apply = theme => {
-    document.documentElement.dataset.theme = theme;
-    dark.setAttribute('aria-pressed', String(theme === 'dark'));
-    light.setAttribute('aria-pressed', String(theme === 'light'));
+  const dark = document.getElementById('t-dark'), light = document.getElementById('t-light');
+  const apply = t => {
+    document.documentElement.dataset.theme = t;
+    dark.setAttribute('aria-pressed', String(t === 'dark'));
+    light.setAttribute('aria-pressed', String(t === 'light'));
   };
   dark.onclick = () => apply('dark');
   light.onclick = () => apply('light');

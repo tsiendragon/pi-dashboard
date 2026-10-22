@@ -9,72 +9,72 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Design tokens for PiDash.
+ * Design tokens for PiDash — minimal.
  *
- * The app used Material 3 defaults plus Android's wallpaper-derived dynamic colour,
- * which made a phone screenshot depend on the wallpaper and left every label at the
- * same size. These tokens replace that: one accent, neutral surfaces, a real type
- * scale, and a 4 dp spacing grid.
- *
- * Deliberately small — a screen should only need background/surface/surfaceVariant,
- * the accent, the three text colours and the semantic colours.
+ * Rules the palette encodes:
+ * 1. Background and surface are the same colour; the app has no elevation.
+ * 2. There is one accent, and it is reserved for what the user can act on
+ *    (links, primary button, a running state). Nothing decorative is coloured.
+ * 3. Everything else is `onSurface` at full, 60% or 40% opacity. No tints, no pills.
  */
 object PiPalette {
-    // Light
     val LightBackground = Color(0xFFFFFFFF)
     val LightSurface = Color(0xFFFFFFFF)
-    val LightSurfaceVariant = Color(0xFFF4F6F8)
-    val LightOutline = Color(0xFFE2E6EB)
-    val LightOnSurface = Color(0xFF14161A)
-    val LightOnSurfaceVariant = Color(0xFF5B6472)
+    val LightSurfaceVariant = Color(0xFFF6F7F9)
+    val LightOutline = Color(0xFFE6E9ED)
+    val LightOnSurface = Color(0xFF16181C)
+    val LightOnSurfaceVariant = Color(0xFF6B7280)
     val LightAccent = Color(0xFF1F6FEB)
-    val LightAccentContainer = Color(0xFFE8F1FF)
+    val LightAccentContainer = Color(0xFFEAF1FE)
     val LightSuccess = Color(0xFF1A7F5A)
-    val LightError = Color(0xFFD93A3A)
+    val LightError = Color(0xFFCE3B3B)
 
-    // Dark
-    val DarkBackground = Color(0xFF0F1115)
-    val DarkSurface = Color(0xFF15181E)
-    val DarkSurfaceVariant = Color(0xFF1C2027)
-    val DarkOutline = Color(0xFF2A3038)
-    val DarkOnSurface = Color(0xFFE6E8EC)
-    val DarkOnSurfaceVariant = Color(0xFF9AA3B0)
-    val DarkAccent = Color(0xFF6FA8FF)
-    val DarkAccentContainer = Color(0xFF17253A)
-    val DarkSuccess = Color(0xFF4ECB9A)
-    val DarkError = Color(0xFFFF7A7A)
+    val DarkBackground = Color(0xFF0E1013)
+    val DarkSurface = Color(0xFF0E1013)
+    val DarkSurfaceVariant = Color(0xFF191C21)
+    val DarkOutline = Color(0xFF24282E)
+    val DarkOnSurface = Color(0xFFEDEFF2)
+    val DarkOnSurfaceVariant = Color(0xFF8E96A2)
+    val DarkAccent = Color(0xFF7FB0FF)
+    val DarkAccentContainer = Color(0xFF151D2B)
+    val DarkSuccess = Color(0xFF57C79A)
+    val DarkError = Color(0xFFFF7B7B)
 }
 
-/** 4 dp grid; anything not on it is a bug, not a preference. */
+/**
+ * Spacing is a 4 dp grid, but the vertical rhythm is deliberately generous: minimal
+ * design reads as "airy", and cramming rows is what made the old screen feel dense.
+ */
 object Spacing {
     val xs = 4.dp
     val sm = 8.dp
     val md = 12.dp
     val lg = 16.dp
     val xl = 24.dp
+    val xxl = 32.dp
 }
 
 object Radii {
-    val chip = RoundedCornerShape(6.dp)
-    val card = RoundedCornerShape(12.dp)
-    val bubble = RoundedCornerShape(16.dp)
+    val chip = RoundedCornerShape(4.dp)
+    val card = RoundedCornerShape(8.dp)
+    val bubble = RoundedCornerShape(12.dp)
 }
 
-/** Reading width for prose; phones ignore it, tablets and foldables stop stretching. */
-val ProseMaxWidth = 720.dp
+/** Reading width; phones ignore it, tablets stop stretching. */
+val ProseMaxWidth = 680.dp
 
 /**
- * Type scale. `bodyLarge` is the transcript default (15 sp / 23 sp line height reads
- * well for both Latin and CJK); `bodySmall`+`labelSmall` are for metadata only so a
- * long session keeps a visible hierarchy.
+ * Type scale. Only four steps are used on a screen: 15/16 for content, 13 for
+ * secondary, 12 for metadata, 11 for actions. Weight carries emphasis, not colour.
  */
 object PiType {
-    val body = TextStyle(fontSize = 15.sp, lineHeight = 23.sp)
-    val bodyCompact = TextStyle(fontSize = 14.sp, lineHeight = 21.sp)
-    val meta = TextStyle(fontSize = 13.sp, lineHeight = 19.sp)
-    val micro = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = 0.2.sp)
-    val title = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
-    val strong = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold)
-    val mono = TextStyle(fontSize = 13.sp, lineHeight = 20.sp, fontFamily = FontFamily.Monospace)
+    val body = TextStyle(fontSize = 15.sp, lineHeight = 24.sp)
+    val bodyCompact = TextStyle(fontSize = 14.sp, lineHeight = 22.sp)
+    val meta = TextStyle(fontSize = 13.sp, lineHeight = 20.sp)
+    val micro = TextStyle(fontSize = 12.sp, lineHeight = 18.sp)
+    val action = TextStyle(fontSize = 11.sp, lineHeight = 16.sp)
+    val title = TextStyle(fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
+    val strong = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+    val mono = TextStyle(fontSize = 13.sp, lineHeight = 21.sp, fontFamily = FontFamily.Monospace)
     val monoMicro = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontFamily = FontFamily.Monospace)
 }
