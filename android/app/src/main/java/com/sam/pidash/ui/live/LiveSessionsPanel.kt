@@ -3,9 +3,11 @@ package com.sam.pidash.ui.live
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
-import com.sam.pidash.ui.common.InfoPill
+import com.sam.pidash.ui.common.MetaLine
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.common.StatusDot
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Spacing
 
@@ -126,12 +128,12 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            StatusDot(
-                                if (running) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                            )
+                            if (running) {
+                                StatusDot(MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.size(Spacing.sm))
+                            }
                             Text(
-                                "  " + row.summary.title,
+                                row.summary.title,
                                 style = PiType.bodyCompact.copy(fontWeight = FontWeight.Medium),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
@@ -145,20 +147,21 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                         Text(
                             row.summary.cwd,
                             style = PiType.monoMicro,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                            if (row.summary.claim.state == "claimed") InfoPill("已接管", tint = MaterialTheme.colorScheme.primary)
-                            row.summary.model?.let { InfoPill("${it.provider}/${it.id}") }
-                            row.summary.thinkingLevel?.let { InfoPill(it) }
-                            row.meta.tags.take(2).forEach { InfoPill("#$it") }
-                        }
+                        MetaLine(
+                            listOfNotNull(
+                                row.summary.claim.state.takeIf { it == "claimed" }?.let { "已接管" },
+                                row.summary.model?.let { "${it.provider}/${it.id}" },
+                                row.summary.thinkingLevel,
+                            ) + row.meta.tags.take(2).map { "#$it" }
+                        )
                     }
                     MetaAction("分组", { groupError = null; moving = row }, enabled = org.loaded)
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
             }
         }
     }

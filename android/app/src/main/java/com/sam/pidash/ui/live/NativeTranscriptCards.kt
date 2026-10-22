@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -96,14 +98,10 @@ internal fun NativeStepCard(
 ) {
     var open by remember(item.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
-    val tint = when {
-        item.isError -> scheme.error
-        item.status == "running" -> scheme.primary
-        else -> scheme.onSurfaceVariant.copy(alpha = 0.65f)
-    }
     val name = if (isRunCode(item)) "Run Code" else item.toolName ?: "工具"
     val detail = toolArgumentPreview(item)
     val output = toolOutput(item)
+    val active = item.isError || item.status == "running"
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth()
@@ -111,35 +109,40 @@ internal fun NativeStepCard(
                 .padding(vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            StatusDot(tint)
+            if (active) {
+                StatusDot(if (item.isError) scheme.error else scheme.primary)
+                Spacer(Modifier.size(6.dp))
+            }
             Text(
-                "  $name",
-                style = PiType.monoMicro.copy(fontWeight = FontWeight.SemiBold),
-                color = if (item.isError) scheme.error else scheme.onSurface,
+                name,
+                style = PiType.monoMicro,
+                color = if (item.isError) scheme.error else scheme.onSurface.copy(alpha = 0.9f),
                 maxLines = 1,
             )
-            if (detail.isNotEmpty()) Text(
-                "  $detail",
-                style = PiType.monoMicro,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            ) else Spacer(Modifier.weight(1f))
+            if (detail.isNotEmpty()) {
+                Spacer(Modifier.size(Spacing.sm))
+                Text(
+                    detail,
+                    style = PiType.monoMicro,
+                    color = scheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            } else Spacer(Modifier.weight(1f))
             if (output.isNotEmpty()) Text(
                 if (open) "⌃" else "⌄",
-                style = PiType.micro,
-                color = scheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, end = 2.dp),
+                style = PiType.action,
+                color = scheme.onSurfaceVariant.copy(alpha = 0.7f),
+                modifier = Modifier.padding(start = Spacing.xs),
             )
         }
         if (open && output.isNotEmpty()) {
             SelectionContainer {
                 Box(
                     Modifier.fillMaxWidth()
-                        .padding(start = 2.dp, top = 2.dp, bottom = 6.dp)
-                        .border(1.dp, scheme.outline.copy(alpha = 0.6f), Radii.chip)
-                        .background(scheme.surfaceVariant.copy(alpha = 0.4f), Radii.chip)
+                        .padding(top = Spacing.xs, bottom = Spacing.sm)
+                        .background(scheme.surfaceVariant.copy(alpha = 0.5f), Radii.chip)
                         .heightIn(max = 320.dp)
                         .verticalScroll(rememberScrollState())
                         .padding(Spacing.sm),
@@ -170,26 +173,31 @@ internal fun NativeMessageCard(
     val user = item.role == "user"
 
     if (user) {
+        // No bubble: the reader's own text is right-aligned and marked by a hairline.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Column(
-                Modifier.widthIn(max = 560.dp)
-                    .background(scheme.primary.copy(alpha = 0.12f), Radii.bubble)
-                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-            ) {
-                item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
-                if (item.text.isNotBlank()) Text(visible, style = PiType.body, color = scheme.onSurface)
-                if (long) MetaAction(
-                    if (expanded) "收起正文" else "展开全部正文（${lines.size} 行）",
-                    { expanded = !expanded },
-                    tint = scheme.primary,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    if (onQuote != null && item.text.isNotBlank()) MetaAction("引用", { onQuote(item) }, enabled)
-                    if (onAnnotate != null && item.text.isNotBlank()) MetaAction("批注", { onAnnotate(item) }, enabled)
-                    if (item.forkable && !item.entryId.isNullOrBlank() && onFork != null) {
-                        MetaAction("分叉", { onFork(item.entryId) }, enabled)
+            Row(Modifier.widthIn(max = 560.dp)) {
+                Box(
+                    Modifier.padding(top = 3.dp, bottom = 3.dp).widthIn(min = 2.dp)
+                        .height(IntrinsicSize.Min)
+                        .background(scheme.outline, Radii.chip),
+                ) { Spacer(Modifier.size(2.dp)) }
+                Column(
+                    Modifier.padding(start = Spacing.sm),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                ) {
+                    item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+                    if (item.text.isNotBlank()) Text(visible, style = PiType.body, color = scheme.onSurface)
+                    if (long) MetaAction(
+                        if (expanded) "收起" else "展开全部（${lines.size} 行）",
+                        { expanded = !expanded },
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        if (onQuote != null && item.text.isNotBlank()) MetaAction("引用", { onQuote(item) }, enabled)
+                        if (onAnnotate != null && item.text.isNotBlank()) MetaAction("批注", { onAnnotate(item) }, enabled)
+                        if (item.forkable && !item.entryId.isNullOrBlank() && onFork != null) {
+                            MetaAction("分叉", { onFork(item.entryId) }, enabled)
+                        }
                     }
                 }
             }
@@ -197,17 +205,7 @@ internal fun NativeMessageCard(
         return
     }
 
-    Column(
-        Modifier.fillMaxWidth()
-            .then(
-                if (item.isError) Modifier
-                    .border(1.dp, scheme.error.copy(alpha = 0.5f), Radii.card)
-                    .background(scheme.error.copy(alpha = 0.06f), Radii.card)
-                    .padding(Spacing.md)
-                else Modifier
-            ),
-        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-    ) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
         if (item.text.isNotBlank()) {
             MarkdownBody(
@@ -216,14 +214,10 @@ internal fun NativeMessageCard(
                 onOpenUrl = onOpenUrl,
                 style = PiType.body.copy(color = if (item.isError) scheme.error else scheme.onSurface),
             )
-            if (long) MetaAction(
-                if (expanded) "收起正文" else "展开全部正文（${lines.size} 行）",
-                { expanded = !expanded },
-                tint = scheme.primary,
-            )
+            if (long) MetaAction(if (expanded) "收起" else "展开全部（${lines.size} 行）", { expanded = !expanded })
         }
-        val hasMeta = !item.thinking.isNullOrBlank() || item.text.isNotBlank()
-        if (hasMeta) Row(
+        if (item.isError && item.text.isBlank()) Text("出错了", style = PiType.meta, color = scheme.error)
+        Row(
             horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -236,19 +230,14 @@ internal fun NativeMessageCard(
             }
         }
         if (showThinking) item.thinking?.let {
-            Box(
-                Modifier.fillMaxWidth()
-                    .border(1.dp, scheme.outline.copy(alpha = 0.6f), Radii.chip)
-                    .background(scheme.surfaceVariant.copy(alpha = 0.35f), Radii.chip)
-                    .padding(Spacing.sm),
-            ) {
-                SelectionContainer {
-                    Text(it, style = PiType.monoMicro, color = scheme.onSurfaceVariant)
-                }
+            SelectionContainer {
+                Text(
+                    it,
+                    style = PiType.monoMicro,
+                    color = scheme.onSurfaceVariant.copy(alpha = 0.9f),
+                    modifier = Modifier.padding(start = Spacing.sm),
+                )
             }
-        }
-        if (item.isError && item.text.isBlank()) {
-            Text("出错了", style = PiType.meta, color = scheme.error)
         }
     }
 }
@@ -282,54 +271,41 @@ internal fun NativeStepGroup(
 ) {
     var open by remember(group.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
-    val (tint, state) = when {
-        group.failed -> scheme.error to "含失败"
-        group.running -> scheme.primary to "进行中"
-        else -> scheme.onSurfaceVariant.copy(alpha = 0.65f) to "已完成"
+    val state = when {
+        group.failed -> "失败" to scheme.error
+        group.running -> "进行中" to scheme.primary
+        else -> "已完成" to scheme.onSurfaceVariant
     }
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = 4.dp),
+            Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            StatusDot(tint)
+            Text(if (open) "⌃" else "⌄", style = PiType.action, color = scheme.onSurfaceVariant)
+            Spacer(Modifier.size(Spacing.xs))
             Text(
-                "  ${group.items.size} 个步骤",
+                "${group.items.size} 个步骤",
                 style = PiType.strong,
-                color = if (group.failed) scheme.error else scheme.onSurface,
+                color = scheme.onSurface.copy(alpha = 0.9f),
             )
-            Text(
-                "  $state",
-                style = PiType.micro,
-                color = tint,
-            )
-            Text(
-                "  ${group.names.joinToString(" · ")}",
-                style = PiType.monoMicro,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                if (open) "⌃" else "⌄",
-                style = PiType.micro,
-                color = scheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = Spacing.xs, end = 2.dp),
-            )
-        }
-        if (open) Row(Modifier.fillMaxWidth()) {
-            Box(
-                Modifier.padding(start = 2.dp, top = 2.dp, bottom = 2.dp).widthIn(min = 1.dp)
-                    .heightIn(min = 8.dp)
-                    .background(scheme.outline.copy(alpha = 0.5f)),
-            ) { Spacer(Modifier.size(1.dp)) }
-            Column(
-                Modifier.weight(1f).padding(start = Spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(1.dp),
-            ) {
-                group.items.forEach { item -> NativeStepCard(item, onOpenPath, onOpenUrl) }
+            Spacer(Modifier.size(Spacing.sm))
+            Text(state.first, style = PiType.micro, color = state.second)
+            if (group.names.isNotEmpty()) {
+                Spacer(Modifier.size(Spacing.sm))
+                Text(
+                    group.names.joinToString(" · "),
+                    style = PiType.monoMicro,
+                    color = scheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
+        }
+        if (open) Column(
+            Modifier.fillMaxWidth().padding(start = Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+        ) {
+            group.items.forEach { item -> NativeStepCard(item, onOpenPath, onOpenUrl) }
         }
     }
 }
