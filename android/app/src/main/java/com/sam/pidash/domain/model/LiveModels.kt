@@ -201,7 +201,14 @@ data class LiveGoalProgress(val current: String? = null, val lastSummary: String
 @Serializable
 data class LiveGoalItem(val id: String, val title: String, val state: String? = null)
 @Serializable
-data class LiveGoalBlocker(val title: String, val reason: String? = null)
+data class LiveGoalBlocker(
+    val title: String,
+    val reason: String? = null,
+    /** `needs_user` means the agent is waiting on a decision, not on itself. */
+    val disposition: String? = null,
+    val owner: String? = null,
+    val kind: String? = null,
+)
 @Serializable
 data class LiveGoalAnchor(
     val objective: String,

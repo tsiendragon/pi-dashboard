@@ -40,7 +40,9 @@ import com.sam.pidash.data.remote.projectLiveTimeline
 import com.sam.pidash.domain.model.AppQuote
 import com.sam.pidash.domain.model.AppReviewItem
 import com.sam.pidash.domain.model.composeOutgoing
+import com.sam.pidash.data.remote.liveGoalAnchor
 import com.sam.pidash.domain.model.LiveSessionTree
+import com.sam.pidash.domain.model.goalSummary
 import com.sam.pidash.domain.model.LiveUsageReport
 import com.sam.pidash.domain.model.cacheHitPercent
 import com.sam.pidash.domain.model.humanTokens
@@ -95,6 +97,7 @@ fun LiveSessionScreen(
     var usageMonth by remember(sessionKey) { mutableStateOf<String?>(null) }
     var usageError by remember(sessionKey) { mutableStateOf<String?>(null) }
     var usageBusy by remember(sessionKey) { mutableStateOf(false) }
+    var showGoal by remember(sessionKey) { mutableStateOf(false) }
     // Read-only file preview: path plus loaded text (null while fetching).
     var preview by remember(sessionKey) { mutableStateOf<Pair<String, String?>?>(null) }
     var previewError by remember(sessionKey) { mutableStateOf<String?>(null) }
@@ -157,6 +160,8 @@ fun LiveSessionScreen(
     var dialog by remember(sessionKey) { mutableStateOf<String?>(null) }
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
     var answered by remember(sessionKey) { mutableStateOf(emptySet<String>()) }
+    val goal = remember(detail) { detail?.let { liveGoalAnchor(it) } }
+    val goalState = remember(goal) { goalSummary(goal) }
     val rows = remember(timeline) { groupTranscript(timeline) }
     val visibleCount = rows.size
 
@@ -275,6 +280,10 @@ fun LiveSessionScreen(
                                     onClick = { menu = false; notice = null; dialog = "context" })
                             }
                             HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text(if (goal == null) "目标（未设置）…" else "目标…") },
+                                onClick = { menu = false; notice = null; showGoal = true },
+                            )
                             DropdownMenuItem(
                                 text = { Text("用量统计…") },
                                 onClick = {
@@ -462,7 +471,9 @@ fun LiveSessionScreen(
             summary?.let { s ->
                 SelectionContainer {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                        Text("${s.status} · ${s.model?.let { "${it.provider}/${it.id}" } ?: "模型未知"} · ${s.thinkingLevel ?: "默认思考"}",
+                        Text(
+                            "${s.status} · ${s.model?.let { "${it.provider}/${it.id}" } ?: "模型未知"} · ${s.thinkingLevel ?: "默认思考"}" +
+                                (goalState?.let { " · 目标 ${it.statusLabel}" } ?: ""),
                             style = MaterialTheme.typography.labelSmall)
                         Text(s.cwd, style = MaterialTheme.typography.labelSmall, maxLines = 2)
                         s.contextUsage?.let { usage ->
@@ -589,6 +600,26 @@ fun LiveSessionScreen(
                     }
                 }
             }
+        }
+    }
+    if (showGoal) {
+        val current = goal
+        if (current == null) {
+            AlertDialog(
+                onDismissRequest = { showGoal = false },
+                title = { Text("目标") },
+                text = { Text("这个会话还没有目标记录。目标由 Agent 用 /goal 命令维护，本页只读。") },
+                confirmButton = {
+                    TextButton(onClick = { showGoal = false; draft = "/goal " }) { Text("用 /goal 设置") }
+                },
+                dismissButton = { TextButton(onClick = { showGoal = false }) { Text("关闭") } },
+            )
+        } else {
+            LiveGoalDialog(
+                goal = current,
+                onDismiss = { showGoal = false },
+                onEditWithCommand = { showGoal = false; draft = "/goal " },
+            )
         }
     }
     if (tree != null || treeError != null || treeBusy) {
