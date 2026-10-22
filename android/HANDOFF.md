@@ -1,7 +1,7 @@
 # PiDash Android · 当前交接
 
-> 当前实现：3.1 / versionCode 12。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
-> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi31)。
+> 当前实现：3.2 / versionCode 13。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
+> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi32)。
 > 功能适配评估与后续范围：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)。
 
 ## 1. 当前状态
@@ -68,6 +68,8 @@
 | `ui/common/AppInfo.kt` | 构建版本与 Live 状态文案；不使用普通 Chat 状态替代 Live 授权 |
 | `ui/markdown/MarkdownParser.kt`、`MarkdownBody.kt` | 纯 Kotlin Markdown 解析（可单测）+ Compose 渲染；默认会话正文 |
 | `ui/live/NativeTranscriptCards.kt` | 步骤一行式（状态·工具名·参数摘要）+ 折叠输出；消息卡按角色着色、12 行截断、Run Code 归组 |
+| `domain/model/ReviewMessages.kt` | 引用/批注消息与网页 `reviewComments.ts` 同字节格式（160 字上限、speaker 标签、comment 编号） |
+| `domain/model/TranscriptGrouping.kt` | 连续工具调用折叠为 `TranscriptRow.Steps`，纯函数可单测 |
 | `data/remote/TranscriptPaths.kt` | `externalUrlAllowed`：只放行 http(s)，拒绝 `javascript:`/`intent:`/`file:` 与空白/控制字符 |
 | `MainActivity.kt` | 前台/后台 Live 生命周期 |
 
@@ -78,7 +80,7 @@
 
 ## 5. 验证证据与剩余风险
 
-- Android：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过，**85 项单元测试通过**；JUnit 为纯 JVM 合成数据/临时回环 HTTP，无手机、无生产会话操作。
+- Android：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过，**95 项单元测试通过**；JUnit 为纯 JVM 合成数据/临时回环 HTTP，无手机、无生产会话操作。
 - `LiveProtocolTest`：流式替换、工具合并、序列缺口/陈旧事件、真实 entryId、遥测/扩展 UI、重复合法输入、坏数据、上限。
 - 本轮 APK 包元数据核验：`com.sam.pidash` / versionName `2.2` / versionCode `3`；APK 签名验证通过。带版本名副本：`app/build/outputs/apk/debug/pidash-2.2-build3-debug.apk`，与标准 `app-debug.apk` 相同。
   SHA-256：`acc2f932aa5a953debdfed81cea736ba59214e70b8202b757a8e4ae14c2e9031`。

@@ -133,6 +133,11 @@ Android 的 Live Cookie 用 AndroidKeyStore AES-GCM 加密并绑定服务器地�
 - `ui/markdown/MarkdownBody.kt`：Compose 渲染。代码块**不换行、块内横滚**并带「复制」；表格块内横滚；
   裸链接与本地路径可点。整页**只允许纵向滚动**，超长代码或宽表格不会把页面横向拖走。
 - `ui/live/NativeTranscriptCards.kt`：步骤卡与消息卡遵循 WebUI 的呈现规则：
+  - **连续工具调用折叠成一组**：`3 个步骤 · 已完成 · bash · read`，点开展开每一步；含失败/进行中会直接标出。
+  - **引用/批注**：消息下方「引用」把该条正文（空白折叠、上限 160 字）加成待发送引用芯片，最多 4 段；
+    「批注」在引用之上再写一段评论。两者发出的消息与网页 `utils/reviewComments.ts` 完全同格式——
+    引用是 `引用（来自你的回复）：` + `> ` 逐行引用；批注是
+    `Please review and address these comments about the quoted parts of our conversation:` + `[1] 你的回复` / `Quoted: "…"` / `Comment: …`。
   - **每次工具调用只有一行**：状态图标（● 进行中 / ✓ 已完成 / ! 失败）+ 工具名 + 参数单行摘要；
     参数**不会**以 JSON 形式灌进正文。完整输出默认折叠在「展开输出」后，`run_code` 归为「Run Code」。
   - 一次调用的「发起 + 执行事件 + 结果」合并为同一行（`toolCallId` 作为键），不会叠出第二张卡。
