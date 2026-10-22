@@ -3,150 +3,157 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PiDash 极简版设计稿（4.1）</title>
+<title>PiDash 设计稿（4.2 · iOS 语言）</title>
 <!--
   设计稿预览，不是 App 截图。
-  它与 ui/theme/Tokens.kt 使用同一批色值/字号/间距，用来在改代码前后对齐视觉。
+  与 ui/theme/Tokens.kt 使用同一批 iOS 系统色、字号与间距，用于对齐视觉。
   真机字体度量（尤其中文行高）会有差异。
 -->
 <style>
   :root {
-    --bg: #0E1013; --sv: #191C21; --outline: #24282E;
-    --on: #EDEFF2; --muted: #8E96A2; --accent: #7FB0FF; --ok: #57C79A; --error: #FF7B7B;
+    /* iOS dark */
+    --bg: #000000; --grouped: #1C1C1E; --surface: #1C1C1E; --separator: #38383A;
+    --label: #FFFFFF; --label2: rgba(235,235,245,.6); --label3: rgba(235,235,245,.3);
+    --blue: #0A84FF; --green: #30D158; --red: #FF453A;
     --kw: #C792EA; --str: #C3E88D; --com: #7F8C98; --num: #F78C6C; --typ: #82AAFF; --fn: #89DDFF;
   }
   html[data-theme="light"] {
-    --bg: #FFFFFF; --sv: #F6F7F9; --outline: #E6E9ED;
-    --on: #16181C; --muted: #6B7280; --accent: #1F6FEB; --ok: #1A7F5A; --error: #CE3B3B;
+    --bg: #FFFFFF; --grouped: #F2F2F7; --surface: #FFFFFF; --separator: #C6C6C8;
+    --label: #000000; --label2: rgba(60,60,67,.6); --label3: rgba(60,60,67,.3);
+    --blue: #007AFF; --green: #34C759; --red: #FF3B30;
     --kw: #7C3AED; --str: #047857; --com: #6B7280; --num: #B45309; --typ: #1D4ED8; --fn: #0E7490;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 28px 20px 40px; background: var(--bg); color: var(--on);
-    font: 15px/24px -apple-system, "Noto Sans SC", "PingFang SC", Roboto, sans-serif;
-    -webkit-font-smoothing: antialiased;
+    margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--label);
+    /* SF Pro on Apple platforms, Roboto elsewhere — same metrics family */
+    font: 17px/25px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Noto Sans SC", "PingFang SC", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; letter-spacing: -0.1px;
   }
   .wrap { max-width: 680px; margin: 0 auto; }
-  h1 { font-size: 16px; line-height: 23px; font-weight: 600; margin: 0; }
-  .meta { font-size: 12px; line-height: 18px; color: var(--muted); }
-  .action { font-size: 11px; line-height: 16px; color: var(--muted); padding: 4px; cursor: pointer; }
-  .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: none; }
+  h1 { font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.2px; margin: 0; }
+  .foot { font-size: 13px; line-height: 18px; color: var(--label2); }
+  .cap { font-size: 12px; line-height: 16px; color: var(--label2); }
+  .act { font-size: 12px; line-height: 16px; color: var(--label2); padding: 4px 2px; cursor: pointer; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); flex: none; }
 
-  .switch { display: flex; gap: 12px; margin: 18px 0 32px; }
+  .switch { display: flex; gap: 16px; margin: 18px 0 28px; }
   .switch button {
-    font: 11px/16px inherit; color: var(--muted); background: none; border: 0; padding: 0 0 2px;
+    font: 12px/16px inherit; color: var(--label2); background: none; border: 0; padding: 0 0 3px;
     cursor: pointer; border-bottom: 1px solid transparent;
   }
-  .switch button[aria-pressed="true"] { color: var(--on); border-bottom-color: var(--outline); }
+  .switch button[aria-pressed="true"] { color: var(--label); border-bottom-color: var(--label3); }
 
-  /* header: title, one muted line, cwd. No pills, no rule. */
-  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
-  header .back { font-size: 18px; color: var(--muted); }
-  header h1 { flex: 1; }
-  header .more { color: var(--muted); }
-  .facts { margin-bottom: 28px; }
-  .facts .cwd { font: 12px/18px ui-monospace, Menlo, monospace; color: var(--muted); }
+  /* nav bar: 17 semibold title, hairline under */
+  .navbar { display: flex; align-items: baseline; gap: 12px; padding: 8px 0 12px; }
+  .navbar .back { color: var(--blue); font-size: 17px; }
+  .navbar h1 { flex: 1; font-size: 17px; line-height: 22px; }
+  .navbar .more { color: var(--blue); font-size: 17px; }
+  .facts { padding-bottom: 14px; border-bottom: .5px solid var(--separator); margin-bottom: 20px; }
+  .facts .cwd { font: 12px/17px ui-monospace, Menlo, monospace; color: var(--label2); margin-top: 2px; }
 
-  /* user message: right aligned, hairline on the left, no bubble */
-  .user { display: flex; justify-content: flex-end; margin-bottom: 28px; }
-  .user .inner { display: flex; gap: 8px; max-width: 560px; }
-  .user .rule { width: 2px; background: var(--outline); border-radius: 4px; }
-  .user .body { text-align: right; }
-  .user .acts { display: flex; gap: 12px; justify-content: flex-end; margin-top: 4px; }
+  /* your own message: iOS filled bubble, tightened tail corner */
+  .user { display: flex; justify-content: flex-end; margin: 0 0 20px; }
+  .bubble {
+    max-width: 78%; background: var(--blue); color: #fff; border-radius: 18px;
+    border-bottom-right-radius: 6px; padding: 9px 12px; font-size: 17px; line-height: 25px;
+  }
+  .bubble .acts { display: flex; gap: 10px; justify-content: flex-end; margin-top: 2px; }
+  .bubble .act { color: rgba(255,255,255,.8); }
 
   /* assistant prose */
-  .answer { margin-bottom: 26px; }
+  .answer { margin-bottom: 20px; }
   .answer p { margin: 0 0 12px; }
-  code.inline { font: 13px/21px ui-monospace, Menlo, monospace; background: var(--sv); padding: 1px 5px; border-radius: 4px; }
+  code.inline { font: 13px/20px ui-monospace, Menlo, monospace; background: var(--grouped); padding: 1px 5px; border-radius: 8px; }
 
-  /* code: language label above, subtle fill, no border */
-  .code { margin: 14px 0 18px; }
-  .code .cap { display: flex; font: 11px/16px ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 4px; }
-  .code .cap span { flex: 1; }
-  .code .cap b { font-weight: 400; cursor: pointer; }
+  /* code: grouped fill, 10 dp, language above */
+  .code { margin: 12px 0 20px; }
+  .code .head { display: flex; font: 12px/16px ui-monospace, Menlo, monospace; color: var(--label2); margin-bottom: 4px; }
+  .code .head span { flex: 1; }
+  .code .head b { font-weight: 400; }
   .code pre {
-    margin: 0; padding: 8px 10px; background: var(--sv); border-radius: 4px; overflow-x: auto;
-    font: 13px/21px ui-monospace, Menlo, monospace;
+    margin: 0; padding: 10px 12px; background: var(--grouped); border-radius: 10px; overflow-x: auto;
+    font: 13px/20px ui-monospace, Menlo, monospace;
   }
   .k { color: var(--kw); } .s { color: var(--str); } .c { color: var(--com); }
   .n { color: var(--num); } .t { color: var(--typ); } .f { color: var(--fn); }
 
-  /* steps: one muted line; dot only while something is running */
-  .steps { margin-bottom: 22px; }
-  .steps .head { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 18px; cursor: pointer; }
-  .steps .head .count { font-weight: 600; font-size: 12px; }
-  .steps .head .names { color: var(--muted); font: 12px/18px ui-monospace, Menlo, monospace; }
-  .steps .list { padding-left: 16px; margin-top: 6px; }
-  .step { display: flex; gap: 8px; align-items: center; font: 12px/18px ui-monospace, Menlo, monospace; padding: 3px 0; }
-  .step .name { color: var(--on); }
-  .step .arg { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .step .chev { color: var(--muted); }
+  /* steps */
+  .steps { margin-bottom: 18px; }
+  .steps .head { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 18px; }
+  .steps .head .count { font-weight: 600; }
+  .steps .head .names { color: var(--label2); font: 12px/17px ui-monospace, Menlo, monospace; }
+  .steps .list { margin-top: 4px; }
+  .step { display: flex; align-items: center; gap: 8px; font: 12px/17px ui-monospace, Menlo, monospace; padding: 5px 0; }
+  .step .name { color: var(--label); }
+  .step .arg { color: var(--label2); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step .chev { color: var(--label3); }
+  .hair { height: .5px; background: var(--separator); }
   .out {
-    margin: 4px 0 8px; padding: 8px 10px; background: var(--sv); border-radius: 4px;
-    font: 13px/21px ui-monospace, Menlo, monospace; white-space: pre-wrap;
+    margin: 2px 0 6px; padding: 10px 12px; background: var(--grouped); border-radius: 10px;
+    font: 13px/20px ui-monospace, Menlo, monospace; white-space: pre-wrap;
   }
+  .error { color: var(--red); margin-bottom: 18px; }
 
-  /* error: colour only, no box */
-  .error { color: var(--error); margin-bottom: 22px; }
-
-  /* composer: one row + one quiet line */
-  .composer { border-top: 1px solid var(--outline); padding-top: 14px; margin-top: 32px; }
-  .composer .row { display: flex; align-items: center; gap: 10px; }
-  .composer .plus { font-size: 18px; color: var(--muted); }
+  /* composer: filled borderless field */
+  .composer { border-top: .5px solid var(--separator); padding-top: 12px; margin-top: 28px; }
+  .composer .row { display: flex; align-items: center; gap: 8px; }
+  .composer .plus { width: 30px; height: 30px; border-radius: 15px; background: var(--grouped);
+    color: var(--label2); display: grid; place-items: center; font-size: 18px; }
   .composer .field {
-    flex: 1; border: 1px solid var(--outline); border-radius: 8px; padding: 11px 12px;
-    font-size: 14px; line-height: 22px; color: var(--muted);
+    flex: 1; background: var(--grouped); border-radius: 18px; padding: 8px 12px;
+    font-size: 17px; line-height: 25px; color: var(--label3);
   }
-  .composer .send { width: 34px; height: 34px; border-radius: 17px; background: var(--accent); color: #0E1013;
+  .composer .send { width: 30px; height: 30px; border-radius: 15px; background: var(--blue); color: #fff;
     display: grid; place-items: center; font-size: 14px; }
-  .composer .foot { display: flex; gap: 12px; margin-top: 8px; }
+  .composer .foot { margin-top: 8px; }
 
-  /* lists */
-  .list-title { font-size: 12px; font-weight: 600; color: var(--muted); margin: 32px 0 10px; }
-  .machine { padding: 10px 0 18px; }
-  .machine .name { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 23px; font-weight: 600; }
-  .machine .origin { font: 12px/18px ui-monospace, Menlo, monospace; color: var(--muted); margin: 4px 0 6px; }
-  .sess { display: flex; align-items: center; gap: 10px; padding: 12px 0; }
+  /* grouped lists */
+  .section-title { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--label2);
+    margin: 28px 0 8px; padding-left: 16px; }
+  .card { background: var(--surface); border-radius: 10px; overflow: hidden; }
+  .machine { padding: 14px 16px; }
+  .machine .name { display: flex; align-items: center; gap: 8px; font-size: 17px; line-height: 22px; font-weight: 600; }
+  .machine .origin { font: 12px/17px ui-monospace, Menlo, monospace; color: var(--label2); margin-top: 3px; }
+  .sess { display: flex; align-items: center; gap: 8px; padding: 10px 8px 10px 16px; }
   .sess .body { flex: 1; min-width: 0; }
-  .sess .t { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 22px; }
-  .sess .p { font: 12px/18px ui-monospace, Menlo, monospace; color: var(--muted);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
-  .note { font-size: 11px; line-height: 17px; color: var(--muted); margin-top: 40px;
-    border-top: 1px solid var(--outline); padding-top: 14px; }
+  .sess .t { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 23px; font-weight: 500; }
+  .sess .p { font: 12px/17px ui-monospace, Menlo, monospace; color: var(--label2);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .note { font-size: 11px; line-height: 16px; color: var(--label2); margin-top: 36px;
+    border-top: .5px solid var(--separator); padding-top: 14px; }
+  .page-grouped { background: var(--grouped); margin: 24px -16px; padding: 8px 16px 20px; border-radius: 0; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>极简版会话页</h1>
-  <div class="switch" style="margin-top:8px">
+  <h1>会话页</h1>
+  <div class="switch">
     <button id="t-dark" aria-pressed="true">暗色</button>
     <button id="t-light" aria-pressed="false">亮色</button>
   </div>
 
-  <header>
-    <div class="back">←</div>
+  <div class="navbar">
+    <div class="back">‹</div>
     <h1>简化 Live 自动授权、共享输入与原生命令渲染</h1>
-    <div class="more">⋮</div>
-  </header>
+    <div class="more">⋯</div>
+  </div>
   <div class="facts">
-    <div class="meta">running · dashscope/deepseek-v4.1-flash · 默认思考 · 4.2% · 目标进行中</div>
+    <div class="foot">running · dashscope/deepseek-v4.1-flash · 默认思考 · 4.2%</div>
     <div class="cwd">/home/you/apps/pi-dashboard</div>
   </div>
 
   <div class="user">
-    <div class="inner">
-      <div class="rule"></div>
-      <div class="body">
-        把附件里的 CSV 按月份汇总一下，顺便看看日志里有没有 5xx。
-        <div class="acts"><span class="action">引用</span><span class="action">批注</span></div>
-      </div>
+    <div class="bubble">
+      把附件里的 CSV 按月份汇总一下，顺便看看日志里有没有 5xx。
+      <div class="acts"><span class="act">引用</span><span class="act">批注</span></div>
     </div>
   </div>
 
   <div class="answer">
     <p>先看目录结构，再按月聚合 <code class="inline">rows.csv</code>。</p>
     <div class="code">
-      <div class="cap"><span>kotlin</span><b>复制</b></div>
+      <div class="head"><span>kotlin</span><b>复制</b></div>
       <pre><span class="k">fun</span> <span class="f">monthly</span>(rows: <span class="t">List</span>&lt;<span class="t">Row</span>&gt;) =
   rows.<span class="f">groupBy</span> { it.date.<span class="f">take</span>(<span class="n">7</span>) }   <span class="c">// 2026-08</span></pre>
     </div>
@@ -154,13 +161,15 @@
 
   <div class="steps">
     <div class="head">
-      <span>⌃</span><span class="count">3 个步骤</span><span class="meta">已完成</span>
-      <span class="names">bash · read · write</span>
+      <span style="color:var(--label2)">⌃</span><span class="count">3 个步骤</span>
+      <span class="foot">已完成</span><span class="names">bash · read · write</span>
     </div>
     <div class="list">
       <div class="step"><span class="name">bash</span><span class="arg">du -sh android/app/src/main/assets</span><span class="chev">⌄</span></div>
       <div class="out">16K	android/app/src/main/assets</div>
+      <div class="hair"></div>
       <div class="step"><span class="dot"></span><span class="name">read</span><span class="arg">app/src/main/assets/native-renderer/index.html</span><span class="chev">⌄</span></div>
+      <div class="hair"></div>
       <div class="step"><span class="name">bash</span><span class="arg">grep -c " 5[0-9][0-9] " access.log</span><span class="chev">⌄</span></div>
     </div>
   </div>
@@ -171,40 +180,48 @@
     <div class="row">
       <div class="plus">＋</div>
       <div class="field">输入消息…</div>
-      <div class="send">➤</div>
+      <div class="send">↑</div>
     </div>
-    <div class="foot meta"><span>投递：默认</span></div>
+    <div class="foot cap">投递：默认</div>
   </div>
 
-  <div class="list-title">机器</div>
-  <div class="machine">
-    <div class="name">家里的 Pi <span class="dot"></span></div>
-    <div class="origin">https://pi.tsien.space</div>
-    <div class="meta">Live 已连接 · 3 个主会话 · 1 工作中 · Chat 已连接</div>
-  </div>
+  <div class="page-grouped">
+    <div class="section-title">机器</div>
+    <div class="card">
+      <div class="machine">
+        <div class="name">家里的 Pi <span class="dot"></span></div>
+        <div class="origin">https://pi.tsien.space</div>
+        <div class="foot" style="margin-top:6px">Live 已连接 · 3 个主会话 · 1 工作中 · Chat 已连接</div>
+      </div>
+    </div>
 
-  <div class="list-title">本机会话</div>
-  <div class="sess">
-    <div class="body">
-      <div class="t"><span class="dot"></span>简化 Live 自动授权、共享输入与原生命令渲染</div>
-      <div class="p">/home/you/apps/pi-dashboard</div>
-      <div class="meta">已接管 · dashscope/deepseek-v4.1-flash</div>
+    <div class="section-title">进行中</div>
+    <div class="card">
+      <div class="sess">
+        <div class="body">
+          <div class="t"><span class="dot"></span>简化 Live 自动授权、共享输入与原生命令渲染</div>
+          <div class="p">/home/you/apps/pi-dashboard</div>
+          <div class="foot">已接管 · dashscope/deepseek-v4.1-flash</div>
+        </div>
+        <span class="act">分组</span>
+      </div>
+      <div class="hair" style="margin-left:16px"></div>
+      <div class="sess">
+        <div class="body">
+          <div class="t">手机端会话树查看</div>
+          <div class="p">/home/you/apps/my-app</div>
+          <div class="foot">anthropic/claude · #infra</div>
+        </div>
+        <span class="act">分组</span>
+      </div>
     </div>
-    <span class="action">分组</span>
-  </div>
-  <div class="sess">
-    <div class="body">
-      <div class="t">手机端会话树查看</div>
-      <div class="p">/home/you/apps/my-app</div>
-      <div class="meta">anthropic/claude · #infra</div>
-    </div>
-    <span class="action">分组</span>
   </div>
 
   <div class="note">
-    极简规则：背景与表面同色（无 elevation）；只有一个强调色，且只用于可操作项与运行中状态；
-    其余信息一律靠字号（15/13/12/11）与不透明度（100/85/75%）分层；没有 pill 底色、没有卡片边框、
-    几乎没有分隔线；状态点只在「运行中 / 失败」时出现，静态状态只用一个字。
+    iOS 语言的四个支点：<b>系统色</b>（#007AFF / #F2F2F7 / #1C1C1E，标签用 100/60/30% 不透明度）、
+    <b>SF 字号</b>（正文 17、headline 17 半粗、footnote 13、caption 12）、
+    <b>发丝线</b>（0.5px，内缩 16px 分隔行）、<b>圆角连续性</b>（卡片 10、气泡 18 且尾角收紧、输入框 18 填充无边框）。
+    唯一的实心色块是「你自己说的话」，与系统讯息 App 一致。
   </div>
 </div>
 <script>

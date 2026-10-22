@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import com.sam.pidash.ui.theme.Hairline
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
@@ -157,7 +158,7 @@ private fun CodeBlock(block: MdBlock.Code) {
         }
         Box(
             Modifier.fillMaxWidth()
-                .background(scheme.surfaceVariant.copy(alpha = 0.55f), Radii.chip)
+                .background(scheme.surfaceVariant, Radii.card)
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.sm, vertical = 6.dp),
         ) {
@@ -178,7 +179,7 @@ private fun TableBlock(block: MdBlock.Table, style: TextStyle, onOpenPath: (Stri
                 }
             }
         }
-        HorizontalDivider(color = scheme.outline.copy(alpha = 0.6f))
+        HorizontalDivider(thickness = Hairline, color = scheme.outline.copy(alpha = 0.6f))
         block.rows.forEach { row ->
             Row {
                 row.forEach { cell ->

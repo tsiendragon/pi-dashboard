@@ -3,6 +3,8 @@ package com.sam.pidash.ui.live
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
+import com.sam.pidash.ui.common.GroupedCard
+import com.sam.pidash.ui.common.InsetSeparator
 import com.sam.pidash.ui.common.MetaLine
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.common.StatusDot
@@ -107,61 +109,30 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                         .clickable {
                             toggled = if (section.id in toggled) toggled - section.id else toggled + section.id
                         }
-                        .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                        .padding(horizontal = Spacing.xl, vertical = Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(if (collapsed) "▸" else "▾", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("  ${section.name}", style = PiType.strong)
+                    Text(
+                        section.name.uppercase(),
+                        style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Text(
                         "  ${section.sessions.size}",
-                        style = PiType.micro,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = PiType.footnote,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )
                 }
             }
-            if (!collapsed) items(section.sessions, key = { "${section.id}:${it.key.slotKey}" }) { row ->
-                val running = row.summary.status == "running"
-                Row(
-                    Modifier.fillMaxWidth().clickable { onOpen(row.key) }
-                        .padding(start = Spacing.lg, end = Spacing.sm, top = 9.dp, bottom = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (running) {
-                                StatusDot(MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.size(Spacing.sm))
-                            }
-                            Text(
-                                row.summary.title,
-                                style = PiType.bodyCompact.copy(fontWeight = FontWeight.Medium),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (row.meta.pinned) Text(
-                                "  ★",
-                                style = PiType.micro,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+            if (!collapsed) item(key = "card:${section.id}") {
+                Column(Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs)) {
+                    GroupedCard {
+                        section.sessions.forEachIndexed { index, row ->
+                            if (index > 0) InsetSeparator()
+                            SessionRow(row, org.loaded, onOpen) { groupError = null; moving = row }
                         }
-                        Text(
-                            row.summary.cwd,
-                            style = PiType.monoMicro,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        MetaLine(
-                            listOfNotNull(
-                                row.summary.claim.state.takeIf { it == "claimed" }?.let { "已接管" },
-                                row.summary.model?.let { "${it.provider}/${it.id}" },
-                                row.summary.thinkingLevel,
-                            ) + row.meta.tags.take(2).map { "#$it" }
-                        )
                     }
-                    MetaAction("分组", { groupError = null; moving = row }, enabled = org.loaded)
                 }
-
             }
         }
     }
@@ -343,4 +314,54 @@ fun NewLiveSessionDialog(
         },
         dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(if (waiting) "返回列表" else "取消") } },
     )
+}
+
+/** One row inside a grouped card: status dot, title, mono cwd, muted facts. */
+@Composable
+private fun SessionRow(
+    row: AggregatedLiveSession,
+    groupEnabled: Boolean,
+    onOpen: (SessionKey) -> Unit,
+    onGroup: () -> Unit,
+) {
+    val running = row.summary.status == "running"
+    Row(
+        Modifier.fillMaxWidth().clickable { onOpen(row.key) }
+            .padding(start = Spacing.lg, end = Spacing.sm, top = Spacing.md, bottom = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (running) {
+                    StatusDot(MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.size(Spacing.sm))
+                }
+                Text(
+                    row.summary.title,
+                    style = PiType.callout.copy(fontWeight = FontWeight.Medium),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (row.meta.pinned) Text(
+                    "  ★",
+                    style = PiType.caption,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                row.summary.cwd,
+                style = PiType.monoMicro,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            MetaLine(
+                listOfNotNull(
+                    row.summary.claim.state.takeIf { it == "claimed" }?.let { "已接管" },
+                    row.summary.model?.let { "${it.provider}/${it.id}" },
+                ) + row.meta.tags.take(2).map { "#$it" }
+            )
+        }
+        MetaAction("分组", onGroup, enabled = groupEnabled)
+    }
 }
