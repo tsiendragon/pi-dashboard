@@ -73,12 +73,17 @@ fun reviewMessage(items: List<AppReviewItem>, intro: String = CHAT_REVIEW_INTRO)
     return "$intro\n\n${blocks.joinToString("\n\n")}"
 }
 
-/** What actually goes over the wire: quotes first, then annotations, then the typed text. */
+/**
+ * What actually goes over the wire. Order matches the WebUI composer:
+ * attached-file blocks, then quotes, then annotations, then the typed text.
+ */
 fun composeOutgoing(
     text: String,
     quotes: List<AppQuote> = emptyList(),
     reviews: List<AppReviewItem> = emptyList(),
+    filePrefix: String = "",
 ): String = listOf(
+    filePrefix.trim().takeIf { it.isNotEmpty() },
     quotes.takeIf { it.isNotEmpty() }?.let(::quoteReplyMessage),
     reviews.takeIf { it.isNotEmpty() }?.let { reviewMessage(it) },
     text.trim().takeIf { it.isNotEmpty() },

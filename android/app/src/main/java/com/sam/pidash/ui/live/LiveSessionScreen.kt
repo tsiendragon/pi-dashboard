@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.sam.pidash.ui.markdown.MarkdownBody
+import com.sam.pidash.data.remote.FileAttachments
 import com.sam.pidash.data.remote.ImageAttachments
 import com.sam.pidash.domain.model.LiveImage
 import androidx.compose.material3.*
@@ -73,6 +74,7 @@ fun LiveSessionScreen(
     var attachments by remember(sessionKey) { mutableStateOf(emptyList<LiveImage>()) }
     // Quotes and annotations reuse the WebUI's message shapes, so the agent sees
     // the same blockquote/comment round from either client.
+    var files by remember(sessionKey) { mutableStateOf(emptyList<FileAttachments.TextAttachment>()) }
     var quotes by remember(sessionKey) { mutableStateOf(emptyList<AppQuote>()) }
     var reviews by remember(sessionKey) { mutableStateOf(emptyList<AppReviewItem>()) }
     var annotating by remember(sessionKey) { mutableStateOf<AppReviewItem?>(null) }
@@ -95,6 +97,43 @@ fun LiveSessionScreen(
             val merged = attachments + picked
             val problem = ImageAttachments.validate(merged)
             if (problem != null) notice = problem else attachments = merged
+        }
+    }
+    // Phone files are not on the agent's machine, so text is inlined and PDFs become
+    // image parts — both shapes the Live protocol already accepts.
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) {
+            notice = null
+            scope.launch {
+                uris.take(FileAttachments.MAX_FILES).forEach { uri ->
+                    val name = FileAttachments.displayName(context, uri)
+                    when {
+                        FileAttachments.isPdf(name) -> FileAttachments.pdfPages(context, uri).fold(
+                            onSuccess = { pages ->
+                                val room = (ImageAttachments.MAX_IMAGES - attachments.size).coerceAtLeast(0)
+                                val merged = attachments + pages.take(room)
+                                val problem = ImageAttachments.validate(merged)
+                                if (room == 0) notice = "图片与 PDF 页面合计最多 ${ImageAttachments.MAX_IMAGES} 个"
+                                else if (problem != null) notice = problem
+                                else {
+                                    attachments = merged
+                                    if (pages.size > room) notice = "$name 只发送了前 $room 页"
+                                }
+                            },
+                            onFailure = { error -> notice = error.message ?: "无法读取 PDF" },
+                        )
+                        FileAttachments.isTextFile(name) -> FileAttachments.readText(context, uri).fold(
+                            onSuccess = { file ->
+                                val merged = files + file
+                                val problem = FileAttachments.validate(merged)
+                                if (problem != null) notice = problem else files = merged
+                            },
+                            onFailure = { error -> notice = error.message ?: "无法读取文件" },
+                        )
+                        else -> notice = "不支持的文件类型：$name"
+                    }
+                }
+            }
         }
     }
     var menu by remember { mutableStateOf(false) }
@@ -258,6 +297,28 @@ fun LiveSessionScreen(
                         }
                     }
                 }
+                if (files.isNotEmpty()) Row(
+                    Modifier.fillMaxWidth().padding(bottom = 4.dp).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    files.forEach { file ->
+                        Row(
+                            Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
+                                .padding(start = 6.dp, end = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${file.name} · ${FileAttachments.humanSize(file.sizeBytes)}" +
+                                    if (file.truncated) "（截断）" else "",
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                            )
+                            IconButton(onClick = { files = files - file }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Filled.Close, "移除 ${file.name}", Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
                 if (attachments.isNotEmpty()) Row(
                     Modifier.fillMaxWidth().padding(bottom = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -293,26 +354,43 @@ fun LiveSessionScreen(
                     )
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
-                    IconButton(enabled = !busy && attachments.size < ImageAttachments.MAX_IMAGES,
-                        onClick = { picker.launch("image/*") }) {
-                        Icon(Icons.Filled.Add, "附加图片（最多 4 张）")
+                    Box {
+                        var addMenu by remember { mutableStateOf(false) }
+                        IconButton(enabled = !busy, onClick = { addMenu = true }) {
+                            Icon(Icons.Filled.Add, "附加内容")
+                        }
+                        DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("图片（最多 ${ImageAttachments.MAX_IMAGES} 张）") },
+                                enabled = attachments.size < ImageAttachments.MAX_IMAGES,
+                                onClick = { addMenu = false; picker.launch("image/*") },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("文本文件 / PDF") },
+                                enabled = files.size < FileAttachments.MAX_FILES,
+                                onClick = { addMenu = false; filePicker.launch(arrayOf("*/*")) },
+                            )
+                        }
                     }
                     OutlinedTextField(value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
                         placeholder = { Text("输入消息（网页、TUI 也可同时输入）…") }, maxLines = 4, enabled = !busy)
                     FilledIconButton(enabled = !busy && summary != null &&
-                        (draft.isNotBlank() || attachments.isNotEmpty() || quotes.isNotEmpty() || reviews.isNotEmpty()) &&
+                        (draft.isNotBlank() || attachments.isNotEmpty() || files.isNotEmpty() ||
+                            quotes.isNotEmpty() || reviews.isNotEmpty()) &&
                         ImageAttachments.validate(attachments) == null,
                         onClick = {
                         val typed = draft
                         val images = attachments
                         val sentQuotes = quotes
                         val sentReviews = reviews
-                        val text = composeOutgoing(typed, sentQuotes, sentReviews)
+                        val sentFiles = files
+                        val text = composeOutgoing(typed, sentQuotes, sentReviews, FileAttachments.prefix(sentFiles))
                         perform("已发送") {
                             live.send(sessionKey, text, deliverAs, images).onSuccess {
                                 // Never discard the draft or the attachment on failed/uncertain delivery.
                                 if (draft == typed) draft = ""
                                 if (attachments == images) attachments = emptyList()
+                                if (files == sentFiles) files = emptyList()
                                 if (quotes == sentQuotes) quotes = emptyList()
                                 if (reviews == sentReviews) reviews = emptyList()
                             }

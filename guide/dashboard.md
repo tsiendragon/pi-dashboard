@@ -115,9 +115,19 @@ frontend/src/features/live-sessions/ActivityTimeline.tsx   # 网页规则
 android/app/src/main/java/com/sam/pidash/ui/live/NativeTranscriptCards.kt  # App 同规则
 ```
 
-### 图片附件
+### 附件（图片 / 文本 / PDF）
 
-会话输入框左侧的「＋」可从相册多选图片，限制与 `shared/src/live-sessions.ts` 完全一致：
+输入框左侧「＋」有两个来源：**图片**（相册）与**文本文件 / PDF**（系统文件选择器）。
+
+**文本文件**：`md`/`markdown`/`json`/`py`/`yaml`/`yml`/`txt`/`conf`/`csv` 等常见文本与代码后缀允许；
+最多 3 个、单文件 32 KB、合计 96 KB。内容以 `<文件名 + 大小（截断说明）>` 加围栏代码块前置到消息，
+因为**手机上的文件不在 Agent 那台机器上**，网页版只传路径的做法在这里不成立。二进制（含 NUL 或大量控制符）
+直接拒绝，不做猜测。
+
+**PDF**：用 `android.graphics.pdf.PdfRenderer` 把前 4 页渲染成图片部件发送（白底、1240 px 宽、JPEG 80），
+与图片共用 4 张 / 单张 3 MB / 合计 6 MB 的上限。这不需要后端改动，也不需要把 PDF 上传到服务器。
+
+**图片**：限制与 `shared/src/live-sessions.ts` 完全一致：
 单张 ≤ 3 MB、最多 4 张、合计 ≤ 6 MB；仅 PNG/JPEG/WebP/GIF。超限图片在本地按长边 2048 缩放并以
 JPEG 重新压缩，仍超限则明确报错而不是静默丢弃；原始大小已合规时保留原始字节（GIF/WebP 不失真）。
 附件与草稿一样，**发送失败时保留**。服务端仍做同样校验，客户端限制只是提前失败。选中的图片会随消息
