@@ -278,7 +278,7 @@ fun LiveSessionScreen(
                             summary?.title ?: "Live Pi",
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
-                            style = PiType.title,
+                            style = PiType.headline,
                         )
                         Text(
                             aggregate?.backendName ?: sessionKey.backendId,
@@ -475,13 +475,21 @@ fun LiveSessionScreen(
                             )
                         }
                     }
-                    OutlinedTextField(
+                    // iOS-style field: filled, borderless, 18 dp radius.
+                    TextField(
                         value = draft,
                         onValueChange = { draft = it },
                         modifier = Modifier.weight(1f).padding(horizontal = Spacing.xs),
-                        placeholder = { Text("输入消息…", style = PiType.meta) },
+                        placeholder = { Text("输入消息…", style = PiType.bodyCompact) },
                         textStyle = PiType.bodyCompact,
-                        shape = Radii.card,
+                        shape = Radii.bubble,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        ),
                         maxLines = 4,
                         enabled = !busy,
                     )
@@ -571,8 +579,8 @@ fun LiveSessionScreen(
             } else LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.md),
-                verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(Spacing.lg),
             ) {
                 items(rows, key = { it.id }) { row ->
                     NativeTimelineRow(

@@ -1,7 +1,7 @@
 # PiDash Android · 当前交接
 
-> 当前实现：4.1 / versionCode 22。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
-> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi41)。
+> 当前实现：4.2 / versionCode 23。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
+> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi42)。
 > 功能适配评估与后续范围：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)。
 
 ## 1. 当前状态
@@ -68,7 +68,8 @@
 | `ui/common/AppInfo.kt` | 构建版本与 Live 状态文案；不使用普通 Chat 状态替代 Live 授权 |
 | `ui/markdown/MarkdownParser.kt`、`MarkdownBody.kt` | 纯 Kotlin Markdown 解析（可单测）+ Compose 渲染；默认会话正文 |
 | `ui/live/NativeTranscriptCards.kt` | 步骤一行式（状态·工具名·参数摘要）+ 折叠输出；消息卡按角色着色、12 行截断、Run Code 归组 |
-| `ui/common/Bits.kt` | 极简共享件：`StatusDot`（仅运行/失败）、`MetaText`/`MetaLine`（无底色事实行）、`MetaAction`（11 sp 动作）、`SectionLabel` |
+| `ui/theme/Tokens.kt`（4.2） | iOS 系统色、SF 字号（正文 17）、`Hairline = 0.5.dp`、圆角 8/10/14/18 |
+| `ui/common/Bits.kt` | 极简共享件：`StatusDot`（仅运行/失败）、`MetaText`/`MetaLine`（无底色事实行）、`MetaAction`（11 sp 动作）、`SectionLabel`；另有 `InsetSeparator`（0.5 dp 内缩发丝线）与 `GroupedCard`（分组白卡） |
 | `ui/theme/Tokens.kt`、`Theme.kt` | 自有调色板 + 字号/间距/圆角 token；壁纸取色默认关闭 |
 | `docs/design-preview.html` | 会话页设计稿预览（同色值/字号，非截图，不进 APK） |
 | `notify/LiveAlerts.kt`、`LiveNotifier.kt`、`LiveAlertWatcher.kt` | 两类后台提醒（结束/待回答），标题不含消息正文，30 秒节流；opt-in 且无前台服务 |

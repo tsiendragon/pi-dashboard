@@ -18,6 +18,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.Alignment
+import com.sam.pidash.ui.common.GroupedCard
 import com.sam.pidash.ui.common.MetaLine
 import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.StatusDot
@@ -37,7 +38,7 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
     val states by repo.live.backendStates.collectAsState()
     val chat by repo.connection.collectAsState()
     val scope = rememberCoroutineScope()
-    Scaffold(topBar = {
+    Scaffold(containerColor = MaterialTheme.colorScheme.surfaceVariant, topBar = {
         TopAppBar(title = { Column { Text("机器 / Dashboard"); AppVersionLabel() } }, actions = {
             IconButton(onClick = { scope.launch { repo.live.refreshAll() } }) { Icon(Icons.Default.Refresh, "刷新机器状态") }
             IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "管理机器") }
@@ -45,17 +46,17 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
     }, floatingActionButton = {
         FloatingActionButton(onClick = onSettings) { Icon(Icons.Default.Add, "添加机器") }
     }) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-            item { MetaText("先选择机器，再查看它自己的分组、会话与进度。不会扫描内网或接管会话。", maxLines = 2) }
+        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            item { MetaText("先选择机器，再查看它自己的分组、会话与进度。", maxLines = 2) }
             if (backends.isEmpty()) item { MetaText("尚未配置 Dashboard，请点 + 添加现有服务器地址。", maxLines = 2) }
             items(backends, key = { it.id }) { backend ->
                 val state = states[backend.id]
                 val main = sessions.filter { it.key.backendId == backend.id && it.summary.role != "subagent" && it.summary.parentSessionId == null }
                 val running = main.count { it.summary.status == "running" }
                 val live = state?.connected == true
+                GroupedCard(Modifier.clickable { onOpen(backend.id) }) {
                 Column(
-                    Modifier.fillMaxWidth().clickable { onOpen(backend.id) }
-                        .padding(horizontal = Spacing.xs, vertical = Spacing.sm),
+                    Modifier.fillMaxWidth().padding(Spacing.lg),
                     verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -89,6 +90,7 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
                         state?.message != null -> MetaText(state.message!!, tint = MaterialTheme.colorScheme.error, maxLines = 2)
                         !live -> MetaText("尚未取得已授权 Live 列表，不等于没有会话。", maxLines = 2)
                     }
+                }
                 }
             }
         }

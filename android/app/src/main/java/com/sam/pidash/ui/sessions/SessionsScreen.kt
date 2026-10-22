@@ -85,6 +85,7 @@ fun SessionsScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
         topBar = {
             TopAppBar(
                 title = { Column { Text(backends.firstOrNull()?.name ?: "机器 Dashboard", maxLines = 1); AppVersionLabel() } },
