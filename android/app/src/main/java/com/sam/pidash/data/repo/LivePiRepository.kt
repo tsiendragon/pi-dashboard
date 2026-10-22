@@ -323,6 +323,15 @@ class LivePiRepository(
         catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { backendFailure(id, error); throw error }
     }
+    /** Fork family for one session; the file path comes from the session summary. */
+    suspend fun sessionTree(key: SessionKey): Result<LiveSessionTree> {
+        val file = details.value[key]?.summary?.sessionFile
+            ?: sessions.value.firstOrNull { it.key == key }?.summary?.sessionFile
+            ?: return Result.failure(IOException("这个会话没有可读取的会话文件"))
+        return client(key.backendId)?.sessionTree(file)?.let { Result.success(it) }
+            ?: Result.failure(IOException("机器未配置"))
+    }
+
     suspend fun createGroup(id: String, name: String): Result<Unit> = mutation {
         require(name.isNotBlank() && name.length <= 120) { "分组名需为 1–120 个字符" }
         val api = client(id)

@@ -133,6 +133,15 @@ class LiveSessionClient(
         pidashJson.decodeFromJsonElement(ListSerializer(LiveGroup.serializer()),
             response["groups"] ?: throw IOException("服务器未提供分组结果"))
     } catch (error: kotlinx.serialization.SerializationException) { throw IOException("无法确认服务器分组结果", error) }
+    /** Fork family of one session file; read-only, keyed by session file path. */
+    suspend fun sessionTree(sessionFile: String): LiveSessionTree = withContext(Dispatchers.IO) {
+        require(sessionFile.startsWith('/') && sessionFile.length <= 4096 && !sessionFile.contains('\u0000')) {
+            "无效会话文件路径"
+        }
+        val query = java.net.URLEncoder.encode(sessionFile, "UTF-8")
+        pidashJson.decodeFromJsonElement(LiveSessionTree.serializer(), get("/api/session-tree?file=$query"))
+    }
+
     suspend fun organization(): LiveOrganization {
         val groups = decodeGroups(get("/api/live-session-groups"))
         val order = pidashJson.decodeFromJsonElement(LiveOrder.serializer(), get("/api/live-session-order"))
