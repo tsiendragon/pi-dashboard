@@ -110,6 +110,12 @@ Android 的 Live Cookie 用 AndroidKeyStore AES-GCM 加密并绑定服务器地�
 xml/html、css/markdown；`text`/`log` 等纯文本块保持不着色，未知语言只做通用分词。配色按明暗主题固定，
 超过 20 000 字符或 600 行的块跳过高亮以避免卡顿。这与 highlight.js 不是同一实现，个别语言细节可能不同。
 
+**目标（只读）**（3.6 起）：会话菜单「目标…」展示 `goal-state` 锚点：objective、状态
+（进行中/已暂停/已完成/未标注）、工作项进度条与逐项 `✓/◐/!/⏸/○`、阻塞项（种类·归属·原因）、
+最近进展，以及两种过期提示——「已完成但仍有未完成项」与「超过 300 条消息未更新」（阈值同
+`shared/src/goal-anchor.ts` 的 `GOAL_STALE_MESSAGE_THRESHOLD`）。**App 只读**：要改目标用「用 /goal 修改」
+把 `/goal ` 填进输入框，由 Agent 自己执行；不会伪造或本地改写目标。
+
 **用量统计**（3.5 起）：会话菜单「用量统计…」调用只读 `GET /api/usage?month=YYYY-MM`（账本按机器聚合，
 不是按会话），显示当月 tokens、USD、缓存命中率、记录数，以及按模型/按会话的 top 5；`◀ ▶` 切换月份，
 月份格式与后端一致（`YYYY-MM`）。它只读账本，不触发任何模型调用。
