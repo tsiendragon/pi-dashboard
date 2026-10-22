@@ -150,8 +150,17 @@ Android 的 Live Cookie 用 AndroidKeyStore AES-GCM 加密并绑定服务器地�
   - `http(s)` 链接交给**系统浏览器**（`ACTION_VIEW`）；`externalUrlAllowed` 只放行 `http(s)`，
     `javascript:`/`intent://`/`file://` 与含空格/控制字符的一律拒绝。
 
-已知差距（有意保留）：原生渲染**不做代码语法高亮配色、不渲染 mermaid 图与 KaTeX 公式**，
-也不解析原始 HTML。这些块会以等宽文本出现在正文里。
+**代码高亮**（3.5 起）：`ui/markdown/SyntaxHighlighter.kt` 是纯 Kotlin 分词器（关键字/字符串含转义/行注释与块注释/
+数字/类型/函数名），覆盖 kotlin、java、js/ts、python、bash、json、yaml/toml/ini、sql、go、rust、c/cpp、diff、
+xml/html、css/markdown；`text`/`log` 等纯文本块保持不着色，未知语言只做通用分词。配色按明暗主题固定，
+超过 20 000 字符或 600 行的块跳过高亮以避免卡顿。这与 highlight.js 不是同一实现，个别语言细节可能不同。
+
+**用量统计**（3.5 起）：会话菜单「用量统计…」调用只读 `GET /api/usage?month=YYYY-MM`（账本按机器聚合，
+不是按会话），显示当月 tokens、USD、缓存命中率、记录数，以及按模型/按会话的 top 5；`◀ ▶` 切换月份，
+月份格式与后端一致（`YYYY-MM`）。它只读账本，不触发任何模型调用。
+
+已知差距（有意保留）：原生渲染**不渲染 mermaid 图与 KaTeX 公式**，也不解析原始 HTML。
+这些块会以等宽文本出现在正文里。
 
 改动渲染规则时同时改网页与 App，两边的阈值和文案要保持一致：
 

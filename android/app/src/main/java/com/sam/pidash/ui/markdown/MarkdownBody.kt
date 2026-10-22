@@ -100,6 +100,21 @@ private fun Block(block: MdBlock, style: TextStyle, onOpenPath: (String) -> Unit
 @Composable
 private fun CodeBlock(block: MdBlock.Code) {
     val clipboard = LocalClipboardManager.current
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val highlighted = remember(block.code, block.language, dark) {
+        val tokens = SyntaxHighlighter.highlight(block.code, block.language)
+        if (tokens.isEmpty()) AnnotatedString(block.code) else buildAnnotatedString {
+            var cursor = 0
+            tokens.forEach { token ->
+                if (token.start > cursor) append(block.code.substring(cursor, token.start))
+                pushStyle(SpanStyle(color = codeColor(token.kind, dark)))
+                append(block.code.substring(token.start, token.end))
+                pop()
+                cursor = token.end
+            }
+            if (cursor < block.code.length) append(block.code.substring(cursor))
+        }
+    }
     Column(
         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
             .padding(vertical = 4.dp),
@@ -117,7 +132,7 @@ private fun CodeBlock(block: MdBlock.Code) {
         }
         // Same rule as the WebUI: code keeps its own horizontal scroll, no wrapping.
         Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
-            Text(block.code, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+            Text(highlighted, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
         }
     }
 }
@@ -143,6 +158,17 @@ private fun TableBlock(block: MdBlock.Table, style: TextStyle, onOpenPath: (Stri
             }
         }
     }
+}
+
+/** Palette is fixed per theme: readable on both surfaces and independent of the dashboard theme. */
+private fun codeColor(kind: CodeTokenKind, dark: Boolean): Color = when (kind) {
+    CodeTokenKind.Keyword -> if (dark) Color(0xFFC792EA) else Color(0xFF7C3AED)
+    CodeTokenKind.String -> if (dark) Color(0xFFC3E88D) else Color(0xFF047857)
+    CodeTokenKind.Comment -> if (dark) Color(0xFF7F8C98) else Color(0xFF6B7280)
+    CodeTokenKind.Number -> if (dark) Color(0xFFF78C6C) else Color(0xFFB45309)
+    CodeTokenKind.Type -> if (dark) Color(0xFF82AAFF) else Color(0xFF1D4ED8)
+    CodeTokenKind.Function -> if (dark) Color(0xFF89DDFF) else Color(0xFF0E7490)
+    CodeTokenKind.Plain -> Color.Unspecified
 }
 
 private class TapSpan(val start: Int, val end: Int, val url: String?, val path: String?)
