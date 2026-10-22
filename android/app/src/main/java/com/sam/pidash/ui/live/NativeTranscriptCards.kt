@@ -39,6 +39,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.TranscriptRow
+import com.sam.pidash.ui.common.MetaAction
+import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
@@ -85,25 +87,6 @@ private fun toolOutput(item: LiveTimelineItem): String =
 
 private fun isRunCode(item: LiveTimelineItem) =
     item.toolName?.lowercase()?.let { "run" in it && "code" in it } == true
-
-@Composable
-private fun StatusDot(color: Color, size: Int = 6) {
-    Box(Modifier.size(size.dp).background(color, CircleShape))
-}
-
-/** A quiet text action: 11 sp, muted, minimal padding — never a Material button. */
-@Composable
-internal fun MetaAction(text: String, onClick: () -> Unit, enabled: Boolean = true, tint: Color? = null) {
-    Text(
-        text,
-        style = PiType.micro,
-        color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .clip(Radii.chip)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 3.dp),
-    )
-}
 
 @Composable
 internal fun NativeStepCard(

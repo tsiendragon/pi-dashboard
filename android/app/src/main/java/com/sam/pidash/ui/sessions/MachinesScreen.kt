@@ -14,6 +14,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.ConnectionState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.Alignment
+import com.sam.pidash.ui.common.InfoPill
+import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
+import com.sam.pidash.ui.theme.Spacing
 import com.sam.pidash.ui.common.AppVersionLabel
 import com.sam.pidash.ui.common.backendOriginLabel
 import com.sam.pidash.ui.common.liveConnectionLabel
@@ -41,21 +50,75 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
             items(backends, key = { it.id }) { backend ->
                 val state = states[backend.id]
                 val main = sessions.filter { it.key.backendId == backend.id && it.summary.role != "subagent" && it.summary.parentSessionId == null }
-                OutlinedCard(Modifier.fillMaxWidth().clickable { onOpen(backend.id) }) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(backend.name, style = MaterialTheme.typography.titleMedium)
-                        Text(backendOriginLabel(backend.baseUrl), style = MaterialTheme.typography.labelSmall)
-                        Text(liveConnectionLabel(state))
-                        Text(if (state?.connected == true) "${main.size} 个在线主会话 · ${main.count { it.summary.status == "running" }} 个工作中"
-                            else "尚未取得已授权 Live 列表，不等于没有会话", style = MaterialTheme.typography.bodySmall)
-                        Text("普通 Chat：" + when (chat[backend.id]) {
-                            ConnectionState.Connected -> "已连接（不代表 Live 已配对）"
-                            ConnectionState.Connecting -> "连接中"
-                            else -> "未连接"
-                        }, style = MaterialTheme.typography.labelSmall)
-                        if (state?.needsPairing == true) Text("进入此 Dashboard → 配对；使用网页的一次性手机配对码。", style = MaterialTheme.typography.bodySmall)
-                        else state?.message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                        Text("打开 Dashboard →", color = MaterialTheme.colorScheme.primary)
+                val running = main.count { it.summary.status == "running" }
+                val live = state?.connected == true
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth().clickable { onOpen(backend.id) },
+                    shape = Radii.card,
+                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+                ) {
+                    Column(
+                        Modifier.padding(Spacing.lg),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(backend.name, style = PiType.title, modifier = Modifier.weight(1f), maxLines = 1)
+                            StatusDot(
+                                if (running > 0) MaterialTheme.colorScheme.primary
+                                else if (live) MaterialTheme.colorScheme.secondary
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                size = 8.dp,
+                            )
+                        }
+                        Text(
+                            backendOriginLabel(backend.baseUrl),
+                            style = PiType.monoMicro,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                        ) {
+                            InfoPill(
+                                if (live) "Live 已连接" else "Live 未连接",
+                                tint = if (live) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            InfoPill("${main.size} 个主会话")
+                            if (running > 0) InfoPill("$running 工作中", tint = MaterialTheme.colorScheme.primary)
+                            if (state?.needsPairing == true) InfoPill("需要配对", tint = MaterialTheme.colorScheme.error)
+                            InfoPill(
+                                "Chat " + when (chat[backend.id]) {
+                                    ConnectionState.Connected -> "已连接"
+                                    ConnectionState.Connecting -> "连接中"
+                                    else -> "未连接"
+                                },
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        when {
+                            state?.needsPairing == true -> Text(
+                                "进入此 Dashboard 后用网页的一次性配对码配对。",
+                                style = PiType.meta,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            state?.message != null -> Text(
+                                state.message!!,
+                                style = PiType.meta,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            !live -> Text(
+                                "尚未取得已授权 Live 列表，不等于没有会话。",
+                                style = PiType.meta,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Spacer(Modifier.weight(1f))
+                            Text("打开 Dashboard", style = PiType.micro, color = MaterialTheme.colorScheme.primary)
+                            Text(" →", style = PiType.micro, color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
             }
