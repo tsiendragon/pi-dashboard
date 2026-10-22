@@ -69,6 +69,33 @@ data class LiveModelOption(
     val thinkingLevels: List<String> = emptyList(),
 )
 @Serializable
+data class LiveBackgroundTask(
+    val taskId: String,
+    val title: String = "",
+    val status: String = "",
+    val command: String = "",
+    val cwd: String = "",
+    val mode: String? = null,
+    val toolCallId: String? = null,
+    val pid: Int? = null,
+    val startedAt: Long = 0,
+    val endedAt: Long? = null,
+    val exitCode: Int? = null,
+    val exitReason: String? = null,
+    val outputBytes: Long = 0,
+    val outputTail: String = "",
+    val outputTruncated: Boolean = false,
+    val error: String? = null,
+)
+
+@Serializable
+data class LiveBackgroundSnapshot(
+    val revision: Int = 0,
+    val generatedAt: Long = 0,
+    val tasks: List<LiveBackgroundTask> = emptyList(),
+)
+
+@Serializable
 data class LiveUsageTotals(
     val inputTokens: Long = 0,
     val outputTokens: Long = 0,
