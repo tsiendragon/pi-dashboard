@@ -1,6 +1,13 @@
 package com.sam.pidash.ui.markdown
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
+import com.sam.pidash.ui.theme.Spacing
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
@@ -21,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -53,7 +61,10 @@ fun MarkdownBody(
     style: TextStyle = MaterialTheme.typography.bodyMedium,
 ) {
     val blocks = remember(markdown) { MarkdownParser.parse(markdown) }
-    Column(modifier, verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+    Column(
+        modifier,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(com.sam.pidash.ui.theme.Spacing.sm),
+    ) {
         blocks.forEach { block -> Block(block, style, onOpenPath, onOpenUrl) }
     }
 }
@@ -62,10 +73,14 @@ fun MarkdownBody(
 private fun Block(block: MdBlock, style: TextStyle, onOpenPath: (String) -> Unit, onOpenUrl: (String) -> Unit) {
     when (block) {
         is MdBlock.Heading -> {
-            val scale = when (block.level) { 1 -> 1.35f; 2 -> 1.2f; 3 -> 1.08f; else -> 1f }
+            val scale = when (block.level) { 1 -> 1.3f; 2 -> 1.15f; 3 -> 1.05f; else -> 1f }
             InlineText(
                 MarkdownParser.inline(block.text),
-                style.copy(fontSize = style.fontSize * scale, fontWeight = FontWeight.SemiBold),
+                style.copy(
+                    fontSize = style.fontSize * scale,
+                    lineHeight = style.lineHeight * scale,
+                    fontWeight = FontWeight.SemiBold,
+                ),
                 onOpenPath, onOpenUrl,
             )
         }
@@ -84,7 +99,10 @@ private fun Block(block: MdBlock, style: TextStyle, onOpenPath: (String) -> Unit
             }
         }
         is MdBlock.Quote -> Row(Modifier.fillMaxWidth()) {
-            Box(Modifier.widthIn(min = 3.dp).background(MaterialTheme.colorScheme.outlineVariant))
+            Box(
+                Modifier.widthIn(min = 2.dp).height(IntrinsicSize.Min)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+            )
             Column(
                 Modifier.padding(start = 8.dp),
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
@@ -101,6 +119,7 @@ private fun Block(block: MdBlock, style: TextStyle, onOpenPath: (String) -> Unit
 private fun CodeBlock(block: MdBlock.Code) {
     val clipboard = LocalClipboardManager.current
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val scheme = MaterialTheme.colorScheme
     val highlighted = remember(block.code, block.language, dark) {
         val tokens = SyntaxHighlighter.highlight(block.code, block.language)
         if (tokens.isEmpty()) AnnotatedString(block.code) else buildAnnotatedString {
@@ -115,47 +134,67 @@ private fun CodeBlock(block: MdBlock.Code) {
             if (cursor < block.code.length) append(block.code.substring(cursor))
         }
     }
+    // A thin border instead of a filled slab: keeps code blocks from reading as cards.
     Column(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
-            .padding(vertical = 4.dp),
+        Modifier.fillMaxWidth()
+            .border(1.dp, scheme.outline.copy(alpha = 0.7f), Radii.chip)
+            .background(scheme.surfaceVariant.copy(alpha = 0.45f), Radii.chip),
     ) {
-        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp)) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = Spacing.sm, end = Spacing.xs, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                block.language ?: "code",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                (block.language ?: "code").lowercase(),
+                style = PiType.micro.copy(fontFamily = FontFamily.Monospace),
+                color = scheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = { clipboard.setText(AnnotatedString(block.code)) }) {
-                Text("复制", style = MaterialTheme.typography.labelSmall)
+            TextButton(
+                onClick = { clipboard.setText(AnnotatedString(block.code)) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                modifier = Modifier.height(26.dp),
+            ) {
+                Text("复制", style = PiType.micro, color = scheme.onSurfaceVariant)
             }
         }
+        HorizontalDivider(color = scheme.outline.copy(alpha = 0.5f))
         // Same rule as the WebUI: code keeps its own horizontal scroll, no wrapping.
-        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
-            Text(highlighted, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(Spacing.sm)) {
+            Text(highlighted, style = PiType.mono)
         }
     }
 }
 
 @Composable
 private fun TableBlock(block: MdBlock.Table, style: TextStyle, onOpenPath: (String) -> Unit, onOpenUrl: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-        Row {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        Modifier.fillMaxWidth()
+            .border(1.dp, scheme.outline.copy(alpha = 0.7f), Radii.chip)
+            .horizontalScroll(rememberScrollState()),
+    ) {
+        Row(Modifier.background(scheme.surfaceVariant.copy(alpha = 0.6f))) {
             block.header.forEach { cell ->
-                Box(Modifier.widthIn(min = 110.dp, max = 240.dp).padding(4.dp)) {
-                    InlineText(MarkdownParser.inline(cell), style.copy(fontWeight = FontWeight.SemiBold), onOpenPath, onOpenUrl)
+                Box(Modifier.widthIn(min = 112.dp, max = 240.dp).padding(horizontal = Spacing.sm, vertical = 6.dp)) {
+                    InlineText(
+                        MarkdownParser.inline(cell),
+                        PiType.strong,
+                        onOpenPath, onOpenUrl,
+                    )
                 }
             }
         }
-        HorizontalDivider()
-        block.rows.forEach { row ->
+        HorizontalDivider(color = scheme.outline.copy(alpha = 0.6f))
+        block.rows.forEachIndexed { index, row ->
             Row {
                 row.forEach { cell ->
-                    Box(Modifier.widthIn(min = 110.dp, max = 240.dp).padding(4.dp)) {
+                    Box(Modifier.widthIn(min = 112.dp, max = 240.dp).padding(horizontal = Spacing.sm, vertical = 6.dp)) {
                         InlineText(MarkdownParser.inline(cell), style, onOpenPath, onOpenUrl)
                     }
                 }
             }
+            if (index < block.rows.lastIndex) HorizontalDivider(color = scheme.outline.copy(alpha = 0.35f))
         }
     }
 }
