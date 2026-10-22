@@ -25,6 +25,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.sam.pidash.ui.markdown.MarkdownBody
+import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
+import com.sam.pidash.ui.theme.Spacing
 import com.sam.pidash.data.remote.FileAttachments
 import com.sam.pidash.data.remote.ImageAttachments
 import com.sam.pidash.domain.model.LiveImage
@@ -34,6 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.externalUrlAllowed
 import com.sam.pidash.data.remote.projectLiveTimeline
@@ -263,10 +267,22 @@ fun LiveSessionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 title = {
-                    Column {
-                        Text(summary?.title ?: "Live Pi", maxLines = 1, style = MaterialTheme.typography.titleMedium)
-                        Text(aggregate?.backendName ?: sessionKey.backendId, style = MaterialTheme.typography.labelSmall)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            summary?.title ?: "Live Pi",
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            style = PiType.title,
+                        )
+                        Text(
+                            aggregate?.backendName ?: sessionKey.backendId,
+                            style = PiType.micro,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
@@ -350,7 +366,7 @@ fun LiveSessionScreen(
                                 .padding(start = 6.dp, end = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("${selectionLabel(quote.role)}：${quote.text}", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            Text("${selectionLabel(quote.role)}：${quote.text}", style = PiType.micro, maxLines = 1)
                             IconButton(onClick = { quotes = quotes - quote }, modifier = Modifier.size(24.dp)) {
                                 Icon(Icons.Filled.Close, "移除引用", Modifier.size(14.dp))
                             }
@@ -362,7 +378,7 @@ fun LiveSessionScreen(
                                 .padding(start = 6.dp, end = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("批注：${review.content}", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            Text("批注：${review.content}", style = PiType.micro, maxLines = 1)
                             IconButton(onClick = { reviews = reviews - review }, modifier = Modifier.size(24.dp)) {
                                 Icon(Icons.Filled.Close, "移除批注", Modifier.size(14.dp))
                             }
@@ -382,10 +398,10 @@ fun LiveSessionScreen(
                             Text(
                                 "${file.name} · ${FileAttachments.humanSize(file.sizeBytes)}" +
                                     if (file.truncated) "（截断）" else "",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = PiType.micro,
                                 maxLines = 1,
                             )
-                            IconButton(onClick = { files = files - file }, modifier = Modifier.size(24.dp)) {
+                            IconButton(onClick = { files = files - file }, modifier = Modifier.size(22.dp)) {
                                 Icon(Icons.Filled.Close, "移除 ${file.name}", Modifier.size(14.dp))
                             }
                         }
@@ -414,15 +430,35 @@ fun LiveSessionScreen(
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(enabled = !busy && owned, onClick = {
-                        perform("已请求中止") {
-                            if (live.leases.value.containsKey(sessionKey)) live.abort(sessionKey)
-                            else Result.failure(IllegalStateException("本机已不再持有控制权，未发送中止。"))
-                        }
-                    }) { Text("中止") }
+                    val stateText = when {
+                        busy -> "运行中"
+                        owned -> "本机接管中"
+                        heldElsewhere -> "他端持有控制权，仍可直接输入"
+                        else -> "可直接输入 · 与网页、TUI 同步"
+                    }
+                    Box(
+                        Modifier.size(6.dp).background(
+                            if (busy) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            androidx.compose.foundation.shape.CircleShape,
+                        ),
+                    )
                     Text(
-                        if (owned) "本机接管中 · 仅中止/压缩需要" else "可直接输入 · 与网页、TUI 同步",
-                        style = MaterialTheme.typography.labelSmall,
+                        "  $stateText",
+                        style = PiType.micro,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (busy || owned) MetaAction(
+                        text = "中止",
+                        onClick = {
+                            perform("已请求中止") {
+                                if (live.leases.value.containsKey(sessionKey)) live.abort(sessionKey)
+                                else Result.failure(IllegalStateException("本机已不再持有控制权，未发送中止。"))
+                            }
+                        },
+                        enabled = !busy || owned,
+                        tint = MaterialTheme.colorScheme.error,
                     )
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -444,8 +480,16 @@ fun LiveSessionScreen(
                             )
                         }
                     }
-                    OutlinedTextField(value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
-                        placeholder = { Text("输入消息（网页、TUI 也可同时输入）…") }, maxLines = 4, enabled = !busy)
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        modifier = Modifier.weight(1f).padding(horizontal = Spacing.xs),
+                        placeholder = { Text("输入消息…", style = PiType.meta) },
+                        textStyle = PiType.bodyCompact,
+                        shape = Radii.card,
+                        maxLines = 4,
+                        enabled = !busy,
+                    )
                     FilledIconButton(enabled = !busy && summary != null &&
                         (draft.isNotBlank() || attachments.isNotEmpty() || files.isNotEmpty() ||
                             quotes.isNotEmpty() || reviews.isNotEmpty()) &&
@@ -469,10 +513,35 @@ fun LiveSessionScreen(
                         }
                     }) { Icon(Icons.AutoMirrored.Filled.Send, "发送") }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(null to "默认", "steer" to "引导", "followUp" to "排队").forEach { (value, label) ->
-                        FilterChip(selected = deliverAs == value, enabled = !busy, onClick = { deliverAs = value }, label = { Text(label) })
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    // Three always-visible chips cost a whole row; one compact menu keeps the composer short.
+                    var deliverMenu by remember { mutableStateOf(false) }
+                    Box {
+                        MetaAction(
+                            text = "投递：" + when (deliverAs) {
+                                "steer" -> "引导"
+                                "followUp" -> "排队"
+                                else -> "默认"
+                            } + " ▾",
+                            onClick = { deliverMenu = true },
+                            enabled = !busy,
+                        )
+                        DropdownMenu(expanded = deliverMenu, onDismissRequest = { deliverMenu = false }) {
+                            listOf(null to "默认（直接发送）", "steer" to "引导（插到当前步）", "followUp" to "排队（本轮之后）")
+                                .forEach { (value, label) ->
+                                    DropdownMenuItem(
+                                        text = { Text(label) },
+                                        onClick = { deliverAs = value; deliverMenu = false },
+                                    )
+                                }
+                        }
                     }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "${draft.length} 字",
+                        style = PiType.micro,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         },
@@ -483,17 +552,32 @@ fun LiveSessionScreen(
                 Text(backend?.message ?: if (backend?.needsPairing == true) "需要重新手机配对" else "连接中断或正在连接；下方可能是缓存内容。",
                     Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
-            summary?.let { s ->
-                SelectionContainer {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                        Text(
-                            "${s.status} · ${s.model?.let { "${it.provider}/${it.id}" } ?: "模型未知"} · ${s.thinkingLevel ?: "默认思考"}" +
-                                (goalState?.let { " · 目标 ${it.statusLabel}" } ?: ""),
-                            style = MaterialTheme.typography.labelSmall)
-                        Text(s.cwd, style = MaterialTheme.typography.labelSmall, maxLines = 2)
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    summary?.let { s ->
+                        InfoPill(
+                            text = s.status,
+                            tint = if (s.status == "running") MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        InfoPill(s.model?.let { "${it.provider}/${it.id}" } ?: "模型未知")
+                        InfoPill(s.thinkingLevel ?: "默认思考")
                         s.contextUsage?.let { usage ->
-                            Text("上下文 ${usage.tokens?.toString() ?: "?"} / ${usage.contextWindow}" +
-                                (usage.percent?.let { " · ${"%.1f".format(it)}%" } ?: ""), style = MaterialTheme.typography.labelSmall)
+                            InfoPill(
+                                usage.percent?.let { "${"%.1f".format(it)}% 上下文" } ?: "上下文",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        goalState?.let { InfoPill("目标 ${it.statusLabel}", tint = MaterialTheme.colorScheme.primary) }
+                        summary?.cwd?.takeIf { cwd -> cwd.isNotBlank() }?.let { cwd ->
+                            InfoPill(cwd, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -501,13 +585,17 @@ fun LiveSessionScreen(
             HorizontalDivider()
             if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text(if (detail == null) "等待会话详情；可从菜单刷新。" else "暂无消息（只读打开）。")
+                    Text(
+                        if (detail == null) "正在同步会话详情…" else "这段会话还没有消息。",
+                        style = PiType.meta,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             } else LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(Spacing.md),
             ) {
                 items(rows, key = { it.id }) { row ->
                     NativeTimelineRow(
@@ -812,4 +900,21 @@ internal fun LiveTimelineCard(item: LiveTimelineItem, enabled: Boolean, onFork: 
             TextButton(enabled = enabled, onClick = { onFork(item.entryId) }) { Text("从此消息分叉…") }
         }
     }
+}
+
+/** Small rounded label used for status, model and context — replaces stacked log lines. */
+@Composable
+private fun InfoPill(
+    text: String,
+    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Text(
+        text,
+        style = PiType.micro,
+        color = tint,
+        maxLines = 1,
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f), Radii.chip)
+            .padding(horizontal = Spacing.sm, vertical = 3.dp),
+    )
 }

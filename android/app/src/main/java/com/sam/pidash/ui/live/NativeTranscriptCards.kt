@@ -2,22 +2,27 @@ package com.sam.pidash.ui.live
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,28 +30,31 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.TranscriptRow
 import com.sam.pidash.ui.markdown.MarkdownBody
+import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
+import com.sam.pidash.ui.theme.Spacing
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 
 /**
- * Native transcript cards. Presentation follows the WebUI:
+ * Native transcript cards.
  *
- * - every tool call is ONE line (status · name · argument preview) and its output
- *   stays collapsed until tapped;
- * - a reply longer than 12 lines or 1200 characters is clipped with the same
- *   "展开全部正文（N 行）" affordance;
- * - assistant prose has no bubble, the user's own message is tinted, errors are
- *   red. Nothing is rendered as a JSON dump any more.
+ * Visual rules: the transcript is the product, so it gets the reading type scale and
+ * the only accent in the screen; chrome (step rows, metadata actions) stays at 11 sp
+ * so a long session never turns into one grey block. Presentation still matches the
+ * WebUI — one line per tool call, output collapsed, 12-line reply clipping.
  */
 
 private const val PREVIEW_LINES = 12
@@ -57,7 +65,7 @@ private val isToolItem = { item: LiveTimelineItem ->
     item.role == "tool" || item.role == "toolResult" || item.toolCallId != null
 }
 
-/** `bash · cd /repo && npm test` — one readable line instead of raw JSON. */
+/** `cd /repo && npm test` — one readable line instead of raw JSON. */
 internal fun toolArgumentPreview(item: LiveTimelineItem): String {
     val raw = item.toolArgs?.trim().orEmpty()
     val parsed = raw.takeIf { it.startsWith("{") }?.let {
@@ -79,6 +87,25 @@ private fun isRunCode(item: LiveTimelineItem) =
     item.toolName?.lowercase()?.let { "run" in it && "code" in it } == true
 
 @Composable
+private fun StatusDot(color: Color, size: Int = 6) {
+    Box(Modifier.size(size.dp).background(color, CircleShape))
+}
+
+/** A quiet text action: 11 sp, muted, minimal padding — never a Material button. */
+@Composable
+internal fun MetaAction(text: String, onClick: () -> Unit, enabled: Boolean = true, tint: Color? = null) {
+    Text(
+        text,
+        style = PiType.micro,
+        color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .clip(Radii.chip)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+    )
+}
+
+@Composable
 internal fun NativeStepCard(
     item: LiveTimelineItem,
     onOpenPath: (String) -> Unit,
@@ -86,51 +113,55 @@ internal fun NativeStepCard(
 ) {
     var open by remember(item.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
-    val (icon, tint) = when {
-        item.isError -> "!" to scheme.error
-        item.status == "running" -> "●" to scheme.primary
-        else -> "✓" to scheme.onSurfaceVariant
+    val tint = when {
+        item.isError -> scheme.error
+        item.status == "running" -> scheme.primary
+        else -> scheme.onSurfaceVariant.copy(alpha = 0.65f)
     }
     val name = if (isRunCode(item)) "Run Code" else item.toolName ?: "工具"
     val detail = toolArgumentPreview(item)
     val output = toolOutput(item)
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().padding(vertical = 2.dp),
+            Modifier.fillMaxWidth()
+                .then(if (output.isNotEmpty()) Modifier.clickable { open = !open } else Modifier)
+                .padding(vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(icon, color = tint, style = MaterialTheme.typography.labelSmall)
+            StatusDot(tint)
             Text(
                 "  $name",
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                style = PiType.monoMicro.copy(fontWeight = FontWeight.SemiBold),
+                color = if (item.isError) scheme.error else scheme.onSurface,
                 maxLines = 1,
             )
             if (detail.isNotEmpty()) Text(
                 "  $detail",
-                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                style = PiType.monoMicro,
                 color = scheme.onSurfaceVariant,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
-            ) else androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-            if (output.isNotEmpty()) TextButton(
-                onClick = { open = !open },
-                modifier = Modifier.heightIn(min = 26.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-            ) {
-                Text(
-                    if (open) "收起" else if (isRunCode(item)) "展开 Run Code" else "展开输出",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.primary,
-                )
-            }
+            ) else Spacer(Modifier.weight(1f))
+            if (output.isNotEmpty()) Text(
+                if (open) "⌃" else "⌄",
+                style = PiType.micro,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, end = 2.dp),
+            )
         }
         if (open && output.isNotEmpty()) {
             SelectionContainer {
-                Column(
-                    Modifier.fillMaxWidth().padding(bottom = 4.dp)
-                        .background(scheme.surfaceVariant, RoundedCornerShape(6.dp)).padding(8.dp),
+                Box(
+                    Modifier.fillMaxWidth()
+                        .padding(start = 2.dp, top = 2.dp, bottom = 6.dp)
+                        .border(1.dp, scheme.outline.copy(alpha = 0.6f), Radii.chip)
+                        .background(scheme.surfaceVariant.copy(alpha = 0.4f), Radii.chip)
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(Spacing.sm),
                 ) {
-                    MarkdownBody(output, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl)
+                    MarkdownBody(output, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl, style = PiType.mono)
                 }
             }
         }
@@ -154,94 +185,176 @@ internal fun NativeMessageCard(
     val long = lines.size > PREVIEW_LINES || item.text.length > PREVIEW_CHARS
     val visible = if (long && !expanded) lines.take(PREVIEW_LINES).joinToString("\n").take(PREVIEW_CHARS) else item.text
     val user = item.role == "user"
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = if (user) Arrangement.End else Arrangement.Start,
-    ) {
-        Column(
-            Modifier
-                .then(if (user) Modifier.widthIn(max = 520.dp) else Modifier.fillMaxWidth())
-                .background(
-                    when {
-                        item.isError -> scheme.errorContainer
-                        user -> scheme.primaryContainer
-                        else -> androidx.compose.ui.graphics.Color.Transparent
-                    },
-                    RoundedCornerShape(10.dp),
-                )
-                .then(if (user || item.isError) Modifier.padding(horizontal = 10.dp, vertical = 8.dp) else Modifier),
-            horizontalAlignment = if (user) Alignment.End else Alignment.Start,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            if (!item.thinking.isNullOrBlank()) TextButton(
-                onClick = { showThinking = !showThinking },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                modifier = Modifier.heightIn(min = 24.dp),
+
+    if (user) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Column(
+                Modifier.widthIn(max = 560.dp)
+                    .background(scheme.primary.copy(alpha = 0.12f), Radii.bubble)
+                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
             ) {
-                Text(
-                    if (showThinking) "收起思考" else "查看思考",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
+                item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+                if (item.text.isNotBlank()) Text(visible, style = PiType.body, color = scheme.onSurface)
+                if (long) MetaAction(
+                    if (expanded) "收起正文" else "展开全部正文（${lines.size} 行）",
+                    { expanded = !expanded },
+                    tint = scheme.primary,
                 )
-            }
-            if (showThinking) item.thinking?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = scheme.onSurfaceVariant,
-                )
-            }
-            item.images.forEachIndexed { index, image ->
-                val bitmap = remember(image.data) {
-                    runCatching {
-                        val bytes = android.util.Base64.decode(image.data, android.util.Base64.DEFAULT)
-                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                    }.getOrNull()
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    if (onQuote != null && item.text.isNotBlank()) MetaAction("引用", { onQuote(item) }, enabled)
+                    if (onAnnotate != null && item.text.isNotBlank()) MetaAction("批注", { onAnnotate(item) }, enabled)
+                    if (item.forkable && !item.entryId.isNullOrBlank() && onFork != null) {
+                        MetaAction("分叉", { onFork(item.entryId) }, enabled)
+                    }
                 }
-                if (bitmap != null) Image(bitmap, "附件 ${index + 1}", Modifier.size(140.dp), contentScale = ContentScale.Fit)
+            }
+        }
+        return
+    }
+
+    Column(
+        Modifier.fillMaxWidth()
+            .then(
+                if (item.isError) Modifier
+                    .border(1.dp, scheme.error.copy(alpha = 0.5f), Radii.card)
+                    .background(scheme.error.copy(alpha = 0.06f), Radii.card)
+                    .padding(Spacing.md)
+                else Modifier
+            ),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+    ) {
+        item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+        if (item.text.isNotBlank()) {
+            MarkdownBody(
+                visible,
+                onOpenPath = onOpenPath,
+                onOpenUrl = onOpenUrl,
+                style = PiType.body.copy(color = if (item.isError) scheme.error else scheme.onSurface),
+            )
+            if (long) MetaAction(
+                if (expanded) "收起正文" else "展开全部正文（${lines.size} 行）",
+                { expanded = !expanded },
+                tint = scheme.primary,
+            )
+        }
+        val hasMeta = !item.thinking.isNullOrBlank() || item.text.isNotBlank()
+        if (hasMeta) Row(
+            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (!item.thinking.isNullOrBlank()) {
+                MetaAction(if (showThinking) "收起思考" else "思考", { showThinking = !showThinking })
             }
             if (item.text.isNotBlank()) {
-                if (user) Text(visible, style = MaterialTheme.typography.bodyMedium)
-                else MarkdownBody(visible, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl)
-                if (long) TextButton(
-                    onClick = { expanded = !expanded },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                    modifier = Modifier.heightIn(min = 24.dp),
-                ) {
-                    Text(
-                        if (expanded) "收起正文" else "展开全部正文（${lines.size} 行）",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (user) scheme.onSurfaceVariant else scheme.primary,
-                    )
+                if (onQuote != null) MetaAction("引用", { onQuote(item) }, enabled)
+                if (onAnnotate != null) MetaAction("批注", { onAnnotate(item) }, enabled)
+            }
+        }
+        if (showThinking) item.thinking?.let {
+            Box(
+                Modifier.fillMaxWidth()
+                    .border(1.dp, scheme.outline.copy(alpha = 0.6f), Radii.chip)
+                    .background(scheme.surfaceVariant.copy(alpha = 0.35f), Radii.chip)
+                    .padding(Spacing.sm),
+            ) {
+                SelectionContainer {
+                    Text(it, style = PiType.monoMicro, color = scheme.onSurfaceVariant)
                 }
             }
-            if (item.isError && item.text.isBlank()) {
-                Text("出错了", style = MaterialTheme.typography.bodySmall, color = scheme.error)
-            }
-            if (item.text.isNotBlank() && (onQuote != null || onAnnotate != null)) Row {
-                if (onQuote != null) TextButton(
-                    enabled = enabled,
-                    onClick = { onQuote(item) },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                    modifier = Modifier.heightIn(min = 24.dp),
-                ) { Text("引用", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant) }
-                if (onAnnotate != null) TextButton(
-                    enabled = enabled,
-                    onClick = { onAnnotate(item) },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.heightIn(min = 24.dp),
-                ) { Text("批注", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant) }
-            }
-            if (item.forkable && !item.entryId.isNullOrBlank() && onFork != null) TextButton(
-                enabled = enabled,
-                onClick = { onFork(item.entryId) },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                modifier = Modifier.heightIn(min = 24.dp),
+        }
+        if (item.isError && item.text.isBlank()) {
+            Text("出错了", style = PiType.meta, color = scheme.error)
+        }
+    }
+}
+
+@Composable
+private fun AttachmentImage(data: String, index: Int) {
+    val bitmap = remember(data) {
+        runCatching {
+            val bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT)
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
+    if (bitmap != null) Image(
+        bitmap,
+        "附件 ${index + 1}",
+        Modifier.size(160.dp).clip(RoundedCornerShape(10.dp)),
+        contentScale = ContentScale.Crop,
+    )
+}
+
+/**
+ * A run of consecutive tool calls folded into one row: a status dot, the step count,
+ * the tool names, and a chevron. Expanded steps hang off a hairline rule so the group
+ * still reads as one block.
+ */
+@Composable
+internal fun NativeStepGroup(
+    group: TranscriptRow.Steps,
+    onOpenPath: (String) -> Unit,
+    onOpenUrl: (String) -> Unit,
+) {
+    var open by remember(group.id) { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    val (tint, state) = when {
+        group.failed -> scheme.error to "含失败"
+        group.running -> scheme.primary to "进行中"
+        else -> scheme.onSurfaceVariant.copy(alpha = 0.65f) to "已完成"
+    }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            StatusDot(tint)
+            Text(
+                "  ${group.items.size} 个步骤",
+                style = PiType.strong,
+                color = if (group.failed) scheme.error else scheme.onSurface,
+            )
+            Text(
+                "  $state",
+                style = PiType.micro,
+                color = tint,
+            )
+            Text(
+                "  ${group.names.joinToString(" · ")}",
+                style = PiType.monoMicro,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                if (open) "⌃" else "⌄",
+                style = PiType.micro,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = Spacing.xs, end = 2.dp),
+            )
+        }
+        if (open) Row(Modifier.fillMaxWidth()) {
+            Box(
+                Modifier.padding(start = 2.dp, top = 2.dp, bottom = 2.dp).widthIn(min = 1.dp)
+                    .heightIn(min = 8.dp)
+                    .background(scheme.outline.copy(alpha = 0.5f)),
+            ) { Spacer(Modifier.size(1.dp)) }
+            Column(
+                Modifier.weight(1f).padding(start = Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
-                Text("从此消息分叉…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                group.items.forEach { item -> NativeStepCard(item, onOpenPath, onOpenUrl) }
             }
         }
     }
+}
+
+/** A faint rule between logical blocks keeps long transcripts scannable. */
+@Composable
+internal fun TranscriptSeparator() {
+    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
 }
 
 @Composable
@@ -261,56 +374,5 @@ internal fun NativeTimelineRow(
             else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate)
         }
         is TranscriptRow.Steps -> NativeStepGroup(row, onOpenPath, onOpenUrl)
-    }
-}
-
-/**
- * A run of consecutive tool calls folded into one collapsible line, the way the
- * WebUI folds an activity block instead of listing ten步骤.
- */
-@Composable
-internal fun NativeStepGroup(
-    group: TranscriptRow.Steps,
-    onOpenPath: (String) -> Unit,
-    onOpenUrl: (String) -> Unit,
-) {
-    var open by remember(group.id) { mutableStateOf(false) }
-    val scheme = MaterialTheme.colorScheme
-    val (icon, tint, state) = when {
-        group.failed -> Triple("!", scheme.error, "含失败")
-        group.running -> Triple("●", scheme.primary, "进行中")
-        else -> Triple("✓", scheme.onSurfaceVariant, "已完成")
-    }
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(icon, color = tint, style = MaterialTheme.typography.labelSmall)
-            Text(
-                "  ${group.items.size} 个步骤 · $state",
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = tint,
-            )
-            Text(
-                "  ${group.names.joinToString(" · ")}",
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                if (open) "收起" else "展开",
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.primary,
-                modifier = Modifier.padding(horizontal = 6.dp),
-            )
-        }
-        if (open) Column(
-            Modifier.fillMaxWidth().padding(start = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            group.items.forEach { item -> NativeStepCard(item, onOpenPath, onOpenUrl) }
-        }
     }
 }
