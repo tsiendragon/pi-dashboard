@@ -1,9 +1,9 @@
 # PiDash Android（原生 Compose 客户端）
 
-一个原生 Kotlin + Jetpack Compose 客户端。**3.1 / build 12：机器列表 → 本机 Dashboard → Session**；本机默认 Live Pi，普通 Chat 保留在独立标签中，不把旧 Chat slot 假装成 Live 进程。机器列表、Dashboard、设置页显示实际构建版本。
+一个原生 Kotlin + Jetpack Compose 客户端。**3.2 / build 13：机器列表 → 本机 Dashboard → Session**；本机默认 Live Pi，普通 Chat 保留在独立标签中，不把旧 Chat slot 假装成 Live 进程。机器列表、Dashboard、设置页显示实际构建版本。
 
 - **APK 下载与每版更新说明**：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)（当前为预发布版；下载后由用户确认覆盖安装，不是 App 内自动更新）
-- **部署、构建、手机配对与验收**：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi31)
+- **部署、构建、手机配对与验收**：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi32)
 - **当前进度、测试证据与限制**：[`HANDOFF.md`](HANDOFF.md)
 - **功能适配与边界评估**：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)
 - 历史设计：[`docs/android-app-design.md`](../docs/android-app-design.md)
@@ -18,6 +18,8 @@
 | 默认新建 Live Pi、选择服务器和工作目录 | 已实现：服务器 roots / 项目候选 / 手填绝对路径；服务器最终校验权限 |
 | 文本渲染 | 纯 Kotlin Markdown 解析 + Compose 渲染（标题/代码/列表/引用/表格/行内样式/链接/路径可点）；工具**一行式**且参数不进正文、输出默认折叠 |
 | 流式/思考/工具进度/错误 | 已实现；一次调用的发起/事件/结果合成同一行，状态与失败可辨 |
+| 活动分组 | 连续工具调用折叠成 `N 个步骤 · 已完成`，点开展开；含失败/进行中会标出 |
+| 引用/批注 | 消息下方「引用」「批注」；发出的消息与网页 `reviewComments.ts` 同格式，一次最多 4 段引用 |
 | 输入（与网页、TUI 同时输入） | 已实现：普通消息/改名/切模型/重载**不需要接管**，与 WebUI 规则一致 |
 | 图片附件 | 已实现：相册多选（最多 4 张），本地校验并压缩到协议上限（单张 3 MB、合计 6 MB），失败保留草稿与附件 |
 | 中止、压缩、重启 | 需要显式接管，不抢占他端；他端持有时直接拒绝 |
@@ -43,7 +45,7 @@ Live Cookie 用 AndroidKeyStore AES-GCM 加密，并绑定服务器地址/连接
 
 | 组件 | 版本 |
 |---|---|
-| App | 3.1 / versionCode 12 / `com.sam.pidash` |
+| App | 3.2 / versionCode 13 / `com.sam.pidash` |
 | Gradle / AGP | 8.9 / 8.7.3 |
 | Kotlin / Compose BOM | 2.0.21 / 2024.10.01 |
 | compileSdk / targetSdk / minSdk | 35 / 35 / 26 |
