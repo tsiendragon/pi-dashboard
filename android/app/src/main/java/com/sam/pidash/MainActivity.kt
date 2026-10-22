@@ -19,6 +19,16 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    override fun onResume() {
+        super.onResume()
+        (application as PiDashApp).notifier.foreground = true
+    }
+
+    override fun onPause() {
+        (application as PiDashApp).notifier.foreground = false
+        super.onPause()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
