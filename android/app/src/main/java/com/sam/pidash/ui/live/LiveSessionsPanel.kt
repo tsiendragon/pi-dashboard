@@ -1,5 +1,14 @@
 package com.sam.pidash.ui.live
 
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
+import com.sam.pidash.ui.common.InfoPill
+import com.sam.pidash.ui.common.MetaAction
+import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Spacing
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -91,21 +100,65 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
         sections.forEach { section ->
             val collapsed = query.isBlank() && (section.collapsedByDefault != (section.id in toggled))
             item(key = "section:${section.id}") {
-                TextButton(onClick = { toggled = if (section.id in toggled) toggled - section.id else toggled + section.id }) {
-                    Text("${if (collapsed) "▸" else "▾"} ${section.name} (${section.sessions.size})")
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable {
+                            toggled = if (section.id in toggled) toggled - section.id else toggled + section.id
+                        }
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (collapsed) "▸" else "▾", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("  ${section.name}", style = PiType.strong)
+                    Text(
+                        "  ${section.sessions.size}",
+                        style = PiType.micro,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             if (!collapsed) items(section.sessions, key = { "${section.id}:${it.key.slotKey}" }) { row ->
-                ListItem(modifier = Modifier.clickable { onOpen(row.key) },
-                    headlineContent = { Text((if (row.meta.pinned) "★ " else "") + row.summary.title) },
-                    supportingContent = { Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("${row.summary.status} · ${row.summary.claim.state}")
-                        Text(row.summary.cwd, style = MaterialTheme.typography.bodySmall)
-                        row.summary.model?.let { Text("${it.provider}/${it.id}", style = MaterialTheme.typography.labelSmall) }
-                        if (row.meta.tags.isNotEmpty()) Text(row.meta.tags.joinToString("  ") { "#$it" })
-                    } },
-                    trailingContent = { TextButton(enabled = org.loaded, onClick = { groupError = null; moving = row }) { Text("分组") } })
-                HorizontalDivider()
+                val running = row.summary.status == "running"
+                Row(
+                    Modifier.fillMaxWidth().clickable { onOpen(row.key) }
+                        .padding(start = Spacing.lg, end = Spacing.sm, top = 9.dp, bottom = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            StatusDot(
+                                if (running) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                            )
+                            Text(
+                                "  " + row.summary.title,
+                                style = PiType.bodyCompact.copy(fontWeight = FontWeight.Medium),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (row.meta.pinned) Text(
+                                "  ★",
+                                style = PiType.micro,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Text(
+                            row.summary.cwd,
+                            style = PiType.monoMicro,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                            if (row.summary.claim.state == "claimed") InfoPill("已接管", tint = MaterialTheme.colorScheme.primary)
+                            row.summary.model?.let { InfoPill("${it.provider}/${it.id}") }
+                            row.summary.thinkingLevel?.let { InfoPill(it) }
+                            row.meta.tags.take(2).forEach { InfoPill("#$it") }
+                        }
+                    }
+                    MetaAction("分组", { groupError = null; moving = row }, enabled = org.loaded)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             }
         }
     }

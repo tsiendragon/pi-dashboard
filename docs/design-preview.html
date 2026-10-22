@@ -136,6 +136,29 @@
     display: grid; place-items: center; font-size: 16px; flex: none;
   }
   .composer .foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  /* ---- machine card + session rows ---- */
+  .card {
+    border: 1px solid color-mix(in srgb, var(--outline) 60%, transparent);
+    border-radius: 12px; padding: 16px; margin-bottom: 12px; background: var(--surface);
+  }
+  .card .head { display: flex; align-items: center; gap: 8px; }
+  .card .name { font-size: 16px; line-height: 22px; font-weight: 600; flex: 1; }
+  .card .origin { font: 12px/18px ui-monospace, monospace; color: var(--muted); margin: 6px 0 8px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .open { text-align: right; font-size: 11px; color: var(--accent); margin-top: 10px; }
+  .row {
+    display: flex; align-items: center; gap: 8px; padding: 9px 8px 9px 16px;
+    border-bottom: 1px solid color-mix(in srgb, var(--outline) 30%, transparent);
+  }
+  .row .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .row .t { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 21px; font-weight: 500; }
+  .row .p { font: 12px/18px ui-monospace, monospace; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .pills { display: flex; gap: 4px; }
+  .section-head { display: flex; align-items: center; gap: 6px; padding: 8px 16px;
+    font-size: 13px; font-weight: 600; }
+  .section-head .n { font-size: 11px; font-weight: 400; color: var(--muted); }
   .note { font-size: 11px; line-height: 16px; color: var(--muted); margin-top: 24px;
     border-top: 1px dashed var(--outline); padding-top: 12px; }
 </style>
@@ -232,6 +255,41 @@
     </div>
   </div>
 
+
+  <h2 style="font-size:13px;margin:28px 0 10px;color:var(--muted)">机器列表</h2>
+  <div class="card">
+    <div class="head">
+      <div class="name">家里的 Pi</div>
+      <div class="dot run" style="width:8px;height:8px"></div>
+    </div>
+    <div class="origin">https://pi.tsien.space</div>
+    <div class="pills">
+      <span class="pill" style="color:var(--ok)">Live 已连接</span>
+      <span class="pill">3 个主会话</span>
+      <span class="pill accent">1 工作中</span>
+      <span class="pill">Chat 已连接</span>
+    </div>
+    <div class="open">打开 Dashboard →</div>
+  </div>
+
+  <h2 style="font-size:13px;margin:28px 0 10px;color:var(--muted)">本机会话</h2>
+  <div class="section-head">▾ 进行中 <span class="n">2</span></div>
+  <div class="row">
+    <div class="body">
+      <div class="t"><div class="dot run"></div>简化 Live 自动授权、共享输入与原生命令渲染 <span style="font-size:11px;color:var(--accent)">★</span></div>
+      <div class="p">/home/you/apps/pi-dashboard</div>
+      <div class="pills"><span class="pill accent">已接管</span><span class="pill">dashscope/deepseek-v4.1-flash</span></div>
+    </div>
+    <a class="meta" href="#" style="color:var(--muted);font-size:11px">分组</a>
+  </div>
+  <div class="row">
+    <div class="body">
+      <div class="t"><div class="dot"></div>手机端会话树查看</div>
+      <div class="p">/home/you/apps/my-app</div>
+      <div class="pills"><span class="pill">anthropic/claude</span><span class="pill">#infra</span></div>
+    </div>
+    <a class="meta" href="#" style="color:var(--muted);font-size:11px">分组</a>
+  </div>
   <div class="note">
     设计要点：强调色只有一个（蓝），用户气泡用 12% 强调色底 + 16dp 圆角；助手正文 15/23 无底色；
     工具行压到 11–12px mono，状态用 6px 圆点而不是文字 ✓；代码块是细边框而非填充块，头部 24px 高；
