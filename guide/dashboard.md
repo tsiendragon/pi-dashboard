@@ -144,6 +144,18 @@ frontend/src/features/live-sessions/ActivityTimeline.tsx   # 网页规则
 android/app/src/main/java/com/sam/pidash/ui/live/NativeTranscriptCards.kt  # App 同规则
 ```
 
+### 会话视图（4.4 起：默认「只看回复」）
+
+手机屏读不了整份记录，所以默认视图是**活动视图**，与网页 Dashboard 的活动时间线同一思路：
+
+- 每轮一条卡片：用户提问一行（灰、最多两行）、工具调用折叠成**一行**（`N 个步骤 · 状态 · bash · read`）、
+  然后只显示 **Agent 的正文回复**（Markdown 渲染）。
+- 不显示：思考片段（折叠成「思考 N 段」）、中间态助手文本、工具参数 JSON、重复的工具结果。
+- 卡片右上「思考 N 段」「引用」「批注」「分叉」都在；点步骤行展开可看**完整记录**（含每一步参数与输出）。
+- 事实行右侧的 `只看回复 / 完整记录` 可整页切换；选择按机器+会话记忆。
+- 投影规则抽成纯函数 `activityReplies` / `activityTools`（`data/remote/LiveActivities.kt`），有单测：
+  只取非中间态、非错误的助手正文；被打断的一轮回退到最后一段文本。
+
 ### 视觉系统（4.2 起：极简 + iOS 语言）
 
 极简决定「不加装饰」，iOS 语言决定「留下什么」。四条支点都写在 `ui/theme/Tokens.kt`：

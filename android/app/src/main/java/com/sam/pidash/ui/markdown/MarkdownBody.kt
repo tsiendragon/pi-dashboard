@@ -167,6 +167,12 @@ private fun CodeBlock(block: MdBlock.Code) {
     }
 }
 
+/** Table cells never wrap: the table scrolls sideways instead of squeezing columns. */
+@Composable
+private fun CellText(text: String, style: TextStyle, onOpenPath: (String) -> Unit, onOpenUrl: (String) -> Unit) {
+    InlineText(MarkdownParser.inline(text), style.copy(), onOpenPath, onOpenUrl, softWrap = false)
+}
+
 @Composable
 private fun TableBlock(block: MdBlock.Table, style: TextStyle, onOpenPath: (String) -> Unit, onOpenUrl: (String) -> Unit) {
     val scheme = MaterialTheme.colorScheme
@@ -174,8 +180,8 @@ private fun TableBlock(block: MdBlock.Table, style: TextStyle, onOpenPath: (Stri
     Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
         Row {
             block.header.forEach { cell ->
-                Box(Modifier.widthIn(min = 112.dp, max = 240.dp).padding(horizontal = Spacing.sm, vertical = 4.dp)) {
-                    InlineText(MarkdownParser.inline(cell), PiType.strong, onOpenPath, onOpenUrl)
+                Box(Modifier.widthIn(min = 96.dp).padding(horizontal = Spacing.sm, vertical = 4.dp)) {
+                    CellText(cell, PiType.strong, onOpenPath, onOpenUrl)
                 }
             }
         }
@@ -183,8 +189,8 @@ private fun TableBlock(block: MdBlock.Table, style: TextStyle, onOpenPath: (Stri
         block.rows.forEach { row ->
             Row {
                 row.forEach { cell ->
-                    Box(Modifier.widthIn(min = 112.dp, max = 240.dp).padding(horizontal = Spacing.sm, vertical = 4.dp)) {
-                        InlineText(MarkdownParser.inline(cell), style, onOpenPath, onOpenUrl)
+                    Box(Modifier.widthIn(min = 96.dp).padding(horizontal = Spacing.sm, vertical = 4.dp)) {
+                        CellText(cell, style, onOpenPath, onOpenUrl)
                     }
                 }
             }
@@ -214,6 +220,7 @@ private fun InlineText(
     style: TextStyle,
     onOpenPath: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
+    softWrap: Boolean = true,
 ) {
     val linkColor = MaterialTheme.colorScheme.primary
     val codeBackground = MaterialTheme.colorScheme.surfaceVariant
@@ -227,6 +234,7 @@ private fun InlineText(
     Text(
         text = annotated,
         style = style,
+        softWrap = softWrap,
         onTextLayout = { layout = it },
         modifier = Modifier.pointerInput(annotated) {
             detectTapGestures { offset ->

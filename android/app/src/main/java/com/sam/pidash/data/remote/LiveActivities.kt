@@ -26,6 +26,23 @@ fun projectLiveActivities(detail: LiveDetail): List<LiveActivity> {
     }
 }
 
+/**
+ * The replies the activity view shows: assistant text that is not an intermediate
+ * step and not an error. Falls back to the last assistant text so a turn that ended
+ * mid-flight still shows something instead of an empty card.
+ */
+fun activityReplies(activity: LiveActivity): List<LiveTimelineItem> {
+    val final = activity.items.filter {
+        it.role == "assistant" && it.text.isNotBlank() && !it.isError && !it.intermediate
+    }
+    if (final.isNotEmpty()) return final
+    return listOfNotNull(activity.items.lastOrNull { it.role == "assistant" && it.text.isNotBlank() })
+}
+
+/** Tools that belong to this turn, in order; used for the one-line step summary. */
+fun activityTools(activity: LiveActivity): List<LiveTimelineItem> =
+    activity.items.filter { it.role == "tool" || it.toolCallId != null }
+
 fun liveGoalAnchor(detail: LiveDetail): LiveGoalAnchor? = detail.goal?.let {
     runCatching { pidashJson.decodeFromJsonElement<LiveGoalAnchor>(it) }.getOrNull()
 }

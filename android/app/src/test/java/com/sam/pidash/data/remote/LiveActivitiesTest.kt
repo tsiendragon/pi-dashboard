@@ -64,3 +64,54 @@ class LiveActivitiesTest {
         assertNull(liveGoalAnchor(detail().copy(goal = JsonPrimitive("malformed"))))
     }
 }
+
+/** The default (activity) view must show replies, not every intermediate record. */
+class ActivityViewProjectionTest {
+    private fun item(
+        id: String,
+        role: String,
+        text: String,
+        intermediate: Boolean = false,
+        status: String = "done",
+        toolName: String? = null,
+    ) = com.sam.pidash.domain.model.LiveTimelineItem(
+        id = id, role = role, text = text, intermediate = intermediate, status = status, toolName = toolName,
+    )
+
+    private fun activity(vararg items: com.sam.pidash.domain.model.LiveTimelineItem) =
+        com.sam.pidash.domain.model.LiveActivity("a1", "prompt", "已回复", items.toList())
+
+    @Test fun onlyFinalAssistantTextIsShown() {
+        val replies = activityReplies(
+            activity(
+                item("u1", "user", "问题"),
+                item("a0", "assistant", "先看目录", intermediate = true),
+                item("t1", "tool", "output", toolName = "bash"),
+                item("a1", "assistant", "答案是 42"),
+            )
+        )
+        assertEquals(listOf("答案是 42"), replies.map { it.text })
+    }
+
+    @Test fun anInterruptedTurnFallsBackToItsLastText() {
+        val replies = activityReplies(
+            activity(
+                item("a0", "assistant", "正在处理", intermediate = true),
+                item("t1", "tool", "output", status = "running", toolName = "bash"),
+            )
+        )
+        assertEquals(listOf("正在处理"), replies.map { it.text })
+    }
+
+    @Test fun toolsAreCountedForTheOneLineSummary() {
+        val tools = activityTools(
+            activity(
+                item("u1", "user", "问题"),
+                item("t1", "tool", "out", toolName = "bash"),
+                item("t2", "tool", "out", toolName = "read"),
+                item("a1", "assistant", "答案"),
+            )
+        )
+        assertEquals(listOf("bash", "read"), tools.map { it.toolName })
+    }
+}
