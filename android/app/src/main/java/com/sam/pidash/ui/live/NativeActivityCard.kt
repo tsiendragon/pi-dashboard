@@ -1,7 +1,14 @@
 package com.sam.pidash.ui.live
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,142 +19,91 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.activityReplies
 import com.sam.pidash.data.remote.activityTools
 import com.sam.pidash.domain.model.LiveActivity
-import com.sam.pidash.domain.model.LiveTimelineItem
-import com.sam.pidash.domain.model.groupTranscript
-import com.sam.pidash.ui.common.MetaAction
-import com.sam.pidash.ui.common.MetaLine
+import com.sam.pidash.domain.model.activityPreview
+import com.sam.pidash.domain.model.activityStatus
+import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.StatusDot
-import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
 
 /**
- * Default view: one card per turn, showing what the agent *answered*.
+ * One turn = one card, a few lines long, tappable for the full record.
  *
- * A phone cannot read a full transcript, so the activity view keeps only:
- * the prompt as a one-line anchor, one collapsed line for the tool run, and the
- * reply body. The complete record (thinking, every step, arguments) stays one tap
- * away — nothing is hidden, it is just not the default.
+ * The card answers three questions at a glance: what did I ask, what is the agent
+ * doing right now, and what did it answer. Everything else waits behind the tap.
  */
 @Composable
 internal fun NativeActivityCard(
     activity: LiveActivity,
-    onOpenPath: (String) -> Unit,
-    onOpenUrl: (String) -> Unit,
-    onQuote: (LiveTimelineItem) -> Unit,
-    onAnnotate: (LiveTimelineItem) -> Unit,
-    onFork: (String) -> Unit,
-    enabled: Boolean,
+    onOpen: () -> Unit,
 ) {
-    var showRecord by remember(activity.id) { mutableStateOf(false) }
-    var showThinking by remember(activity.id) { mutableStateOf(false) }
-
+    val status = activityStatus(activity)
     val prompt = activity.items.firstOrNull { it.role == "user" }?.text?.trim().orEmpty()
-    val tools = activityTools(activity)
-    val shown = activityReplies(activity)
-    val thinking = activity.items.mapNotNull { it.thinking?.takeIf { text -> text.isNotBlank() } }
-    val errors = activity.items.filter { it.isError }
-    val running = activity.state == "工作中"
-    val failed = errors.isNotEmpty()
+    val preview = activityReplies(activity).lastOrNull()?.text?.let { activityPreview(it, maxLines = 3) }.orEmpty()
+    val steps = activityTools(activity).size
+    val accent = when {
+        status.failed -> MaterialTheme.colorScheme.error
+        status.running -> MaterialTheme.colorScheme.primary
+        else -> null
+    }
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        if (prompt.isNotBlank()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (running) {
-                    StatusDot(MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.size(Spacing.sm))
-                }
-                Text(
-                    prompt,
-                    style = PiType.footnote,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (tools.isNotEmpty()) {
-            Row(
-                Modifier.fillMaxWidth().clickable { showRecord = !showRecord }.padding(vertical = Spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    if (showRecord) "⌃" else "⌄",
-                    style = PiType.caption,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.size(Spacing.xs))
-                Text(
-                    if (tools.size == 1) "1 个步骤" else "${tools.size} 个步骤",
-                    style = PiType.footnote.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-                )
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant, Radii.card)
+            .clickable(onClick = onOpen)
+            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (accent != null) {
+                PulsingDot(accent)
                 Spacer(Modifier.size(Spacing.sm))
-                MetaLine(
-                    listOfNotNull(
-                        activity.state.takeIf { it.isNotBlank() },
-                        tools.mapNotNull { it.toolName }.distinct().take(3).joinToString(" · ").takeIf { it.isNotBlank() },
-                    ),
-                    tint = if (failed) MaterialTheme.colorScheme.error else null,
-                )
             }
+            Text(
+                status.label,
+                style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold),
+                color = accent ?: MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.weight(1f))
+            if (steps > 0) MetaText("$steps 步")
         }
-        if (showRecord) Column(Modifier.fillMaxWidth()) {
-            groupTranscript(activity.items).forEach { row ->
-                NativeTimelineRow(row, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate)
-            }
+        if (prompt.isNotBlank()) {
+            Text(
+                prompt.replace('\n', ' '),
+                style = PiType.footnote,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        if (!showRecord) {
-            shown.forEach { reply ->
-                MarkdownBody(
-                    reply.text,
-                    onOpenPath = onOpenPath,
-                    onOpenUrl = onOpenUrl,
-                    style = PiType.body,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    MetaAction("引用", { onQuote(reply) }, enabled)
-                    MetaAction("批注", { onAnnotate(reply) }, enabled)
-                    if (reply.forkable && !reply.entryId.isNullOrBlank()) MetarecordFork(reply.entryId, onFork, enabled)
-                }
-            }
-            if (shown.isEmpty() && tools.isEmpty() && prompt.isNotBlank()) {
-                Text("（这一轮还没有正文回复）", style = PiType.footnote, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            errors.forEach { error ->
-                Text(
-                    error.text.ifBlank { "工具执行失败" },
-                    style = PiType.footnote,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (thinking.isNotEmpty()) {
-                MetaAction(if (showThinking) "收起思考" else "思考 ${thinking.size} 段", { showThinking = !showThinking })
-                if (showThinking) thinking.forEach {
-                    Text(
-                        it,
-                        style = PiType.monoMicro,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = Spacing.md),
-                    )
-                }
-            }
+        if (preview.isNotBlank()) {
+            Text(preview, style = PiType.callout, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        } else if (!status.running) {
+            MetaText("这一轮没有正文回复")
         }
     }
 }
 
+/** A dot that breathes while work is happening — the only motion in the app. */
 @Composable
-private fun MetarecordFork(entryId: String, onFork: (String) -> Unit, enabled: Boolean) {
-    MetaAction("分叉", { onFork(entryId) }, enabled)
+private fun PulsingDot(color: androidx.compose.ui.graphics.Color) {
+    val transition = rememberInfiniteTransition(label = "activity")
+    val alpha by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "alpha",
+    )
+    Box(Modifier.alpha(alpha)) { StatusDot(color, size = 6.dp) }
 }
