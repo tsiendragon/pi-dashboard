@@ -115,3 +115,78 @@ class ActivityViewProjectionTest {
         assertEquals(listOf("bash", "read"), tools.map { it.toolName })
     }
 }
+
+/** The card status must say *what* the agent is doing, not just "working". */
+class ActivityStatusTest {
+    private fun item(
+        id: String,
+        role: String,
+        text: String = "",
+        status: String = "done",
+        toolName: String? = null,
+        error: Boolean = false,
+    ) = com.sam.pidash.domain.model.LiveTimelineItem(
+        id = id, role = role, text = text, status = status, toolName = toolName, isError = error,
+    )
+
+    private fun status(state: String, vararg items: com.sam.pidash.domain.model.LiveTimelineItem) =
+        com.sam.pidash.domain.model.activityStatus(
+            com.sam.pidash.domain.model.LiveActivity("a", "p", state, items.toList())
+        )
+
+    @Test fun aRunningToolNamesItsVerb() {
+        val running = status("工作中", item("u", "user", "做点事"), item("t", "tool", status = "running", toolName = "bash"))
+        assertEquals(com.sam.pidash.domain.model.ActivityPhase.COMMAND, running.phase)
+        assertEquals("执行命令", running.label)
+        assertTrue(running.running)
+
+        assertEquals("读取文件", status("工作中", item("t", "tool", status = "running", toolName = "read")).label)
+        assertEquals("写入文件", status("工作中", item("t", "tool", status = "running", toolName = "write")).label)
+        assertEquals("搜索", status("工作中", item("t", "tool", status = "running", toolName = "grep")).label)
+    }
+
+    @Test fun thinkingComesBeforeAnyText() {
+        assertEquals("思考中", status("工作中", item("u", "user", "问题")).label)
+        assertEquals("回复中", status("工作中", item("a", "assistant", "正在回答")).label)
+    }
+
+    @Test fun finishedAndFailedAreDistinct() {
+        val done = status("已回复", item("a", "assistant", "答案"))
+        assertEquals(com.sam.pidash.domain.model.ActivityPhase.DONE, done.phase)
+        assertFalse(done.running)
+
+        val failed = status("有失败，需检查", item("t", "tool", error = true))
+        assertEquals(com.sam.pidash.domain.model.ActivityPhase.FAILED, failed.phase)
+        assertTrue(failed.failed)
+    }
+
+    @Test fun previewStripsMarkdownAndKeepsProse() {
+        val text = """
+            ## 结论
+            这里有 **重点** 和 `inline` 代码。
+
+            ```kotlin
+            val a = 1
+            val b = 2
+            val c = 3
+            ```
+            - 第一点
+            - 第二点
+        """.trimIndent()
+        val preview = com.sam.pidash.domain.model.activityPreview(text)
+        assertFalse(preview.contains("**"))
+        assertFalse(preview.contains("```"))
+        assertTrue(preview.startsWith("结论"))
+        assertTrue(preview.contains("重点"))
+        assertTrue(preview.contains("第一点"))
+        // At most two code lines survive, and the third never shows.
+        assertFalse(preview.contains("val c"))
+    }
+
+    @Test fun previewCutsLongTextAtASentenceBoundary() {
+        val long = (1..40).joinToString("") { "第${it}句很短。" }
+        val preview = com.sam.pidash.domain.model.activityPreview(long, maxLines = 2)
+        assertTrue(preview.endsWith("。") || preview.endsWith("…"))
+        assertTrue(preview.length < long.length)
+    }
+}

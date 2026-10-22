@@ -1,5 +1,10 @@
 package com.sam.pidash.ui.live
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,6 +43,7 @@ import com.sam.pidash.domain.model.LiveImage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -186,6 +192,7 @@ fun LiveSessionScreen(
     val activities = remember(detail) { detail?.let { projectLiveActivities(it) }.orEmpty() }
     // Default is the activity view: a phone reads replies, not the whole transcript.
     var viewMode by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("activity") }
+    var openActivity by remember(sessionKey) { mutableStateOf<com.sam.pidash.domain.model.LiveActivity?>(null) }
     val background = remember(detail) { backgroundSnapshot(detail) }
     val backgroundActive = background?.tasks?.count { it.isActive() } ?: 0
     val goalState = remember(goal) { goalSummary(goal) }
@@ -281,24 +288,39 @@ fun LiveSessionScreen(
         }
     }
 
+    // Reading surface first: the bar shrinks once you scroll and returns at the top.
+    var chromeHidden by remember(viewMode) { mutableStateOf(false) }
+    LaunchedEffect(listState, viewMode) {
+        snapshotFlow {
+            val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+            ((first?.index ?: 0) > 0) || ((first?.offset ?: 0) < -24)
+        }.distinctUntilChanged().collect { chromeHidden = it }
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
+            AnimatedVisibility(
+                visible = !chromeHidden,
+                enter = expandVertically() + slideInVertically { -it },
+                exit = shrinkVertically() + slideOutVertically { -it },
+            ) {
+                TopAppBar(
+                expandedHeight = 52.dp,
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 title = {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Column {
                         Text(
                             summary?.title ?: "Live Pi",
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            style = PiType.headline,
-                        )
-                        Text(
-                            aggregate?.backendName ?: sessionKey.backendId,
-                            style = PiType.micro,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            style = PiType.callout.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                        )
+                        MetaText(
+                            listOfNotNull(
+                                summary?.status,
+                                summary?.model?.id,
+                                goalState?.let { "目标${it.statusLabel}" },
+                            ).joinToString("  ·  "),
                         )
                     }
                 },
@@ -369,7 +391,8 @@ fun LiveSessionScreen(
                         }
                     }
                 },
-            )
+                )
+            }
         },
         bottomBar = {
             Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -495,6 +518,16 @@ fun LiveSessionScreen(
                                 enabled = files.size < FileAttachments.MAX_FILES,
                                 onClick = { addMenu = false; filePicker.launch(arrayOf("*/*")) },
                             )
+                            HorizontalDivider()
+                            listOf(null to "投递：默认", "steer" to "投递：引导", "followUp" to "投递：排队")
+                                .forEach { (value, label) ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(if (deliverAs == value) "✓ $label" else label)
+                                        },
+                                        onClick = { addMenu = false; deliverAs = value },
+                                    )
+                                }
                         }
                     }
                     // iOS-style field: filled, borderless, 18 dp radius.
@@ -538,91 +571,59 @@ fun LiveSessionScreen(
                         }
                     }) { Icon(Icons.AutoMirrored.Filled.Send, "发送") }
                 }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    // Three always-visible chips cost a whole row; one compact menu keeps the composer short.
-                    var deliverMenu by remember { mutableStateOf(false) }
-                    Box {
-                        MetaAction(
-                            text = "投递：" + when (deliverAs) {
-                                "steer" -> "引导"
-                                "followUp" -> "排队"
-                                else -> "默认"
-                            } + " ▾",
-                            onClick = { deliverMenu = true },
-                            enabled = !busy,
-                        )
-                        DropdownMenu(expanded = deliverMenu, onDismissRequest = { deliverMenu = false }) {
-                            listOf(null to "默认（直接发送）", "steer" to "引导（插到当前步）", "followUp" to "排队（本轮之后）")
-                                .forEach { (value, label) ->
-                                    DropdownMenuItem(
-                                        text = { Text(label) },
-                                        onClick = { deliverAs = value; deliverMenu = false },
-                                    )
-                                }
-                        }
-                    }
+                // The footer only exists when it says something: a non-default delivery mode
+                // or a character count. A default send costs zero extra vertical space.
+                if (deliverAs != null || draft.isNotBlank()) Row(
+                    Modifier.fillMaxWidth().padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (deliverAs != null) MetaText(
+                        "投递：" + when (deliverAs) {
+                            "steer" -> "引导"
+                            "followUp" -> "排队"
+                            else -> "默认"
+                        },
+                    )
                     Spacer(Modifier.weight(1f))
                     if (draft.isNotBlank()) MetaText("${draft.length} 字")
                 }
             }
         },
     ) { padding ->
+        openActivity?.let { activity ->
+            ActivityDetailDialog(
+                activity = activity,
+                enabled = !busy && !heldElsewhere,
+                onDismiss = { openActivity = null },
+                onOpenPath = ::openPathPreview,
+                onOpenUrl = ::openExternalUrl,
+                onQuote = { item ->
+                    normalizeQuote(item.text)?.let { quoted ->
+                        if (quotes.size >= 4) notice = "一次最多引用 4 段"
+                        else quotes = quotes + AppQuote("q${item.id}", quoted, item.role, item.entryId)
+                    }
+                },
+                onAnnotate = { item ->
+                    val quoted = normalizeQuote(item.text).orEmpty()
+                    annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
+                },
+                onFork = { entryId -> openActivity = null; forkEntry = entryId; dialog = "fork" },
+            )
+        }
         Column(Modifier.fillMaxSize().padding(padding)) {
             val backend = backendStates[sessionKey.backendId]
             if (backend?.connected != true || backend.message != null) {
                 Text(backend?.message ?: if (backend?.needsPairing == true) "需要重新手机配对" else "连接中断或正在连接；下方可能是缓存内容。",
                     Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    summary?.let { s ->
-                        Box(Modifier.weight(1f)) {
-                            MetaLine(
-                                listOfNotNull(
-                                    s.status,
-                                    s.model?.id,
-                                    s.thinkingLevel,
-                                    s.contextUsage?.percent?.let { "${"%.1f".format(it)}%" },
-                                    goalState?.let { "目标${it.statusLabel}" },
-                                ),
-                                maxLines = 2,
-                            )
-                        }
-                    }
-                    MetaAction(
-                        text = if (viewMode == "activity") "只看回复" else "完整记录",
-                        onClick = { viewMode = if (viewMode == "activity") "full" else "activity" },
-                    )
-                }
-                summary?.let { s -> if (s.cwd.isNotBlank()) MetaText(s.cwd) }
-            }
             if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.lg),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xl),
+                contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
                 items(activities, key = { "activity:${it.id}" }) { activity ->
-                    NativeActivityCard(
-                        activity = activity,
-                        onOpenPath = ::openPathPreview,
-                        onOpenUrl = ::openExternalUrl,
-                        enabled = !busy && !heldElsewhere,
-                        onQuote = { item ->
-                            normalizeQuote(item.text)?.let { quoted ->
-                                if (quotes.size >= 4) notice = "一次最多引用 4 段"
-                                else quotes = quotes + AppQuote("q${item.id}", quoted, item.role, item.entryId)
-                            }
-                        },
-                        onAnnotate = { item ->
-                            val quoted = normalizeQuote(item.text).orEmpty()
-                            annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
-                        },
-                        onFork = { entryId -> notice = null; forkEntry = entryId; dialog = "fork" },
-                    )
+                    NativeActivityCard(activity = activity, onOpen = { openActivity = activity })
                 }
             } else if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {

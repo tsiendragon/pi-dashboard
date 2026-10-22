@@ -144,7 +144,22 @@ frontend/src/features/live-sessions/ActivityTimeline.tsx   # 网页规则
 android/app/src/main/java/com/sam/pidash/ui/live/NativeTranscriptCards.kt  # App 同规则
 ```
 
-### 会话视图（4.4 起：默认「只看回复」）
+### 会话视图（4.5 起：卡片式活动视图）
+
+手机上一屏只有那么大，所以会话页默认是**卡片列表**，不是流水账：
+
+- **一张卡 = 一轮**：`状态` + `N 步`、提问一行（灰）、回复三条预览（纯文本、去 Markdown 标记）。
+  点卡片 → 全屏「本轮记录」，里面是每一步的参数/输出、思考与完整正文，可引用/批注/分叉。
+- **标题栏 52 dp 且会自动收起**：只剩 16 sp 标题一行 + 12 sp 事实一行（状态 · 模型 · 目标）；
+  向上滚动超过 24 dp 立即收起，回到顶部再出现。cwd、会话文件等细节移进菜单对话框。
+- **状态是具体的动词**：`思考中 / 回复中 / 读取文件 / 写入文件 / 执行命令 / 搜索 / 运行代码 / 调用 X / 已回复 / 失败`，
+  由 `activityStatus()` 从这一轮的记录推断（正在跑的工具优先），运行时圆点呼吸（全 App 唯一的动画）。
+- **输入区只占一行**：投递方式收进「＋」菜单，只有非默认值或正在输入时才多一行脚注。
+
+投影与状态规则是纯函数：`activityReplies` / `activityTools` / `activityStatus` / `activityPreview`
+（`data/remote/LiveActivities.kt`、`domain/model/ActivityStatus.kt`），共 11 项单测覆盖。
+
+### 会话视图（4.4：默认「只看回复」）
 
 手机屏读不了整份记录，所以默认视图是**活动视图**，与网页 Dashboard 的活动时间线同一思路：
 
