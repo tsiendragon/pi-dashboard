@@ -458,6 +458,24 @@ class LivePiRepository(
         if (level !in setOf("off", "minimal", "low", "medium", "high", "xhigh", "max")) return Result.failure(IOException("无效思考级别"))
         return send(key, "/effort $level")
     }
+    /**
+     * Hand a still-running foreground call to the background.
+     *
+     * `feature_command` is lease-bound on the server (same rule as the WebUI), so this
+     * takes exclusive control instead of silently steering another client's run.
+     */
+    suspend fun backgroundToolCall(key: SessionKey, toolCallId: String): Result<Unit> {
+        if (!toolCallId.matches(Regex("[A-Za-z0-9_.:-]{1,256}"))) return Result.failure(IOException("无效工具调用标识"))
+        return controlled(key) {
+            buildJsonObject {
+                put("type", "feature_command")
+                put("leaseId", it.leaseId)
+                put("feature", "background-commands")
+                put("command", buildJsonObject { put("type", "background"); put("toolCallId", toolCallId) })
+            }
+        }
+    }
+
     suspend fun compact(key: SessionKey): Result<Unit> = controlled(key) { buildJsonObject { put("type", "compact"); put("leaseId", it.leaseId) } }
     suspend fun reload(key: SessionKey): Result<Unit> = shared(key) { buildJsonObject { put("type", "reload") } }.also {
         if (it.isSuccess) _leases.update { map -> map - key }
