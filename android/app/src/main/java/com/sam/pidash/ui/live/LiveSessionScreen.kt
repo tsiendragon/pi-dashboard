@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.externalUrlAllowed
+import com.sam.pidash.data.remote.projectLiveActivities
 import com.sam.pidash.data.remote.projectLiveTimeline
 import com.sam.pidash.domain.model.AppQuote
 import com.sam.pidash.domain.model.AppReviewItem
@@ -182,6 +183,9 @@ fun LiveSessionScreen(
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
     var answered by remember(sessionKey) { mutableStateOf(emptySet<String>()) }
     val goal = remember(detail) { detail?.let { liveGoalAnchor(it) } }
+    val activities = remember(detail) { detail?.let { projectLiveActivities(it) }.orEmpty() }
+    // Default is the activity view: a phone reads replies, not the whole transcript.
+    var viewMode by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("activity") }
     val background = remember(detail) { backgroundSnapshot(detail) }
     val backgroundActive = background?.tasks?.count { it.isActive() } ?: 0
     val goalState = remember(goal) { goalSummary(goal) }
@@ -327,6 +331,15 @@ fun LiveSessionScreen(
                             DropdownMenuItem(
                                 text = { Text(if (goal == null) "目标（未设置）…" else "目标…") },
                                 onClick = { menu = false; notice = null; showGoal = true },
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(if (viewMode == "activity") "视图：完整记录" else "视图：只看回复")
+                                },
+                                onClick = {
+                                    menu = false
+                                    viewMode = if (viewMode == "activity") "full" else "activity"
+                                },
                             )
                             DropdownMenuItem(
                                 text = { Text("用量统计…") },
@@ -564,20 +577,54 @@ fun LiveSessionScreen(
                 Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                summary?.let { s ->
-                    MetaLine(
-                        listOfNotNull(
-                            s.status,
-                            s.model?.let { "${it.provider}/${it.id}" },
-                            s.thinkingLevel,
-                            s.contextUsage?.percent?.let { "${"%.1f".format(it)}%" },
-                            goalState?.let { "目标${it.statusLabel}" },
-                        )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    summary?.let { s ->
+                        Box(Modifier.weight(1f)) {
+                            MetaLine(
+                                listOfNotNull(
+                                    s.status,
+                                    s.model?.id,
+                                    s.thinkingLevel,
+                                    s.contextUsage?.percent?.let { "${"%.1f".format(it)}%" },
+                                    goalState?.let { "目标${it.statusLabel}" },
+                                ),
+                                maxLines = 2,
+                            )
+                        }
+                    }
+                    MetaAction(
+                        text = if (viewMode == "activity") "只看回复" else "完整记录",
+                        onClick = { viewMode = if (viewMode == "activity") "full" else "activity" },
                     )
-                    if (s.cwd.isNotBlank()) MetaText(s.cwd)
                 }
+                summary?.let { s -> if (s.cwd.isNotBlank()) MetaText(s.cwd) }
             }
-            if (timeline.isEmpty()) {
+            if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xl),
+            ) {
+                items(activities, key = { "activity:${it.id}" }) { activity ->
+                    NativeActivityCard(
+                        activity = activity,
+                        onOpenPath = ::openPathPreview,
+                        onOpenUrl = ::openExternalUrl,
+                        enabled = !busy && !heldElsewhere,
+                        onQuote = { item ->
+                            normalizeQuote(item.text)?.let { quoted ->
+                                if (quotes.size >= 4) notice = "一次最多引用 4 段"
+                                else quotes = quotes + AppQuote("q${item.id}", quoted, item.role, item.entryId)
+                            }
+                        },
+                        onAnnotate = { item ->
+                            val quoted = normalizeQuote(item.text).orEmpty()
+                            annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
+                        },
+                        onFork = { entryId -> notice = null; forkEntry = entryId; dialog = "fork" },
+                    )
+                }
+            } else if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(
                         if (detail == null) "正在同步会话详情…" else "这段会话还没有消息。",

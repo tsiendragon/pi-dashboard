@@ -1,7 +1,7 @@
 # PiDash Android · 当前交接
 
-> 当前实现：4.3 / versionCode 24。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
-> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi43)。
+> 当前实现：4.4 / versionCode 25。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
+> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi44)。
 > 功能适配评估与后续范围：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)。
 
 ## 1. 当前状态
@@ -69,6 +69,8 @@
 | `ui/markdown/MarkdownParser.kt`、`MarkdownBody.kt` | 纯 Kotlin Markdown 解析（可单测）+ Compose 渲染；默认会话正文 |
 | `ui/live/NativeTranscriptCards.kt` | 步骤一行式（状态·工具名·参数摘要）+ 折叠输出；消息卡按角色着色、12 行截断、Run Code 归组 |
 | `ui/theme/Tokens.kt`（4.2） | iOS 系统色、SF 字号（正文 17）、`Hairline = 0.5.dp`、圆角 8/10/14/18 |
+| `ui/live/NativeActivityCard.kt` | 默认活动视图：提问一行 + 步骤一行 + 回复正文；展开看完整记录 |
+| `data/remote/LiveActivities.kt`（4.4） | `activityReplies`/`activityTools` 纯函数投影，决定"只看回复"的取数规则 |
 | `ui/common/Bits.kt` | 极简共享件：`StatusDot`（仅运行/失败）、`MetaText`/`MetaLine`（无底色事实行）、`MetaAction`（11 sp 动作）、`SectionLabel`；另有 `InsetSeparator`（0.5 dp 内缩发丝线）与 `GroupedCard`（分组白卡） |
 | `ui/theme/Tokens.kt`、`Theme.kt` | 自有调色板 + 字号/间距/圆角 token；壁纸取色默认关闭 |
 | `docs/design-preview.html` | 会话页设计稿预览（同色值/字号，非截图，不进 APK） |
@@ -93,7 +95,7 @@
 
 ## 5. 验证证据与剩余风险
 
-- Android：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过，**138 项单元测试通过**；JUnit 为纯 JVM 合成数据/临时回环 HTTP，无手机、无生产会话操作。
+- Android：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过，**141 项单元测试通过**；JUnit 为纯 JVM 合成数据/临时回环 HTTP，无手机、无生产会话操作。
 - `LiveProtocolTest`：流式替换、工具合并、序列缺口/陈旧事件、真实 entryId、遥测/扩展 UI、重复合法输入、坏数据、上限。
 - 本轮 APK 包元数据核验：`com.sam.pidash` / versionName `2.2` / versionCode `3`；APK 签名验证通过。带版本名副本：`app/build/outputs/apk/debug/pidash-2.2-build3-debug.apk`，与标准 `app-debug.apk` 相同。
   SHA-256：`acc2f932aa5a953debdfed81cea736ba59214e70b8202b757a8e4ae14c2e9031`。
