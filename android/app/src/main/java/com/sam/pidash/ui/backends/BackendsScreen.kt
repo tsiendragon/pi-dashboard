@@ -1,5 +1,14 @@
 package com.sam.pidash.ui.backends
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import com.sam.pidash.PiDashApp
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +35,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.Switch
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -60,6 +70,15 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     val liveStates by repo.live.backendStates.collectAsState()
     val scope = rememberCoroutineScope()
     var showAdd by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val notifier = remember { (context.applicationContext as PiDashApp).notifier }
+    var alertsEnabled by remember { mutableStateOf(notifier.prefs.enabled) }
+    var alertsNeedsPermission by remember { mutableStateOf(false) }
+    // Android 13+: enabling alerts asks for the runtime permission instead of failing silently.
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        alertsNeedsPermission = !granted
+        if (granted) { notifier.prefs.enabled = true; alertsEnabled = true }
+    }
 
     Scaffold(
         topBar = {
@@ -114,6 +133,44 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                                     Icon(Icons.Filled.Delete, contentDescription = "删除")
                                 }
                             },
+                        )
+                        HorizontalDivider()
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text("后台会话提醒") },
+                            supportingContent = {
+                                Text(
+                                    "会话完成或等你回答时发系统通知。仅在 App 仍在运行且退到后台时生效，" +
+                                        "不含消息正文、命令或路径；进程被系统回收后不再提醒。",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            },
+                            trailingContent = {
+                                Switch(checked = alertsEnabled, onCheckedChange = { want ->
+                                    if (!want) {
+                                        notifier.prefs.enabled = false
+                                        alertsEnabled = false
+                                        alertsNeedsPermission = false
+                                        return@Switch
+                                    }
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+                                        PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        notifier.prefs.enabled = true
+                                        alertsEnabled = true
+                                    }
+                                })
+                            },
+                        )
+                        if (alertsNeedsPermission) Text(
+                            "系统未授予通知权限，提醒不会出现；可到系统设置里打开本应用的通知。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 16.dp),
                         )
                         HorizontalDivider()
                     }
