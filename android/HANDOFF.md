@@ -1,7 +1,7 @@
 # PiDash Android · 当前交接
 
-> 当前实现：3.6 / versionCode 17。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
-> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi36)。
+> 当前实现：3.7 / versionCode 18。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
+> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi37)。
 > 功能适配评估与后续范围：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)。
 
 ## 1. 当前状态
@@ -68,6 +68,8 @@
 | `ui/common/AppInfo.kt` | 构建版本与 Live 状态文案；不使用普通 Chat 状态替代 Live 授权 |
 | `ui/markdown/MarkdownParser.kt`、`MarkdownBody.kt` | 纯 Kotlin Markdown 解析（可单测）+ Compose 渲染；默认会话正文 |
 | `ui/live/NativeTranscriptCards.kt` | 步骤一行式（状态·工具名·参数摘要）+ 折叠输出；消息卡按角色着色、12 行截断、Run Code 归组 |
+| `data/remote/LiveFeatures.kt` | `live_feature_snapshot` → 后台命令快照（取最新一次），只读投影 |
+| `ui/live/BackgroundCommandsDialog.kt` | 任务列表/输出尾部；仅「转入后台」一个写操作（受租约约束） |
 | `domain/model/GoalSummary.kt` | 目标状态标签、进度百分比、两种过期原因、工作项/阻塞标签，阈值同 `goal-anchor.ts` |
 | `ui/live/LiveGoalDialog.kt` | 目标只读对话框；改目标只把 `/goal ` 填进输入框 |
 | `ui/markdown/SyntaxHighlighter.kt` | 纯 Kotlin 分词高亮（逐语言关键字表、字符串转义、行/块注释、数字、类型、函数名），有大小上限 |
@@ -86,7 +88,7 @@
 
 ## 5. 验证证据与剩余风险
 
-- Android：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过，**126 项单元测试通过**；JUnit 为纯 JVM 合成数据/临时回环 HTTP，无手机、无生产会话操作。
+- Android：`./gradlew :app:testDebugUnitTest :app:assembleDebug --offline` 通过，**131 项单元测试通过**；JUnit 为纯 JVM 合成数据/临时回环 HTTP，无手机、无生产会话操作。
 - `LiveProtocolTest`：流式替换、工具合并、序列缺口/陈旧事件、真实 entryId、遥测/扩展 UI、重复合法输入、坏数据、上限。
 - 本轮 APK 包元数据核验：`com.sam.pidash` / versionName `2.2` / versionCode `3`；APK 签名验证通过。带版本名副本：`app/build/outputs/apk/debug/pidash-2.2-build3-debug.apk`，与标准 `app-debug.apk` 相同。
   SHA-256：`acc2f932aa5a953debdfed81cea736ba59214e70b8202b757a8e4ae14c2e9031`。

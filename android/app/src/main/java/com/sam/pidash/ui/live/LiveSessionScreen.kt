@@ -40,6 +40,8 @@ import com.sam.pidash.data.remote.projectLiveTimeline
 import com.sam.pidash.domain.model.AppQuote
 import com.sam.pidash.domain.model.AppReviewItem
 import com.sam.pidash.domain.model.composeOutgoing
+import com.sam.pidash.data.remote.backgroundSnapshot
+import com.sam.pidash.data.remote.isActive
 import com.sam.pidash.data.remote.liveGoalAnchor
 import com.sam.pidash.domain.model.LiveSessionTree
 import com.sam.pidash.domain.model.goalSummary
@@ -98,6 +100,8 @@ fun LiveSessionScreen(
     var usageError by remember(sessionKey) { mutableStateOf<String?>(null) }
     var usageBusy by remember(sessionKey) { mutableStateOf(false) }
     var showGoal by remember(sessionKey) { mutableStateOf(false) }
+    var showBackground by remember(sessionKey) { mutableStateOf(false) }
+    var backgroundSelected by remember(sessionKey) { mutableStateOf<String?>(null) }
     // Read-only file preview: path plus loaded text (null while fetching).
     var preview by remember(sessionKey) { mutableStateOf<Pair<String, String?>?>(null) }
     var previewError by remember(sessionKey) { mutableStateOf<String?>(null) }
@@ -161,6 +165,8 @@ fun LiveSessionScreen(
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
     var answered by remember(sessionKey) { mutableStateOf(emptySet<String>()) }
     val goal = remember(detail) { detail?.let { liveGoalAnchor(it) } }
+    val background = remember(detail) { backgroundSnapshot(detail) }
+    val backgroundActive = background?.tasks?.count { it.isActive() } ?: 0
     val goalState = remember(goal) { goalSummary(goal) }
     val rows = remember(timeline) { groupTranscript(timeline) }
     val visibleCount = rows.size
@@ -280,6 +286,15 @@ fun LiveSessionScreen(
                                     onClick = { menu = false; notice = null; dialog = "context" })
                             }
                             HorizontalDivider()
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (backgroundActive > 0) "后台命令（$backgroundActive 运行中）…" else "后台命令…"
+                                    )
+                                },
+                                enabled = background != null,
+                                onClick = { menu = false; notice = null; showBackground = true },
+                            )
                             DropdownMenuItem(
                                 text = { Text(if (goal == null) "目标（未设置）…" else "目标…") },
                                 onClick = { menu = false; notice = null; showGoal = true },
@@ -601,6 +616,20 @@ fun LiveSessionScreen(
                 }
             }
         }
+    }
+    if (showBackground && background != null) {
+        BackgroundCommandsDialog(
+            snapshot = background,
+            selected = backgroundSelected,
+            busy = busy,
+            onSelect = { backgroundSelected = it },
+            onDismiss = { showBackground = false },
+            onMoveToBackground = { task ->
+                val toolCallId = task.toolCallId
+                if (toolCallId.isNullOrBlank()) notice = "这个命令没有可移交的工具调用标识"
+                else perform("已请求转入后台") { live.backgroundToolCall(sessionKey, toolCallId) }
+            },
+        )
     }
     if (showGoal) {
         val current = goal
