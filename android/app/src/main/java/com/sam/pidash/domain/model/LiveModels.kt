@@ -68,6 +68,33 @@ data class LiveModelOption(
     val contextWindow: Long = 0,
     val thinkingLevels: List<String> = emptyList(),
 )
+/** One session file in the fork family returned by `/api/session-tree`. */
+@Serializable
+data class LiveSessionTreeEntry(
+    val key: String,
+    val file: String,
+    val sessionId: String? = null,
+    val cwd: String? = null,
+    val timestamp: String? = null,
+    val entryCount: Int = 0,
+    val leafId: String? = null,
+    val isFocus: Boolean = false,
+    val isLive: Boolean = false,
+    /** Session key this file was forked from, when it belongs to the family. */
+    val forkOf: String? = null,
+    /** Entry id where the branches diverge. */
+    val forkAnchorId: String? = null,
+    val partial: Boolean = false,
+)
+
+@Serializable
+data class LiveSessionTree(
+    val focusKey: String = "",
+    val sessions: List<LiveSessionTreeEntry> = emptyList(),
+    val truncated: Boolean = false,
+    val generatedAt: Long = 0,
+)
+
 @Serializable
 data class LiveGroup(val id: String, val name: String, val sessionIds: List<String> = emptyList())
 @Serializable
