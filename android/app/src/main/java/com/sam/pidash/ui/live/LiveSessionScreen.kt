@@ -139,8 +139,17 @@ fun LiveSessionScreen(
             scope.launch {
                 uris.take(FileAttachments.MAX_FILES).forEach { uri ->
                     val name = FileAttachments.displayName(context, uri)
+                    val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
                     when {
-                        FileAttachments.isPdf(name) -> FileAttachments.pdfPages(context, uri).fold(
+                        FileAttachments.isImage(name, mime) -> ImageAttachments.read(context, uri).fold(
+                            onSuccess = { image ->
+                                val merged = attachments + image
+                                val problem = ImageAttachments.validate(merged)
+                                if (problem != null) notice = problem else attachments = merged
+                            },
+                            onFailure = { error -> notice = error.message ?: "无法读取图片" },
+                        )
+                        FileAttachments.isPdf(name) || mime == "application/pdf" -> FileAttachments.pdfPages(context, uri).fold(
                             onSuccess = { pages ->
                                 val room = (ImageAttachments.MAX_IMAGES - attachments.size).coerceAtLeast(0)
                                 val merged = attachments + pages.take(room)
@@ -162,7 +171,7 @@ fun LiveSessionScreen(
                             },
                             onFailure = { error -> notice = error.message ?: "无法读取文件" },
                         )
-                        else -> notice = "不支持的文件类型：$name"
+                        else -> notice = "不支持：$name${mime?.let { "（$it）" } ?: ""}。支持图片、PDF 与文本文件。"
                     }
                 }
             }
@@ -469,7 +478,7 @@ fun LiveSessionScreen(
                                 onClick = { addMenu = false; picker.launch("image/*") },
                             )
                             DropdownMenuItem(
-                                text = { Text("文本文件 / PDF") },
+                                text = { Text("图片 / 文本 / PDF 文件") },
                                 enabled = files.size < FileAttachments.MAX_FILES,
                                 onClick = { addMenu = false; filePicker.launch(arrayOf("*/*")) },
                             )
