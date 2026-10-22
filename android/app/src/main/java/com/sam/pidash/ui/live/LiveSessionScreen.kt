@@ -24,7 +24,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.sam.pidash.ui.common.InfoPill
+import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.common.MetaLine
+import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
@@ -431,27 +433,18 @@ fun LiveSessionScreen(
                         }
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val stateText = when {
-                        busy -> "运行中"
-                        owned -> "本机接管中"
-                        heldElsewhere -> "他端持有控制权，仍可直接输入"
-                        else -> "可直接输入 · 与网页、TUI 同步"
+                if (busy || owned) Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (busy) {
+                        StatusDot(MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.size(6.dp))
                     }
-                    Box(
-                        Modifier.size(6.dp).background(
-                            if (busy) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            androidx.compose.foundation.shape.CircleShape,
-                        ),
-                    )
                     Text(
-                        "  $stateText",
-                        style = PiType.micro,
+                        if (busy) "运行中" else "本机接管中",
+                        style = PiType.action,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
                     )
-                    if (busy || owned) MetaAction(
+                    Spacer(Modifier.weight(1f))
+                    MetaAction(
                         text = "中止",
                         onClick = {
                             perform("已请求中止") {
@@ -539,11 +532,7 @@ fun LiveSessionScreen(
                         }
                     }
                     Spacer(Modifier.weight(1f))
-                    Text(
-                        "${draft.length} 字",
-                        style = PiType.micro,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (draft.isNotBlank()) MetaText("${draft.length} 字")
                 }
             }
         },
@@ -555,36 +544,22 @@ fun LiveSessionScreen(
                     Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    summary?.let { s ->
-                        InfoPill(
-                            text = s.status,
-                            tint = if (s.status == "running") MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                summary?.let { s ->
+                    MetaLine(
+                        listOfNotNull(
+                            s.status,
+                            s.model?.let { "${it.provider}/${it.id}" },
+                            s.thinkingLevel,
+                            s.contextUsage?.percent?.let { "${"%.1f".format(it)}%" },
+                            goalState?.let { "目标${it.statusLabel}" },
                         )
-                        InfoPill(s.model?.let { "${it.provider}/${it.id}" } ?: "模型未知")
-                        InfoPill(s.thinkingLevel ?: "默认思考")
-                        s.contextUsage?.let { usage ->
-                            InfoPill(
-                                usage.percent?.let { "${"%.1f".format(it)}% 上下文" } ?: "上下文",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        goalState?.let { InfoPill("目标 ${it.statusLabel}", tint = MaterialTheme.colorScheme.primary) }
-                        summary?.cwd?.takeIf { cwd -> cwd.isNotBlank() }?.let { cwd ->
-                            InfoPill(cwd, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                    )
+                    if (s.cwd.isNotBlank()) MetaText(s.cwd)
                 }
             }
-            HorizontalDivider()
             if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(

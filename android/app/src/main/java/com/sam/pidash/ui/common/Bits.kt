@@ -3,12 +3,14 @@ package com.sam.pidash.ui.common
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -19,41 +21,46 @@ import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
 
 /**
- * The four smallest shared pieces of the visual language.
+ * Minimal language: hierarchy comes from size, weight and opacity — never from boxes.
  *
- * They exist so a status is drawn the same way everywhere: a pill for facts, a dot
- * for state, 11 sp text for actions, and 13 sp semibold for section headers.
+ * There are no pill backgrounds, no chip borders and almost no dividers. A fact is a
+ * muted line, a state is one 5 dp dot (or nothing when nothing is happening), and an
+ * action is 11 sp text with no container.
  */
 
+/** Only drawn when something is actually happening: running, failed, or selected. */
 @Composable
-fun StatusDot(color: Color, size: Dp = 6.dp) {
+fun StatusDot(color: Color, size: Dp = 5.dp) {
     Box(Modifier.size(size).background(color, CircleShape))
 }
 
-/** A fact: model, status, context usage, tag. Never a control. */
+/** A muted fact. No background, no border — one line of 12 sp secondary text. */
 @Composable
-fun InfoPill(
-    text: String,
-    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    filled: Boolean = true,
-) {
+fun MetaText(text: String, tint: Color? = null, maxLines: Int = 1) {
     Text(
         text,
         style = PiType.micro,
-        color = tint,
-        maxLines = 1,
-        modifier = Modifier
-            .then(
-                if (filled) Modifier.background(
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                    Radii.chip,
-                ) else Modifier
-            )
-            .padding(horizontal = Spacing.sm, vertical = 3.dp),
+        color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = maxLines,
     )
 }
 
-/** A quiet action: 11 sp, muted, 6 dp horizontal padding — never a Material button. */
+/**
+ * Facts joined by a middle dot: `running · dashscope/deepseek · 4.2%`.
+ * One line beats four boxes when every value is the same kind of information.
+ */
+@Composable
+fun MetaLine(parts: List<String>, tint: Color? = null, maxLines: Int = 1) {
+    if (parts.isEmpty()) return
+    Text(
+        parts.joinToString("  ·  "),
+        style = PiType.micro,
+        color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = maxLines,
+    )
+}
+
+/** A quiet action: 11 sp, no container, 4 dp of pull-in for the touch target. */
 @Composable
 fun MetaAction(
     text: String,
@@ -65,15 +72,15 @@ fun MetaAction(
         text,
         style = PiType.micro,
         color = if (enabled) (tint ?: MaterialTheme.colorScheme.onSurfaceVariant)
-        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier
             .clip(Radii.chip)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 3.dp),
+            .padding(horizontal = Spacing.xs, vertical = 4.dp),
     )
 }
 
-/** Section heading inside a screen or dialog. */
+/** Section heading: 12 sp semibold, muted, no rule under it. */
 @Composable
 fun SectionLabel(text: String) {
     Text(
@@ -82,4 +89,23 @@ fun SectionLabel(text: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(vertical = 2.dp),
     )
+}
+
+/** Icon-free row used by lists: content on the left, one muted action on the right. */
+@Composable
+fun TextRow(
+    content: @Composable () -> Unit,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.weight(1f)) { content() }
+        trailing?.invoke()
+    }
 }
