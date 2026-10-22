@@ -40,7 +40,10 @@ import com.sam.pidash.data.remote.projectLiveTimeline
 import com.sam.pidash.domain.model.AppQuote
 import com.sam.pidash.domain.model.AppReviewItem
 import com.sam.pidash.domain.model.composeOutgoing
+import com.sam.pidash.domain.model.LiveSessionTree
 import com.sam.pidash.domain.model.groupTranscript
+import com.sam.pidash.domain.model.sessionTreeLabel
+import com.sam.pidash.domain.model.sessionTreeRows
 import com.sam.pidash.domain.model.normalizeQuote
 import com.sam.pidash.domain.model.selectionLabel
 import com.sam.pidash.data.repo.PiDashRepository
@@ -78,6 +81,9 @@ fun LiveSessionScreen(
     var quotes by remember(sessionKey) { mutableStateOf(emptyList<AppQuote>()) }
     var reviews by remember(sessionKey) { mutableStateOf(emptyList<AppReviewItem>()) }
     var annotating by remember(sessionKey) { mutableStateOf<AppReviewItem?>(null) }
+    var tree by remember(sessionKey) { mutableStateOf<LiveSessionTree?>(null) }
+    var treeError by remember(sessionKey) { mutableStateOf<String?>(null) }
+    var treeBusy by remember(sessionKey) { mutableStateOf(false) }
     // Read-only file preview: path plus loaded text (null while fetching).
     var preview by remember(sessionKey) { mutableStateOf<Pair<String, String?>?>(null) }
     var previewError by remember(sessionKey) { mutableStateOf<String?>(null) }
@@ -248,6 +254,19 @@ fun LiveSessionScreen(
                                     onClick = { menu = false; notice = null; dialog = "context" })
                             }
                             HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("会话树 / 子 Agent…") },
+                                onClick = {
+                                    menu = false; notice = null
+                                    treeError = null; tree = null; treeBusy = true
+                                    scope.launch {
+                                        repo.live.sessionTree(sessionKey).fold(
+                                            onSuccess = { result -> tree = result; treeBusy = false },
+                                            onFailure = { error -> treeError = error.message ?: "无法读取会话树"; treeBusy = false },
+                                        )
+                                    }
+                                },
+                            )
                             listOf("compact" to "压缩上下文…", "reload" to "重载扩展…", "restart" to "重启 Pi 进程…")
                                 .forEach { (id, label) -> DropdownMenuItem(text = { Text(label) }, enabled = !busy && !heldElsewhere,
                                     onClick = { menu = false; notice = null; dialog = id }) }
@@ -481,6 +500,49 @@ fun LiveSessionScreen(
             },
             dismissButton = { TextButton(onClick = { annotating = null }) { Text("取消") } },
         )
+    }
+    if (tree != null || treeError != null || treeBusy) {
+        val rows = remember(tree) { tree?.let { sessionTreeRows(it.sessions) }.orEmpty() }
+        Dialog(onDismissRequest = { tree = null; treeError = null; treeBusy = false }) {
+            Surface(shape = RoundedCornerShape(12.dp)) {
+                Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
+                    Text("会话树 / 子 Agent", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        when {
+                            treeBusy -> "读取中…"
+                            treeError != null -> treeError!!
+                            else -> "${rows.size} 个会话文件" + if (tree?.truncated == true) "（已截断）" else ""
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (treeError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    rows.forEach { row ->
+                        Row(Modifier.fillMaxWidth().padding(start = (row.depth * 14).dp, top = 3.dp, bottom = 3.dp)) {
+                            Text(if (row.forked) "└ " else "", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    sessionTreeLabel(row.entry),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (row.entry.isFocus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                )
+                                val sub = listOfNotNull(
+                                    row.entry.cwd,
+                                    row.entry.forkAnchorId?.take(8)?.let { "分叉点 $it…" },
+                                    row.forks.takeIf { it > 0 }?.let { "$it 个子 Agent" },
+                                ).joinToString(" · ")
+                                if (sub.isNotBlank()) Text(sub, style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { tree = null; treeError = null; treeBusy = false }) { Text("关闭") }
+                    }
+                }
+            }
+        }
     }
     val dismiss = { if (!busy) { dialog = null; forkEntry = null } }
     when (dialog) {

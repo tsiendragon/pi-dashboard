@@ -115,6 +115,13 @@ frontend/src/features/live-sessions/ActivityTimeline.tsx   # 网页规则
 android/app/src/main/java/com/sam/pidash/ui/live/NativeTranscriptCards.kt  # App 同规则
 ```
 
+### 会话树 / 子 Agent
+
+会话菜单里的「会话树 / 子 Agent…」调用只读接口 `GET /api/session-tree?file=<sessionFile>`，
+把 `forkOf` 关系投影成**缩进树**（`domain/model/SessionTreeRows.kt`，纯函数）而不是画布：
+父会话在 0 层，`└` 标记分叉出来的会话，每个会话显示工作目录短名、条数、是否运行中、分叉点前 8 位、
+直接子 Agent 数量；孤儿与环都会被显示而不是被丢弃。请求失败时对话框显示原因，不缓存假数据。
+
 ### 附件（图片 / 文本 / PDF）
 
 输入框左侧「＋」有两个来源：**图片**（相册）与**文本文件 / PDF**（系统文件选择器）。
