@@ -10,6 +10,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 
 /**
  * PiDash keeps its own palette so a screenshot looks the same on every phone.
@@ -58,6 +59,15 @@ private val DarkColors = darkColorScheme(
     onErrorContainer = PiPalette.DarkError,
 )
 
+/** One shape scale for every Material component (dialogs pick `extraLarge`). */
+private val PiShapes = androidx.compose.material3.Shapes(
+    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
+    small = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+    large = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+)
+
 private val PiTypography = Typography(
     bodyLarge = PiType.body,
     bodyMedium = PiType.bodyCompact,
@@ -84,5 +94,5 @@ fun PiDashTheme(
         darkTheme -> DarkColors
         else -> LightColors
     }
-    MaterialTheme(colorScheme = colorScheme, typography = PiTypography, content = content)
+    MaterialTheme(colorScheme = colorScheme, typography = PiTypography, shapes = PiShapes, content = content)
 }

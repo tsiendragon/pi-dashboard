@@ -24,6 +24,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.sam.pidash.ui.common.InfoPill
+import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
@@ -900,21 +902,4 @@ internal fun LiveTimelineCard(item: LiveTimelineItem, enabled: Boolean, onFork: 
             TextButton(enabled = enabled, onClick = { onFork(item.entryId) }) { Text("从此消息分叉…") }
         }
     }
-}
-
-/** Small rounded label used for status, model and context — replaces stacked log lines. */
-@Composable
-private fun InfoPill(
-    text: String,
-    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
-) {
-    Text(
-        text,
-        style = PiType.micro,
-        color = tint,
-        maxLines = 1,
-        modifier = Modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f), Radii.chip)
-            .padding(horizontal = Spacing.sm, vertical = 3.dp),
-    )
 }
