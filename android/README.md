@@ -1,9 +1,9 @@
 # PiDash Android（原生 Compose 客户端）
 
-一个原生 Kotlin + Jetpack Compose 客户端。**3.8 / build 19：机器列表 → 本机 Dashboard → Session**；本机默认 Live Pi，普通 Chat 保留在独立标签中，不把旧 Chat slot 假装成 Live 进程。机器列表、Dashboard、设置页显示实际构建版本。
+一个原生 Kotlin + Jetpack Compose 客户端。**3.9 / build 20：机器列表 → 本机 Dashboard → Session**；本机默认 Live Pi，普通 Chat 保留在独立标签中，不把旧 Chat slot 假装成 Live 进程。机器列表、Dashboard、设置页显示实际构建版本。
 
 - **APK 下载与每版更新说明**：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)（当前为预发布版；下载后由用户确认覆盖安装，不是 App 内自动更新）
-- **部署、构建、手机配对与验收**：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi38)
+- **部署、构建、手机配对与验收**：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi39)
 - **当前进度、测试证据与限制**：[`HANDOFF.md`](HANDOFF.md)
 - **功能适配与边界评估**：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)
 - 历史设计：[`docs/android-app-design.md`](../docs/android-app-design.md)
@@ -23,6 +23,7 @@
 | 后台会话提醒 | 默认关闭；仅「回复结束」「等待回答」两类，正文不含消息内容，30 秒节流；无前台服务 |
 | 后台命令 | 读 `live_feature_snapshot` 列出任务/输出尾部；可把运行中的前台调用转入后台（需租约），取消不支持 |
 | 目标（goal） | 只读 `goal-state` 锚点：状态、工作项 `✓/◐/!/⏸/○`、阻塞（种类·归属·原因）、过期提示；改目标走 `/goal` |
+| 视觉系统 | 自带调色板（不用壁纸取色）+ 15/23 正文尺度 + 4 dp 栅格；气泡/工具行/代码块/输入区按 `docs/design-preview.html` 重做 |
 | 代码高亮 | 纯 Kotlin 分词器（kotlin/java/js/ts/py/bash/json/yaml/sql/go/rust/c/cpp/diff/html/css），明暗两套配色 |
 | 用量统计 | 只读 `/api/usage`，当月 tokens/USD/缓存命中，按模型与会话 top 5，可切换月份 |
 | 会话树 / 子 Agent | 只读 `/api/session-tree`，缩进树显示分叉、分叉点、子 Agent 数量、运行中状态 |
@@ -52,7 +53,7 @@ Live Cookie 用 AndroidKeyStore AES-GCM 加密，并绑定服务器地址/连接
 
 | 组件 | 版本 |
 |---|---|
-| App | 3.8 / versionCode 19 / `com.sam.pidash` |
+| App | 3.9 / versionCode 20 / `com.sam.pidash` |
 | Gradle / AGP | 8.9 / 8.7.3 |
 | Kotlin / Compose BOM | 2.0.21 / 2024.10.01 |
 | compileSdk / targetSdk / minSdk | 35 / 35 / 26 |

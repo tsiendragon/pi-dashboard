@@ -189,6 +189,23 @@ frontend/src/features/live-sessions/ActivityTimeline.tsx   # 网页规则
 android/app/src/main/java/com/sam/pidash/ui/live/NativeTranscriptCards.kt  # App 同规则
 ```
 
+### 视觉系统（3.9 起）
+
+App 不再用 Material 默认配色 + 壁纸取色。设计 token 在 `ui/theme/Tokens.kt`：
+
+- **配色**：一套中性底（背景/表面/表面变体/描边）+ **单一强调色**（亮 `#1F6FEB` / 暗 `#6FA8FF`）、
+  成功、错误。壁纸动态取色仍保留但**默认关闭**（`PiDashTheme(useDynamicColor = false)`），
+  否则每台手机的气泡与 chip 颜色都不同、对比度也不可控。
+- **字号**：正文 15/23、紧凑正文 14/21、元信息 13/19、微 11/15、标题 16/22 半粗、等宽 13/20 与 12/18。
+  会话正文走正文档，chrome（工具行、元信息动作）一律 11–12，长会话才有层级。
+- **间距/圆角**：4 dp 栅格（4/8/12/16/24），圆角只有 6（chip）/12（卡片）/16（气泡）三档；正文限宽 720 dp。
+- **会话页**：头部压成「标题 + 一排 pill（状态/模型/思考/上下文/目标）+ 一行 cwd」；
+  用户气泡=强调色 12% 底 + 16 dp 圆角靠右，助手正文无底色；工具行是 6 dp 状态圆点 + mono 工具名 +
+  mono 参数，`⌄/⌃` 展开；步骤组用细竖线挂步骤；代码块改为**细边框 + 24 dp 头部**（语言 chip + 复制）；
+  输入区从四行压到两行（投递方式收进一个 `投递：默认 ▾` 菜单）。
+- 设计稿预览：`docs/design-preview.html`（同一套色值/字号/间距重画的会话页，可直接在浏览器打开对比；
+  **不是 App 截图**，真机字体度量会有差异）。
+
 ### 会话树 / 子 Agent
 
 会话菜单里的「会话树 / 子 Agent…」调用只读接口 `GET /api/session-tree?file=<sessionFile>`，
