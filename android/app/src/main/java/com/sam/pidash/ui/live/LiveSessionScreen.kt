@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -35,6 +36,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.externalUrlAllowed
 import com.sam.pidash.data.remote.projectLiveTimeline
+import com.sam.pidash.domain.model.AppQuote
+import com.sam.pidash.domain.model.AppReviewItem
+import com.sam.pidash.domain.model.composeOutgoing
+import com.sam.pidash.domain.model.groupTranscript
+import com.sam.pidash.domain.model.normalizeQuote
+import com.sam.pidash.domain.model.selectionLabel
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.SessionKey
@@ -64,6 +71,11 @@ fun LiveSessionScreen(
     val listState = rememberLazyListState()
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
     var attachments by remember(sessionKey) { mutableStateOf(emptyList<LiveImage>()) }
+    // Quotes and annotations reuse the WebUI's message shapes, so the agent sees
+    // the same blockquote/comment round from either client.
+    var quotes by remember(sessionKey) { mutableStateOf(emptyList<AppQuote>()) }
+    var reviews by remember(sessionKey) { mutableStateOf(emptyList<AppReviewItem>()) }
+    var annotating by remember(sessionKey) { mutableStateOf<AppReviewItem?>(null) }
     // Read-only file preview: path plus loaded text (null while fetching).
     var preview by remember(sessionKey) { mutableStateOf<Pair<String, String?>?>(null) }
     var previewError by remember(sessionKey) { mutableStateOf<String?>(null) }
@@ -89,7 +101,8 @@ fun LiveSessionScreen(
     var dialog by remember(sessionKey) { mutableStateOf<String?>(null) }
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
     var answered by remember(sessionKey) { mutableStateOf(emptySet<String>()) }
-    val visibleCount = timeline.size
+    val rows = remember(timeline) { groupTranscript(timeline) }
+    val visibleCount = rows.size
 
     // Opening/subscribing is strictly read-only. Repository owns foreground handling
     // and releasing our lease when the focused screen is disposed.
@@ -216,6 +229,35 @@ fun LiveSessionScreen(
                     }
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (quotes.isNotEmpty() || reviews.isNotEmpty()) Row(
+                    Modifier.fillMaxWidth().padding(bottom = 4.dp).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    quotes.forEach { quote ->
+                        Row(
+                            Modifier.background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
+                                .padding(start = 6.dp, end = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("${selectionLabel(quote.role)}：${quote.text}", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            IconButton(onClick = { quotes = quotes - quote }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Filled.Close, "移除引用", Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                    reviews.forEach { review ->
+                        Row(
+                            Modifier.background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(6.dp))
+                                .padding(start = 6.dp, end = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("批注：${review.content}", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            IconButton(onClick = { reviews = reviews - review }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Filled.Close, "移除批注", Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
                 if (attachments.isNotEmpty()) Row(
                     Modifier.fillMaxWidth().padding(bottom = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -257,15 +299,22 @@ fun LiveSessionScreen(
                     }
                     OutlinedTextField(value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
                         placeholder = { Text("输入消息（网页、TUI 也可同时输入）…") }, maxLines = 4, enabled = !busy)
-                    FilledIconButton(enabled = !busy && summary != null && (draft.isNotBlank() || attachments.isNotEmpty()) && ImageAttachments.validate(attachments) == null,
+                    FilledIconButton(enabled = !busy && summary != null &&
+                        (draft.isNotBlank() || attachments.isNotEmpty() || quotes.isNotEmpty() || reviews.isNotEmpty()) &&
+                        ImageAttachments.validate(attachments) == null,
                         onClick = {
-                        val text = draft
+                        val typed = draft
                         val images = attachments
+                        val sentQuotes = quotes
+                        val sentReviews = reviews
+                        val text = composeOutgoing(typed, sentQuotes, sentReviews)
                         perform("已发送") {
                             live.send(sessionKey, text, deliverAs, images).onSuccess {
                                 // Never discard the draft or the attachment on failed/uncertain delivery.
-                                if (draft == text) draft = ""
+                                if (draft == typed) draft = ""
                                 if (attachments == images) attachments = emptyList()
+                                if (quotes == sentQuotes) quotes = emptyList()
+                                if (reviews == sentReviews) reviews = emptyList()
                             }
                         }
                     }) { Icon(Icons.AutoMirrored.Filled.Send, "发送") }
@@ -308,19 +357,53 @@ fun LiveSessionScreen(
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(timeline, key = { it.id }) { item ->
-                    NativeTimelineCard(
-                        item = item,
+                items(rows, key = { it.id }) { row ->
+                    NativeTimelineRow(
+                        row = row,
                         onOpenPath = ::openPathPreview,
                         onOpenUrl = ::openExternalUrl,
                         enabled = !busy && !heldElsewhere,
                         onFork = { entryId -> notice = null; forkEntry = entryId; dialog = "fork" },
+                        onQuote = { item ->
+                            normalizeQuote(item.text)?.let { quoted ->
+                                if (quotes.size >= 4) notice = "一次最多引用 4 段"
+                                else quotes = quotes + AppQuote("q${item.id}", quoted, item.role, item.entryId)
+                            }
+                        },
+                        onAnnotate = { item ->
+                            val quoted = normalizeQuote(item.text).orEmpty()
+                            annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
+                        },
                     )
                 }
             }
         }
     }
 
+    annotating?.let { draftReview ->
+        var note by remember(draftReview.id) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { annotating = null },
+            title = { Text("批注") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    draftReview.quote?.let { quoted ->
+                        Text("${draftReview.label}：$quoted", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedTextField(value = note, onValueChange = { note = it }, minLines = 3,
+                        placeholder = { Text("写下你的批注…") }, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = note.isNotBlank(), onClick = {
+                    reviews = reviews + draftReview.copy(content = note.trim())
+                    annotating = null
+                }) { Text("添加") }
+            },
+            dismissButton = { TextButton(onClick = { annotating = null }) { Text("取消") } },
+        )
+    }
     val dismiss = { if (!busy) { dialog = null; forkEntry = null } }
     when (dialog) {
         "title" -> LiveTextDialog("修改标题", summary?.sessionName.orEmpty(), "标题", busy, notice, dismiss) { value ->

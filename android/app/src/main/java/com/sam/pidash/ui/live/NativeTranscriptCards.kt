@@ -2,6 +2,7 @@ package com.sam.pidash.ui.live
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.domain.model.LiveTimelineItem
+import com.sam.pidash.domain.model.TranscriptRow
 import com.sam.pidash.ui.markdown.MarkdownBody
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -142,6 +144,8 @@ internal fun NativeMessageCard(
     onOpenUrl: (String) -> Unit,
     onFork: ((String) -> Unit)? = null,
     enabled: Boolean = true,
+    onQuote: ((LiveTimelineItem) -> Unit)? = null,
+    onAnnotate: ((LiveTimelineItem) -> Unit)? = null,
 ) {
     var expanded by remember(item.id) { mutableStateOf(false) }
     var showThinking by remember(item.id) { mutableStateOf(false) }
@@ -214,6 +218,20 @@ internal fun NativeMessageCard(
             if (item.isError && item.text.isBlank()) {
                 Text("出错了", style = MaterialTheme.typography.bodySmall, color = scheme.error)
             }
+            if (item.text.isNotBlank() && (onQuote != null || onAnnotate != null)) Row {
+                if (onQuote != null) TextButton(
+                    enabled = enabled,
+                    onClick = { onQuote(item) },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                    modifier = Modifier.heightIn(min = 24.dp),
+                ) { Text("引用", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant) }
+                if (onAnnotate != null) TextButton(
+                    enabled = enabled,
+                    onClick = { onAnnotate(item) },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.heightIn(min = 24.dp),
+                ) { Text("批注", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant) }
+            }
             if (item.forkable && !item.entryId.isNullOrBlank() && onFork != null) TextButton(
                 enabled = enabled,
                 onClick = { onFork(item.entryId) },
@@ -227,13 +245,72 @@ internal fun NativeMessageCard(
 }
 
 @Composable
-internal fun NativeTimelineCard(
-    item: LiveTimelineItem,
+internal fun NativeTimelineRow(
+    row: TranscriptRow,
     onOpenPath: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
     onFork: (String) -> Unit,
     enabled: Boolean,
+    onQuote: (LiveTimelineItem) -> Unit,
+    onAnnotate: (LiveTimelineItem) -> Unit,
 ) {
-    if (isToolItem(item)) NativeStepCard(item, onOpenPath, onOpenUrl)
-    else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled)
+    when (row) {
+        is TranscriptRow.Single -> {
+            val item = row.item
+            if (isToolItem(item)) NativeStepCard(item, onOpenPath, onOpenUrl)
+            else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate)
+        }
+        is TranscriptRow.Steps -> NativeStepGroup(row, onOpenPath, onOpenUrl)
+    }
+}
+
+/**
+ * A run of consecutive tool calls folded into one collapsible line, the way the
+ * WebUI folds an activity block instead of listing ten步骤.
+ */
+@Composable
+internal fun NativeStepGroup(
+    group: TranscriptRow.Steps,
+    onOpenPath: (String) -> Unit,
+    onOpenUrl: (String) -> Unit,
+) {
+    var open by remember(group.id) { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    val (icon, tint, state) = when {
+        group.failed -> Triple("!", scheme.error, "含失败")
+        group.running -> Triple("●", scheme.primary, "进行中")
+        else -> Triple("✓", scheme.onSurfaceVariant, "已完成")
+    }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(icon, color = tint, style = MaterialTheme.typography.labelSmall)
+            Text(
+                "  ${group.items.size} 个步骤 · $state",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = tint,
+            )
+            Text(
+                "  ${group.names.joinToString(" · ")}",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                if (open) "收起" else "展开",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.primary,
+                modifier = Modifier.padding(horizontal = 6.dp),
+            )
+        }
+        if (open) Column(
+            Modifier.fillMaxWidth().padding(start = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            group.items.forEach { item -> NativeStepCard(item, onOpenPath, onOpenUrl) }
+        }
+    }
 }
