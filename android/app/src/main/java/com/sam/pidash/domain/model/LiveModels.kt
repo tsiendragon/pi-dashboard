@@ -68,6 +68,58 @@ data class LiveModelOption(
     val contextWindow: Long = 0,
     val thinkingLevels: List<String> = emptyList(),
 )
+@Serializable
+data class LiveUsageTotals(
+    val inputTokens: Long = 0,
+    val outputTokens: Long = 0,
+    val cacheReadTokens: Long = 0,
+    val cacheWriteTokens: Long = 0,
+    val totalTokens: Long = 0,
+    val costUsd: Double = 0.0,
+)
+
+@Serializable
+data class LiveUsageModel(
+    val key: String,
+    val inputTokens: Long = 0,
+    val outputTokens: Long = 0,
+    val cacheReadTokens: Long = 0,
+    val cacheWriteTokens: Long = 0,
+    val totalTokens: Long = 0,
+    val costUsd: Double = 0.0,
+    val effectiveUsdPerMillionTokens: Double = 0.0,
+)
+
+@Serializable
+data class LiveUsageSession(
+    val key: String,
+    val label: String = "",
+    val sessionId: String? = null,
+    val sessionFile: String? = null,
+    val cwd: String? = null,
+    val totalTokens: Long = 0,
+    val costUsd: Double = 0.0,
+)
+
+@Serializable
+data class LiveUsageDay(
+    val date: String,
+    val totalTokens: Long = 0,
+    val costUsd: Double = 0.0,
+)
+
+@Serializable
+data class LiveUsageReport(
+    val month: String = "",
+    val timezone: String = "",
+    val currency: String = "USD",
+    val total: LiveUsageTotals = LiveUsageTotals(),
+    val models: List<LiveUsageModel> = emptyList(),
+    val sessions: List<LiveUsageSession> = emptyList(),
+    val daily: List<LiveUsageDay> = emptyList(),
+    val recordCount: Int = 0,
+)
+
 /** One session file in the fork family returned by `/api/session-tree`. */
 @Serializable
 data class LiveSessionTreeEntry(

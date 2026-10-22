@@ -133,6 +133,13 @@ class LiveSessionClient(
         pidashJson.decodeFromJsonElement(ListSerializer(LiveGroup.serializer()),
             response["groups"] ?: throw IOException("服务器未提供分组结果"))
     } catch (error: kotlinx.serialization.SerializationException) { throw IOException("无法确认服务器分组结果", error) }
+    /** Monthly usage ledger for this dashboard; `month` is `YYYY-MM`. */
+    suspend fun usage(month: String? = null): LiveUsageReport = withContext(Dispatchers.IO) {
+        month?.let { require(it.matches(Regex("\\d{4}-\\d{2}"))) { "月份格式应为 YYYY-MM" } }
+        val path = if (month != null) "/api/usage?month=$month" else "/api/usage"
+        pidashJson.decodeFromJsonElement(LiveUsageReport.serializer(), get(path))
+    }
+
     /** Fork family of one session file; read-only, keyed by session file path. */
     suspend fun sessionTree(sessionFile: String): LiveSessionTree = withContext(Dispatchers.IO) {
         require(sessionFile.startsWith('/') && sessionFile.length <= 4096 && !sessionFile.contains('\u0000')) {
