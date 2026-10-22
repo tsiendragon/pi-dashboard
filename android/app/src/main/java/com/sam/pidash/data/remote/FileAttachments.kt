@@ -47,6 +47,15 @@ object FileAttachments {
 
     fun isSupported(name: String): Boolean = isTextFile(name) || isPdf(name)
 
+    /**
+     * The file picker also lists photos, so accept them by mime type or by name and hand
+     * them to the image pipeline instead of refusing with "unsupported type".
+     */
+    fun isImage(name: String, mime: String? = null): Boolean {
+        if (ImageAttachments.normalizeMime(mime, name) != null) return true
+        return extensionOf(name) in setOf("png", "jpg", "jpeg", "webp", "gif")
+    }
+
     data class TextAttachment(
         val name: String,
         val text: String,

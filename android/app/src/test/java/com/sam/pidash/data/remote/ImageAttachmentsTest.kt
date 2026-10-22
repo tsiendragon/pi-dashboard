@@ -44,4 +44,25 @@ class ImageAttachmentsTest {
     @Test fun emptyAttachmentListIsValid() {
         assertNull(ImageAttachments.validate(emptyList()))
     }
+
+    @Test fun providerMimeVariantsAreNormalised() {
+        assertEquals("image/jpeg", ImageAttachments.normalizeMime("image/jpg"))
+        assertEquals("image/jpeg", ImageAttachments.normalizeMime("IMAGE/JPEG; charset=binary"))
+        assertEquals("image/png", ImageAttachments.normalizeMime("image/x-png"))
+        assertEquals("image/png", ImageAttachments.normalizeMime("application/octet-stream", "screenshot.PNG"))
+        assertEquals("image/webp", ImageAttachments.normalizeMime(null, "a.webp"))
+        assertEquals(null, ImageAttachments.normalizeMime("application/pdf", "a.pdf"))
+        assertEquals(null, ImageAttachments.normalizeMime(null, null))
+    }
+
+    @Test fun fileSignaturesDecideWhenTheProviderLies() {
+        fun bytes(vararg values: Int) = values.map { it.toByte() }.toByteArray()
+        assertEquals("image/png", ImageAttachments.sniffMime(bytes(0x89, 0x50, 0x4E, 0x47, 0x0D)))
+        assertEquals("image/jpeg", ImageAttachments.sniffMime(bytes(0xFF, 0xD8, 0xFF, 0xE0)))
+        assertEquals("image/gif", ImageAttachments.sniffMime(bytes(0x47, 0x49, 0x46, 0x38, 0x39)))
+        val webp = bytes(0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50)
+        assertEquals("image/webp", ImageAttachments.sniffMime(webp))
+        assertEquals(null, ImageAttachments.sniffMime(bytes(0x25, 0x50, 0x44, 0x46)))
+        assertEquals(null, ImageAttachments.sniffMime(ByteArray(0)))
+    }
 }

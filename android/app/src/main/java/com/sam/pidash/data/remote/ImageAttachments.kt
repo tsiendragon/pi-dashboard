@@ -25,6 +25,36 @@ internal object ImageAttachments {
 
     val ALLOWED_MIMES = setOf("image/png", "image/jpeg", "image/webp", "image/gif")
 
+    /** `image/jpg`, `image/x-png` and extension-only names are all real-world cases. */
+    fun normalizeMime(type: String?, name: String? = null): String? {
+        val clean = type?.lowercase()?.substringBefore(';')?.trim().orEmpty()
+        if (clean in ALLOWED_MIMES) return clean
+        if (clean == "image/jpg" || clean == "image/pjpeg") return "image/jpeg"
+        if (clean == "image/x-png") return "image/png"
+        val extension = name?.substringAfterLast('.', "")?.lowercase().orEmpty()
+        return when (extension) {
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            else -> null
+        }
+    }
+
+    /** Some providers hand out `application/octet-stream`; the file signature is the truth. */
+    fun sniffMime(bytes: ByteArray): String? {
+        fun starts(vararg prefix: Int): Boolean =
+            bytes.size >= prefix.size && prefix.indices.all { bytes[it] == prefix[it].toByte() }
+        return when {
+            starts(0x89, 0x50, 0x4E, 0x47) -> "image/png"
+            starts(0xFF, 0xD8, 0xFF) -> "image/jpeg"
+            starts(0x47, 0x49, 0x46, 0x38) -> "image/gif"
+            bytes.size >= 12 && starts(0x52, 0x49, 0x46, 0x46) &&
+                String(bytes, 8, 4, Charsets.US_ASCII) == "WEBP" -> "image/webp"
+            else -> null
+        }
+    }
+
     /** Returns a user-facing reason, or null when the set is sendable. */
     fun validate(images: List<LiveImage>): String? {
         if (images.size > MAX_IMAGES) return "最多附加 $MAX_IMAGES 张图片"
@@ -41,10 +71,12 @@ internal object ImageAttachments {
     }
 
     fun read(context: Context, uri: Uri): Result<LiveImage> = runCatching {
-        val type = context.contentResolver.getType(uri)?.lowercase()?.substringBefore(';') ?: ""
-        if (type !in ALLOWED_MIMES) throw IOException("只支持 PNG/JPEG/WebP/GIF 图片")
+        val name = FileAttachments.displayName(context, uri)
+        // Never trust the provider's mime alone: fall back to the name, then to the bytes.
+        val declared = normalizeMime(context.contentResolver.getType(uri), name)
         val raw = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: throw IOException("无法读取这张图片")
+        val type = declared ?: sniffMime(raw) ?: throw IOException("只支持 PNG/JPEG/WebP/GIF 图片")
         if (raw.size > MAX_SOURCE_BYTES) throw IOException("图片过大，请先裁剪再附加")
         if (raw.size <= MAX_IMAGE_BYTES) {
             // Already sendable: keep the original bytes, so WebP/GIF stay intact.

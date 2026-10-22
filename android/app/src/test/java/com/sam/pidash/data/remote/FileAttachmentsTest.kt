@@ -51,4 +51,13 @@ class FileAttachmentsTest {
         assertEquals("hi", com.sam.pidash.domain.model.composeOutgoing("hi", filePrefix = ""))
         assertEquals("文件：a.txt\n\nhi", com.sam.pidash.domain.model.composeOutgoing("hi", filePrefix = "文件：a.txt"))
     }
+
+    @Test fun theFilePickerTreatsPhotosAsImagesNotUnsupportedFiles() {
+        assertTrue(FileAttachments.isImage("IMG_0001.jpg"))
+        assertTrue(FileAttachments.isImage("a.PNG"))
+        assertTrue(FileAttachments.isImage("photo", "image/webp"))
+        assertTrue(FileAttachments.isImage("blob", "application/octet-stream").not())
+        assertFalse(FileAttachments.isImage("notes.md"))
+        assertFalse(FileAttachments.isImage("a.pdf"))
+    }
 }
