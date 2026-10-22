@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -16,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.sam.pidash.ui.theme.Hairline
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
@@ -77,6 +81,31 @@ fun MetaAction(
             .clip(Radii.chip)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = Spacing.xs, vertical = 4.dp),
+    )
+}
+
+/**
+ * An iOS hairline: 0.5 dp, inset 16 dp from the leading edge (or full width when the
+ * row already has its own inset). Never use a 1 dp rule.
+ */
+@Composable
+fun InsetSeparator(modifier: Modifier = Modifier, inset: Dp = Spacing.lg) {
+    Box(
+        modifier
+            .fillMaxWidth()
+            .padding(start = inset)
+            .height(Hairline)
+            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+    )
+}
+
+/** Inset-grouped container: rounded 10 dp card on the grouped background. */
+@Composable
+fun GroupedCard(modifier: Modifier = Modifier, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    androidx.compose.foundation.layout.Column(
+        modifier.fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, Radii.card),
+        content = content,
     )
 }
 

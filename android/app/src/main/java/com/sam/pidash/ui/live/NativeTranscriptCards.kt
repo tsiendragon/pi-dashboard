@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.TranscriptRow
+import com.sam.pidash.ui.common.InsetSeparator
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.markdown.MarkdownBody
@@ -173,31 +174,31 @@ internal fun NativeMessageCard(
     val user = item.role == "user"
 
     if (user) {
-        // No bubble: the reader's own text is right-aligned and marked by a hairline.
+        // iOS Messages shape: your own words are the only filled surface in the screen.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Row(Modifier.widthIn(max = 560.dp)) {
-                Box(
-                    Modifier.padding(top = 3.dp, bottom = 3.dp).widthIn(min = 2.dp)
-                        .height(IntrinsicSize.Min)
-                        .background(scheme.outline, Radii.chip),
-                ) { Spacer(Modifier.size(2.dp)) }
-                Column(
-                    Modifier.padding(start = Spacing.sm),
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-                ) {
-                    item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
-                    if (item.text.isNotBlank()) Text(visible, style = PiType.body, color = scheme.onSurface)
-                    if (long) MetaAction(
-                        if (expanded) "收起" else "展开全部（${lines.size} 行）",
-                        { expanded = !expanded },
+            Column(
+                Modifier.widthIn(max = 560.dp)
+                    .background(
+                        scheme.primary,
+                        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 18.dp),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                        if (onQuote != null && item.text.isNotBlank()) MetaAction("引用", { onQuote(item) }, enabled)
-                        if (onAnnotate != null && item.text.isNotBlank()) MetaAction("批注", { onAnnotate(item) }, enabled)
-                        if (item.forkable && !item.entryId.isNullOrBlank() && onFork != null) {
-                            MetaAction("分叉", { onFork(item.entryId) }, enabled)
-                        }
+                    .padding(horizontal = Spacing.md, vertical = 9.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            ) {
+                item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+                if (item.text.isNotBlank()) Text(visible, style = PiType.body, color = scheme.onPrimary)
+                if (long) MetaAction(
+                    if (expanded) "收起" else "展开全部（${lines.size} 行）",
+                    { expanded = !expanded },
+                    tint = scheme.onPrimary.copy(alpha = 0.8f),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    val tint = scheme.onPrimary.copy(alpha = 0.8f)
+                    if (onQuote != null && item.text.isNotBlank()) MetaAction("引用", { onQuote(item) }, enabled, tint)
+                    if (onAnnotate != null && item.text.isNotBlank()) MetaAction("批注", { onAnnotate(item) }, enabled, tint)
+                    if (item.forkable && !item.entryId.isNullOrBlank() && onFork != null) {
+                        MetaAction("分叉", { onFork(item.entryId) }, enabled, tint)
                     }
                 }
             }
@@ -285,7 +286,7 @@ internal fun NativeStepGroup(
             Spacer(Modifier.size(Spacing.xs))
             Text(
                 "${group.items.size} 个步骤",
-                style = PiType.strong,
+                style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold),
                 color = scheme.onSurface.copy(alpha = 0.9f),
             )
             Spacer(Modifier.size(Spacing.sm))
@@ -301,11 +302,11 @@ internal fun NativeStepGroup(
                 )
             }
         }
-        if (open) Column(
-            Modifier.fillMaxWidth().padding(start = Spacing.md),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
-        ) {
-            group.items.forEach { item -> NativeStepCard(item, onOpenPath, onOpenUrl) }
+        if (open) Column(Modifier.fillMaxWidth().padding(start = Spacing.md)) {
+            group.items.forEachIndexed { index, item ->
+                if (index > 0) InsetSeparator(inset = 0.dp)
+                NativeStepCard(item, onOpenPath, onOpenUrl)
+            }
         }
     }
 }

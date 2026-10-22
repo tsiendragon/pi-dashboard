@@ -9,43 +9,46 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Design tokens for PiDash — minimal.
+ * Tokens following Apple's iOS visual language, kept minimal.
  *
- * Rules the palette encodes:
- * 1. Background and surface are the same colour; the app has no elevation.
- * 2. There is one accent, and it is reserved for what the user can act on
- *    (links, primary button, a running state). Nothing decorative is coloured.
- * 3. Everything else is `onSurface` at full, 60% or 40% opacity. No tints, no pills.
+ * What makes it read as "iOS" rather than "generic Material":
+ * 1. System colours: `#007AFF` accent, grouped background `#F2F2F7` / `#1C1C1E`,
+ *    labels at 100 / 60 / 30% instead of dozens of greys.
+ * 2. Type scale close to SF: 17 body, 17 semibold headline, 20 title, 28 large title,
+ *    13 footnote, 11 caption. Content is bigger than Android defaults; chrome smaller.
+ * 3. Hairlines: a 0.5 dp separator, inset 16 dp — Apple never draws a heavy rule.
+ * 4. Continuity: one radius family (10 grouped cards, 18 bubbles, 14 sheets) and one
+ *    accent used only where the user acts.
  */
 object PiPalette {
+    // Light — iOS system colours
     val LightBackground = Color(0xFFFFFFFF)
+    val LightGrouped = Color(0xFFF2F2F7)
     val LightSurface = Color(0xFFFFFFFF)
-    val LightSurfaceVariant = Color(0xFFF6F7F9)
-    val LightOutline = Color(0xFFE6E9ED)
-    val LightOnSurface = Color(0xFF16181C)
-    val LightOnSurfaceVariant = Color(0xFF6B7280)
-    val LightAccent = Color(0xFF1F6FEB)
-    val LightAccentContainer = Color(0xFFEAF1FE)
-    val LightSuccess = Color(0xFF1A7F5A)
-    val LightError = Color(0xFFCE3B3B)
+    val LightSeparator = Color(0xFFC6C6C8)
+    val LightLabel = Color(0xFF000000)
+    val LightSecondaryLabel = Color(0x993C3C43)
+    val LightTertiaryLabel = Color(0x4D3C3C43)
+    val LightAccent = Color(0xFF007AFF)
+    val LightSuccess = Color(0xFF34C759)
+    val LightError = Color(0xFFFF3B30)
 
-    val DarkBackground = Color(0xFF0E1013)
-    val DarkSurface = Color(0xFF0E1013)
-    val DarkSurfaceVariant = Color(0xFF191C21)
-    val DarkOutline = Color(0xFF24282E)
-    val DarkOnSurface = Color(0xFFEDEFF2)
-    val DarkOnSurfaceVariant = Color(0xFF8E96A2)
-    val DarkAccent = Color(0xFF7FB0FF)
-    val DarkAccentContainer = Color(0xFF151D2B)
-    val DarkSuccess = Color(0xFF57C79A)
-    val DarkError = Color(0xFFFF7B7B)
+    // Dark — iOS system colours
+    val DarkBackground = Color(0xFF000000)
+    val DarkGrouped = Color(0xFF1C1C1E)
+    val DarkSurface = Color(0xFF1C1C1E)
+    val DarkSeparator = Color(0xFF38383A)
+    val DarkLabel = Color(0xFFFFFFFF)
+    val DarkSecondaryLabel = Color(0x99EBEBF5)
+    val DarkTertiaryLabel = Color(0x4DEBEBF5)
+    val DarkAccent = Color(0xFF0A84FF)
+    val DarkSuccess = Color(0xFF30D158)
+    val DarkError = Color(0xFFFF453A)
 }
 
-/**
- * Spacing is a 4 dp grid, but the vertical rhythm is deliberately generous: minimal
- * design reads as "airy", and cramming rows is what made the old screen feel dense.
- */
+/** 4 dp grid; margins and section gaps follow iOS rhythm (16 / 24 / 32). */
 object Spacing {
+    val xxs = 2.dp
     val xs = 4.dp
     val sm = 8.dp
     val md = 12.dp
@@ -54,27 +57,41 @@ object Spacing {
     val xxl = 32.dp
 }
 
+/** Apple's separator weight: a hairline, never a 1 dp rule. */
+val Hairline = 0.5.dp
+
 object Radii {
-    val chip = RoundedCornerShape(4.dp)
-    val card = RoundedCornerShape(8.dp)
-    val bubble = RoundedCornerShape(12.dp)
+    /** Inset-grouped card / code block. */
+    val card = RoundedCornerShape(10.dp)
+    /** Sheet and dialog. */
+    val sheet = RoundedCornerShape(14.dp)
+    /** Message bubble; the sender's tail corner is tightened at the call site. */
+    val bubble = RoundedCornerShape(18.dp)
+    val chip = RoundedCornerShape(8.dp)
 }
 
-/** Reading width; phones ignore it, tablets stop stretching. */
 val ProseMaxWidth = 680.dp
 
 /**
- * Type scale. Only four steps are used on a screen: 15/16 for content, 13 for
- * secondary, 12 for metadata, 11 for actions. Weight carries emphasis, not colour.
+ * SF-like scale. `body` is 17 sp (iOS body), which is larger than Material's 14 —
+ * this is the single biggest reason the app will feel like a phone app from Apple.
  */
 object PiType {
-    val body = TextStyle(fontSize = 15.sp, lineHeight = 24.sp)
-    val bodyCompact = TextStyle(fontSize = 14.sp, lineHeight = 22.sp)
-    val meta = TextStyle(fontSize = 13.sp, lineHeight = 20.sp)
-    val micro = TextStyle(fontSize = 12.sp, lineHeight = 18.sp)
-    val action = TextStyle(fontSize = 11.sp, lineHeight = 16.sp)
-    val title = TextStyle(fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
-    val strong = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
-    val mono = TextStyle(fontSize = 13.sp, lineHeight = 21.sp, fontFamily = FontFamily.Monospace)
-    val monoMicro = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontFamily = FontFamily.Monospace)
+    val largeTitle = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
+    val title = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
+    val headline = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
+    val body = TextStyle(fontSize = 17.sp, lineHeight = 25.sp, letterSpacing = (-0.1).sp)
+    val callout = TextStyle(fontSize = 16.sp, lineHeight = 23.sp, letterSpacing = (-0.1).sp)
+    val subhead = TextStyle(fontSize = 15.sp, lineHeight = 21.sp)
+    val footnote = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
+    val caption = TextStyle(fontSize = 12.sp, lineHeight = 16.sp)
+    val action = TextStyle(fontSize = 12.sp, lineHeight = 16.sp)
+    val mono = TextStyle(fontSize = 13.sp, lineHeight = 20.sp, fontFamily = FontFamily.Monospace)
+    val monoMicro = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontFamily = FontFamily.Monospace)
+
+    // Backwards-compatible aliases used across screens while they migrate.
+    val bodyCompact = callout
+    val meta = subhead
+    val micro = footnote
+    val strong = caption.copy(fontWeight = FontWeight.SemiBold)
 }

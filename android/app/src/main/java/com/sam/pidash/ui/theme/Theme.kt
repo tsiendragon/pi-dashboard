@@ -2,82 +2,85 @@ package com.sam.pidash.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 /**
- * PiDash keeps its own palette so a screenshot looks the same on every phone.
+ * iOS-style colour scheme: pure white / pure black pages, `#F2F2F7` grouped surfaces,
+ * label colours expressed as opacity, one system-blue accent.
  *
- * Material's wallpaper-derived dynamic colour is still available, but it is opt-in
- * (`useDynamicColor`): with it on, the user's bubble and every chip change hue per
- * device and contrast is out of our hands.
+ * Wallpaper-derived dynamic colour stays available but is off by default — with it on,
+ * the accent and every grouped surface change per device.
  */
 private val LightColors = lightColorScheme(
     primary = PiPalette.LightAccent,
-    onPrimary = androidx.compose.ui.graphics.Color.White,
-    primaryContainer = PiPalette.LightAccentContainer,
-    onPrimaryContainer = PiPalette.LightOnSurface,
+    onPrimary = Color.White,
+    primaryContainer = PiPalette.LightAccent.copy(alpha = 0.12f),
+    onPrimaryContainer = PiPalette.LightLabel,
     secondary = PiPalette.LightSuccess,
     tertiary = PiPalette.LightSuccess,
     background = PiPalette.LightBackground,
-    onBackground = PiPalette.LightOnSurface,
+    onBackground = PiPalette.LightLabel,
     surface = PiPalette.LightSurface,
-    onSurface = PiPalette.LightOnSurface,
-    surfaceVariant = PiPalette.LightSurfaceVariant,
-    onSurfaceVariant = PiPalette.LightOnSurfaceVariant,
-    outline = PiPalette.LightOutline,
-    outlineVariant = PiPalette.LightOutline,
+    onSurface = PiPalette.LightLabel,
+    surfaceVariant = PiPalette.LightGrouped,
+    onSurfaceVariant = PiPalette.LightSecondaryLabel,
+    outline = PiPalette.LightSeparator,
+    outlineVariant = PiPalette.LightSeparator,
     error = PiPalette.LightError,
-    errorContainer = androidx.compose.ui.graphics.Color(0xFFFFF0F0),
+    errorContainer = PiPalette.LightError.copy(alpha = 0.10f),
     onErrorContainer = PiPalette.LightError,
 )
 
 private val DarkColors = darkColorScheme(
     primary = PiPalette.DarkAccent,
-    onPrimary = androidx.compose.ui.graphics.Color(0xFF08111F),
-    primaryContainer = PiPalette.DarkAccentContainer,
-    onPrimaryContainer = PiPalette.DarkOnSurface,
+    onPrimary = Color.White,
+    primaryContainer = PiPalette.DarkAccent.copy(alpha = 0.18f),
+    onPrimaryContainer = PiPalette.DarkLabel,
     secondary = PiPalette.DarkSuccess,
     tertiary = PiPalette.DarkSuccess,
     background = PiPalette.DarkBackground,
-    onBackground = PiPalette.DarkOnSurface,
+    onBackground = PiPalette.DarkLabel,
     surface = PiPalette.DarkSurface,
-    onSurface = PiPalette.DarkOnSurface,
-    surfaceVariant = PiPalette.DarkSurfaceVariant,
-    onSurfaceVariant = PiPalette.DarkOnSurfaceVariant,
-    outline = PiPalette.DarkOutline,
-    outlineVariant = PiPalette.DarkOutline,
+    onSurface = PiPalette.DarkLabel,
+    surfaceVariant = PiPalette.DarkGrouped,
+    onSurfaceVariant = PiPalette.DarkSecondaryLabel,
+    outline = PiPalette.DarkSeparator,
+    outlineVariant = PiPalette.DarkSeparator,
     error = PiPalette.DarkError,
-    errorContainer = androidx.compose.ui.graphics.Color(0xFF2A1416),
+    errorContainer = PiPalette.DarkError.copy(alpha = 0.16f),
     onErrorContainer = PiPalette.DarkError,
 )
 
-/** One shape scale for every Material component (dialogs pick `extraLarge`). */
-private val PiShapes = androidx.compose.material3.Shapes(
-    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
-    small = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-    medium = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-    large = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+/** One radius family: 8 chips, 10 grouped cards, 14 sheets, 18 bubbles. */
+private val PiShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(14.dp),
+    extraLarge = RoundedCornerShape(16.dp),
 )
 
 private val PiTypography = Typography(
     bodyLarge = PiType.body,
-    bodyMedium = PiType.bodyCompact,
-    bodySmall = PiType.meta,
-    labelLarge = PiType.meta,
-    labelMedium = PiType.micro,
+    bodyMedium = PiType.callout,
+    bodySmall = PiType.subhead,
+    labelLarge = PiType.subhead,
+    labelMedium = PiType.footnote,
     labelSmall = PiType.action,
-    titleSmall = PiType.title,
-    titleMedium = PiType.title,
     titleLarge = PiType.title,
+    titleMedium = PiType.headline,
+    titleSmall = PiType.callout,
 )
 
 @Composable
