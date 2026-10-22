@@ -3,225 +3,144 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PiDash 设计稿（4.2 · iOS 语言）</title>
+<title>PiDash 设计稿（4.5 · 卡片式活动视图）</title>
 <!--
   设计稿预览，不是 App 截图。
-  与 ui/theme/Tokens.kt 使用同一批 iOS 系统色、字号与间距，用于对齐视觉。
+  与 ui/theme/Tokens.kt 同一批 iOS 系统色、SF 字号与间距。
   真机字体度量（尤其中文行高）会有差异。
 -->
 <style>
   :root {
-    /* iOS dark */
-    --bg: #000000; --grouped: #1C1C1E; --surface: #1C1C1E; --separator: #38383A;
-    --label: #FFFFFF; --label2: rgba(235,235,245,.6); --label3: rgba(235,235,245,.3);
+    --bg: #000; --grouped: #1C1C1E; --sep: #38383A;
+    --label: #FFF; --label2: rgba(235,235,245,.6); --label3: rgba(235,235,245,.3);
     --blue: #0A84FF; --green: #30D158; --red: #FF453A;
-    --kw: #C792EA; --str: #C3E88D; --com: #7F8C98; --num: #F78C6C; --typ: #82AAFF; --fn: #89DDFF;
   }
   html[data-theme="light"] {
-    --bg: #FFFFFF; --grouped: #F2F2F7; --surface: #FFFFFF; --separator: #C6C6C8;
-    --label: #000000; --label2: rgba(60,60,67,.6); --label3: rgba(60,60,67,.3);
+    --bg: #FFF; --grouped: #F2F2F7; --sep: #C6C6C8;
+    --label: #000; --label2: rgba(60,60,67,.6); --label3: rgba(60,60,67,.3);
     --blue: #007AFF; --green: #34C759; --red: #FF3B30;
-    --kw: #7C3AED; --str: #047857; --com: #6B7280; --num: #B45309; --typ: #1D4ED8; --fn: #0E7490;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--label);
-    /* SF Pro on Apple platforms, Roboto elsewhere — same metrics family */
+    margin: 0; padding: 0 0 40px; background: var(--bg); color: var(--label);
     font: 17px/25px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Noto Sans SC", "PingFang SC", Roboto, sans-serif;
-    -webkit-font-smoothing: antialiased; letter-spacing: -0.1px;
+    -webkit-font-smoothing: antialiased; letter-spacing: -.1px;
   }
   .wrap { max-width: 680px; margin: 0 auto; }
-  h1 { font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.2px; margin: 0; }
-  .foot { font-size: 13px; line-height: 18px; color: var(--label2); }
-  .cap { font-size: 12px; line-height: 16px; color: var(--label2); }
-  .act { font-size: 12px; line-height: 16px; color: var(--label2); padding: 4px 2px; cursor: pointer; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); flex: none; }
 
-  .switch { display: flex; gap: 16px; margin: 18px 0 28px; }
-  .switch button {
-    font: 12px/16px inherit; color: var(--label2); background: none; border: 0; padding: 0 0 3px;
-    cursor: pointer; border-bottom: 1px solid transparent;
-  }
+  /* compact bar: 52 px, one line of title, one 12 sp fact line, hairline */
+  .bar { display: flex; align-items: center; gap: 4px; padding: 4px 8px 6px 4px; }
+  .bar .chev { width: 40px; text-align: center; font-size: 20px; color: var(--label); }
+  .bar .mid { flex: 1; min-width: 0; }
+  .bar .mid .t { font-size: 16px; line-height: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar .mid .m { font-size: 12px; line-height: 16px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar .more { width: 40px; text-align: center; font-size: 18px; color: var(--label2); }
+  .hair { height: .5px; background: var(--sep); opacity: .6; }
+  .hint { font-size: 12px; line-height: 17px; color: var(--label3); padding: 6px 16px 2px; }
+
+  /* activity cards: 10 dp radius, grouped fill, 3 lines max */
+  .list { padding: 12px 16px 8px; display: flex; flex-direction: column; gap: 8px; }
+  .card { background: var(--grouped); border-radius: 10px; padding: 12px 16px; }
+  .card .top { display: flex; align-items: center; gap: 8px; }
+  .card .state { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--label2); }
+  .card .state.run { color: var(--blue); }
+  .card .state.bad { color: var(--red); }
+  .card .steps { margin-left: auto; font-size: 12px; line-height: 16px; color: var(--label2); }
+  .card .q { font-size: 13px; line-height: 18px; color: var(--label2); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .a { font-size: 16px; line-height: 23px; margin-top: 3px;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); flex: none;
+    animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+  /* composer: one row, no footer unless it says something */
+  .composer { border-top: .5px solid var(--sep); padding: 8px 8px 4px; display: flex; align-items: center; gap: 8px; }
+  .composer .plus { width: 32px; height: 32px; display: grid; place-items: center; font-size: 20px; color: var(--label2); }
+  .composer .field { flex: 1; background: var(--grouped); border-radius: 18px; padding: 8px 12px;
+    font-size: 17px; color: var(--label3); }
+  .composer .send { width: 34px; height: 34px; border-radius: 17px; background: var(--blue); color: #fff;
+    display: grid; place-items: center; font-size: 15px; }
+
+  /* detail sheet */
+  .detail { margin: 22px 0 0; border-top: .5px solid var(--sep); padding: 10px 16px 0; }
+  .detail .dh { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; }
+  .detail .dh .t { font-size: 16px; font-weight: 600; }
+  .detail .dh .m { font-size: 12px; color: var(--label2); }
+  .row { display: flex; gap: 8px; align-items: baseline; font: 12px/17px ui-monospace, Menlo, monospace; padding: 5px 0; }
+  .row .name { color: var(--label); }
+  .row .arg { color: var(--label2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .out { background: var(--grouped); border-radius: 10px; padding: 10px 12px; margin: 2px 0 8px;
+    font: 13px/20px ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+  .note { font-size: 11px; line-height: 16px; color: var(--label2); margin: 26px 16px 0;
+    border-top: .5px solid var(--sep); padding-top: 12px; }
+  .switch { display: flex; gap: 16px; padding: 16px 16px 0; }
+  .switch button { font: 12px/16px inherit; color: var(--label2); background: none; border: 0; padding: 0 0 3px;
+    cursor: pointer; border-bottom: 1px solid transparent; }
   .switch button[aria-pressed="true"] { color: var(--label); border-bottom-color: var(--label3); }
-
-  /* nav bar: 17 semibold title, hairline under */
-  .navbar { display: flex; align-items: baseline; gap: 12px; padding: 8px 0 12px; }
-  .navbar .back { color: var(--blue); font-size: 17px; }
-  .navbar h1 { flex: 1; font-size: 17px; line-height: 22px; }
-  .navbar .more { color: var(--blue); font-size: 17px; }
-  .facts { padding-bottom: 14px; border-bottom: .5px solid var(--separator); margin-bottom: 20px; }
-  .facts .cwd { font: 12px/17px ui-monospace, Menlo, monospace; color: var(--label2); margin-top: 2px; }
-
-  /* your own message: iOS filled bubble, tightened tail corner */
-  .user { display: flex; justify-content: flex-end; margin: 0 0 20px; }
-  .bubble {
-    max-width: 78%; background: var(--blue); color: #fff; border-radius: 18px;
-    border-bottom-right-radius: 6px; padding: 9px 12px; font-size: 17px; line-height: 25px;
-  }
-  .bubble .acts { display: flex; gap: 10px; justify-content: flex-end; margin-top: 2px; }
-  .bubble .act { color: rgba(255,255,255,.8); }
-
-  /* assistant prose */
-  .answer { margin-bottom: 20px; }
-  .answer p { margin: 0 0 12px; }
-  code.inline { font: 13px/20px ui-monospace, Menlo, monospace; background: var(--grouped); padding: 1px 5px; border-radius: 8px; }
-
-  /* code: grouped fill, 10 dp, language above */
-  .code { margin: 12px 0 20px; }
-  .code .head { display: flex; font: 12px/16px ui-monospace, Menlo, monospace; color: var(--label2); margin-bottom: 4px; }
-  .code .head span { flex: 1; }
-  .code .head b { font-weight: 400; }
-  .code pre {
-    margin: 0; padding: 10px 12px; background: var(--grouped); border-radius: 10px; overflow-x: auto;
-    font: 13px/20px ui-monospace, Menlo, monospace;
-  }
-  .k { color: var(--kw); } .s { color: var(--str); } .c { color: var(--com); }
-  .n { color: var(--num); } .t { color: var(--typ); } .f { color: var(--fn); }
-
-  /* steps */
-  .steps { margin-bottom: 18px; }
-  .steps .head { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 18px; }
-  .steps .head .count { font-weight: 600; }
-  .steps .head .names { color: var(--label2); font: 12px/17px ui-monospace, Menlo, monospace; }
-  .steps .list { margin-top: 4px; }
-  .step { display: flex; align-items: center; gap: 8px; font: 12px/17px ui-monospace, Menlo, monospace; padding: 5px 0; }
-  .step .name { color: var(--label); }
-  .step .arg { color: var(--label2); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .step .chev { color: var(--label3); }
-  .hair { height: .5px; background: var(--separator); }
-  .out {
-    margin: 2px 0 6px; padding: 10px 12px; background: var(--grouped); border-radius: 10px;
-    font: 13px/20px ui-monospace, Menlo, monospace; white-space: pre-wrap;
-  }
-  .error { color: var(--red); margin-bottom: 18px; }
-
-  /* composer: filled borderless field */
-  .composer { border-top: .5px solid var(--separator); padding-top: 12px; margin-top: 28px; }
-  .composer .row { display: flex; align-items: center; gap: 8px; }
-  .composer .plus { width: 30px; height: 30px; border-radius: 15px; background: var(--grouped);
-    color: var(--label2); display: grid; place-items: center; font-size: 18px; }
-  .composer .field {
-    flex: 1; background: var(--grouped); border-radius: 18px; padding: 8px 12px;
-    font-size: 17px; line-height: 25px; color: var(--label3);
-  }
-  .composer .send { width: 30px; height: 30px; border-radius: 15px; background: var(--blue); color: #fff;
-    display: grid; place-items: center; font-size: 14px; }
-  .composer .foot { margin-top: 8px; }
-
-  /* grouped lists */
-  .section-title { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--label2);
-    margin: 28px 0 8px; padding-left: 16px; }
-  .card { background: var(--surface); border-radius: 10px; overflow: hidden; }
-  .machine { padding: 14px 16px; }
-  .machine .name { display: flex; align-items: center; gap: 8px; font-size: 17px; line-height: 22px; font-weight: 600; }
-  .machine .origin { font: 12px/17px ui-monospace, Menlo, monospace; color: var(--label2); margin-top: 3px; }
-  .sess { display: flex; align-items: center; gap: 8px; padding: 10px 8px 10px 16px; }
-  .sess .body { flex: 1; min-width: 0; }
-  .sess .t { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 23px; font-weight: 500; }
-  .sess .p { font: 12px/17px ui-monospace, Menlo, monospace; color: var(--label2);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .note { font-size: 11px; line-height: 16px; color: var(--label2); margin-top: 36px;
-    border-top: .5px solid var(--separator); padding-top: 14px; }
-  .page-grouped { background: var(--grouped); margin: 24px -16px; padding: 8px 16px 20px; border-radius: 0; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>会话页</h1>
   <div class="switch">
     <button id="t-dark" aria-pressed="true">暗色</button>
     <button id="t-light" aria-pressed="false">亮色</button>
   </div>
 
-  <div class="navbar">
-    <div class="back">‹</div>
-    <h1>简化 Live 自动授权、共享输入与原生命令渲染</h1>
+  <div class="bar">
+    <div class="chev">‹</div>
+    <div class="mid">
+      <div class="t">简化 Live 自动授权、共享输入与原生命令渲染</div>
+      <div class="m">running  ·  deepseek-v4.1-flash-1017  ·  目标进行中</div>
+    </div>
     <div class="more">⋯</div>
   </div>
-  <div class="facts">
-    <div class="foot">running · dashscope/deepseek-v4.1-flash · 默认思考 · 4.2%</div>
-    <div class="cwd">/home/you/apps/pi-dashboard</div>
-  </div>
+  <div class="hair"></div>
+  <div class="hint">↓ 向下滚动时整条标题栏自动收起，回到顶部再出现</div>
 
-  <div class="user">
-    <div class="bubble">
-      把附件里的 CSV 按月份汇总一下，顺便看看日志里有没有 5xx。
-      <div class="acts"><span class="act">引用</span><span class="act">批注</span></div>
+  <div class="list">
+    <div class="card">
+      <div class="top"><span class="state run"><span class="dot"></span> 执行命令</span><span class="steps">7 步</span></div>
+      <div class="q">把附件里的 CSV 按月份汇总一下，顺便看看日志里有没有 5xx</div>
+      <div class="a">先按月聚合 rows.csv，再扫 access.log 的 5xx。目前已经跑完目录结构检查，正在过滤日志……</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><span class="state">已回复</span><span class="steps">3 步</span></div>
+      <div class="q">谁在 21:07 重启了 Pi 进程</div>
+      <div class="a">不是重启，是 launcher 的 supervisor 把 idle 进程回收后由 App 唤起。日志里 `spawn pid=4821`，父进程仍是同一个 supervisor。</div>
+    </div>
+
+    <div class="card">
+      <div class="top"><span class="state bad">失败</span><span class="steps">2 步</span></div>
+      <div class="q">读一下 access.log 里昨天的错误</div>
+      <div class="a">读取失败：路径不存在。当前 cwd 是 /home/you/apps/my-app，日志实际在 /var/log/caddy/，需要确认后再读。</div>
     </div>
   </div>
-
-  <div class="answer">
-    <p>先看目录结构，再按月聚合 <code class="inline">rows.csv</code>。</p>
-    <div class="code">
-      <div class="head"><span>kotlin</span><b>复制</b></div>
-      <pre><span class="k">fun</span> <span class="f">monthly</span>(rows: <span class="t">List</span>&lt;<span class="t">Row</span>&gt;) =
-  rows.<span class="f">groupBy</span> { it.date.<span class="f">take</span>(<span class="n">7</span>) }   <span class="c">// 2026-08</span></pre>
-    </div>
-  </div>
-
-  <div class="steps">
-    <div class="head">
-      <span style="color:var(--label2)">⌃</span><span class="count">3 个步骤</span>
-      <span class="foot">已完成</span><span class="names">bash · read · write</span>
-    </div>
-    <div class="list">
-      <div class="step"><span class="name">bash</span><span class="arg">du -sh android/app/src/main/assets</span><span class="chev">⌄</span></div>
-      <div class="out">16K	android/app/src/main/assets</div>
-      <div class="hair"></div>
-      <div class="step"><span class="dot"></span><span class="name">read</span><span class="arg">app/src/main/assets/native-renderer/index.html</span><span class="chev">⌄</span></div>
-      <div class="hair"></div>
-      <div class="step"><span class="name">bash</span><span class="arg">grep -c " 5[0-9][0-9] " access.log</span><span class="chev">⌄</span></div>
-    </div>
-  </div>
-
-  <div class="error">读取 access.log 失败：文件不存在或已被删除</div>
 
   <div class="composer">
-    <div class="row">
-      <div class="plus">＋</div>
-      <div class="field">输入消息…</div>
-      <div class="send">↑</div>
-    </div>
-    <div class="foot cap">投递：默认</div>
+    <div class="plus">＋</div>
+    <div class="field">输入消息…</div>
+    <div class="send">↑</div>
   </div>
 
-  <div class="page-grouped">
-    <div class="section-title">机器</div>
-    <div class="card">
-      <div class="machine">
-        <div class="name">家里的 Pi <span class="dot"></span></div>
-        <div class="origin">https://pi.tsien.space</div>
-        <div class="foot" style="margin-top:6px">Live 已连接 · 3 个主会话 · 1 工作中 · Chat 已连接</div>
-      </div>
-    </div>
-
-    <div class="section-title">进行中</div>
-    <div class="card">
-      <div class="sess">
-        <div class="body">
-          <div class="t"><span class="dot"></span>简化 Live 自动授权、共享输入与原生命令渲染</div>
-          <div class="p">/home/you/apps/pi-dashboard</div>
-          <div class="foot">已接管 · dashscope/deepseek-v4.1-flash</div>
-        </div>
-        <span class="act">分组</span>
-      </div>
-      <div class="hair" style="margin-left:16px"></div>
-      <div class="sess">
-        <div class="body">
-          <div class="t">手机端会话树查看</div>
-          <div class="p">/home/you/apps/my-app</div>
-          <div class="foot">anthropic/claude · #infra</div>
-        </div>
-        <span class="act">分组</span>
-      </div>
-    </div>
+  <div class="detail">
+    <div class="dh"><span style="font-size:20px">‹</span><div><div class="t">本轮记录</div><div class="m">已回复  ·  14 条记录</div></div></div>
+    <div class="hair"></div>
+    <div style="height:10px"></div>
+    <div class="row"><span class="name">bash</span><span class="arg">ls -la /home/you/apps/my-app</span></div>
+    <div class="out">total 128
+drwxr-xr-x  infra/  deploy/  docs/</div>
+    <div class="row"><span class="name">read</span><span class="arg">guide/dashboard.md</span></div>
+    <div class="row"><span class="name">write</span><span class="arg">android/app/src/main/java/.../NativeActivityCard.kt</span></div>
+    <div style="font-size:16px;line-height:23px;margin-top:6px">改完了：卡片只留三行，完整记录点进来看。</div>
   </div>
 
   <div class="note">
-    iOS 语言的四个支点：<b>系统色</b>（#007AFF / #F2F2F7 / #1C1C1E，标签用 100/60/30% 不透明度）、
-    <b>SF 字号</b>（正文 17、headline 17 半粗、footnote 13、caption 12）、
-    <b>发丝线</b>（0.5px，内缩 16px 分隔行）、<b>圆角连续性</b>（卡片 10、气泡 18 且尾角收紧、输入框 18 填充无边框）。
-    唯一的实心色块是「你自己说的话」，与系统讯息 App 一致。
+    本版三件事：<b>标题栏 52 dp 并可自动收起</b>（只剩 16 sp 标题 + 12 sp 一行事实）、
+    <b>活动 = 卡片</b>（状态 / 提问 / 三条预览，点开看完整记录）、
+    <b>状态是具体的</b>（思考中、读取文件、写入文件、执行命令、搜索、回复中、已回复、失败；运行时圆点呼吸）。
+    输入区回到一行：投递方式收进「＋」菜单，只有非默认时才多一行。
   </div>
 </div>
 <script>
