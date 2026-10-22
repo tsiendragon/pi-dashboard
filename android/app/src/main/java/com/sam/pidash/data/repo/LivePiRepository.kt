@@ -323,6 +323,12 @@ class LivePiRepository(
         catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { backendFailure(id, error); throw error }
     }
+    /** Monthly usage for the machine this session runs on (the ledger is per dashboard). */
+    suspend fun usage(backendId: String, month: String? = null): Result<LiveUsageReport> {
+        val target = client(backendId) ?: return Result.failure(IOException("机器未配置"))
+        return runCatching { target.usage(month) }
+    }
+
     /** Fork family for one session; the file path comes from the session summary. */
     suspend fun sessionTree(key: SessionKey): Result<LiveSessionTree> {
         val file = details.value[key]?.summary?.sessionFile

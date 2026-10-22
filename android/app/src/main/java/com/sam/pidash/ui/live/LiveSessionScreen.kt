@@ -41,6 +41,13 @@ import com.sam.pidash.domain.model.AppQuote
 import com.sam.pidash.domain.model.AppReviewItem
 import com.sam.pidash.domain.model.composeOutgoing
 import com.sam.pidash.domain.model.LiveSessionTree
+import com.sam.pidash.domain.model.LiveUsageReport
+import com.sam.pidash.domain.model.cacheHitPercent
+import com.sam.pidash.domain.model.humanTokens
+import com.sam.pidash.domain.model.humanUsd
+import com.sam.pidash.domain.model.shiftMonth
+import com.sam.pidash.domain.model.topModels
+import com.sam.pidash.domain.model.topSessions
 import com.sam.pidash.domain.model.groupTranscript
 import com.sam.pidash.domain.model.sessionTreeLabel
 import com.sam.pidash.domain.model.sessionTreeRows
@@ -84,6 +91,10 @@ fun LiveSessionScreen(
     var tree by remember(sessionKey) { mutableStateOf<LiveSessionTree?>(null) }
     var treeError by remember(sessionKey) { mutableStateOf<String?>(null) }
     var treeBusy by remember(sessionKey) { mutableStateOf(false) }
+    var usage by remember(sessionKey) { mutableStateOf<LiveUsageReport?>(null) }
+    var usageMonth by remember(sessionKey) { mutableStateOf<String?>(null) }
+    var usageError by remember(sessionKey) { mutableStateOf<String?>(null) }
+    var usageBusy by remember(sessionKey) { mutableStateOf(false) }
     // Read-only file preview: path plus loaded text (null while fetching).
     var preview by remember(sessionKey) { mutableStateOf<Pair<String, String?>?>(null) }
     var previewError by remember(sessionKey) { mutableStateOf<String?>(null) }
@@ -209,6 +220,16 @@ fun LiveSessionScreen(
         }
     }
 
+    fun loadUsage(month: String?) {
+        usageBusy = true
+        scope.launch {
+            repo.live.usage(sessionKey.backendId, month).fold(
+                onSuccess = { report -> usage = report; usageMonth = report.month; usageBusy = false },
+                onFailure = { error -> usageError = error.message ?: "无法读取用量"; usageBusy = false },
+            )
+        }
+    }
+
     fun openExternalUrl(url: String) {
         // Leaves the app for the user's browser; only plain web links are accepted.
         if (!externalUrlAllowed(url)) { notice = "不支持的链接类型"; return }
@@ -254,6 +275,14 @@ fun LiveSessionScreen(
                                     onClick = { menu = false; notice = null; dialog = "context" })
                             }
                             HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("用量统计…") },
+                                onClick = {
+                                    menu = false; notice = null
+                                    usageError = null; usage = null; usageBusy = true
+                                    scope.launch { loadUsage(usageMonth) }
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text("会话树 / 子 Agent…") },
                                 onClick = {
@@ -500,6 +529,67 @@ fun LiveSessionScreen(
             },
             dismissButton = { TextButton(onClick = { annotating = null }) { Text("取消") } },
         )
+    }
+    if (usage != null || usageError != null || usageBusy) {
+        Dialog(onDismissRequest = { usage = null; usageError = null; usageBusy = false }) {
+            Surface(shape = RoundedCornerShape(12.dp)) {
+                Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("用量统计", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        TextButton(enabled = !usageBusy, onClick = {
+                            shiftMonth(usageMonth ?: usage?.month.orEmpty(), -1)?.let { loadUsage(it) }
+                        }) { Text("◀") }
+                        Text(usageMonth?.takeIf { it.isNotBlank() } ?: "本月", style = MaterialTheme.typography.labelSmall)
+                        TextButton(enabled = !usageBusy, onClick = {
+                            shiftMonth(usageMonth ?: usage?.month.orEmpty(), 1)?.let { loadUsage(it) }
+                        }) { Text("▶") }
+                    }
+                    if (usageBusy) Text("读取中…", style = MaterialTheme.typography.labelSmall)
+                    usageError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    usage?.let { report ->
+                        Text(
+                            "${humanTokens(report.total.totalTokens)} tokens · ${report.currency} ${humanUsd(report.total.costUsd)}" +
+                                " · 缓存命中 ${cacheHitPercent(report.total)}% · ${report.recordCount} 条记录",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            "输入 ${humanTokens(report.total.inputTokens)} · 输出 ${humanTokens(report.total.outputTokens)}" +
+                                " · 缓存读 ${humanTokens(report.total.cacheReadTokens)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (report.timezone.isNotBlank()) Text("时区 ${report.timezone}",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        val models = remember(report) { topModels(report) }
+                        if (models.isNotEmpty()) {
+                            Text("按模型", style = MaterialTheme.typography.labelSmall)
+                            models.forEach { model ->
+                                Text(
+                                    "· ${model.key}  ${humanTokens(model.totalTokens)}  ${humanUsd(model.costUsd)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                        val sessions = remember(report) { topSessions(report) }
+                        if (sessions.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text("按会话", style = MaterialTheme.typography.labelSmall)
+                            sessions.forEach { item ->
+                                Text(
+                                    "· ${item.label.ifBlank { item.key.take(8) }}  ${humanTokens(item.totalTokens)}  ${humanUsd(item.costUsd)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { usage = null; usageError = null; usageBusy = false }) { Text("关闭") }
+                    }
+                }
+            }
+        }
     }
     if (tree != null || treeError != null || treeBusy) {
         val rows = remember(tree) { tree?.let { sessionTreeRows(it.sessions) }.orEmpty() }
