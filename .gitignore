@@ -15,6 +15,9 @@ dist/
 !.pi/skills/dashboard-ui-ux-verify/
 .pi/skills/dashboard-ui-ux-verify/*
 !.pi/skills/dashboard-ui-ux-verify/SKILL.md
+!.pi/skills/pi-stack-install/
+.pi/skills/pi-stack-install/*
+!.pi/skills/pi-stack-install/SKILL.md
 *.log
 tmux-*.log
 .env
