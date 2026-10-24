@@ -38,6 +38,7 @@ import {
   registerMemeRoutes,
   registerExtConfigRoutes,
   registerPiExtListRoutes,
+  registerSubagentModelsRoutes,
   registerPiExtWriteRoutes,
   registerPiExtPackagesRoutes,
   type LiveSessionRoutes,
@@ -974,6 +975,7 @@ registerUsageRoutes({ app, ledger: usageLedger, limits: usageLimits })
 registerTimingRoutes({ app, ledger: timingLedger })
 registerExtConfigRoutes({ app, auth: liveSessionAuth })
 registerPiExtListRoutes({ app })
+registerSubagentModelsRoutes({ app, manager, auth: liveSessionAuth })
 registerPiExtWriteRoutes({ app, auth: liveSessionAuth })
 registerPiExtPackagesRoutes({ app, auth: liveSessionAuth })
 registerRepoRoutes({

@@ -64,6 +64,7 @@
 | `large-read-pack.json` | 可选（**已否决，默认关闭**） | 大文件读取打包；代码保留，需要时在 Extension config 点「创建并保存」恢复 |
 | `tsien-memory.json` | 可选 | **按项目解析**（`<cwd>/.pi/`） |
 | `rtk-config.json` | 可选 | **按项目解析**（`<cwd>/.pi/`） |
+| `subagent-models.json` | 推荐 | 子任务模型档位（light/medium/heavy/ultra）与候选顺序，由 `pi-tsien-subagent-workbench` 读取；可用 `PI_SUBAGENT_MODEL_CONFIG` 指向别处。缺失时退回旧变量 `PI_SUBAGENT_EXECUTION_MODEL`，两者都没有则子任务直接报错，不再有内置默认模型。可在 **Settings → Subagent Models / 子任务模型** 编辑 |
 
 缺失即用扩展内置默认值；多数可在 dashboard 的 **Settings → general → Extension config** 改（见 §3）。
 

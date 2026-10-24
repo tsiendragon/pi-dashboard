@@ -269,6 +269,7 @@ PI_DASH_HOST=your-server PI_DASH_USER=you ./pi-dash-connect.sh
 | `/memory` | 记忆页：只读展示 `pi-tsien-memory` 扩展写入的记忆，见下 |
 | `/memes` | 表情包工坊：界面导览与模型、费用说明见本文「表情包工坊」 |
 | Workbench | 子 Agent 与 Workflow 面板 |
+| Settings → 子任务模型 | 把每个模型分到「不用 / 轻量 / 普通 / 强 / 超强」，调整档内顺序和高级设置；读写 `<agent dir>/subagent-models.json`（`GET/PUT /api/subagent-models`，文件被别处改过返回 409，保存前备份到 `<agent dir>/backups/`）。只改档位文件，不碰密钥；修改后扩展在下次选模型时自动读取，无需 `/reload` |
 | `guide/api-reference.md` | 后端 API |
 | `guide/config.md` | 配置总览（四层地图、每个 config 谁读、怎么改） |
 

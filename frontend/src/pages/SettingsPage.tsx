@@ -15,6 +15,7 @@ import { asrLanguageLabel, ASR_REALTIME_MODEL, ASR_LANGUAGES, type AsrConfigResp
 import { TTS_LANGUAGES, TTS_MODELS, TTS_VOICES, type TtsConfigResponse } from '@shared/tts.js'
 import { SettingsSectionSlot } from '../plugins/slot-consumers'
 import { ACTIONS, formatKey, setShortcut, resetShortcut, resetAllShortcuts, hasCustomShortcuts, subscribeShortcuts, eventToKeyString, type ActionCategory } from '../shortcuts'
+import SubagentModelsTab from '../features/subagent-models/SubagentModelsTab'
 import { modelFullId, modelPatternMatches, splitModelFullId, splitThinkingSuffix } from '../utils/modelUtils'
 import { modelSelectionPatterns, selectedModelIds } from '../utils/modelSelection'
 
@@ -40,7 +41,7 @@ async function putJson(url: string, body: unknown): Promise<{ ok: boolean; error
   }
 }
 
-type Tab = 'general' | 'model' | 'models' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'voice' | 'display' | 'vault' | 'tasks' | 'lark' | 'developer' | 'shortcuts'
+type Tab = 'general' | 'model' | 'models' | 'subagent-models' | 'behavior' | 'terminal' | 'skills' | 'chat' | 'voice' | 'display' | 'vault' | 'tasks' | 'lark' | 'developer' | 'shortcuts'
 
 /* ── Shared form components ── */
 
@@ -1678,6 +1679,7 @@ const SETTINGS_GROUPS: { group: string; tabs: { id: Tab; label: string; icon: st
     group: 'Agent',
     tabs: [
       { id: 'models', label: 'Model List', icon: '☑️', hint: 'Choose providers and available models' },
+      { id: 'subagent-models', label: '子任务模型', icon: '🧩', hint: '子 Agent 按档位自动挑模型' },
       { id: 'model', label: 'Model', icon: '🤖', hint: 'Default model & thinking level' },
       { id: 'behavior', label: 'Behavior', icon: '⚙', hint: 'Permissions, tools, runtime' },
       { id: 'skills', label: 'Skills', icon: '🛠', hint: 'Enable & manage skills' },
@@ -1759,6 +1761,7 @@ export default function SettingsPage() {
           )}
           <div className="max-w-2xl">
             {tab === 'models' && <ModelListTab />}
+            {tab === 'subagent-models' && <SubagentModelsTab />}
             {tab === 'model' && <ModelTab />}
             {tab === 'behavior' && <BehaviorTab />}
             {tab === 'terminal' && <TerminalTab />}
