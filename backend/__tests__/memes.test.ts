@@ -7,6 +7,10 @@ import { generateMeme, MEME_MAX_REFERENCE_BYTES, memeProviders } from '../memes.
 import { registerMemeRoutes } from '../routes/memes.js'
 import { MEME_MODELS, resourceFingerprint } from '../meme-models.js'
 import { memeModelChecks } from '../meme-model-checks.js'
+import { getMemeJob, listMemeJobs, resetMemeJobCache } from '../meme-jobs.js'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg=='
 const IMAGE = `data:image/png;base64,${PNG}`
@@ -246,10 +250,13 @@ describe('image service contracts', () => {
   })
 })
 
-describe('protected meme routes', () => {
+describe('persistent meme jobs', () => {
   let server: Server
   let base: string
+  let outputDir: string
   const headers = { 'content-type': 'application/json', 'x-test-auth': 'yes' }
+  const PNG_BYTES = Buffer.from(PNG, 'base64')
+
   beforeAll(async () => {
     const app = express()
     app.use(express.json())
@@ -262,43 +269,162 @@ describe('protected meme routes', () => {
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   })
   afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) })
+  beforeEach(() => {
+    outputDir = mkdtempSync(join(tmpdir(), 'pi-memes-'))
+    vi.stubEnv('MEME_OUTPUT_DIR', outputDir)
+    resetMemeJobCache()
+  })
+  afterEach(() => { resetMemeJobCache(); rmSync(outputDir, { recursive: true, force: true }) })
 
-  it('requires browser auth for both metadata and paid generation', async () => {
+  function pngResponse() {
+    return new Response(new Uint8Array(PNG_BYTES), { status: 200, headers: { 'content-type': 'image/png' } })
+  }
+  function dashImageResult(url = 'https://dashscope.example.com/result.png?signature=test') {
+    return json({ output: { choices: [{ message: { content: [{ image: url }] } }] } })
+  }
+  function generateRequest(body: Record<string, unknown>, requestHeaders: Record<string, string> = headers) {
+    return nativeFetch(`${base}/api/memes/generate`, { method: 'POST', headers: requestHeaders, body: JSON.stringify(body) })
+  }
+  async function waitForJob(id: string) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const job = getMemeJob(id)
+      if (job && job.status !== 'running') return job
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    throw new Error(`job ${id} never finished`)
+  }
+
+  it('requires browser auth for metadata, history, images and paid generation', async () => {
     expect((await nativeFetch(`${base}/api/memes/providers`)).status).toBe(401)
-    expect((await nativeFetch(`${base}/api/memes/generate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401)
+    expect((await nativeFetch(`${base}/api/memes/jobs`)).status).toBe(401)
+    expect((await nativeFetch(`${base}/api/memes/images/m1abc-abcd1234`)).status).toBe(401)
+    expect((await generateRequest({ provider: 'dashscope', prompt: '猫' }, { 'content-type': 'application/json' })).status).toBe(401)
     expect((await nativeFetch(`${base}/api/memes/providers`, { headers: { ...headers, origin: 'https://evil.example.com' } })).status).toBe(403)
     const response = await nativeFetch(`${base}/api/memes/providers`, { headers })
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(await response.text()).not.toContain('secret')
+    const history = await nativeFetch(`${base}/api/memes/jobs`, { headers })
+    expect(history.status).toBe(200)
+    expect(await history.json()).toEqual({ jobs: [], outputDir })
   })
 
-  it('returns validation errors and releases the lock after failure', async () => {
-    const bad = await nativeFetch(`${base}/api/memes/generate`, { method: 'POST', headers, body: '{}' })
+  it('rejects invalid input before creating or charging a job', async () => {
+    const call = vi.fn<typeof fetch>()
+    vi.stubGlobal('fetch', call)
+    const bad = await generateRequest({ provider: 'dashscope' })
     expect(bad.status).toBe(400)
-    const call = vi.fn<typeof fetch>().mockResolvedValue(dashResult())
-    vi.stubGlobal('fetch', call)
-    const good = await nativeFetch(`${base}/api/memes/generate`, { method: 'POST', headers, body: JSON.stringify({ provider: 'dashscope', prompt: '猫' }) })
-    expect(good.status).toBe(200)
-    expect(await good.json()).toMatchObject({ image: REMOTE_IMAGE })
+    expect((await bad.json()).error).toBeTruthy()
+    expect(listMemeJobs().jobs).toHaveLength(0)
+    expect(call).not.toHaveBeenCalled()
+    expect(readdirSync(outputDir)).toEqual([])
   })
 
-  it('rejects concurrent paid requests without calling the provider twice', async () => {
-    let finish!: (value: Response) => void
-    let started!: () => void
-    const ready = new Promise<void>(resolve => { started = resolve })
-    const call = vi.fn<typeof fetch>().mockImplementation(() => { started(); return new Promise<Response>(resolve => { finish = resolve }) })
+  it('accepts the job immediately, keeps generating, and serves the stored file', async () => {
+    let release!: (value: Response) => void
+    const call = vi.fn<typeof fetch>(input => {
+      const url = String(input)
+      if (url.includes('dashscope.example.com/generate')) return new Promise<Response>(resolve => { release = resolve })
+      if (url.startsWith('https://dashscope.example.com/result')) return Promise.resolve(pngResponse())
+      return Promise.resolve(json({}, 404))
+    })
     vi.stubGlobal('fetch', call)
-    const request = () => nativeFetch(`${base}/api/memes/generate`, { method: 'POST', headers, body: JSON.stringify({ provider: 'dashscope', prompt: '猫' }) })
-    const first = request()
-    await ready
-    try {
-      const second = await request()
-      expect(second.status).toBe(429)
-      expect(call).toHaveBeenCalledTimes(1)
-    } finally {
-      finish(dashResult())
-      expect((await first).status).toBe(200)
+
+    const response = await generateRequest({ provider: 'dashscope', prompt: '困困的猫' })
+    expect(response.status).toBe(202)
+    const { job } = await response.json() as { job: { id: string; status: string } }
+    expect(job.status).toBe('running')
+    expect(job.id).toMatch(/^m[a-z0-9]+-[a-f0-9]{8}$/)
+    expect(await (await nativeFetch(`${base}/api/memes/jobs`, { headers })).json()).toMatchObject({
+      jobs: [{ id: job.id, status: 'running' }],
+    })
+
+    await vi.waitFor(() => expect(call).toHaveBeenCalled())
+    release(dashImageResult())
+    const finished = await waitForJob(job.id)
+    expect(finished).toMatchObject({ status: 'done', provider: 'dashscope', model: 'qwen-image-max', mime: 'image/png' })
+    expect(finished.file).toBe(`${job.id}.png`)
+    expect(finished.remoteUrl).toBeUndefined()
+    expect(readdirSync(outputDir).sort()).toEqual(['jobs.json', `${job.id}.png`])
+
+    const history = await (await nativeFetch(`${base}/api/memes/jobs`, { headers })).json() as { jobs: { imageUrl: string }[] }
+    expect(history.jobs[0]!.imageUrl).toBe(`/api/memes/images/${job.id}`)
+
+    const image = await nativeFetch(`${base}/api/memes/images/${job.id}`, { headers })
+    expect(image.status).toBe(200)
+    expect(image.headers.get('content-type')).toBe('image/png')
+    expect(image.headers.get('cache-control')).toContain('immutable')
+    expect(image.headers.get('content-disposition')).toBe(`inline; filename="meme-${job.id}.png"`)
+    expect(Buffer.from(await image.arrayBuffer()).equals(PNG_BYTES)).toBe(true)
+
+    const download = await nativeFetch(`${base}/api/memes/images/${job.id}?download=1`, { headers })
+    expect(download.headers.get('content-disposition')).toBe(`attachment; filename="meme-${job.id}.png"`)
+
+    // The record survives a restart: the next process reads it back from disk.
+    resetMemeJobCache()
+    expect(getMemeJob(job.id)).toMatchObject({ status: 'done', file: `${job.id}.png` })
+  })
+
+  it('rejects a second paid request while one is running', async () => {
+    let release!: (value: Response) => void
+    const call = vi.fn<typeof fetch>(input => {
+      if (String(input).includes('dashscope.example.com/generate')) return new Promise<Response>(resolve => { release = resolve })
+      return Promise.resolve(pngResponse())
+    })
+    vi.stubGlobal('fetch', call)
+
+    const first = await generateRequest({ provider: 'dashscope', prompt: '困困的猫' })
+    expect(first.status).toBe(202)
+    const firstJob = (await first.json() as { job: { id: string } }).job
+    await vi.waitFor(() => expect(call).toHaveBeenCalledTimes(1))
+    const second = await generateRequest({ provider: 'dashscope', prompt: '开心的狗' })
+    expect(second.status).toBe(429)
+    expect(await second.json()).toMatchObject({ job: { id: firstJob.id, status: 'running' } })
+    expect(call).toHaveBeenCalledTimes(1)
+    expect(listMemeJobs().jobs).toHaveLength(1)
+
+    release(dashImageResult())
+    expect((await waitForJob(firstJob.id)).status).toBe('done')
+  })
+
+  it('saves provider links from its own domain and keeps links from elsewhere unconverted', async () => {
+    const call = vi.fn<typeof fetch>(input => {
+      if (String(input).includes('dashscope.example.com/generate')) return Promise.resolve(dashImageResult())
+      return Promise.resolve(pngResponse())
+    })
+    vi.stubGlobal('fetch', call)
+    const saved = (await (await generateRequest({ provider: 'dashscope', prompt: '猫' })).json() as { job: { id: string } }).job
+    const savedJob = await waitForJob(saved.id)
+    expect(savedJob).toMatchObject({ status: 'done', file: `${saved.id}.png` })
+    expect(call).toHaveBeenCalledTimes(2)
+
+    const foreign = vi.fn<typeof fetch>().mockResolvedValue(dashImageResult('https://cdn.example.net/cat.png'))
+    vi.stubGlobal('fetch', foreign)
+    const linked = (await (await generateRequest({ provider: 'dashscope', prompt: '狗' })).json() as { job: { id: string } }).job
+    const linkedJob = await waitForJob(linked.id)
+    expect(linkedJob).toMatchObject({ status: 'done', remoteUrl: 'https://cdn.example.net/cat.png' })
+    expect(linkedJob.file).toBeUndefined()
+    expect(linkedJob.note).toContain('临时链接')
+    expect(foreign).toHaveBeenCalledTimes(1)
+    expect(readdirSync(outputDir).filter(name => name.startsWith(linked.id))).toEqual([])
+  })
+
+  it('marks jobs left running by a dead process as failed on the next start', async () => {
+    const stale = {
+      id: 'm1abc-abcd1234', status: 'running', provider: 'dashscope', model: 'qwen-image-3.0',
+      mode: 't2i', prompt: '猫', style: '', createdAt: Date.now(),
     }
+    writeFileSync(join(outputDir, 'jobs.json'), JSON.stringify({ version: 1, jobs: [stale] }), 'utf8')
+    resetMemeJobCache()
+    const { jobs } = listMemeJobs()
+    expect(jobs[0]).toMatchObject({ id: stale.id, status: 'failed' })
+    expect(jobs[0]!.error).toContain('服务进程')
+    expect(getMemeJob(stale.id)).toMatchObject({ status: 'failed' })
+  })
+
+  it('refuses unknown and traversal image ids', async () => {
+    expect((await nativeFetch(`${base}/api/memes/images/not-an-id`, { headers })).status).toBe(404)
+    expect((await nativeFetch(`${base}/api/memes/images/${encodeURIComponent('../jobs.json')}`, { headers })).status).toBe(404)
+    expect((await nativeFetch(`${base}/api/memes/jobs/not-an-id`, { headers })).status).toBe(404)
   })
 })
