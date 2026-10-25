@@ -130,4 +130,47 @@ describe('DocumentPreviewModal', () => {
       vi.restoreAllMocks()
     })
   })
+  it('renders HTML artifacts as a live page in a sandboxed iframe with assets inlined as data URIs', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: any) => {
+      const url = String(input)
+      if (url.includes(encodeURIComponent('/tmp/report/images/a.png'))) {
+        return { ok: true, blob: async () => new Blob(['PNG'], { type: 'image/png' }) } as Response
+      }
+      return { ok: false, blob: async () => new Blob([]) } as Response
+    }))
+    try {
+      render(
+        <DocumentPreviewModal
+          filePath="/tmp/report/index.html"
+          content={'<html><body><img src="images/a.png"><script>window.x = 1<' + '/script></body></html>'}
+          onClose={() => {}}
+        />,
+      )
+
+      expect(screen.getByText('HTML')).toBeInTheDocument()
+      const iframe = await screen.findByTitle('HTML preview')
+      expect(iframe.getAttribute('sandbox')).toContain('allow-scripts')
+      expect(iframe.getAttribute('srcdoc')).toContain('data:image/png;base64,')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('switches an HTML artifact between the rendered page and its source', async () => {
+    const { container } = render(
+      <DocumentPreviewModal
+        filePath="/tmp/report/index.html"
+        content={'<html><body><h1>Report</h1></body></html>'}
+        onClose={() => {}}
+      />,
+    )
+
+    await screen.findByTitle('HTML preview')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    expect(screen.queryByTitle('HTML preview')).toBeNull()
+    expect(container.querySelector('code.language-xml')).toHaveTextContent('Report')
+
+    fireEvent.click(screen.getByRole('button', { name: '预览' }))
+    expect(await screen.findByTitle('HTML preview')).toBeInTheDocument()
+  })
 })

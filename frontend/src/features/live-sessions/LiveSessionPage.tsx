@@ -2479,7 +2479,10 @@ export default function LiveSessionPage() {
 
   const handleDocumentLink = useCallback(async (rawPath: string) => {
     const filePath = resolvePath(rawPath, summary?.canonicalCwd)
-    if (detectFileType(filePath) !== 'text') {
+    // Binary artifacts stay on the full document panel; HTML goes to the
+    // preview modal, which renders the page (JS/images/videos).
+    const fileType = detectFileType(filePath)
+    if (fileType !== 'text' && fileType !== 'html') {
       setDocumentPreview(null)
       void handleFileOpen(rawPath)
       return
