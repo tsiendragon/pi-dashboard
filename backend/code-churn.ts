@@ -112,6 +112,8 @@ export class CodeChurnLedger {
   readonly timezone: string
   private readonly files = new Map<string, FileChurn>()
   private readonly refreshing = new Map<string, Promise<void>>()
+  /** Months whose first scan already settled; keeps the UI from polling forever. */
+  private readonly settled = new Set<string>()
   private startPromise?: Promise<void>
 
   constructor(options: CodeChurnOptions = {}) {
@@ -134,9 +136,8 @@ export class CodeChurnLedger {
   async getReport(month: string, timezone = this.timezone): Promise<ChurnReport> {
     if (!validMonth(month)) throw new Error('month must use YYYY-MM format')
     const key = `${month}|${timezone}`
-    const pending = this.refreshing.get(key)
-    if (!pending) void this.refresh(month, timezone).catch(() => undefined)
-    return this.buildReport(month, timezone, this.refreshing.has(key))
+    if (!this.refreshing.has(key)) void this.refresh(month, timezone)
+    return this.buildReport(month, timezone, !this.settled.has(key))
   }
 
   private buildReport(month: string, timezone: string, scanning: boolean): ChurnReport {
@@ -187,16 +188,19 @@ export class CodeChurnLedger {
     const key = `${month}|${timezone}`
     const existing = this.refreshing.get(key)
     if (existing) return existing
-    const run = this.refreshNow(month, timezone).finally(() => {
-      if (this.refreshing.get(key) === run) this.refreshing.delete(key)
-    })
+    const run = this.refreshNow(month, timezone)
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.refreshing.get(key) === run) this.refreshing.delete(key)
+        // Even a failed scan stops the polling; the next call retries in the background.
+        this.settled.add(key)
+      })
     this.refreshing.set(key, run)
     return run
   }
 
   private async refreshNow(month: string, timezone: string): Promise<void> {
     const { start, end } = monthBounds(month)
-    const seen = new Set<string>()
     let projectDirectories: string[]
     try {
       projectDirectories = (await readdir(this.sessionsRoot, { withFileTypes: true }))
@@ -222,7 +226,6 @@ export class CodeChurnLedger {
           continue
         }
         if (stats.mtimeMs < start || stats.mtimeMs > end) continue
-        seen.add(path)
         const cached = this.files.get(path)
         if (cached && cached.size === stats.size && cached.mtimeMs === stats.mtimeMs && cached.timezone === timezone) continue
         try {
@@ -231,10 +234,6 @@ export class CodeChurnLedger {
           continue
         }
       }
-    }
-    for (const path of [...this.files.keys()]) {
-      if (this.files.get(path)?.timezone !== timezone) continue
-      if (!seen.has(path)) this.files.delete(path)
     }
   }
 

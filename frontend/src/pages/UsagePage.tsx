@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { ChurnReport, ChurnTotals } from '@shared/churn'
 import type { UsageDailyPoint, UsageLimitProviderReport, UsageLimitWindow, UsageModelSummary, UsageReport, UsageTotals, UsageLimitsReport } from '@shared/usage'
 
 function currentMonth(): string {
@@ -26,6 +27,12 @@ function formatTokens(value: number): string {
 function formatUnitCost(value: number): string {
   if (!value) return '—'
   return `${value < 0.01 ? value.toFixed(4) : value.toFixed(2)} USD/MTok`
+}
+
+function formatLines(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return String(Math.round(value))
 }
 
 function SummaryCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -428,6 +435,81 @@ function ProviderLimitCard({ provider }: { provider: UsageLimitProviderReport })
   )
 }
 
+type ChurnScope = 'code' | 'all'
+
+function churnSeries(day: ChurnTotals, scope: ChurnScope): { added: number; removed: number } {
+  return scope === 'code'
+    ? { added: day.codeAdded, removed: day.codeRemoved }
+    : { added: day.added, removed: day.removed }
+}
+
+function ChurnChart({ report, scope }: { report: ChurnReport; scope: ChurnScope }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number>()
+  const width = 900
+  const height = 240
+  const left = 56
+  const right = 18
+  const top = 18
+  const bottom = 30
+  const plotWidth = width - left - right
+  const plotHeight = height - top - bottom
+  const today = currentDay()
+  const points = useMemo(
+    () => report.days.filter(day => day.date <= today).map(day => ({ date: day.date, ...churnSeries(day, scope) })),
+    [report.days, scope, today],
+  )
+  const maxValue = Math.max(...points.flatMap(point => [point.added, point.removed]), 0)
+  const scale = maxValue > 0 ? maxValue : 1
+  const slotWidth = points.length > 0 ? plotWidth / points.length : plotWidth
+  const barWidth = Math.max(3, Math.min(16, slotWidth * 0.34))
+  const labels = [1, 0.5, 0].map(ratio => ({ value: Math.round(maxValue * ratio), y: top + plotHeight - ratio * plotHeight }))
+  const hoveredPoint = hoveredIndex === undefined ? undefined : points[hoveredIndex]
+
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-muted">
+        <span className="inline-flex items-center gap-1.5"><b className="h-2 w-2 rounded-sm" style={{ background: 'var(--diff-add-text)' }} />新增行</span>
+        <span className="inline-flex items-center gap-1.5"><b className="h-2 w-2 rounded-sm" style={{ background: 'var(--diff-del-text)' }} />删除行</span>
+      </div>
+      <div className="relative overflow-x-auto">
+        <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[680px] w-full h-[240px]" role="img" aria-label="每日新增与删除代码行数" onMouseLeave={() => setHoveredIndex(undefined)}>
+          {labels.map((label, index) => (
+            <g key={index}>
+              <line x1={left} x2={width - right} y1={label.y} y2={label.y} stroke="var(--border)" strokeDasharray="3 5" />
+              <text x={left - 8} y={label.y + 4} textAnchor="end" fontSize="10" fill="var(--muted)">{formatLines(label.value)}</text>
+            </g>
+          ))}
+          {points.map((point, index) => {
+            const centerX = left + slotWidth * (index + 0.5)
+            const addedHeight = (point.added / scale) * plotHeight
+            const removedHeight = (point.removed / scale) * plotHeight
+            const active = hoveredIndex === index
+            return (
+              <g key={point.date}>
+                <rect x={left + slotWidth * index} y={top} width={slotWidth} height={plotHeight} fill="transparent" className="cursor-pointer" onMouseEnter={() => setHoveredIndex(index)} />
+                {addedHeight > 0 && <rect x={centerX - barWidth - 1} y={top + plotHeight - addedHeight} width={barWidth} height={addedHeight} rx="1.5" fill="var(--diff-add-text)" opacity={active ? 1 : 0.8} />}
+                {removedHeight > 0 && <rect x={centerX + 1} y={top + plotHeight - removedHeight} width={barWidth} height={removedHeight} rx="1.5" fill="var(--diff-del-text)" opacity={active ? 1 : 0.7} />}
+                {(index === 0 || index === points.length - 1 || (index + 1) % 5 === 0) && (
+                  <text x={centerX} y={height - 9} textAnchor="middle" fontSize="10" fill="var(--muted)">{point.date.slice(8)}</text>
+                )}
+              </g>
+            )
+          })}
+        </svg>
+        {hoveredPoint && (
+          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[190px] rounded-md border border-border bg-card px-3 py-2 shadow-lg backdrop-blur-sm">
+            <div className="text-xs font-medium text-text-strong">{hoveredPoint.date}</div>
+            <div className="mt-1 space-y-1 text-2xs">
+              <div className="flex justify-between gap-4"><span className="text-muted">新增</span><span className="text-text-strong">+{formatLines(hoveredPoint.added)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted">删除</span><span className="text-text-strong">-{formatLines(hoveredPoint.removed)}</span></div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function UsagePage({ embedded = false }: { embedded?: boolean } = {}) {
   const [month, setMonth] = useState(currentMonth)
   const [report, setReport] = useState<UsageReport>()
@@ -436,6 +518,9 @@ export default function UsagePage({ embedded = false }: { embedded?: boolean } =
   const [limits, setLimits] = useState<UsageLimitsReport>()
   const [limitsError, setLimitsError] = useState<string>()
   const [limitsLoading, setLimitsLoading] = useState(false)
+  const [churn, setChurn] = useState<ChurnReport>()
+  const [churnError, setChurnError] = useState<string>()
+  const [churnScope, setChurnScope] = useState<ChurnScope>('code')
 
   useEffect(() => {
     let cancelled = false
@@ -485,6 +570,35 @@ export default function UsagePage({ embedded = false }: { embedded?: boolean } =
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    let timer: number | undefined
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const load = async () => {
+      try {
+        const response = await fetch(
+          `/api/code-churn?month=${encodeURIComponent(month)}&timezone=${encodeURIComponent(timezone)}`,
+          { credentials: 'same-origin' },
+        )
+        const body = await response.json().catch(() => ({})) as Record<string, unknown>
+        if (!response.ok) throw new Error(typeof body.message === 'string' ? body.message : `HTTP ${response.status}`)
+        if (cancelled) return
+        const value = body as unknown as ChurnReport
+        setChurn(value)
+        setChurnError(undefined)
+        // The first scan of a month walks many session files; poll until it settles.
+        if (value.scanning) timer = window.setTimeout(() => { void load() }, 3000)
+      } catch (reason) {
+        if (!cancelled) setChurnError(reason instanceof Error ? reason.message : String(reason))
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [month])
+
   const cacheHit = useMemo(() => {
     if (!report) return 0
     const input = report.total.inputTokens + report.total.cacheReadTokens + report.total.cacheWriteTokens
@@ -528,6 +642,33 @@ export default function UsagePage({ embedded = false }: { embedded?: boolean } =
           <section className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center justify-between mb-2"><div><h2 className="text-sm font-medium text-text-strong">每日费用与 Token</h2><p className="text-2xs text-muted mt-1">{report.month} · 左轴费用 USD，右轴输入 / 输出 token · {report.timezone}</p></div><span className="text-2xs text-muted">USD 估算</span></div>
             <CostChart points={visibleDaily} />
+          </section>
+          <section className="rounded-lg border border-border bg-card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div>
+                <h2 className="text-sm font-medium text-text-strong">每日代码改动行数</h2>
+                <p className="text-2xs text-muted mt-1">
+                  来自本机 Pi session 里 edit / write 工具的写入量
+                  {churn ? ` · 本月新增 ${formatLines(churnScope === 'code' ? churn.total.codeAdded : churn.total.added)} / 删除 ${formatLines(churnScope === 'code' ? churn.total.codeRemoved : churn.total.removed)} · ${churn.total.files} 个文件` : ''}
+                  {churn?.scanning ? ' · 仍在统计历史 session…' : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+                {([['code', '仅代码'], ['all', '全部文件']] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setChurnScope(value)}
+                    aria-pressed={churnScope === value}
+                    className={`rounded px-2 py-1 text-2xs ${churnScope === value ? 'bg-accent text-accent-fg' : 'text-muted hover:text-text'}`}
+                  >{label}</button>
+                ))}
+              </div>
+            </div>
+            {churnError && <div className="mb-3 rounded-md border border-danger bg-danger-subtle px-3 py-2 text-xs text-danger">代码行数读取失败：{churnError}</div>}
+            {!churn && !churnError && <div className="py-8 text-center text-sm text-muted">统计代码改动中…</div>}
+            {churn && <ChurnChart report={churn} scope={churnScope} />}
+            <p className="mt-3 text-2xs text-muted">同一文件当天反复重写只计行数差额；代码与文档按文件扩展名区分。这些数字包含尚未提交的改动，因此可能与 git 统计不同。</p>
           </section>
           <section className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center justify-between mb-2"><div><h2 className="text-sm font-medium text-text-strong">每日 Cache 命中率</h2><p className="text-2xs text-muted mt-1">Cache read ÷（普通输入 + Cache read + Cache write）· 点击数据点查看当天各模型命中率</p></div><span className="text-2xs text-info">比例</span></div>
