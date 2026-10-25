@@ -271,7 +271,7 @@ describe('LiveSessionsList sidebar', () => {
     mockFetch()
     render(<LiveSessionsList sessions={[session('pid-a', 101, { status: 'running' })]} onSelect={() => {}} />)
     expect(screen.getByText('pi 101')).toBeInTheDocument()
-    expect(screen.getByText('pi 101').closest('[data-live-row]')).toHaveClass('py-1')
+    expect(screen.getByText('pi 101').closest('[data-live-row]')).toHaveClass('py-1.5')
     expect(within(screen.getByRole('status', { name: 'Session 状态：工作中' })).getByTestId('working-muyu')).toBeInTheDocument()
     expect(screen.queryByText('工作中')).not.toBeInTheDocument()
     expect(screen.getByText('2h')).toBeInTheDocument()// lastActivityAt = now - 101min

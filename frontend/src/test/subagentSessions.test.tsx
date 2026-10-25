@@ -65,6 +65,8 @@ describe('subagent grouped UI', () => {
     })) } })
     const onFocus = vi.fn()
     const { container } = render(<LiveSubagentStrip items={items} onFocus={onFocus} onStop={() => {}} />)
+    // Records without a live process hide themselves; 恢复 brings the history back.
+    fireEvent.click(screen.getByRole('button', { name: '恢复收起的记录' }))
     expect(screen.queryByText(/运行中 ·/)).toBeNull()
     expect(container.querySelector('details')?.open).toBe(false)
     expect(screen.getByText('已完成 · 20')).toBeInTheDocument()
@@ -78,6 +80,26 @@ describe('subagent grouped UI', () => {
     expect(screen.getByRole('button', { name: '停止子助手：子助手' })).toHaveTextContent('停止')
     rerender(<LiveSubagentStrip items={items} confirmCloseId="proc-1" onFocus={() => {}} onStop={() => {}} />)
     expect(screen.getByRole('button', { name: '停止子助手：子助手' })).toHaveTextContent('确认停止')
+  })
+
+  it('does not keep a finished subagent in 运行中 just because its launch record says queued', () => {
+    // `subagent_start` leaves status=queued behind forever when the caller never asks for
+    // `subagent_results`; those rows have no live process and cannot be collapsed.
+    const items = projectSubagentSessions([], { conversations: { items: [
+      { id: 'work-1', label: '跑完的子助手', status: 'queued' },
+      { id: 'work-2', label: '还在跑的子助手', status: 'queued' },
+    ] } })
+    const withLive = projectSubagentSessions([{ ...child('work-2'), status: 'running' }], { conversations: { items: [
+      { id: 'work-1', label: '跑完的子助手', status: 'queued' },
+      { id: 'work-2', label: '还在跑的子助手', status: 'queued' },
+    ] } })
+
+    expect(items.find(item => item.id === 'work-1')?.bucket).toBe('stopped')
+    expect(items.find(item => item.id === 'work-1')?.session).toBeUndefined()
+    expect(withLive.find(item => item.id === 'work-2')?.bucket).toBe('active')
+    // An explicit active run is proof of work even before this browser has its session.
+    const retrying = projectSubagentSessions([], { conversations: { items: [{ id: 'work-3', label: '重试中', status: 'queued', activeRunId: 'run-3' }] } })
+    expect(retrying[0].bucket).toBe('active')
   })
 
   it('folds failures automatically, allows reversible dismissal without stopping, and reveals a retry', () => {
@@ -103,9 +125,28 @@ describe('subagent grouped UI', () => {
     expect(screen.getByText('运行中 · 1')).toBeInTheDocument()
   })
 
-  it('keeps disconnected unknown tasks visible without claiming that they stopped', () => {
+  it('auto-collapses records whose process is gone and restores them on request', () => {
+    const items = projectSubagentSessions([], { conversations: { items: [
+      { id: 'done', label: '完成的任务', latestRunStatus: 'completed' },
+      { id: 'orphan', label: '残留的启动记录', status: 'queued' },
+    ] } })
+    render(<LiveSubagentStrip items={items} onFocus={() => {}} onStop={() => {}} />)
+
+    expect(screen.queryByText('完成的任务')).toBeNull()
+    expect(screen.queryByText('残留的启动记录')).toBeNull()
+    expect(screen.getByText('已收起 · 2（无实时连接的记录会自动收起；历史未删除）')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '恢复收起的记录' }))
+    expect(screen.getByText('完成的任务')).toBeInTheDocument()
+    expect(screen.getByText('残留的启动记录')).toBeInTheDocument()
+  })
+
+  it('auto-collapses an unknown record without claiming that it stopped', () => {
     const items = projectSubagentSessions([], { conversations: { items: [{ id: 'unknown', label: '待确认任务', status: 'idle' }] } })
     const { container } = render(<LiveSubagentStrip items={items} onFocus={() => {}} onStop={() => {}} />)
+
+    expect(screen.queryByText('待确认任务')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '恢复收起的记录' }))
     expect(screen.getByText('待确认任务')).toBeInTheDocument()
     expect(container.querySelector('details')).toBeNull()
     expect(screen.getByText('状态待确认 · 无实时连接')).toBeInTheDocument()

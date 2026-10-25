@@ -69,7 +69,7 @@ describe('Live Session UI', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  it('offers effort (thinking level) inside the model picker', async () => {
+  it('offers effort (thinking level) as its own picker next to the model', async () => {
     const onSelectThinkingLevel = vi.fn().mockResolvedValue(undefined)
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     render(<LiveSessionComposer
@@ -81,8 +81,8 @@ describe('Live Session UI', () => {
       onSubmit={onSubmit}
     />)
 
-    fireEvent.click(screen.getByTitle('切换当前模型'))
-    const high = await screen.findByRole('button', { name: 'high' })
+    fireEvent.click(screen.getByTitle('切换思考强度（effort）'))
+    const high = await screen.findByRole('menuitemradio', { name: 'high' })
     fireEvent.click(high)
     await waitFor(() => expect(onSelectThinkingLevel).toHaveBeenCalledWith('high'))
   })

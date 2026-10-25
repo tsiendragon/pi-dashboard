@@ -58,7 +58,18 @@
 .working-muyu-row{width:26px;height:34px}
 .live-session-row{min-height:35px;border-bottom:1px dashed var(--border)}
 .live-session-section-rows>div:last-child .live-session-row{border-bottom-color:transparent}
-.live-session-row .working-muyu-row{height:32px}
+.live-session-row .working-muyu-row{width:30px;height:36px}
+/* 会话分组淡色底（方案 B：五色统一深浅，取各主题自己的颜色，深色主题略加深） */
+.session-tint-0{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.session-tint-1{background:color-mix(in srgb,var(--ok) 9%,transparent)}
+.session-tint-2{background:color-mix(in srgb,var(--aim) 9%,transparent)}
+.session-tint-3{background:color-mix(in srgb,var(--clarify) 9%,transparent)}
+.session-tint-4{background:color-mix(in srgb,var(--muted) 8%,transparent)}
+[data-theme="dark"] .session-tint-0{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+[data-theme="dark"] .session-tint-1{background:color-mix(in srgb,var(--ok) 12%,transparent)}
+[data-theme="dark"] .session-tint-2{background:color-mix(in srgb,var(--aim) 14%,transparent)}
+[data-theme="dark"] .session-tint-3{background:color-mix(in srgb,var(--clarify) 11%,transparent)}
+[data-theme="dark"] .session-tint-4{background:color-mix(in srgb,var(--muted) 11%,transparent)}
 .working-muyu-row>svg{transform:translateY(2px)}
 .working-muyu-mallet{transform-box:view-box;transform-origin:14.6px 6px;animation:working-muyu-swing 1.3s infinite}
 .working-muyu-body{transform-box:view-box;transform-origin:7px 12.6px;animation:working-muyu-squash 1.3s infinite}

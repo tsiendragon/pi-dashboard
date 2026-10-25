@@ -26,6 +26,39 @@ function renderPanel(entries: unknown[]) {
   )
 }
 
+function panelElement(entries: unknown[]) {
+  const detail: LiveSessionDetail = { summary, entries }
+  return <LiveSubagentPanel summary={summary} detail={detail} onClose={() => {}} onOpenFull={() => {}} />
+}
+
+describe('子 Agent 侧栏在流式更新中保留已展开的内容', () => {
+  it('keeps the same row mounted when entries before it drop out', () => {
+    const reply = {
+      type: 'message',
+      id: 'msg-1',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: '先核对一下服务状态' },
+          { type: 'text', text: '服务已经起来了。' },
+        ],
+      },
+    }
+    const { container, rerender } = renderPanel([reply])
+    const row = container.querySelector('article')
+    expect(row).not.toBeNull()
+
+    // Trimming the oldest entries shifts every position; the row must keep its identity
+    // so the「思考过程」the reader unfolded is not silently closed.
+    rerender(panelElement([
+      { type: 'message', id: 'msg-0', message: { role: 'user', content: '看一下服务' } },
+      reply,
+    ]))
+
+    expect(container.querySelectorAll('article')[1]).toBe(row)
+  })
+})
+
 describe('子 Agent 侧栏的工具输出', () => {
   it('folds a tool result message and shows readable text once unfolded', () => {
     const entries = [{

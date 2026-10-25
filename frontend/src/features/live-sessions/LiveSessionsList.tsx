@@ -5,9 +5,10 @@ import { displayWorktreePath } from '../../utils/displayPath'
 import { api } from '../../api/client'
 import type { ModelLike } from '../../utils/modelUtils'
 import { modelFullId, modelLabel } from '../../utils/modelUtils'
-import { SearchInput } from '../../components/ui'
 import PathCompleteMenu from '../../components/PathCompleteMenu'
 import { TagChip, TagEditor, RowMenu, type RowMenuAction, type RowMenuItem } from '../../components/sessionMetaUi'
+import LineIcon from '../../components/LineIcon'
+import { tagColorClass } from '../../pages/chat/sessionMeta'
 import MaterialIcon, { type MaterialIconName } from '../../components/MaterialIcon'
 import MuyuIcon from '../../components/MuyuIcon'
 import { relTime, projectName } from '../../pages/chat/sessionMeta'
@@ -29,6 +30,9 @@ interface LiveSessionsListProps {
   pendingUiCounts?: Record<string, number>
   onSelect: (processInstanceId: string) => void
 }
+
+/** 分组用淡色底区分，按顺序轮换；样式见 index.css 的 .session-tint-*（统一深浅）。 */
+const SECTION_TINTS = ['session-tint-0', 'session-tint-1', 'session-tint-2', 'session-tint-3', 'session-tint-4']
 
 const MAX_TAG_CHIPS = 2
 
@@ -232,6 +236,11 @@ function SessionRow(p: RowProps) {
   }
 
   const tone = statusTone(p.session)
+  // dot colour comes only from data the row already has: a pending question
+  // (clarify), a running turn (accent), a completed goal (ok); otherwise hollow.
+  const goalDone = !!p.session.goal && (p.session.goal.total > 0 ? p.session.goal.done === p.session.goal.total && !p.session.goal.stale : p.session.goal.status === 'complete')
+  const rowBusy = menuOpen || restartArmed || restartPending || exitArmed || exitPending
+  const dotKind = (p.pendingUiCount ?? 0) > 0 ? 'waiting' : tone === 'running' ? 'running' : goalDone ? 'done' : 'idle'
   const chips = p.tags.slice(0, MAX_TAG_CHIPS)
   const extra = p.tags.length - chips.length
   const cwd = p.session.canonicalCwd || p.session.cwd
@@ -306,31 +315,31 @@ function SessionRow(p: RowProps) {
         onPointerDown={p.onDragStart}
         onClick={p.onSelect}
         onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onSelect() } }}
-        className={`live-session-row relative group flex cursor-pointer gap-2 rounded px-1.5 py-1 transition-colors ${p.depth ? 'ml-4' : ''} ${p.dragging ? 'opacity-40' : ''} ${p.active ? 'bg-accent-subtle' : 'hover:bg-bg-hover'}`}
+        className={`live-session-row relative group flex cursor-pointer gap-2 rounded-md px-2 py-1.5 transition-colors ${p.depth ? 'ml-4' : ''} ${p.dragging ? 'opacity-40' : ''} ${p.active ? 'bg-card shadow-sm' : 'hover:bg-bg-hover'}`}
       >
         {p.appearance?.color && <span aria-hidden="true" className="pointer-events-none absolute inset-y-1 left-0 w-[3px] rounded-r" style={{ backgroundColor: p.appearance.color }} />}
-        <span className={`w-[2px] shrink-0 self-stretch rounded-full ${
-          tone === 'running' ? 'bg-accent shadow-[0_0_7px_var(--accent-glow)]'
-            : tone === 'reconnecting' ? 'bg-warn' : 'bg-transparent'
-        }`} />
+        {p.active && <span aria-hidden="true" className="pointer-events-none absolute inset-y-1.5 left-0 w-[3px] rounded-r bg-accent" />}
         {/* status gutter — the running glyph spans both text lines so the swing
             has room; every other status is a quiet dot or a spinner */}
         <span
-          className="flex w-[26px] shrink-0 items-stretch justify-center self-stretch text-body-s leading-none"
+          className={`flex shrink-0 justify-center ${dotKind === 'running' ? '-ml-1 w-[30px] items-start' : 'h-[18px] w-3 items-center'}`}
           role="status"
           aria-label={`Session 状态：${statusLabel(p.session.status)}`}
           data-session-status={p.session.status}
+          data-session-dot={dotKind}
           title={statusLabel(p.session.status)}
-        >{p.session.status === 'running'
-          ? <span className="flex w-full items-center justify-center"><MuyuIcon className="working-muyu-row" /></span>
-          : p.session.status === 'reconnecting'
-            ? <span className="flex h-[18px] w-full items-center justify-center text-warn"><MaterialIcon name="sync" spin className="h-4 w-4" /></span>
-            : <span className="flex h-[18px] w-full items-center justify-center" aria-hidden="true"><span className="h-[7px] w-[7px] rounded-full border border-muted-strong opacity-60" /></span>}</span>
+        >{p.session.status === 'reconnecting'
+          ? <MaterialIcon name="sync" spin className="h-3 w-3 text-warn" />
+          // 运行中保留原有的敲木鱼动画（产品既有的标志性提示），其他状态用小圆点。
+          : dotKind === 'running' ? <MuyuIcon className="working-muyu-row" />
+          : dotKind === 'waiting' ? <span className="h-2 w-2 rounded-full bg-clarify" />
+          : dotKind === 'done' ? <span className="h-2 w-2 rounded-full bg-ok" />
+          : <span className="h-2 w-2 rounded-full border border-muted-strong opacity-60" aria-hidden="true" />}</span>
         <div className="min-w-0 flex-1">
           {/* line 1 — title */}
           <div className="flex h-[18px] items-center gap-1.5">
             {p.depth > 0 && <span className="shrink-0 text-2xs leading-none text-accent">↳</span>}
-            {!renaming && p.appearance?.emoji && <span data-session-emoji className="max-w-16 shrink-0 truncate text-meta leading-none" title={p.appearance.emoji}>{p.appearance.emoji}</span>}
+            {!renaming && p.appearance?.emoji && <span data-session-emoji className="max-w-16 shrink-0 truncate text-2xs leading-none" title={p.appearance.emoji}>{p.appearance.emoji}</span>}
             {renaming ? (
               <input
                 autoFocus
@@ -348,14 +357,14 @@ function SessionRow(p: RowProps) {
                 className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-body-s text-text-strong outline-none"
               />
             ) : (
-              <span className={`min-w-0 flex-1 truncate text-body-s leading-[18px] ${tone === 'idle' && !p.active ? 'text-text' : 'text-text-strong'}`}>{p.title}</span>
+              <span className={`min-w-0 flex-1 truncate text-meta font-medium leading-[16px] ${tone === 'idle' && !p.active ? 'text-text' : 'text-text-strong'}`}>{p.title}</span>
             )}
-            {p.childCount > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1.5 text-2xs leading-[14px] text-muted" title={`${p.childCount} 个子 Agent`}>{p.childCount} 子</span>}
             {p.session.claim.state === 'claimed' && <span className="flex shrink-0 items-center text-muted-strong" title="已被其他浏览器接管"><MaterialIcon name="lock" className="h-3.5 w-3.5" /></span>}
             {/* "活动" is the session's LAST activity, not how long it has run: an idle
                 Pi sends nothing, so this is the honest "silent since" clock. The label
                 is spelled out because the bare number read as an unexplained “几秒”. */}
-            <span className={`flex shrink-0 items-center gap-0.5 font-mono text-2xs leading-none text-muted-strong ${menuOpen ? 'invisible' : ''}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}\n本会话启动于：${new Date(p.session.startedAt).toLocaleString()}`}><span className="opacity-70">活动</span><span>{relTime(p.session.lastActivityAt)}</span></span>
+            <span className={`flex shrink-0 items-center gap-0.5 font-mono text-2xs leading-none text-muted ${rowBusy ? 'hidden' : 'md:group-hover:hidden md:group-focus-within:hidden'}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}\n本会话启动于：${new Date(p.session.startedAt).toLocaleString()}`}><span>{relTime(p.session.lastActivityAt)}</span></span>
+            <div className={`items-center gap-0.5 ${rowBusy ? 'flex' : 'max-md:flex hidden group-hover:flex group-focus-within:flex'}`}>
             <button
               type="button"
               disabled={restartPending || !!p.restartDisabledReason}
@@ -364,7 +373,7 @@ function SessionRow(p: RowProps) {
               onPointerDown={event => event.stopPropagation()}
               onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
               onClick={requestRestart}
-              className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-not-allowed disabled:opacity-40 ${restartArmed ? 'bg-danger-subtle text-danger opacity-100' : restartPending ? 'text-muted opacity-100' : 'text-muted opacity-50 hover:bg-accent-subtle hover:text-accent group-hover:opacity-100 md:opacity-0 focus-visible:opacity-100'}`}
+              className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-not-allowed disabled:opacity-40 ${restartArmed ? 'bg-danger-subtle text-danger opacity-100' : restartPending ? 'text-muted opacity-100' : 'text-muted opacity-50 hover:bg-accent-subtle hover:text-accent'}`}
             ><MaterialIcon name="restore" spin={restartPending} className="h-3.5 w-3.5" />{restartArmed ? '确认' : ''}</button>
             <button
               type="button"
@@ -374,7 +383,7 @@ function SessionRow(p: RowProps) {
               onPointerDown={event => event.stopPropagation()}
               onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
               onClick={requestExit}
-              className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-wait ${exitArmed ? 'bg-danger-subtle text-danger opacity-100' : exitPending ? 'text-muted opacity-100' : 'text-muted opacity-50 hover:bg-danger-subtle hover:text-danger group-hover:opacity-100 md:opacity-0 focus-visible:opacity-100'}`}
+              className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-wait ${exitArmed ? 'bg-danger-subtle text-danger opacity-100' : exitPending ? 'text-muted opacity-100' : 'text-muted opacity-50 hover:bg-danger-subtle hover:text-danger'}`}
             >{exitPending ? '…' : exitArmed ? '确认' : '⏻'}</button>
             <button
               type="button"
@@ -382,19 +391,26 @@ function SessionRow(p: RowProps) {
               title="设置会话装扮"
               onMouseDown={event => event.stopPropagation()}
               onClick={event => { event.stopPropagation(); setAppearanceEditing(true) }}
-              className="flex shrink-0 items-center rounded px-1 text-muted opacity-60 hover:bg-bg-hover hover:text-accent focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent md:opacity-0 md:group-hover:opacity-100"
+              className="flex shrink-0 items-center rounded px-1 text-muted opacity-60 hover:bg-bg-hover hover:text-accent focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             ><MaterialIcon name="palette" className="h-3.5 w-3.5" /></button>
             <button
               type="button"
               aria-label="Session menu"
               onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
               onClick={() => setMenuOpen(v => !v)}
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition-opacity hover:bg-bg-hover hover:text-text-strong ${menuOpen ? 'bg-bg-hover text-text-strong opacity-100' : 'opacity-50 group-hover:opacity-100 md:opacity-0'}`}
+              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition-opacity hover:bg-bg-hover hover:text-text-strong ${menuOpen ? 'bg-bg-hover text-text-strong opacity-100' : 'opacity-70 hover:opacity-100'}`}
             ><MaterialIcon name="more_horiz" className="h-4 w-4" /></button>
+            </div>
           </div>
 
           {/* line 2 — status · tags · group · location */}
           <div className="flex h-[14px] items-center gap-1 overflow-hidden">
+            <span className="flex min-w-0 shrink items-center gap-1 text-2xs leading-none text-muted-strong">
+              {/* basename only: the full path stays in the row tooltip and the branch in `git.branch`. */}
+              <LineIcon name="terminal" className="h-3 w-3" />
+              <span className="min-w-0 truncate font-mono" title={cwd}>{projectName(cwd) || displayWorktreePath(cwd)}</span>
+            </span>
+            {p.childCount > 0 && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-bg-hover px-1.5 text-2xs leading-[14px] text-muted-strong" title={`${p.childCount} 个子 Agent`}><LineIcon name="flow" className="h-3 w-3" />{p.childCount}</span>}
             {p.pinned && <span className="flex shrink-0 items-center text-accent" title="已置顶"><MaterialIcon name="push_pin" className="h-3.5 w-3.5" /></span>}
             {p.tmuxSession && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-1.5 text-2xs leading-[14px] text-muted-strong" title={`终端可访问：tmux attach -t ${p.tmuxSession}`}><MaterialIcon name="terminal" className="h-3 w-3" />终端</span>}
             {p.subagent && <span className={`inline-flex shrink-0 items-center gap-0.5 text-2xs leading-none ${taskStatusClass(p.taskStatus)}`} title={`子 Agent 任务：${taskStatusLabel(p.taskStatus)}`}>{p.taskStatus === 'running' ? <MuyuIcon className="h-3 w-3" /> : <MaterialIcon name={taskStatusIcon(p.taskStatus)} className="h-3.5 w-3.5" />}子 Agent · {taskStatusLabel(p.taskStatus)}</span>}
@@ -436,11 +452,6 @@ function SessionRow(p: RowProps) {
             {chips.map(t => <TagChip key={t} tag={t} active={p.tagFilter === t} onClick={p.onToggleTagFilter} />)}
             {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-2xs font-semibold leading-[14px] text-muted-strong" title={p.tags.join(', ')}>+{extra}</span>}
             {p.groupName && <span className="shrink-0 truncate rounded-full bg-ok-subtle px-1.5 text-2xs leading-[14px] text-ok" title={`任务分组：${p.groupName}`}>{p.groupName}</span>}
-            <span className="ml-auto flex min-w-0 shrink items-center gap-1 text-2xs leading-none text-muted-strong">
-              {/* basename only: it is what tells the user what a session works on; the
-                  full path stays in the row tooltip and the branch in `git.branch`. */}
-              <span className="min-w-0 truncate font-mono" title={cwd}>{projectName(cwd) || displayWorktreePath(cwd)}</span>
-            </span>
           </div>
         </div>
       </div>
@@ -1103,37 +1114,51 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
   return (
     <aside className={`pidash-sidebar flex w-full shrink-0 flex-col overflow-y-auto border-r border-border bg-bg-accent md:w-[320px] ${dragActive ? 'select-none' : ''}`}>
       <div className="sticky top-0 z-10 border-b border-border bg-bg-accent px-3 py-2.5">
-        <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1 text-meta font-semibold uppercase tracking-[.05em] text-muted">
-            Live Pi Sessions
-            <span className="ml-1.5 font-mono text-2xs normal-case tracking-normal text-muted-strong">
+        <div className="flex items-center gap-1">
+          <h1 className="min-w-0 flex-1 text-title font-semibold text-text-strong">
+            会话
+            <span className="ml-1.5 rounded-full bg-bg-hover px-1.5 py-px font-mono text-2xs font-normal text-muted-strong">
               {visibleMainCount === mainCount ? mainCount : `${visibleMainCount}/${mainCount}`}
             </span>
-          </div>
-          <button type="button" disabled={busy || starting} onClick={() => { setStartError(undefined); setStartOpen(value => !value) }} className="flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-2 py-0.5 text-2xs text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="启动一个新的 Live Pi"><MaterialIcon name="add" className="h-3.5 w-3.5" />启动</button>
-          <button type="button" disabled={busy || starting} onClick={() => setCreating(value => !value)} className="flex shrink-0 items-center gap-0.5 rounded-full bg-bg px-2 py-0.5 text-2xs text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="新建 / 管理任务分组"><MaterialIcon name="add" className="h-3.5 w-3.5" />任务</button>
-        </div>
-
-        <div className="mt-2 flex items-center gap-1.5">
-          <SearchInput className="min-w-0 flex-1" placeholder="搜索 session / 目录 / 标签…" value={filter} onChange={e => setFilter(e.target.value)} />
+          </h1>
           <button
             type="button"
             disabled={reloadingAll}
             onClick={reloadAllSessions}
-            className={`flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-2xs transition disabled:opacity-50 ${reloadAllConfirm.armed ? 'border-danger bg-danger-subtle font-semibold text-danger' : 'border-border bg-bg text-muted hover:border-accent hover:text-accent'}`}
+            aria-label={reloadAllConfirm.armed ? '确认重载' : '重载全部'}
+            className={`flex h-7 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-2xs transition disabled:opacity-50 ${reloadAllConfirm.armed ? 'bg-danger-subtle font-semibold text-danger' : 'text-muted hover:bg-bg-hover hover:text-accent'}`}
             title={reloadAllConfirm.armed ? '再点一次确认重载全部' : '重载所有会话：让每个 Pi 进程重新加载扩展 / 技能 / 提示词 / 主题（子 Agent 进程跳过）'}
-          ><MaterialIcon name="sync" spin={reloadingAll} className="h-3.5 w-3.5" />{reloadAllConfirm.armed ? '确认重载' : '重载全部'}</button>
+          ><LineIcon name="refresh" className={`h-4 w-4 ${reloadingAll ? 'animate-spin' : ''}`} />{reloadAllConfirm.armed && '确认'}</button>
+          <button type="button" aria-label="任务" disabled={busy || starting} onClick={() => setCreating(value => !value)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="新建 / 管理任务分组"><LineIcon name="folder" className="h-4 w-4" /></button>
+          <button type="button" aria-label="启动" disabled={busy || starting} onClick={() => { setStartError(undefined); setStartOpen(value => !value) }} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-accent transition hover:opacity-80 disabled:opacity-50" title="启动一个新的 Live Pi"><LineIcon name="plus" className="h-4 w-4" /></button>
+        </div>
+
+        <div className="relative mt-2">
+          <span className="pointer-events-none absolute left-2.5 top-1/2 flex -translate-y-1/2 text-muted" aria-hidden="true"><LineIcon name="search" className="h-3.5 w-3.5" /></span>
+          <input
+            type="search"
+            className="w-full rounded-md border border-border bg-card py-1 pl-8 pr-3 text-body-s text-text outline-none transition placeholder:text-muted focus:border-accent"
+            placeholder="搜索 session / 目录 / 标签…"
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+          />
         </div>
 
         {reloadNotice && <div role="status" aria-label="重载结果" className={`mt-1.5 text-2xs ${reloadNotice.danger ? 'text-danger' : 'text-muted-strong'}`}>{reloadNotice.text}</div>}
         {sessionActionNotice && <div role="status" aria-label="会话操作结果" className={`mt-1.5 text-2xs ${sessionActionNotice.danger ? 'text-danger' : 'text-muted-strong'}`}>{sessionActionNotice.text}</div>}
 
         {tagCounts.length > 0 && (
-          <div className="mt-1.5 flex items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="mt-2 flex items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button type="button" onClick={() => setTagFilter(null)}
-              className={`shrink-0 rounded-full border px-2 py-px text-2xs font-semibold leading-[16px] ${!tagFilter ? 'border-border-strong bg-bg-hover text-text-strong' : 'border-transparent text-muted hover:text-text'}`}>全部</button>
+              className={`shrink-0 rounded-full border px-2 py-px text-2xs font-medium leading-[16px] ${!tagFilter ? 'border-border-strong bg-bg-hover text-text-strong' : 'border-transparent text-muted hover:text-text'}`}>全部</button>
             {tagCounts.slice(0, 12).map(({ tag, count }) => (
-              <TagChip key={tag} tag={tag} active={tagFilter === tag} onClick={t => setTagFilter(current => current === t ? null : t)} title={`#${tag} · ${count} 个 session`} />
+              <button
+                key={tag}
+                type="button"
+                title={`#${tag} · ${count} 个 session`}
+                onClick={() => setTagFilter(current => current === tag ? null : tag)}
+                className={`inline-flex max-w-[96px] shrink-0 items-center gap-1 truncate rounded-full border px-2 py-px text-2xs font-medium leading-[16px] ${tagColorClass(tag)} ${tagFilter === tag ? 'ring-1 ring-accent' : 'opacity-90 hover:opacity-100'}`}
+              ><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />{tag}</button>
             ))}
           </div>
         )}
@@ -1275,10 +1300,10 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
         <div className="p-5 text-sm text-muted">暂无已连接的 Pi session。已运行的 Pi 需要加载集成 Extension。</div>
       ) : sections.length === 0 && unassociatedSubagents.length === 0 ? (
         <div className="p-5 text-meta text-muted-strong">没有匹配的 session{filter || tagFilter ? '（清除筛选试试）' : ''}</div>
-      ) : sections.map(section => {
+      ) : sections.map((section, sectionIndex) => {
         const collapsed = collapsedSections[section.id] ?? (isHoldGroup(section.name) && !filter && !tagFilter)
         return (
-        <section key={section.id} data-live-block={section.id} className="live-session-section border-b border-border">
+        <section key={section.id} data-live-block={section.id} className={`live-session-section mx-1.5 my-1.5 rounded-lg pb-0.5 ${SECTION_TINTS[sectionIndex % SECTION_TINTS.length]}`}>
           <div className="group/section flex min-h-5 items-center gap-1 px-2.5 py-px">
             <button
               type="button"
@@ -1303,9 +1328,9 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
                 className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-meta text-text-strong outline-none"
               />
             ) : (
-              <strong className="min-w-0 flex-1 truncate text-[10px] leading-[14px] font-semibold text-text-strong" title={section.name}>{section.name}</strong>
+              <strong className="min-w-0 flex-1 truncate text-2xs font-medium text-muted-strong" title={section.name}>{section.name}</strong>
             )}
-            <span className="shrink-0 rounded-full bg-bg-hover px-1 font-mono text-[10px] leading-[14px] text-muted-strong">{section.sessions.length}</span>
+            <span className="shrink-0 font-mono text-2xs text-muted">{section.sessions.length}</span>
             {section.group && <>
               <button type="button" disabled={busy} aria-label="重命名任务分组按钮" onClick={() => { setRenamingGroup(section.id); setGroupDraft(section.name) }} className="flex items-center rounded px-1 text-muted opacity-60 transition-opacity hover:bg-bg-hover hover:text-accent focus-visible:opacity-100 md:opacity-0 md:group-hover/section:opacity-100" title="重命名任务"><MaterialIcon name="edit" className="h-3.5 w-3.5" /></button>
               <button

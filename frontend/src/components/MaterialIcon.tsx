@@ -36,6 +36,7 @@ export type MaterialIconName =
   | 'terminal'
   | 'pause'
   | 'palette'
+  | 'open_in_full'
 
 const PATHS: Record<MaterialIconName, string> = {
   // https://fonts.google.com/icons?selected=Material+Icons:mic
@@ -69,6 +70,7 @@ const PATHS: Record<MaterialIconName, string> = {
   // Terminal window with a prompt: Material-style geometry for a card glyph.
   terminal: 'M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4V6h16v12zM7.5 9.2 6.44 10.26 8.68 12.5l-2.24 2.24 1.06 1.06 3.3-3.3-3.3-3.3zM12.5 14.4h4.5V16h-4.5z',
   pause: 'M6 19h4V5H6v14zm8-14v14h4V5h-4z',
+  open_in_full: 'M21 11V3h-8l3.29 3.29-10 10L3 13v8h8l-3.29-3.29 10-10z',
   palette: 'M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9h1.5c1.38 0 2.5-1.12 2.5-2.5 0-.61-.23-1.16-.59-1.59-.08-.1-.13-.21-.13-.34 0-.28.22-.5.5-.5H17c2.76 0 5-2.24 5-5 0-4.42-4.48-8-10-8zM6.5 12C5.67 12 5 11.33 5 10.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5 11 5.67 11 6.5 10.33 8 9.5 8zm5 0C13.67 8 13 7.33 13 6.5S13.67 5 14.5 5 16 5.67 16 6.5 15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9 19 9.67 19 10.5 18.33 12 17.5 12z',
 }
 

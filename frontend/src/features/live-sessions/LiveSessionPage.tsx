@@ -32,8 +32,10 @@ import {
 } from '../../store/liveSessionsSlice'
 import { liveSessionApi, LiveSessionApiError } from './api'
 import LiveSessionComposer from './LiveSessionComposer'
+import LiveCommandChips, { collectCommandChips } from './LiveCommandChips'
 import ActivityTimeline, { type ActivityImage, type ActivityNote, type ActivityReply, type ActivityStep, type LiveActivity } from './ActivityTimeline'
 import FullContentModal from '../../components/FullContentModal'
+import LineIcon from '../../components/LineIcon'
 import { SelectionQuoteMenu, QuoteCommentPopover } from '../../components/SelectionQuoteMenu'
 import { useChatQuoteSelection, type SelectionTarget } from '../../hooks/useChatQuoteSelection'
 import { CHAT_REVIEW_INTRO, commentReviewItems, quoteOrCommentKind, quotedSnippets, selectionLabel, type FollowUpKind, type QuotedText, type ReviewItem } from '../../utils/reviewComments'
@@ -176,6 +178,50 @@ function entryIdOf(entry: unknown): string | undefined {
   return typeof data?.entryId === 'string' ? data.entryId : undefined
 }
 
+/**
+ * Message id behind a transcript entry, for entries that have no session-entry id yet.
+ *
+ * A streaming assistant message keeps the same message id from `message_start` through
+ * `message_end`, so it can anchor render identity before the entry id arrives.
+ */
+function entryMessageId(entry: unknown): string | undefined {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined
+  const record = entry as Record<string, unknown>
+  const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
+  const message = data?.message && typeof data.message === 'object' && !Array.isArray(data.message)
+    ? data.message as Record<string, unknown>
+    : record.message && typeof record.message === 'object' && !Array.isArray(record.message)
+      ? record.message as Record<string, unknown>
+      : undefined
+  return typeof message?.id === 'string' && message.id ? message.id : undefined
+}
+
+/**
+ * Stable identity for one rendered timeline row.
+ *
+ * Array position is not an identity: the store folds stream placeholders away
+ * (`message_update` -> `message_end`, tool start/update -> end) and trims the oldest
+ * entries on very long sessions, so an index shifts under the reader. Remounting on
+ * that shift silently collapsed whatever had been unfolded, so rows are keyed by the
+ * record they carry (session entry id, then message id, then tool call id).
+ */
+export function entryAnchorKey(entry: unknown, index: number): string {
+  const entryId = entryIdOf(entry)
+  if (entryId) return `entry:${entryId}`
+  const messageId = entryMessageId(entry)
+  if (messageId) return `message:${messageId}`
+  if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+    const record = entry as Record<string, unknown>
+    const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
+    const toolCallId = typeof record.toolCallId === 'string' ? record.toolCallId
+      : typeof data?.toolCallId === 'string' ? data.toolCallId
+        : typeof data?.tool_call_id === 'string' ? data.tool_call_id : undefined
+    if (toolCallId) return `tool:${toolCallId}:${String(record.type ?? '')}`
+    return `pos:${index}:${String(record.type ?? '')}`
+  }
+  return `pos:${index}`
+}
+
 /** Last assistant reply text in the transcript, or '' when there is none. */
 export function lastAssistantSpeechText(entries: unknown[]): string {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -258,7 +304,7 @@ function collectLiveFeatures(entries: unknown[]): Record<string, unknown> {
 function LiveThinkingBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="overflow-hidden rounded-md border-l-2 border-l-aim bg-bg-hover">
+    <div className="overflow-hidden rounded-lg border border-dashed border-border bg-bg-elevated/60">
       <button
         type="button"
         aria-expanded={open}
@@ -266,10 +312,10 @@ function LiveThinkingBlock({ text }: { text: string }) {
         onClick={() => setOpen(value => !value)}
         className="group/think flex w-full min-w-0 items-center gap-1.5 px-2.5 py-1.5 text-left text-2xs text-muted transition-colors hover:text-text"
       >
-        <MaterialIcon name="expand_more" className={`h-3.5 w-3.5 shrink-0 text-aim transition-transform ${open ? 'rotate-180' : ''}`} />
-        <span className="shrink-0 font-semibold text-text-strong">思考过程</span>
+        <LineIcon name="chevronDown" className={`h-3.5 w-3.5 text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className="shrink-0 font-medium text-muted-strong">思考过程</span>
         <span className="min-w-0 flex-1" />
-        <span className="shrink-0 font-mono text-2xs text-muted">{text.length.toLocaleString()} chars</span>
+        <span className="shrink-0 font-mono text-2xs text-muted">{text.length.toLocaleString()} 字</span>
       </button>
       {open && <pre className="m-0 max-h-[340px] overflow-y-auto whitespace-pre-wrap break-words px-2.5 pb-2.5 font-body text-2xs leading-5 text-muted">{text}</pre>}
     </div>
@@ -669,6 +715,9 @@ export type ToolState = {
   command?: string
   argsText?: string
   timestamp?: string
+  /** Epoch ms of the first call/start event, and of the terminal event — drives command chips. */
+  startedAtMs?: number
+  endedAtMs?: number
   parentToolCallId?: string
   nestedTools?: ToolState[]
   partialText?: string
@@ -720,6 +769,7 @@ export function collectToolStates(entries: unknown[]): ToolStateMap {
         const argumentsValue = part.arguments
         state.argsText = typeof argumentsValue === 'string' ? argumentsValue : JSON.stringify(argumentsValue ?? {})
         state.timestamp = entryTimestamp(entry)
+        state.startedAtMs ??= entryTimestampMs(entry)
         if (argumentsValue && typeof argumentsValue === 'object' && !Array.isArray(argumentsValue)) {
           const argumentsRecord = argumentsValue as Record<string, unknown>
           if (typeof argumentsRecord.command === 'string') state.command = argumentsRecord.command
@@ -729,6 +779,7 @@ export function collectToolStates(entries: unknown[]): ToolStateMap {
     if (message?.role === 'toolResult' && message.toolCallId) {
       const state = ensure(message.toolCallId)
       state.result = { text: message.text, toolName: message.toolName, isError: message.isError, timestamp: entryTimestamp(entry) }
+      state.endedAtMs ??= entryTimestampMs(entry)
       state.abandoned = false
       state.isError = message.isError === true
       if (message.toolName) state.toolName = message.toolName
@@ -741,10 +792,12 @@ export function collectToolStates(entries: unknown[]): ToolStateMap {
     if (data.args !== undefined) state.argsText = typeof data.args === 'string' ? data.args : JSON.stringify(data.args)
     state.timestamp ||= entryTimestamp(entry)
     if (record.type === 'tool_execution_start' || record.type === 'tool_execution_update') {
+      if (record.type === 'tool_execution_start') state.startedAtMs = entryTimestampMs(entry) ?? state.startedAtMs
       state.started = true
       state.abandoned = false
     }
     if (record.type === 'tool_execution_end') {
+      state.endedAtMs = entryTimestampMs(entry) ?? state.endedAtMs
       state.ended = true
       state.abandoned = false
       state.isError = data.isError === true || data.isError === 'true'
@@ -1093,7 +1146,8 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
   const attachFollowUp = (activity: LiveActivity, text: string, index: number, kind: FollowUpKind, queued: boolean): void => {
     const list = activity.followUps || []
     if (list.some(item => item.entryIndex === index)) return
-    activity.followUps = [...list, { id: `follow-up-${index}`, kind, text, entryIndex: index, ...(queued ? { queued: true } : {}) }]
+    const anchor = entryIdOf(entries[index]) ?? entryMessageId(entries[index])
+    activity.followUps = [...list, { id: `follow-up-${anchor ?? index}`, kind, text, entryIndex: index, ...(queued ? { queued: true } : {}) }]
   }
   /** 引用/批注指向的活动：拿引文去活动的计划与回复里找，找不到就不自带归属。 */
   const quoteOwner = (text: string): LiveActivity | undefined => {
@@ -1129,8 +1183,13 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
     activity.plan = plan
   }
   const startActivity = (report: ActivityReport): LiveActivity => {
+    // The activity id carries the reader's unfold state. Anchor it to the entry that
+    // started the activity, so a rebuilt snapshot (or a trimmed head) that shifts
+    // every index does not make the whole timeline look like new cards.
+    const anchor = entryIdOf(entries[report.index]) ?? entryMessageId(entries[report.index])
+    const baseId = anchor ? `activity-${anchor}` : `activity-${report.index}-${activities.length}`
     const activity: LiveActivity = {
-      id: `activity-${report.index}-${activities.length}`,
+      id: activities.some(item => item.id === baseId) ? `${baseId}-${activities.length}` : baseId,
       title: report.title,
       sourceLabel: report.sourceLabel,
       status: 'pending',
@@ -1198,7 +1257,9 @@ export function buildLiveActivities(entries: unknown[], sessionStatus: string, g
     const previous = activity.replies[activity.replies.length - 1]
     if (previous && previous.text === text) return
     const entryId = entryIdOf(entries[index])
-    activity.replies.push({ id: `reply-${index}-${activity.replies.length}`, text, kind, entryIndex: index, related: [], ...(entryId ? { entryId } : {}) })
+    // Reply ids are unfold-state keys too; keep them on the message, not its position.
+    const anchor = entryId ?? entryMessageId(entries[index])
+    activity.replies.push({ id: anchor ? `reply-${anchor}` : `reply-${index}-${activity.replies.length}`, text, kind, entryIndex: index, related: [], ...(entryId ? { entryId } : {}) })
   }
   // 动手之前（还没有任何步骤）的说明是 agent 的理解与计划，不再当回复展示。
   const rememberPlan = (activity: LiveActivity, text: string, index: number): void => {
@@ -1575,7 +1636,7 @@ export function RunCodeToolCard({ state }: { state: ToolState }) {
   const output = state.result?.text ?? state.executionResult ?? state.partialText ?? toolTerminalMessage(state)
   const tone = isError ? 'border-danger' : status === 'success' ? 'border-ok' : status === 'running' ? 'border-accent' : 'border-border'
   return (
-    <article aria-label="Run Code 及内部步骤" className={`w-full min-w-0 max-w-full overflow-hidden rounded-md border bg-bg-elevated ${tone}`}>
+    <article aria-label="Run Code 及内部步骤" className={`w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-l-2 bg-card ${tone}`}>
       <button type="button" aria-expanded={expanded} aria-label={`${expanded ? '收起' : '展开'} Run Code 内部步骤`} onClick={() => setExpanded(value => !value)} className="flex w-full min-w-0 items-center gap-2 border-none bg-transparent px-2.5 py-1.5 text-left hover:bg-bg-hover">
         <span aria-hidden="true" className="shrink-0 text-2xs text-muted">{expanded ? '▾' : '▸'}</span>
         <ToolSummaryLine toolName="run_code" command={summary} timestamp={state.timestamp} status={status} className="flex-1" />
@@ -1611,14 +1672,14 @@ function ToolCallCard({ name, toolCallId, argsText, timestamp, state }: { name: 
   const isError = result?.isError === true || state?.isError === true || state?.abandoned === true
   const status: ToolSummaryStatus = isError ? 'error' : result || state?.ended ? 'success' : state?.started || state?.partialText ? 'running' : 'pending'
   const statusTone = status === 'error'
-    ? 'border-danger bg-danger-subtle'
+    ? 'border-danger/40 border-l-danger bg-danger-subtle'
     : status === 'success'
-      ? 'border-ok bg-ok-subtle'
+      ? 'border-border border-l-ok bg-card'
       : status === 'running'
-        ? 'border-accent bg-accent-subtle'
-        : 'border-border'
+        ? 'border-accent/40 border-l-accent bg-card'
+        : 'border-border bg-card'
   return (
-    <article className={`w-full max-w-full overflow-hidden rounded-md border bg-bg-elevated ${statusTone}`}>
+    <article className={`w-full max-w-full overflow-hidden rounded-lg border border-l-2 ${statusTone}`}>
       <details>
         <summary className="flex min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left hover:bg-bg-hover">
           <ToolSummaryLine toolName={name} args={argsText} timestamp={result?.timestamp || timestamp} status={status} className="flex-1" />
@@ -1637,88 +1698,32 @@ function ToolCallCard({ name, toolCallId, argsText, timestamp, state }: { name: 
   )
 }
 
-type MonitoredCommand = {
-  key: string
-  kind: 'foreground' | 'background'
-  label: string
-  detail: string
-  command: string
-  output: string
-  toolCallId?: string
+/**
+ * Start of the latest round: the newest user message's timestamp (Pi-host clock).
+ *
+ * A prompt this browser just sent is shown as a local placeholder with no timestamp
+ * until Pi echoes it back. Falling back to the browser clock would compare across
+ * hosts, so the boundary becomes “just after everything seen so far” instead — the
+ * previous round's finished commands disappear immediately, new ones still qualify.
+ */
+export function latestUserMessageAt(entries: unknown[], features: Record<string, unknown>): number | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (messageFromEntry(entries[index])?.role !== 'user') continue
+    const at = entryTimestampMs(entries[index])
+    if (at !== undefined) return at
+    let latest: number | undefined
+    const bump = (value: unknown) => { if (typeof value === 'number' && Number.isFinite(value) && (latest === undefined || value > latest)) latest = value }
+    for (const entry of entries) bump(entryTimestampMs(entry))
+    const background = features['background-commands']
+    const tasks = background && typeof background === 'object' && !Array.isArray(background) ? (background as Record<string, unknown>).tasks : undefined
+    if (Array.isArray(tasks)) for (const task of tasks) if (task && typeof task === 'object') { bump((task as Record<string, unknown>).startedAt); bump((task as Record<string, unknown>).endedAt) }
+    return latest === undefined ? undefined : latest + 1
+  }
+  return undefined
 }
 
 function compactCommand(value: string): string {
   return value.replace(/\s+/g, ' ').trim().slice(0, 72)
-}
-
-function LiveCommandBar({ toolStates, features, onMoveToBackground }: { toolStates: ToolStateMap; features: Record<string, unknown>; onMoveToBackground?: (toolCallId: string) => void }) {
-  const [selectedKey, setSelectedKey] = useState<string>()
-  const commands = useMemo<MonitoredCommand[]>(() => {
-    const result: MonitoredCommand[] = []
-    for (const state of toolStates.values()) {
-      if (!state.started || state.ended || state.abandoned || state.result) continue
-      const command = state.command || state.toolName || 'tool'
-      result.push({
-        key: `foreground:${state.toolCallId}`,
-        kind: 'foreground',
-        label: compactCommand(command),
-        detail: `${state.toolName || 'tool'} ${shortToolId(state.toolCallId)}`,
-        command,
-        output: state.partialText || '等待输出…',
-        toolCallId: state.toolCallId,
-      })
-    }
-    const background = features['background-commands']
-    const backgroundRecord = background && typeof background === 'object' && !Array.isArray(background) ? background as Record<string, unknown> : undefined
-    const tasks = Array.isArray(backgroundRecord?.tasks) ? backgroundRecord.tasks : []
-    for (const value of tasks) {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) continue
-      const task = value as Record<string, unknown>
-      const status = typeof task.status === 'string' ? task.status : 'unknown'
-      if (status !== 'running' && status !== 'starting' && status !== 'queued') continue
-      const taskId = typeof task.taskId === 'string' ? task.taskId : typeof task.id === 'string' ? task.id : 'background'
-      const command = typeof task.command === 'string' ? task.command : typeof task.title === 'string' ? task.title : '后台命令'
-      result.push({
-        key: `background:${taskId}`,
-        kind: 'background',
-        label: compactCommand(command),
-        detail: `${typeof task.title === 'string' ? task.title : '后台命令'} · ${taskId}`,
-        command,
-        output: typeof task.outputTail === 'string' && task.outputTail ? task.outputTail : '等待输出…',
-      })
-    }
-    return result
-  }, [features, toolStates])
-
-  if (commands.length === 0) return null
-  const selected = commands.find(command => command.key === selectedKey)
-  return <>
-    <div className="shrink-0 border-t border-border bg-bg px-2 py-1.5">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <span className="shrink-0 text-2xs font-medium text-accent">运行中</span>
-        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
-          {commands.map(command => {
-            const handoffToolCallId = command.kind === 'foreground' && onMoveToBackground ? command.toolCallId : undefined
-            return <div key={command.key} className="flex max-w-[min(360px,64vw)] shrink-0 items-center rounded border border-border bg-card hover:border-accent">
-              <button type="button" aria-expanded={selected?.key === command.key} onClick={() => setSelectedKey(command.key)} className="min-w-0 flex-1 truncate px-2 py-1 text-left text-2xs text-muted hover:text-accent" title={`${command.detail}\n${command.command}`}>
-                <span className="mr-1 text-accent">●</span>{command.kind === 'background' ? '后台' : '前台'} · {command.label}
-              </button>
-              {handoffToolCallId && <button type="button" onClick={() => onMoveToBackground?.(handoffToolCallId)} className="mr-1 shrink-0 rounded border border-border px-1.5 py-0.5 text-2xs text-accent hover:border-accent hover:bg-accent-subtle" title="转后台：进程不重启，agent 立即继续，命令继续在后台运行" aria-label={`把「${command.label}」转入后台`}>转后台</button>}
-            </div>
-          })}
-        </div>
-      </div>
-    </div>
-    {selected && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-4" role="presentation" onClick={() => setSelectedKey(undefined)}>
-      <section className="w-full max-w-4xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl" role="dialog" aria-modal="true" aria-label={`${selected.kind === 'background' ? '后台' : '前台'}命令输出`} onClick={event => event.stopPropagation()}>
-        <header className="flex items-center gap-3 border-b border-border bg-bg-elevated px-3 py-2">
-          <div className="min-w-0 flex-1"><div className="text-xs font-semibold text-text-strong">{selected.kind === 'background' ? '后台命令' : '前台命令'} · {selected.detail}</div><div className="mt-0.5 truncate font-mono text-2xs text-muted" title={selected.command}>{selected.command}</div></div>
-          <button type="button" onClick={() => setSelectedKey(undefined)} className="shrink-0 rounded border border-border bg-bg px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button>
-        </header>
-        <pre className="m-0 max-h-[65vh] overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-5 text-text">{selected.output}</pre>
-      </section>
-    </div>}
-  </>
 }
 
 /**
@@ -1867,13 +1872,13 @@ export const TimelineEntry = memo(function TimelineEntry({
         data-msg-anchor=""
         data-msg-role={message.role}
         className={`group/msg ${user
-        ? 'ml-4 w-fit max-w-[min(560px,85%)] self-end rounded-xl bg-accent-subtle px-3 py-2 shadow-sm md:ml-10'
+        ? 'ml-4 w-fit max-w-[min(560px,85%)] self-end rounded-xl rounded-br-sm border border-aim/20 bg-aim-subtle px-3.5 py-2 text-body-s md:ml-10'
         : assistant
-          ? 'w-full max-w-[90%]'
+          ? 'w-full max-w-[90%] rounded-lg border border-border bg-card px-3.5 py-2.5'
           : 'w-fit max-w-[90%] rounded-lg bg-bg-elevated px-2.5 py-2'}`}>
-        <div className={`mb-1 flex items-center gap-2 text-2xs uppercase tracking-wide text-muted-strong ${user ? 'justify-end' : ''}`}>
+        <div className={`mb-1 flex items-center gap-2 text-2xs text-muted ${user ? 'justify-end' : ''}`}>
           <span className="min-w-0 truncate">
-            {message.role}
+            <span className={`font-semibold ${user ? 'text-aim' : assistant ? 'text-accent' : 'text-muted-strong'}`}>{user ? '你' : assistant ? 'Pi' : message.role}</span>
             {message.channel && <span className="ml-2 normal-case text-accent">来自 {channelLabel(message.channel)}</span>}
             {pending && <span className="ml-2 normal-case text-warn" title={pendingDeliveryTitle(pending)}>{pendingDeliveryLabel(pending, { compacting })}</span>}
           </span>
@@ -1885,7 +1890,7 @@ export const TimelineEntry = memo(function TimelineEntry({
                 onClick={() => onForkAt(forkEntryId)}
                 title="从这一步分叉出一个新的独立会话（原会话继续运行，新会话继承任务分组并排在旁边）"
                 className="cursor-pointer rounded-full px-1.5 py-px normal-case text-2xs text-muted opacity-60 transition-opacity hover:bg-bg-hover hover:text-accent focus-visible:opacity-100 disabled:opacity-50 md:opacity-0 md:group-hover/msg:opacity-100"
-              >{forkingEntryId === forkEntryId ? '分叉中…' : '⑂ 从此分叉'}</button>
+              ><span className="inline-flex items-center gap-1"><LineIcon name="flow" className="h-3 w-3" />{forkingEntryId === forkEntryId ? '分叉中…' : '从此分叉'}</span></button>
             )}
             {canWithdraw && discardEntryId && onWithdrawMessage && (
               <>
@@ -1895,7 +1900,7 @@ export const TimelineEntry = memo(function TimelineEntry({
                   onClick={() => onWithdrawMessage(discardEntryId)}
                   title="撤回这条输入及其后续记录；不会撤销已经执行的工具或外部操作"
                   className="cursor-pointer rounded-full px-1.5 py-px normal-case text-2xs text-warn opacity-70 transition-opacity hover:bg-warn-subtle focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 md:opacity-0 md:group-hover/msg:opacity-100"
-                >{rewindingEntryId === discardEntryId ? '撤回中…' : '↶ 撤回'}</button>
+                ><span className="inline-flex items-center gap-1"><LineIcon name="undo" className="h-3 w-3" />{rewindingEntryId === discardEntryId ? '撤回中…' : '撤回'}</span></button>
                 {editableText !== undefined && (
                   <button
                     type="button"
@@ -1914,9 +1919,9 @@ export const TimelineEntry = memo(function TimelineEntry({
                 onClick={() => onDiscardAfter(discardEntryId)}
                 title="永久删除这条用户输入之后的会话记录；该输入保留，原会话会重启"
                 className="cursor-pointer rounded-full px-1.5 py-px normal-case text-2xs text-danger opacity-70 transition-opacity hover:bg-danger-subtle focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 md:opacity-0 md:group-hover/msg:opacity-100"
-              >{discardingEntryId === discardEntryId ? '处理中…' : '⌫ 丢弃后续'}</button>
+              ><span className="inline-flex items-center gap-1"><LineIcon name="trash" className="h-3 w-3" />{discardingEntryId === discardEntryId ? '处理中…' : '丢弃后续'}</span></button>
             )}
-            <time className="shrink-0 font-mono normal-case text-2xs font-normal text-muted-strong">{timestamp || '—'}</time>
+            <time className="shrink-0 font-mono text-2xs font-normal text-muted">{timestamp || '—'}</time>
           </span>
         </div>
         {message.providerError && <ProviderErrorNotice title="⚠️ 模型请求失败" message={message.providerError} />}
@@ -2009,8 +2014,8 @@ const LiveToolGroup = memo(function LiveToolGroup({ items, thinking, onFileOpen,
   for (const item of items) names.set(item.toolName, (names.get(item.toolName) || 0) + 1)
   const nameSummary = [...names.entries()].map(([name, count]) => count > 1 ? `${name}×${count}` : name).join(', ')
   const progress = errors > 0 ? `${done} 完成 · ${errors} 失败` : done === items.length ? `${done} 完成` : `${done} 完成 · ${items.length - done} 运行中`
-  const tone = errors > 0 ? 'bg-danger-subtle' : 'bg-bg-hover'
-  const bar = errors > 0 ? 'border-l-danger' : done === items.length ? 'border-l-ok' : 'border-l-accent'
+  const tone = errors > 0 ? 'bg-danger-subtle' : 'bg-card hover:bg-bg-hover'
+  const bar = errors > 0 ? 'border-danger/40' : done === items.length ? 'border-border' : 'border-accent/40'
   const dot = errors > 0
     ? 'bg-danger shadow-[0_0_0_3px_var(--danger-subtle)]'
     : done === items.length
@@ -2025,12 +2030,13 @@ const LiveToolGroup = memo(function LiveToolGroup({ items, thinking, onFileOpen,
         aria-expanded={expanded}
         title={expanded ? '收起工具明细' : '展开工具明细'}
         onClick={() => { setExpanded(value => !value); setSelectedKey(null) }}
-        className={`group/tools flex w-full min-w-0 items-center gap-2 rounded-md border-l-2 px-2.5 py-1.5 text-left text-2xs transition-colors ${bar} ${tone}`}
+        className={`group/tools flex w-full min-w-0 items-center gap-2 rounded-lg border px-3 py-1.5 text-left text-2xs transition-colors ${bar} ${tone}`}
       >
         <span className={`h-2 w-2 shrink-0 rounded-full ${dot}${running ? ' animate-pulse' : ''}`} />
-        <span className="shrink-0 font-semibold text-text-strong">工具组：{progress}</span>
+        <LineIcon name="tool" className="h-3.5 w-3.5 text-muted" />
+        <span className="shrink-0 font-body font-medium text-text-strong">工具组：{progress}</span>
         <span className="min-w-0 flex-1 truncate text-muted">{nameSummary}</span>
-        <MaterialIcon name="expand_more" className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform group-hover/tools:text-text ${expanded ? 'rotate-180' : ''}`} />
+        <LineIcon name="chevronDown" className={`h-3.5 w-3.5 text-muted transition-transform group-hover/tools:text-text ${expanded ? 'rotate-180' : ''}`} />
       </button>
       {expanded && (
         <div className="ml-2 mt-1.5 border-l border-border/70 pl-2 animate-fade-in">
@@ -2198,6 +2204,10 @@ export default function LiveSessionPage() {
     }
     return undefined
   }, [detail?.entries])
+  // Latest round = everything after the newest user message; finished commands
+  // from earlier rounds are dropped so the chip row stays short.
+  const latestUserAt = useMemo(() => latestUserMessageAt(detail?.entries || [], features), [detail?.entries, features])
+  const commandChips = useMemo(() => collectCommandChips(toolStates.values(), features, latestUserAt), [toolStates, features, latestUserAt])
   const agentState = useMemo(() => deriveAgentState(summary?.status, detail?.entries || [], toolStates, !!summary?.compacting), [summary?.status, summary?.compacting, detail?.entries, toolStates])
   const activityStatus = summary?.status === 'reconnecting'
     ? 'reconnecting'
@@ -2798,6 +2808,25 @@ export default function LiveSessionPage() {
     void clearSession().catch(() => { /* perform() already surfaced the error */ })
   }
 
+  /**
+   * Header shortcuts: Alt+R refreshes, Alt+C starts a fresh session. Plain
+   * letters belong to the composer and Ctrl/Cmd+R is the browser's reload, so
+   * Alt combos are the only safe lane; typing in any field skips them.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      // macOS turns Option+letter into special characters (®/ç), so match the
+      // physical key (code) rather than the produced character (key).
+      if (event.code === 'KeyR') { event.preventDefault(); refreshNow() }
+      else if (event.code === 'KeyC') { event.preventDefault(); handleClear() }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  })
+
   /** ✕ / Esc / the dimmed backdrop all land here, so the unsaved-edit guard lives
    *  in one place and can render its confirming state on the panel. */
   const requestPanelClose = useCallback(() => {
@@ -2992,7 +3021,8 @@ export default function LiveSessionPage() {
               <MaterialIcon name={tts.enabled ? 'volume_up' : 'volume_off'} className="h-3.5 w-3.5" />语音输出
             </button>
             {speaking && <button type="button" onClick={stopSpeaking} className="flex shrink-0 items-center gap-1 rounded border border-warn bg-warn-subtle px-2 py-0.5 text-2xs text-warn" title="停止朗读"><MaterialIcon name="stop" className="h-3 w-3" />停止朗读</button>}
-            <button type="button" onClick={refreshNow} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent">刷新</button>
+            {activeId && <button type="button" disabled={busy} onClick={handleClear} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-50" title="开始新的空会话（旧对话保留在文件中；快捷键 Alt+C）">清空</button>}
+            <button type="button" onClick={refreshNow} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent" title="重新拉取会话列表和当前对话内容（快捷键 Alt+R）">刷新</button>
           </div>
         </div>
         <LiveSubagentStrip
@@ -3053,9 +3083,9 @@ export default function LiveSessionPage() {
                       ? detail.entries.length === 0 && workflowItems.length === 0
                         ? <div className="py-10 text-center text-sm text-muted">该 session 暂无可显示消息。</div>
                         : timelineItems.map(item => item.type === 'toolGroup'
-                          ? <LiveToolGroup key={`tool-group-${item.items[0]?.index ?? 0}`} items={item.items} thinking={item.thinking} onFileOpen={openTimelineFile} toolStates={toolStates} onReadStart={pauseTimelineFollow} />
+                          ? <LiveToolGroup key={`tool-group-${item.items.map(tool => tool.key).join('|')}`} items={item.items} thinking={item.thinking} onFileOpen={openTimelineFile} toolStates={toolStates} onReadStart={pauseTimelineFollow} />
                           : <TimelineEntry
-                            key={`${item.index}-${typeof item.entry === 'object' && item.entry ? String((item.entry as Record<string, unknown>).type || '') : ''}`}
+                            key={entryAnchorKey(item.entry, item.index)}
                             entry={item.entry} onFileOpen={openTimelineFile} toolStates={toolStates} auxiliary={auxiliary}
                             onForkAt={forkAtEntry} forkingEntryId={forkingEntryId}
                             onDiscardAfter={discardAfterEntry} discardingEntryId={discardingEntryId}
@@ -3068,7 +3098,6 @@ export default function LiveSessionPage() {
                       : <ActivityTimeline activities={activities} onFileOpen={openTimelineFile} />}
                   </div>
                 </div>
-                {auxiliary && <LiveCommandBar toolStates={toolStates} features={features} onMoveToBackground={moveToBackground} />}
                 {summary.compacting && <div role="status" aria-label="上下文压缩中" className="flex items-center gap-2 border-t border-border bg-accent-subtle px-3 py-1 text-2xs text-accent">
                   <MaterialIcon name="sync" spin className="h-3.5 w-3.5 shrink-0" />
                   <span className="min-w-0 truncate">压缩期间发送的消息会排队，压缩完成后自动发送</span>
@@ -3081,6 +3110,7 @@ export default function LiveSessionPage() {
                   onDraftStateChange={setComposerHasDraft}
                   status={summary.status}
                   activity={agentState}
+                  activityExtra={auxiliary && commandChips.length > 0 ? <LiveCommandChips chips={commandChips} onMoveToBackground={moveToBackground} /> : undefined}
                   disabled={busy || summary.status === 'reconnecting'}
                   models={availableModels}
                   currentModel={summary.model}
@@ -3126,6 +3156,7 @@ export default function LiveSessionPage() {
                   onClear={handleClear}
                   onReload={() => { void reload().catch(() => {}) }}
                   onAbort={() => { void abort().catch(() => {}) }}
+                  onSendPrompt={text => { void submit(text) }}
                 />
               </div>
             </div>

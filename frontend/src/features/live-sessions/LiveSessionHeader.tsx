@@ -13,26 +13,26 @@ interface LiveSessionHeaderProps {
 
 export default function LiveSessionHeader({ summary, owned, busy, onClaim, onRelease, onAbort, sidebarVisible = true }: LiveSessionHeaderProps) {
   return (
-    <header className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-2.5">
+    <header className="flex min-h-12 items-center gap-3 border-b border-border bg-card px-4 py-2">
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${summary.status === 'running' ? 'bg-ok animate-pulse' : summary.status === 'reconnecting' ? 'bg-warn' : 'bg-muted'}`} />
-          <h1 className="min-w-0 whitespace-normal break-words text-sm font-semibold text-text-strong" title={summary.sessionName || `Pi session ${summary.pid}`}>{summary.sessionName || `Pi session ${summary.pid}`}</h1>
-          {summary.claim.state === 'claimed' && <span className="text-2xs px-2 py-0.5 rounded-full bg-warn-subtle text-warn">{owned ? '已取得强控制' : '其他端持有强控制'}</span>}
+        <div className="flex items-center gap-2 whitespace-nowrap">
+          <span className={`h-2 w-2 shrink-0 rounded-full ${summary.status === 'running' ? 'bg-ok animate-pulse' : summary.status === 'reconnecting' ? 'bg-warn' : 'bg-muted'}`} />
+          <h1 className="min-w-0 shrink-0 whitespace-nowrap text-title font-semibold text-text-strong" title={summary.sessionName || `Pi session ${summary.pid}`}>{summary.sessionName || `Pi session ${summary.pid}`}</h1>
+          {summary.claim.state === 'claimed' && <span className="shrink-0 whitespace-nowrap text-2xs px-2 py-0.5 rounded-full bg-warn-subtle text-warn">{owned ? '已取得强控制' : '其他端持有强控制'}</span>}
         </div>
         {sidebarVisible ? (
           <div className="mt-1 text-2xs text-muted">{summary.status === 'running' ? '运行中' : summary.status === 'reconnecting' ? '连接中断' : '空闲'} · {summary.mode.toUpperCase()}</div>
         ) : (
           <>
-            <div className="mt-1 text-2xs text-muted font-mono whitespace-normal break-all" title={summary.canonicalCwd}>{displayWorktreePath(summary.canonicalCwd)}</div>
-            <div className="mt-1 text-2xs text-muted whitespace-normal break-all">
+            <div className="mt-1 truncate text-2xs text-muted font-mono" title={summary.canonicalCwd}>{displayWorktreePath(summary.canonicalCwd)}</div>
+            <div className="mt-1 truncate text-2xs text-muted">
               PID {summary.pid} · {summary.mode.toUpperCase()} · {summary.model ? `${summary.model.provider}/${summary.model.id}` : 'model unavailable'}
               {summary.thinkingLevel ? ` · ${summary.thinkingLevel}` : ''}
             </div>
           </>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
         {summary.status === 'running' && owned && (
           <button type="button" disabled={busy} onClick={onAbort} className="px-3 py-1.5 rounded-md border border-danger bg-danger-subtle text-danger text-xs disabled:opacity-50">Abort</button>
         )}
