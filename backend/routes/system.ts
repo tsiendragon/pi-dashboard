@@ -16,6 +16,7 @@ import { resolvePiScript } from '../pi-manager.js'
 import { requireBrowserAuth } from './require-browser-auth.js'
 import * as piEnv from '../pi-env.js'
 import * as memoryStore from '../memory-store.js'
+import * as memoryDrafts from '../memory-drafts.js'
 
 const execAsync = promisify(exec)
 const PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || join(os.homedir(), '.pi', 'agent')
@@ -257,6 +258,19 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
   }))
   app.get('/api/memory/nightly', requireAuth((_req: Request, res: Response) => {
     res.json(memoryStore.getNightlyReview())
+  }))
+  // Drafts stay inert until a human approves them; publishing writes real agent files.
+  app.get('/api/memory/drafts', requireAuth((_req: Request, res: Response) => {
+    res.json({ drafts: memoryDrafts.listDrafts() })
+  }))
+  app.post('/api/memory/drafts/:slug/approve', requireAuth((req: Request, res: Response) => {
+    const result = memoryDrafts.publishDraft(String(req.params.slug))
+    res.status(result.ok ? 200 : 409).json(result)
+  }))
+  app.post('/api/memory/drafts/:slug/reject', requireAuth((req: Request, res: Response) => {
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason : undefined
+    const result = memoryDrafts.rejectDraft(String(req.params.slug), reason)
+    res.status(result.ok ? 200 : 409).json(result)
   }))
   // These legacy endpoints read a database that no longer exists and answered writes with a fake
   // `{ok:true}`. They now fail loudly instead of reporting success they did not achieve.

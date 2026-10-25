@@ -116,17 +116,17 @@ describe('ActivityTimeline', () => {
 
     const activities = screen.getAllByRole('article')
     expect(activities).toHaveLength(2)
-    expect(within(activities[0]!).getByText('活动 1')).toBeTruthy()
+    expect(within(activities[0]!).getByText('#1')).toBeTruthy()
     expect(within(activities[0]!).getByText('核对近期出金订单')).toBeTruthy()
-    // 活动徽标 + 2 个步骤 + 1 个计划要点
-    expect(within(activities[0]!).getAllByText('已完成')).toHaveLength(4)
+    // 已完成的步骤只用对勾图标表示，文字只留在活动徽标上
+    expect(within(activities[0]!).getAllByText('已完成')).toHaveLength(1)
     expect(within(activities[0]!).getByText('检查订单数据')).toBeTruthy()
     expect(within(activities[0]!).getByText('Agent 计划')).toBeTruthy()
     expect(within(activities[0]!).getByText('先核对订单金额、时间与渠道，再确认是否需要升级。')).toBeTruthy()
     expect(within(activities[0]!).getByText('核对订单')).toBeTruthy()
     expect(within(activities[0]!).getByText('接着做了：检查订单数据：orders.csv')).toBeTruthy()
     expect(within(activities[1]!).queryByText('Agent 计划')).toBeNull()
-    expect(within(activities[1]!).getByText('活动 2')).toBeTruthy()
+    expect(within(activities[1]!).getByText('#2')).toBeTruthy()
     expect(within(activities[1]!).getByText('检查风险请求入口')).toBeTruthy()
     expect(within(activities[1]!).getAllByText('进行中')).toHaveLength(2)
     expect(within(activities[1]!).getAllByText('未完成')).toHaveLength(3)
@@ -212,7 +212,7 @@ describe('ActivityTimeline', () => {
     // 文件名跟在操作后面（同一个步骤行），不再另起一列。
     const row = screen.getByText('读取文件').closest('li') as HTMLElement
     expect(within(row).getByText('process.md')).toBeTruthy()
-    fireEvent.click(within(row).getByRole('button', { name: 'process.md' }))
+    fireEvent.click(within(row).getByRole('button', { name: /process\.md/ }))
     expect(onFileOpen).toHaveBeenCalledWith('/repo/docs/process.md')
     expect(within(activity).getByText('排队中的输入')).toBeTruthy()
     expect(within(activity).getByText(/另外在操作步骤可以把文件放在一起吗/)).toBeTruthy()
@@ -256,5 +256,34 @@ describe('ActivityTimeline', () => {
     const image = screen.getByRole('img', { name: '用户发送的图片 1' })
     expect(image).toHaveAttribute('src', 'data:image/png;base64,aGVsbG8=')
     expect(image.className).toContain('object-contain')
+  })
+
+  it('marks file steps as read or write and opens the file on click', () => {
+    const onFileOpen = vi.fn()
+    render(<ActivityTimeline onFileOpen={onFileOpen} activities={[{
+      id: 'activity-1', title: '改阈值', sourceLabel: '用户请求', status: 'done', replies: [],
+      steps: [
+        { id: 'r', label: '读取文件', detail: 'eval.py', path: '/repo/eval.py', status: 'done', entryIndex: 1 },
+        { id: 'w', label: '修改文件', detail: 'v1.yaml', path: '/repo/v1.yaml', status: 'done', entryIndex: 2 },
+      ],
+    }]} />)
+    const read = screen.getByRole('button', { name: /eval\.py/ })
+    const write = screen.getByRole('button', { name: /v1\.yaml/ })
+    expect(within(read).getByText('读')).toBeTruthy()
+    expect(within(write).getByText('写')).toBeTruthy()
+    fireEvent.click(write)
+    expect(onFileOpen).toHaveBeenCalledWith('/repo/v1.yaml')
+  })
+
+  it('merges consecutive bare activities with the same title into one expandable row', () => {
+    const bare = (id: string, time: string) => ({ id, title: '继续目标', sourceLabel: '用户请求', startedAt: `2026-10-24 ${time}`, status: 'pending' as const, steps: [], replies: [] })
+    render(<ActivityTimeline activities={[bare('a', '08:53:19'), bare('b', '09:13:19'), bare('c', '09:33:19')]} />)
+    expect(screen.queryAllByRole('article')).toHaveLength(0)
+    expect(screen.getByText('继续目标 × 3')).toBeTruthy()
+    expect(screen.getByText('08:53 · 09:13 · 09:33')).toBeTruthy()
+    fireEvent.click(screen.getByText('继续目标 × 3'))
+    expect(screen.getAllByRole('article')).toHaveLength(3)
+    fireEvent.click(screen.getByRole('button', { name: '收起这 3 条' }))
+    expect(screen.queryAllByRole('article')).toHaveLength(0)
   })
 })

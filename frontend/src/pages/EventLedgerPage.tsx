@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import type { SupervisorAnalysis, SupervisorEvent } from '../../../shared/src/supervisor'
 import { supervisorApi } from '../features/supervisor/api'
 import { SupervisorAgentButton } from '../features/supervisor/SupervisorAgentProvider'
+import { PendingConfirmations } from '../features/supervisor/PendingConfirmations'
 import { useSupervisorResource } from '../features/supervisor/useSupervisorResource'
 import { EventTimeline } from '../features/supervisor/EventTimeline'
 import { ObjectLink, Reports, Section, WorkingStateView, SupervisorFailure, buttonClass, timeText } from '../features/supervisor/SupervisorViews'
@@ -73,6 +74,7 @@ export default function EventLedgerPage() {
   }
   return <main className="mx-auto max-w-5xl p-4 sm:p-6 space-y-5">
     <header className="flex flex-wrap items-center justify-between gap-3"><div><div className="mb-2"><TasksSectionTabs active="events" /></div><h1 className="text-xl font-semibold">事件流水账</h1><p className="text-muted text-body-s">Tasks 的下一级视图：按稳定对象 UID 查询事实、来源、修订和分析。</p></div><div className="flex gap-2"><button className={buttonClass} onClick={retry}>刷新</button><SupervisorAgentButton objectRef={objectRef || undefined} /></div></header>
+    {objectRef && <PendingConfirmations objectRef={objectRef} />}
     <SupervisorFailure error={state.error} retry={retry} />
     {!!state.error && state.data && <p className="text-danger">监督状态刷新失败，任务范围与报告来自上次采样。</p>}
     {state.loading && !state.data && <p role="status">正在读取任务范围…</p>}

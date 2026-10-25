@@ -51,6 +51,23 @@ hljs.registerLanguage('md', markdown)
 
 const PATH_RE = /^~?(?:\.{0,2}\/)?[\w.@~/ -]*\/[\w.@~ -]*[\w.]$/
 const VIEWABLE_FILE_RE = /\.(?:md|markdown|json|ya?ml|txt|toml|ini|conf|log|tsx?|jsx?|py|sh|bash|zsh|sql|xml|css|html?)$/i
+const HTML_FILE_RE = /\.html?$/i
+
+/**
+ * Small "▶ 预览" chip rendered next to a local .html path. The actual open is
+ * delegated: the container click handler in MarkdownRenderer picks up
+ * `data-preview-path` and routes it through onFileOpen like a path click.
+ */
+function HtmlPreviewButton({ path }: { path: string }) {
+  return (
+    <button
+      type="button"
+      data-preview-path={path}
+      title="在弹窗中预览这个 HTML 页面（图片、视频、JS 都会加载）"
+      className="ml-1 inline-block cursor-pointer rounded border border-accent/50 bg-transparent px-1.5 py-0 align-middle text-2xs leading-4 text-accent hover:bg-accent-subtle"
+    >▶ 预览</button>
+  )
+}
 
 function normalizeLocalPath(value: string): string {
   let path = value.trim()
@@ -149,7 +166,13 @@ const MD_COMPONENTS: Record<string, React.ComponentType<any>> = {
 
     if (!className) {
       if (isOpenableCodeSpan(codeStr)) {
-        return <code className="bg-bg-elevated px-1.5 py-0.5 rounded text-accent text-sm font-mono cursor-pointer hover:underline" title="Click to open / Shift+click to reveal in Finder" {...props}>{children}</code>
+        const path = normalizeLocalPath(codeStr)
+        return (
+          <>
+            <code className="bg-bg-elevated px-1.5 py-0.5 rounded text-accent text-sm font-mono cursor-pointer hover:underline" title="Click to open / Shift+click to reveal in Finder" {...props}>{children}</code>
+            {HTML_FILE_RE.test(path) && <HtmlPreviewButton path={path} />}
+          </>
+        )
       }
       return <code className="bg-bg-elevated px-1.5 py-0.5 rounded text-accent text-sm font-mono" {...props}>{children}</code>
     }
@@ -170,7 +193,16 @@ const MD_COMPONENTS: Record<string, React.ComponentType<any>> = {
   table({ children }: any) { return <div className="overflow-x-auto my-3 -mx-1"><table className="min-w-full border-collapse text-sm">{children}</table></div> },
   th({ children }: any) { return <th className="text-left text-muted text-body-s font-medium px-3 py-2 border-b border-border bg-bg-elevated whitespace-nowrap">{children}</th> },
   td({ children }: any) { return <td className="px-3 py-2 border-b border-border text-sm align-top min-w-[100px] [overflow-wrap:break-word]">{children}</td> },
-  a({ href, children }: any) { return <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-2 decoration-accent/40 hover:decoration-accent">{children}</a> },
+  a({ href, children }: any) {
+    const localPath = normalizeLocalPath(href || '')
+    const isLocalHtml = Boolean(href) && !/^(?:https?:|mailto:|#)/i.test(href) && HTML_FILE_RE.test(localPath) && isOpenablePath(localPath)
+    return (
+      <>
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-2 decoration-accent/40 hover:decoration-accent">{children}</a>
+        {isLocalHtml && <HtmlPreviewButton path={localPath} />}
+      </>
+    )
+  },
   blockquote({ children }: any) { return <blockquote className="border-l-[3px] border-accent pl-3 my-2 text-muted italic">{children}</blockquote> },
   hr() { return <hr className="border-border my-4" /> },
   h1({ children }: any) { return <h1 className="text-xl font-bold mt-4 mb-2 text-text-strong">{children}</h1> },
@@ -241,6 +273,16 @@ export default memo(function MarkdownRenderer({ content, streaming = false, onFi
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const el = e.target as HTMLElement
+    const previewBtn = el.closest('[data-preview-path]') as HTMLElement | null
+    if (previewBtn) {
+      e.preventDefault()
+      const path = previewBtn.getAttribute('data-preview-path') || ''
+      if (path) {
+        if (onFileOpen && !e.shiftKey) onFileOpen(path)
+        else api.revealPath(path)
+      }
+      return
+    }
     const codePath = normalizeLocalPath(el.textContent || '')
     if (el.tagName === 'CODE' && isOpenableCodeSpan(codePath)) {
       e.preventDefault()

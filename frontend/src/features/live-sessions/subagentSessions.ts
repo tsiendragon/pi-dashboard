@@ -43,9 +43,9 @@ export function projectSubagentSessions(
     if (!recordId) continue
     const job = jobs.find(candidate => candidate.kind !== 'workflow'
       && (candidate.sessionId === recordId || (!!textValue(item.workId) && candidate.workId === item.workId)))
-    const workId = textValue(item.workId) || textValue(job?.workId)
+    const workId = textValue(item.workId) || textValue(job?.workId) || recordId
     const live = [...remaining].find(session => session.sessionId === recordId
-      || (!!workId && session.subagentWorkId === workId))
+      || session.subagentWorkId === workId)
     const id = workId || recordId
     if (seen.has(id)) continue
     seen.add(id)
@@ -53,8 +53,17 @@ export function projectSubagentSessions(
     const status = textValue(item.activeRunId) ? 'running'
       : item.needsAttention === true || item.stalled === true ? 'blocked'
         : textValue(item.latestRunStatus) || textValue(job?.status) || taskStatuses[workId] || textValue(item.status)
+    /**
+     * A launch leaves `queued`/`running` behind forever when the caller never asks for
+     * the result (no `subagent_results`), so a finished agent kept reading as 运行中 —
+     * and those rows have no stop and no collapse button, which is exactly how they piled
+     * up on the strip. A live process or an explicit active run is the only proof of work
+     * in progress; without either the row is history and belongs in a folded group.
+     */
+    const projected = projectStatus(status)
+    const orphanedActive = projected === 'active' && !live && !textValue(item.activeRunId)
     result.push({ id, label: textValue(item.label) || textValue(item.task) || '子助手',
-      status, bucket: projectStatus(status), session: live, record: item })
+      status, bucket: orphanedActive ? 'stopped' : projected, session: live, record: item })
   }
   for (const session of remaining) {
     const id = session.subagentWorkId || session.sessionId

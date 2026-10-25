@@ -1,5 +1,5 @@
 /** Image requests follow Toolkit's Qwen, Azure GPT Image, FLUX and MAI wire formats. */
-import { findMemeModel, MEME_MODELS, modelVerification, type MemeAdapter } from './meme-models.js'
+import { findMemeModel, MEME_MODELS, modelVerification, type MemeAdapter, type MemeMode } from './meme-models.js'
 export type MemeProvider = 'dashscope' | 'azure'
 
 export class MemeError extends Error {
@@ -10,7 +10,7 @@ export class MemeError extends Error {
 }
 
 export const MEME_MAX_REFERENCE_BYTES = 8 * 1024 * 1024
-const MAX_OUTPUT_BYTES = 20 * 1024 * 1024
+export const MEME_MAX_OUTPUT_BYTES = 20 * 1024 * 1024
 
 function config() {
   return {
@@ -114,7 +114,7 @@ export function memeProviders() {
   ]
 }
 
-function decodeBase64(value: string, limit: number): Buffer {
+export function decodeBase64(value: string, limit: number): Buffer {
   if (value.length > Math.ceil(limit / 3) * 4) throw new MemeError('图片太大，请换一张较小的图片。')
   if (!value || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
     throw new MemeError('图片编码无效，请重新选择图片。')
@@ -124,7 +124,7 @@ function decodeBase64(value: string, limit: number): Buffer {
   return bytes
 }
 
-function imageMime(bytes: Buffer): string | null {
+export function imageMime(bytes: Buffer): string | null {
   if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return 'image/png'
   if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg'
   if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp'
@@ -154,7 +154,19 @@ interface ProviderResponse {
   output?: { choices?: { message?: { content?: { image?: string }[] } }[] }
 }
 
-export async function generateMeme(input: unknown, fetchImpl: typeof fetch = fetch) {
+export interface PreparedMeme {
+  provider: MemeProvider
+  model: string
+  mode: MemeMode
+  prompt: string
+  style: string
+  reference?: { dataUrl: string; bytes: Buffer; mime: string }
+  endpoint: string
+  init: RequestInit
+}
+
+/** Validates one request and builds the provider call without spending money. */
+export function prepareMeme(input: unknown): PreparedMeme {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new MemeError('请求格式无效。')
   const body = input as Record<string, unknown>
   if (body.provider !== 'azure' && body.provider !== 'dashscope') throw new MemeError('请选择有效的图片服务。')
@@ -215,9 +227,13 @@ export async function generateMeme(input: unknown, fetchImpl: typeof fetch = fet
       }
     }
   }
+  return { provider, model, mode, prompt, style, reference: image, endpoint, init }
+}
+
+export async function runPreparedMeme(prepared: PreparedMeme, fetchImpl: typeof fetch = fetch) {
   let response: Response
   try {
-    response = await fetchImpl(endpoint, { ...init, redirect: 'error', signal: AbortSignal.timeout(180_000) })
+    response = await fetchImpl(prepared.endpoint, { ...prepared.init, redirect: 'error', signal: AbortSignal.timeout(180_000) })
   } catch (error) {
     const timedOut = error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name)
     throw new MemeError(timedOut ? '生成超时；服务可能仍在处理，请勿连续重试。' : '无法连接图片服务，请检查后台配置。', timedOut ? 504 : 502)
@@ -232,11 +248,13 @@ export async function generateMeme(input: unknown, fetchImpl: typeof fetch = fet
   } catch {
     throw new MemeError('图片服务返回了无法读取的结果。', 502)
   }
+  const provider = prepared.provider
+  const model = prepared.model
   const item = result?.data?.[0]
   if (provider === 'azure' && item?.b64_json) {
     let bytes: Buffer
     try {
-      bytes = decodeBase64(item.b64_json, MAX_OUTPUT_BYTES)
+      bytes = decodeBase64(item.b64_json, MEME_MAX_OUTPUT_BYTES)
     } catch {
       throw new MemeError('图片服务返回的图片编码无效或超过 20 MiB。', 502)
     }
@@ -246,6 +264,11 @@ export async function generateMeme(input: unknown, fetchImpl: typeof fetch = fet
   }
   const imageUrl = provider === 'azure' ? item?.url : result?.output?.choices?.[0]?.message?.content?.find(part => part.image)?.image
   if (typeof imageUrl !== 'string' || !validEndpoint(imageUrl)) throw new MemeError('图片服务没有返回有效图片。', 502)
-  // Provider URLs are returned, not fetched by this server (no arbitrary URL proxy).
+  // The job store may fetch this URL to save a local copy; that download is limited to the
+  // configured provider's own domains, so this endpoint never proxies arbitrary URLs.
   return { image: imageUrl, provider, model }
+}
+
+export async function generateMeme(input: unknown, fetchImpl: typeof fetch = fetch) {
+  return runPreparedMeme(prepareMeme(input), fetchImpl)
 }

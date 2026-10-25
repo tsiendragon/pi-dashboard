@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildLiveActivities, buildLiveActivityEvidence, currentActivityDescription, emptyThinkingLabel, groupLiveToolEntries, mergeThinkingParts } from '../features/live-sessions/LiveSessionPage'
+import { buildLiveActivities, buildLiveActivityEvidence, currentActivityDescription, emptyThinkingLabel, entryAnchorKey, groupLiveToolEntries, mergeThinkingParts } from '../features/live-sessions/LiveSessionPage'
 
 function assistant(id: string, calls: Array<{ id: string; name: string }>): Record<string, unknown> {
   return {
@@ -744,5 +744,37 @@ describe('groupLiveToolEntries compact reading', () => {
     ])
     expect(hidden).toEqual({ tools: 0, thinking: 0, other: 0 })
     expect(items.length).toBeGreaterThan(0)
+  })
+})
+
+describe('阅读位置的稳定身份', () => {
+  const history = [
+    { type: 'message', id: 'user-1', message: { role: 'user', content: '看一下服务状态' } },
+    { type: 'message', id: 'assistant-1', message: { role: 'assistant', content: '服务已经起动，冒烟通过。' } },
+  ]
+
+  it('keeps entries keyed by their record when the transcript head is trimmed', () => {
+    const shifted = [{ type: 'message', id: 'older-1', message: { role: 'user', content: '更早的请求' } }, ...history]
+
+    expect(entryAnchorKey(history[1], 1)).toBe(entryAnchorKey(shifted[2], 2))
+    // A tool call keeps one identity across its start/update/end lifecycle.
+    expect(entryAnchorKey({ type: 'tool_execution_update', data: { toolCallId: 'call-1' } }, 3))
+      .toBe('tool:call-1:tool_execution_update')
+  })
+
+  it('keeps a reply readable state when earlier entries disappear', () => {
+    const trimmed = buildLiveActivities(history, 'idle', null)
+    const withOlderHead = buildLiveActivities([
+      { type: 'message', id: 'older-1', message: { role: 'user', content: '更早的请求' } },
+      ...history,
+    ], 'idle', null)
+    const olderActivity = withOlderHead.find(activity => activity.replies.some(reply => reply.text === '服务已经起动，冒烟通过。'))
+    const trimmedActivity = trimmed.find(activity => activity.replies.some(reply => reply.text === '服务已经起动，冒烟通过。'))
+
+    expect(olderActivity).toBeDefined()
+    expect(trimmedActivity).toBeDefined()
+    // The unfold state is keyed by these ids, so they must not move with the index.
+    expect(olderActivity?.id).toBe(trimmedActivity?.id)
+    expect(olderActivity?.replies[0]?.id).toBe(trimmedActivity?.replies[0]?.id)
   })
 })

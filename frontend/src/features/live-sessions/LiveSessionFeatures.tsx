@@ -5,6 +5,7 @@ import { goalProgressOf } from './sessionGoal'
 import GoalAnchorDialog from './goal/GoalAnchorDialog'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import FileBrowser from '../../components/FileBrowser'
+import LineIcon, { type LineIconName } from '../../components/LineIcon'
 import { SupervisorNotificationsSidebarButton } from '../supervisor/SupervisorAgentProvider'
 import { isCollapsedByDefault, projectStatus, projectSubagentSnapshot, stableTaskId, textValue } from './subagentProjection'
 
@@ -14,12 +15,11 @@ function record(value: unknown): RecordValue | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : undefined
 }
 
-const RAIL_ICON = 'h-4 w-4 shrink-0 fill-none stroke-current'
-// Same visual language as the left app sidebar: icon + label row, muted by default.
-const RAIL_BUTTON = 'relative flex min-h-[30px] w-full shrink-0 items-center gap-2 rounded-md px-2.5 py-1 text-xs font-medium outline-none transition duration-150 focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] disabled:opacity-35'
+const RAIL_BUTTON = 'group relative flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] outline-none transition duration-150 focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.96] disabled:opacity-35'
 const RAIL_IDLE = 'text-muted hover:bg-bg-hover hover:text-text'
-const RAIL_ACTIVE = 'bg-accent-subtle text-text-strong'
-const RAIL_DANGER = 'text-danger hover:bg-danger-subtle'
+const RAIL_ACTIVE = 'bg-accent-subtle text-accent'
+const RAIL_DANGER = 'text-muted hover:bg-danger-subtle hover:text-danger'
+const RAIL_NUM = 'absolute right-0 top-0 min-w-[14px] rounded-full border border-card bg-accent px-[3px] text-center font-mono text-2xs font-semibold leading-[12px] text-accent-fg'
 
 const BTW_STATUS_LABEL: Record<string, string> = {
   closed: '未打开',
@@ -32,58 +32,60 @@ const BTW_STATUS_LABEL: Record<string, string> = {
 /** Side-chat transcript roles, in the same words the terminal panel uses. */
 const BTW_ROLE_LABEL: Record<string, string> = { user: '你', assistant: 'BTW', notice: '提示' }
 
-const FEATURE_LABEL: Record<'btw' | 'schedule' | 'subagent' | 'commands', string> = {
+const FEATURE_LABEL: Record<'btw' | 'schedule' | 'subagent' | 'commands' | 'prompts', string> = {
   btw: 'BTW',
   commands: '命令',
   schedule: '调度',
   subagent: '代理',
+  prompts: '快捷',
 }
 
-function FeatureIcon({ kind }: { kind: 'btw' | 'schedule' | 'subagent' | 'commands' | 'files' }) {
-  if (kind === 'files') return <svg viewBox="0 0 24 24" className={RAIL_ICON} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6.5A2 2 0 0 1 5.5 4.5h5l2 2h6A2 2 0 0 1 20.5 8.5v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" /><path d="M3.5 9h17" /></svg>
-  if (kind === 'btw') return <svg viewBox="0 0 24 24" className={RAIL_ICON} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v5a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 4v-4.1A2.5 2.5 0 0 1 5 11.5z" /><path d="M9 8.5h6M9 11h3" /></svg>
-  if (kind === 'schedule') return <svg viewBox="0 0 24 24" className={RAIL_ICON} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3 2M8 3.5l-1.5 1M16 3.5l1.5 1" /></svg>
-  if (kind === 'subagent') return <svg viewBox="0 0 24 24" className={RAIL_ICON} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="7" r="2.5" /><circle cx="18" cy="17" r="2.5" /><path d="m8.3 11 7.4-3M8.3 13l7.4 3" /></svg>
-  return <svg viewBox="0 0 24 24" className={RAIL_ICON} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M7 5h10v14H7zM9.5 8h5M9.5 11h5M9.5 14h3" /><path d="M4 8h3M4 12h3M4 16h3" /></svg>
-}
+/** One-tap quick prompts: long, frequently typed instructions sent to the session. */
+const QUICK_PROMPTS: { id: string; label: string; text: string; icon: LineIconName; tone: string }[] = [
+  { id: 'handoff', label: '交接存档', text: '帮我把目前的进展更新到相关的任务文档里（按 session-handoff 流程写一份交接摘要），我接下来要 clear context，会用新的 session 接着工作。', icon: 'send', tone: 'text-accent' },
+  { id: 'wrap-up', label: '收尾自查 + 提交', text: '把这次会话的所有改动自 review 一遍：确认只包含本任务需要的文件、没有误伤无关改动，按 git 规范 commit（一次一个逻辑改动），然后告诉我提交了什么、还有什么没验证。', icon: 'checkCircle', tone: 'text-ok' },
+  { id: 'continue', label: '新 session 接续', text: '我要在这个目录接着上一个 session 工作：先读任务文档（目标、当前状态、下一步），告诉我你理解到的进展和待办，确认无误后继续。', icon: 'repeat', tone: 'text-warn' },
+  { id: 'acceptance', label: '验收前完整检查', text: '这个任务准备验收了：对照验收标准逐条过一遍，该跑的测试/检查都跑掉，没验证的明确列出来，不要凭感觉说完成。', icon: 'search', tone: 'text-accent' },
+  { id: 'report', label: '日报/周报素材', text: '汇总我最近在这个项目做了什么：完成了什么、卡在哪、下一步计划，用能直接贴进汇报的格式。', icon: 'edit', tone: 'text-ok' },
+]
 
-function ActionIcon({ kind }: { kind: 'interrupt' | 'goal' | 'compact' | 'reload' | 'clear' }) {
-  // Interrupting is "pause the current turn", not "stop the session" — the rails
-  // used to draw a stop square here, which read as a different action.
-  if (kind === 'interrupt') return <svg viewBox="0 0 24 24" className={RAIL_ICON} strokeWidth={1.8} strokeLinecap="round"><path d="M9.5 7v10M14.5 7v10" /></svg>
-  if (kind === 'goal') return <svg viewBox="0 0 24 24" className={RAIL_ICON} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></svg>
-  if (kind === 'compact') return <svg viewBox="0 0 24 24" className={RAIL_ICON} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5" /></svg>
-  if (kind === 'reload') return <svg viewBox="0 0 24 24" className={RAIL_ICON} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 1 1-2.4-5.7" /><path d="M20 4.5V9h-4.5" /></svg>
-  return <svg viewBox="0 0 24 24" className={RAIL_ICON} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15" /><path d="M6.5 7l.9 12.1a1 1 0 0 0 1 .9h7.2a1 1 0 0 0 1-.9L17.5 7" /><path d="M9.5 7V4.5h5V7M10 11v5M14 11v5" /></svg>
-}
+type FeatureKind = 'btw' | 'schedule' | 'subagent' | 'commands' | 'prompts'
+const FEATURE_ICON: Record<FeatureKind, LineIconName> = { prompts: 'bolt', btw: 'bubble', schedule: 'clock', subagent: 'flow', commands: 'terminal' }
+const ACTION_ICON = { interrupt: 'stop', goal: 'target', compact: 'compress', reload: 'refresh', clear: 'trash' } as const satisfies Record<string, LineIconName>
 
-function Feature({ title, icon, count, children }: { title: string; icon: 'btw' | 'schedule' | 'subagent' | 'commands'; count?: number; children: React.ReactNode }) {
-  return <details className="relative w-full shrink-0">
-    <summary className={`${RAIL_BUTTON} cursor-pointer list-none ${RAIL_IDLE}`} title={title} aria-label={title}>
-      <FeatureIcon kind={icon} />
-      <span className="truncate">{FEATURE_LABEL[icon]}</span>
-      {count !== undefined && count > 0 && <span className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-accent px-1 text-center text-[9px] font-semibold leading-[15px] text-accent-fg">{count}</span>}
+function Feature({ title, icon, count, children }: { title: string; icon: FeatureKind; count?: number; children: React.ReactNode }) {
+  return <details className="group relative w-full shrink-0 [&>summary::-webkit-details-marker]:hidden">
+    <summary className={`${RAIL_BUTTON} mx-auto cursor-pointer list-none ${RAIL_IDLE} group-open:bg-accent-subtle group-open:text-accent`} title={`${title}（${FEATURE_LABEL[icon]}）`} aria-label={title}>
+      <LineIcon name={FEATURE_ICON[icon]} className="h-[18px] w-[18px]" />
+      {count !== undefined && count > 0 && <span className={RAIL_NUM}>{count}</span>}
     </summary>
-    <div className="absolute right-full top-0 z-40 mr-2 max-h-[70vh] w-[min(560px,calc(100vw-4rem))] overflow-auto rounded-lg border border-border bg-card p-3 shadow-xl">{children}</div>
+    <div className="absolute right-full top-0 z-40 mr-2 flex max-h-[70vh] w-[min(560px,calc(100vw-4rem))] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border py-0 pl-3.5 pr-2">
+        <LineIcon name={FEATURE_ICON[icon]} className="h-4 w-4 text-accent" />
+        <span className="flex-1 truncate text-body-s font-semibold text-text-strong">{title}</span>
+        <button type="button" title="收起" aria-label={`收起${title}`} className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-bg-hover hover:text-text" onClick={event => event.currentTarget.closest('details')?.removeAttribute('open')}>
+          <LineIcon name="chevronRight" className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto p-3">{children}</div>
+    </div>
   </details>
 }
 
 /** Same dot language as the live-session status dots. */
 const ACTION_DOT_CLASS: Record<'ok' | 'accent' | 'warn', string> = { ok: 'bg-ok', accent: 'bg-accent', warn: 'bg-warn' }
 
-function SessionAction({ label, icon, disabled, danger, onClick, title, badge, dot, goalState }: { label: string; icon: 'interrupt' | 'goal' | 'compact' | 'reload' | 'clear'; disabled?: boolean; danger?: boolean; onClick: () => void; title?: string; badge?: { text: string; tone: 'ok' | 'accent' | 'warn' }; dot?: { tone: 'ok' | 'accent' | 'warn'; pulse?: boolean; hint: string }; goalState?: 'active' | 'paused' | 'complete' }) {
+function SessionAction({ label, icon, disabled, danger, onClick, title, badge, dot, goalState }: { label: string; icon: keyof typeof ACTION_ICON; disabled?: boolean; danger?: boolean; onClick: () => void; title?: string; badge?: { text: string; tone: 'ok' | 'accent' | 'warn' }; dot?: { tone: 'ok' | 'accent' | 'warn'; pulse?: boolean; hint: string }; goalState?: 'active' | 'paused' | 'complete' }) {
   const badgeClass = badge?.tone === 'ok' ? 'bg-ok-subtle text-ok' : badge?.tone === 'warn' ? 'bg-warn-subtle text-warn' : 'bg-accent-subtle text-accent'
-  return <button type="button" onClick={onClick} disabled={disabled} title={title || label} aria-label={title || label} data-goal-state={goalState} className={`relative ${RAIL_BUTTON} ${danger ? RAIL_DANGER : RAIL_IDLE}`}>
-    <ActionIcon kind={icon} />
-    <span className="truncate">{label}</span>
-    {(badge || dot) && <span className="absolute -right-0.5 -top-0.5 flex items-center gap-1">
-      {dot && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ACTION_DOT_CLASS[dot.tone]} ${dot.pulse ? 'animate-pulse' : ''}`} title={dot.hint} aria-hidden="true" />}
-      {badge && <span className={`rounded-full px-1 text-[9px] font-semibold leading-[15px] ${badgeClass}`}>{badge.text}</span>}
-    </span>}
+  const tip = title || label
+  return <button type="button" onClick={onClick} disabled={disabled} title={tip === label ? label : `${label}：${tip}`} aria-label={tip} data-goal-state={goalState} className={`${RAIL_BUTTON} mx-auto ${danger ? RAIL_DANGER : RAIL_IDLE}`}>
+    <LineIcon name={ACTION_ICON[icon]} className="h-[18px] w-[18px]" />
+    {dot && <span className={`absolute right-[5px] top-[5px] h-[7px] w-[7px] rounded-full border-[1.5px] border-card ${ACTION_DOT_CLASS[dot.tone]} ${dot.pulse ? 'animate-pulse' : ''}`} title={dot.hint} aria-hidden="true" />}
+    {badge && <span className={`absolute -right-1 -top-1 rounded-full px-1 font-mono text-2xs font-semibold leading-[14px] ${badgeClass}`}>{badge.text}</span>}
   </button>
 }
 
-export default function LiveSessionFeatures({ features, busy, cwd, status, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, goal, goalLoaded = true, onGoalSync, goalBusy = false, onCompact, onClear, onReload, onAbort }: {
+export default function LiveSessionFeatures({ features, busy, cwd, status, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, goal, goalLoaded = true, onGoalSync, goalBusy = false, onCompact, onClear, onReload, onAbort, onSendPrompt }: {
   features: Record<string, unknown>
   busy?: boolean
   cwd?: string
@@ -111,6 +113,8 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
   onClear: () => void
   onReload: () => void
   onAbort: () => void
+  /** Send one of the quick prompts to the session as a normal user message. */
+  onSendPrompt: (text: string) => void
 }) {
   const btw = record(features.btw)
   const schedule = record(features.schedule)
@@ -203,22 +207,8 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
       ? { text: goalStatusLabel as string, tone: goalProgress.status === 'paused' ? 'warn' as const : goalProgress.status === 'complete' ? 'ok' as const : 'accent' as const }
       : undefined
 
-  return <aside className="relative z-30 flex w-[84px] shrink-0 flex-col items-stretch gap-1.5 overflow-visible border-l border-border bg-card px-1.5 py-2.5">
-    {/* The main Agent entry already lives in the navigation sidebar; do not repeat it in this rail. */}
-    <SupervisorNotificationsSidebarButton className={`${RAIL_BUTTON} ${RAIL_IDLE}`} />
-    <button type="button" onClick={() => setFilesOpen(value => !value)} className={`${RAIL_BUTTON} ${filesOpen ? RAIL_ACTIVE : RAIL_IDLE}`} title="浏览当前工作目录" aria-label="浏览当前工作目录">
-      <FeatureIcon kind="files" />
-      <span>文件</span>
-    </button>
-    {filesOpen && <>
-      <div className="fixed inset-0 z-30 bg-black/10 backdrop-blur-[1px]" onClick={() => setFilesOpen(false)} aria-hidden="true" />
-      <div className="absolute right-full top-2 z-40 mr-3 h-[min(78vh,720px)] w-[min(620px,calc(100vw-3.5rem))] overflow-hidden rounded-xl border border-border bg-card shadow-2xl shadow-black/30 ring-1 ring-white/5">
-        <FileBrowser startPath={cwd} onFileOpen={onFileOpen} onClose={() => setFilesOpen(false)} />
-      </div>
-    </>}
-
-    <div className="flex w-full flex-col items-stretch gap-0.5">
-      {status === 'running' && <SessionAction label="中止" icon="interrupt" danger disabled={busy} onClick={onAbort} title="中止当前回合：Pi 会停下来，已完成的步骤保留（不是可恢复的暂停）" />}
+  return <aside className="relative z-30 flex w-12 shrink-0 flex-col items-center gap-0.5 overflow-visible border-l border-border bg-card py-2">
+    {/* 会话操作 */}
       <SessionAction
         label="目标"
         icon="goal"
@@ -231,15 +221,42 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
       />
       <SessionAction label={compacting ? '压缩中…' : '压缩'} icon="compact" disabled={busy || compacting || status !== 'idle'} onClick={onCompact} title={compacting ? '压缩仍在后台进行，等完成后再试' : '压缩当前会话上下文，释放 token'} />
       <SessionAction label="重载" icon="reload" disabled={busy} onClick={onReload} title="重载扩展 / 技能 / 提示词 / 主题" />
-      {/* Enabled while the session works: `/clear` waits for idle itself, and the old
-          `status !== 'idle'` gate is what made a click vanish without a word. */}
-      {/* One click acts: the two-step arm was only a workaround for browsers that
-          swallow `window.confirm`, and it caused its own failures (a 5s window, a
-          banner that outlived it, a press that vanished while the session was busy).
-          The action is recoverable — the old conversation stays in its file. */}
-      <SessionAction label="清空" icon="clear" danger disabled={busy} onClick={onClear} title={status !== 'idle' ? '点击即开始新的空会话（会等这一轮结束后自动切换；旧对话保留在文件中）' : '点击即开始新的空会话（旧对话保留在文件中）'} />
-    </div>
-    <div className="my-0.5 h-px w-10 self-center rounded-full bg-border" />
+    <div className="my-1.5 h-px w-5 bg-border" />
+
+    {/* 工具面板 */}
+    {/* The main Agent entry already lives in the navigation sidebar; do not repeat it in this rail. */}
+    <SupervisorNotificationsSidebarButton className={`${RAIL_BUTTON} ${RAIL_IDLE}`} />
+    <button type="button" onClick={() => setFilesOpen(value => !value)} className={`${RAIL_BUTTON} mx-auto ${filesOpen ? RAIL_ACTIVE : RAIL_IDLE}`} title="文件：浏览当前工作目录" aria-label="浏览当前工作目录">
+      <LineIcon name="folder" className="h-[18px] w-[18px]" />
+    </button>
+    {filesOpen && <>
+      <div className="fixed inset-0 z-30 bg-black/10 backdrop-blur-[1px]" onClick={() => setFilesOpen(false)} aria-hidden="true" />
+      <div className="absolute right-full top-2 z-40 mr-3 h-[min(78vh,720px)] w-[min(620px,calc(100vw-3.5rem))] overflow-hidden rounded-xl border border-border bg-card shadow-2xl shadow-black/30 ring-1 ring-white/5">
+        <FileBrowser startPath={cwd} onFileOpen={onFileOpen} onClose={() => setFilesOpen(false)} />
+      </div>
+    </>}
+
+    <Feature title="快捷短语" icon="prompts">
+      <div className="space-y-2">
+        {QUICK_PROMPTS.map(p => (
+          <button
+            key={p.id}
+            type="button"
+            disabled={busy}
+            title={p.text}
+            className="flex w-full items-start gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5 text-left transition hover:border-accent hover:bg-bg-hover disabled:opacity-50"
+            onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); onSendPrompt(p.text) }}
+          >
+            <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bg-hover ${p.tone}`}><LineIcon name={p.icon} className="h-4 w-4" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-body-s font-semibold text-text-strong">{p.label}</span>
+              <span className="mt-0.5 line-clamp-2 block text-meta text-muted">{p.text}</span>
+            </span>
+          </button>
+        ))}
+        <div className="px-1 pt-1 text-2xs text-muted">点一条即作为你的消息发送给当前会话。</div>
+      </div>
+    </Feature>
 
     <Feature title="BTW" icon="btw" count={conversation.length}>
       <div className="flex items-center gap-2">
@@ -333,6 +350,16 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
         {conversations.map((item, index) => { const status = projectStatus(item.status); return <div key={stableTaskId(item, index)} className={`rounded border p-2 text-xs ${status === 'attention' ? 'border-danger bg-danger-subtle text-danger' : 'border-border bg-card'}`}><span className="font-mono text-accent">subagent</span> · {textValue(item.label, textValue(item.id, '未命名'))}<span className="float-right">{projectionStatus(item.status)}</span></div> })}
       </div>}
     </Feature>
+
+    <div className="flex-1" />
+      {/* Enabled while the session works: `/clear` waits for idle itself, and the old
+          `status !== 'idle'` gate is what made a click vanish without a word. */}
+      {/* One click acts: the two-step arm was only a workaround for browsers that
+          swallow `window.confirm`, and it caused its own failures (a 5s window, a
+          banner that outlived it, a press that vanished while the session was busy).
+          The action is recoverable — the old conversation stays in its file. */}
+      {status === 'running' && <SessionAction label="中止" icon="interrupt" danger disabled={busy} onClick={onAbort} title="中止当前回合：Pi 会停下来，已完成的步骤保留（不是可恢复的暂停）" />}
+      <SessionAction label="清空" icon="clear" danger disabled={busy} onClick={onClear} title={status !== 'idle' ? '点击即开始新的空会话（会等这一轮结束后自动切换；旧对话保留在文件中）' : '点击即开始新的空会话（旧对话保留在文件中）'} />
 
     {goalOpen && <GoalAnchorDialog
       goal={goal ?? null}

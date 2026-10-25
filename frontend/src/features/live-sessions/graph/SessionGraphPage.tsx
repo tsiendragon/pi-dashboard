@@ -5,7 +5,7 @@ import { useAppDispatch, useAppSelector } from '../../../store'
 import { authenticated } from '../../../store/liveSessionsSlice'
 import { AuthPanel } from '../LiveSessionPage'
 import { liveSessionApi } from '../api'
-import { useLiveSessionsRuntime } from '../useLiveSessions'
+import { useLiveSessionsRefresh } from '../LiveSessionsRuntime'
 import { forkLiveSessionAtStep } from '../forkPlacement'
 import { buildSessionTitles } from '../sessionTitle'
 import BranchDetailPanel from './BranchDetailPanel'
@@ -66,7 +66,7 @@ export function treeActionFeedback(outcome: TreeActionOutcome): { toast?: string
 export default function SessionGraphPage() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
-  const { refresh } = useLiveSessionsRuntime()
+  const { refresh } = useLiveSessionsRefresh()
   const [params, setParams] = useSearchParams()
   const state = useAppSelector(root => root.liveSessions)
   const titles = useMemo(() => buildSessionTitles(state.sessions, state.details), [state.sessions, state.details])

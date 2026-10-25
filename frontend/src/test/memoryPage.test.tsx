@@ -43,6 +43,11 @@ const responses: Record<string, unknown> = {
       { id: 'p2', memoryId: 'm2', suggestedType: 'rule', status: 'proposed', strength: '弱', content: '提交前先跑类型检查', createdAt: Date.now() },
     ],
   },
+  '/api/memory/drafts': {
+    drafts: [
+      { slug: 'skill-use-pnpm', type: 'skill', title: 'use pnpm', status: 'draft', strength: '中', content: 'draft body for skill-use-pnpm', targetHint: '/home/u/.pi/agent/skills/skill-use-pnpm/SKILL.md' },
+    ],
+  },
   '/api/memory/nightly': { available: true, generatedAt: new Date().toISOString(), windowDays: 30, markdown: '# 记忆夜间总结\n\n20 条记忆值得考虑沉淀。' },
   '/api/memory/usage': { windowDays: 7, recallRuns: 2036, recallCandidates: 2404, contextInjected: 90, verified: 0, averageLatencyMs: 11, topUsed: [{ id: 'm1', content: 'use pnpm for installs', injected: 5, verified: 0 }] },
 }
@@ -99,8 +104,8 @@ describe('MemoryPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: '升级建议' }))
     expect(await screen.findByText(/最近一次自动总结/)).toBeInTheDocument()
     expect(await screen.findByText('先在两个仓库复现再升级')).toBeInTheDocument()
-    expect(screen.getByText('证据中')).toBeInTheDocument()
-    expect(screen.getByText('证据弱')).toBeInTheDocument()
+    expect(screen.getAllByText('证据中').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('证据弱').length).toBeGreaterThan(0)
     expect(screen.getByText(/不会自己改记忆/)).toBeInTheDocument()
   })
 
@@ -113,5 +118,24 @@ describe('MemoryPage', () => {
     render(<MemoryPage />)
     fireEvent.click(await screen.findByRole('button', { name: '升级建议' }))
     expect(await screen.findByText(/夜里还没有跑过总结/)).toBeInTheDocument()
+  })
+
+  it('publishes a draft only after the user presses approve', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: RequestInit) => {
+      calls.push(`${String(url)} ${opts?.method ?? 'GET'}`)
+      if (String(url).includes('/approve')) {
+        return new Response(JSON.stringify({ ok: true, publishedPath: '/home/u/.pi/agent/skills/skill-use-pnpm/SKILL.md' }), { status: 200 })
+      }
+      if (String(url).startsWith('/api/memory/drafts')) return new Response(JSON.stringify(responses['/api/memory/drafts']), { status: 200 })
+      return new Response(JSON.stringify(responses['/api/memory/overview']), { status: 200 })
+    }))
+    render(<MemoryPage />)
+    fireEvent.click(await screen.findByRole('button', { name: '升级建议' }))
+    expect(await screen.findByText('draft body for skill-use-pnpm')).toBeInTheDocument()
+    expect(calls.some((call) => call.includes('/approve'))).toBe(false)
+    fireEvent.click(await screen.findByRole('button', { name: '批准并发布' }))
+    expect(await screen.findByText(/已发布：use pnpm/)).toBeInTheDocument()
+    expect(calls.some((call) => call.includes('/approve') && call.endsWith('POST'))).toBe(true)
   })
 })

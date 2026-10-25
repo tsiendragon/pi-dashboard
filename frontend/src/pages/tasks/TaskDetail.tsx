@@ -5,6 +5,7 @@ import { errorText, supervisorApi } from '../../features/supervisor/api'
 import { EventTimeline } from '../../features/supervisor/EventTimeline'
 import { useSupervisorResource } from '../../features/supervisor/useSupervisorResource'
 import { SupervisorAgentButton } from '../../features/supervisor/SupervisorAgentProvider'
+import { PendingConfirmations } from '../../features/supervisor/PendingConfirmations'
 import type { LaneDef, PlanningEntry, SessionRef, TaskFact } from '@shared/tasks.js'
 import { COMPLETION_LABEL, KIND_LABEL, laneOf, statusChipClass, statusLabel } from './helpers'
 import type { Completion, PlanningOverlay } from '@shared/tasks.js'
@@ -87,6 +88,9 @@ export default function TaskDetailPage({ supervised = false, task, entry, sessio
           <button onClick={onClose} className="shrink-0 px-2 py-1 rounded-md text-body-s text-muted hover:text-text hover:bg-bg-hover border border-border">← 返回任务列表</button>
         </div>
 
+        {/* A pending main-agent write stays on the task it targets, so approving never depends on
+            spotting a modal that may have scrolled out of view. */}
+        <PendingConfirmations objectRef={task.uid} />
         {supervised && <div className="rounded-xl border border-accent/30 bg-accent-subtle/40 px-4 py-3"><p className="text-body-s text-muted mb-2">本地任务可以直接修改并保存；其他来源的任务仍保持只读。也可以通过主 Agent 记录或修改。</p><SupervisorAgentButton objectRef={task.uid}>通过主 Agent 记录或修改</SupervisorAgentButton></div>}
         <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           <section className="min-w-0 rounded-xl border border-border bg-card px-5 py-5 shadow-sm">

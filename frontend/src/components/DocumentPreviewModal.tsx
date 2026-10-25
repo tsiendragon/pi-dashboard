@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
 import javascript from 'highlight.js/lib/languages/javascript'
@@ -7,7 +7,10 @@ import python from 'highlight.js/lib/languages/python'
 import bash from 'highlight.js/lib/languages/bash'
 import json from 'highlight.js/lib/languages/json'
 import yaml from 'highlight.js/lib/languages/yaml'
+import xml from 'highlight.js/lib/languages/xml'
 import MarkdownRenderer from './MarkdownRenderer'
+
+const HtmlRenderer = lazy(() => import('./renderers/HtmlRenderer'))
 import InlineComments from './InlineComments'
 import type { Comment } from '../hooks/usePanelState'
 import { useCommentSelection, type CommentTarget } from '../hooks/useCommentSelection'
@@ -28,6 +31,8 @@ hljs.registerLanguage('zsh', bash)
 hljs.registerLanguage('json', json)
 hljs.registerLanguage('yaml', yaml)
 hljs.registerLanguage('yml', yaml)
+hljs.registerLanguage('xml', xml)
+hljs.registerLanguage('html', xml)
 
 interface LanguageInfo {
   id: string
@@ -46,6 +51,8 @@ const LANGUAGE_BY_EXTENSION: Record<string, LanguageInfo> = {
   '.sh': { id: 'bash', label: 'Bash' },
   '.bash': { id: 'bash', label: 'Bash' },
   '.zsh': { id: 'bash', label: 'Bash' },
+  '.html': { id: 'xml', label: 'HTML' },
+  '.htm': { id: 'xml', label: 'HTML' },
 }
 
 export function languageForPreview(path: string): LanguageInfo | null {
@@ -55,6 +62,10 @@ export function languageForPreview(path: string): LanguageInfo | null {
 
 function isMarkdownPath(path: string): boolean {
   return /\.(?:md|markdown)$/i.test(path)
+}
+
+function isHtmlPath(path: string): boolean {
+  return /\.html?$/i.test(path)
 }
 
 function HighlightedSource({ content, language }: { content: string; language: LanguageInfo | null }) {
@@ -103,9 +114,15 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
   const [copied, setCopied] = useState(false)
   const [activeInputRange, setActiveInputRange] = useState<CommentTarget | null>(null)
   const markdown = isMarkdownPath(filePath)
+  const html = isHtmlPath(filePath)
   const language = languageForPreview(filePath)
   const label = markdown ? 'Markdown' : language?.label || 'Text'
-  const commenting = Boolean(onAddComment) && !loading && !error
+  // HTML artifacts default to the rendered page (JS runs in the sandboxed
+  // iframe); the source view keeps line-based commenting available.
+  const [htmlView, setHtmlView] = useState<'preview' | 'source'>('preview')
+  useEffect(() => { setHtmlView('preview') }, [filePath])
+  const showRenderedHtml = html && htmlView === 'preview' && !loading && !error
+  const commenting = Boolean(onAddComment) && !loading && !error && !showRenderedHtml
   const { contextMenu, clampedMenuStyle, handleContextMenu, closeContextMenu } = useCommentSelection(content)
 
   const handleAddComment = useCallback((startLine: number, endLine: number, text: string) => {
@@ -143,6 +160,18 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
           <span className="shrink-0 text-sm">📄</span>
           <span className="min-w-0 flex-1 truncate text-body-s font-mono font-semibold text-text" title={filePath}>{filePath}</span>
           <span className="shrink-0 rounded border border-border bg-bg-elevated px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-muted">{label}</span>
+          {html && !loading && !error && (
+            <span className="flex shrink-0 overflow-hidden rounded border border-border">
+              {(['preview', 'source'] as const).map(view => (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => setHtmlView(view)}
+                  className={`border-none px-2 py-1 text-meta cursor-pointer transition-colors ${htmlView === view ? 'bg-accent-subtle text-accent font-medium' : 'bg-transparent text-muted hover:text-text'}`}
+                >{view === 'preview' ? '预览' : '源码'}</button>
+              ))}
+            </span>
+          )}
           <button
             type="button"
             title={`复制 ${filePath} 的内容`}
@@ -168,6 +197,14 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
           ) : markdown ? (
             <div className="msg-content text-sm leading-relaxed text-text">
               <MarkdownRenderer content={content} baseFilePath={filePath} />
+            </div>
+          ) : showRenderedHtml ? (
+            // The modal section is auto-height, so the iframe needs an explicit
+            // viewport-relative height to be visible at all.
+            <div className="h-[70vh]">
+              <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted">Loading…</div>}>
+                <HtmlRenderer content={content} baseFilePath={filePath} />
+              </Suspense>
             </div>
           ) : (
             <div className="rounded-md border border-border bg-bg-elevated p-3">

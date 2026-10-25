@@ -63,6 +63,16 @@ import { toSpeechText } from '../features/voice/speechText'
 import { loadTtsSettings, subscribeTtsSettings } from '../features/voice/ttsSettings'
 import { appendVoiceTranscript, useVoiceInput } from '../features/voice/useVoiceInput'
 
+/** Quick prompts in the right-edge rail: long, frequently typed instructions
+ *  sent to the agent with one click. */
+const QUICK_PROMPTS: { id: string; label: string; text: string }[] = [
+  { id: 'handoff', label: '🤝 交接存档', text: '帮我把目前的进展更新到相关的任务文档里（按 session-handoff 流程写一份交接摘要），我接下来要 clear context，会用新的 session 接着工作。' },
+  { id: 'wrap-up', label: '✅ 收尾自查 + 提交', text: '把这次会话的所有改动自 review 一遍：确认只包含本任务需要的文件、没有误伤无关改动，按 git 规范 commit（一次一个逻辑改动），然后告诉我提交了什么、还有什么没验证。' },
+  { id: 'continue', label: '🔗 新 session 接续', text: '我要在这个目录接着上一个 session 工作：先读任务文档（目标、当前状态、下一步），告诉我你理解到的进展和待办，确认无误后继续。' },
+  { id: 'acceptance', label: '🔍 验收前完整检查', text: '这个任务准备验收了：对照验收标准逐条过一遍，该跑的测试/检查都跑掉，没验证的明确列出来，不要凭感觉说完成。' },
+  { id: 'report', label: '📝 日报/周报素材', text: '汇总我最近在这个项目做了什么：完成了什么、卡在哪、下一步计划，用能直接贴进汇报的格式。' },
+]
+
 /** One review round: what the comments point at and how to clear them after sending. */
 interface ReviewRequest {
   kind: 'panel' | 'preview' | 'chat'
@@ -195,8 +205,9 @@ export default function ChatPage() {
     }
   }, [handleVoiceInput])
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
+  const [showQuickPrompts, setShowQuickPrompts] = useState(false)
   const [showQuickModelMenu, setShowQuickModelMenu] = useState(false)
-  const [quickAction, setQuickAction] = useState<'compact' | 'clear' | 'model' | undefined>()
+  const [quickAction, setQuickAction] = useState<'compact' | 'clear' | 'model' | 'handoff' | undefined>()
   const [showSearch, setShowSearch] = useState(false)
   const [showWorkbench, setShowWorkbench] = useState(false)
   const [showBtw, setShowBtw] = useState(false)
@@ -398,8 +409,10 @@ export default function ChatPage() {
 
   const handleDocumentLink = useCallback(async (rawPath: string) => {
     const filePath = resolvePath(rawPath, slotCwdRef.current)
-    // Keep binary and HTML artifacts on the existing full document panel path.
-    if (detectFileType(filePath) !== 'text') {
+    // Keep binary artifacts on the existing full document panel path; HTML
+    // goes to the preview modal, which renders the page (JS/images/videos).
+    const fileType = detectFileType(filePath)
+    if (fileType !== 'text' && fileType !== 'html') {
       setDocumentPreview(null)
       void handleFileOpen(rawPath)
       return
@@ -987,6 +1000,13 @@ export default function ChatPage() {
     setQuickAction(kind)
     try { await send(command) } finally { setQuickAction(undefined) }
   }, [quickAction, send, slotRunning])
+
+  /** One-tap quick prompt from the right rail (handoff, wrap-up, …). */
+  const sendQuickPrompt = useCallback(async (text: string): Promise<void> => {
+    if (quickAction || !activeSlot || slotRunning) return
+    setQuickAction('handoff')
+    try { await send(text) } finally { setQuickAction(undefined) }
+  }, [quickAction, activeSlot, slotRunning, send])
 
   const selectQuickModel = useCallback(async (model: ModelLike & { contextWindow?: number }): Promise<void> => {
     const id = modelFullId(model)
@@ -1807,6 +1827,44 @@ export default function ChatPage() {
       </div>
       {splitSlot && slots.some(s => s.key === splitSlot) && (
         <SplitPane slotKey={splitSlot} onClose={() => setSplitSlot(null)} onFileOpen={handleFileOpen} />
+      )}
+      {activeSlot && (
+        <div className="hidden md:flex flex-col items-center gap-2 shrink-0 w-11 pt-3 pb-3 border-l border-border bg-bg">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowQuickPrompts(v => !v)}
+              disabled={!!quickAction || slotRunning || slotStopping}
+              className="flex w-8 h-8 items-center justify-center rounded-md bg-transparent border-none text-muted cursor-pointer hover:text-accent hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="快捷短语：一键发送常用的长指令（交接存档、收尾提交、验收检查等）"
+              aria-label="快捷短语"
+            >
+              {quickAction === 'handoff'
+                ? <span className="text-xs animate-pulse">…</span>
+                : <span className="text-base leading-none">⚡</span>
+              }
+            </button>
+            {showQuickPrompts && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowQuickPrompts(false)} />
+                <div className="absolute right-full top-0 mr-2 z-50 w-60 bg-card border border-border rounded-lg shadow-lg py-1">
+                  <div className="px-3 py-1.5 text-2xs text-muted font-semibold uppercase tracking-wider">快捷短语</div>
+                  {QUICK_PROMPTS.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-body-s text-text hover:bg-bg-hover cursor-pointer bg-transparent border-none"
+                      title={p.text}
+                      onClick={() => { setShowQuickPrompts(false); void sendQuickPrompt(p.text) }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
       {panel.isOpen && (
         <ErrorBoundary key={`panel:${panel.filePath}`} fallback={<div className="flex-[0_0_40%] border-l border-border bg-bg flex flex-col items-center justify-center gap-3 p-6 text-center"><div className="text-sm text-danger">文件渲染失败</div><div className="max-w-full truncate text-xs text-muted" title={panel.filePath}>{panel.filePath}</div><div className="flex items-center gap-2"><a href={`/api/local-file/download?path=${encodeURIComponent(panel.filePath)}`} download className="rounded border border-accent px-3 py-1 text-xs text-accent no-underline hover:bg-accent hover:text-accent-fg">下载原文件</a><button type="button" onClick={() => window.location.reload()} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">重新加载</button><button type="button" onClick={requestPanelClose} className="rounded border border-border px-3 py-1 text-xs text-muted hover:border-accent hover:text-accent">关闭</button></div></div>}>

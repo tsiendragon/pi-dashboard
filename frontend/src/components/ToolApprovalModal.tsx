@@ -73,6 +73,8 @@ export default function ToolApprovalModal() {
     if (e.key === 'Escape') { e.preventDefault(); deny() }
   }
 
+  // Height is capped and the body scrolls, so a large `args` payload can never push
+  // Deny/Approve below the viewport (the gate fails closed after 120s).
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/50" onClick={deny} />
@@ -80,26 +82,26 @@ export default function ToolApprovalModal() {
         role="dialog"
         aria-modal="true"
         onKeyDown={onKeyDown}
-        className="fixed left-1/2 top-1/2 z-50 w-[min(94vw,560px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-bg-elevated p-5 shadow-2xl"
+        className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(90dvh,760px)] w-[min(94vw,560px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-border bg-bg-elevated p-5 shadow-2xl"
       >
-        <div className="mb-1 text-sm font-semibold text-text-strong">
+        <div className="mb-1 shrink-0 text-sm font-semibold text-text-strong">
           Approve tool call
         </div>
-        <div className="mb-3 text-body-s text-muted">
+        <div className="mb-3 shrink-0 text-body-s text-muted">
           The agent wants to run{' '}
           <span className="font-mono font-semibold text-accent">{req.toolName}</span>
         </div>
-        <div className="mb-1 text-2xs font-semibold uppercase tracking-wider text-muted">Arguments (editable)</div>
+        <div className="mb-1 shrink-0 text-2xs font-semibold uppercase tracking-wider text-muted">Arguments (editable)</div>
         <textarea
-          className="mb-1 h-48 w-full resize-y rounded-lg border border-border bg-bg px-3 py-2 font-mono text-meta text-text outline-none focus:border-accent"
+          className="mb-1 min-h-32 w-full flex-1 resize-none rounded-lg border border-border bg-bg px-3 py-2 font-mono text-meta text-text outline-none focus:border-accent"
           value={argsText}
           onChange={(e) => { setArgsText(e.target.value); setParseError(null) }}
           spellCheck={false}
         />
         {parseError && (
-          <div className="mb-2 text-meta text-danger">JSON error: {parseError}</div>
+          <div className="mb-2 shrink-0 text-meta text-danger">JSON error: {parseError}</div>
         )}
-        <div className="mt-3 flex justify-end gap-2">
+        <div className="mt-3 flex shrink-0 flex-wrap justify-end gap-2">
           <button
             className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-danger hover:bg-bg disabled:opacity-40"
             onClick={deny}

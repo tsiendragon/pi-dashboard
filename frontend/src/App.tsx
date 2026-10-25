@@ -25,6 +25,8 @@ import TasksPage from './pages/TasksPage'
 import SettingsPage from './pages/SettingsPage'
 import LiveSessionPage from './features/live-sessions/LiveSessionPage'
 import LiveSessionExtensionUiModal from './features/live-sessions/LiveSessionExtensionUiModal'
+import { LiveSessionsRuntimeProvider } from './features/live-sessions/LiveSessionsRuntime'
+import { PendingConfirmationBadge } from './features/supervisor/PendingConfirmations'
 import SessionOverviewPage from './features/live-sessions/SessionOverviewPage'
 import SessionGraphPage from './features/live-sessions/graph/SessionGraphPage'
 import InsightsPage from './pages/InsightsPage'
@@ -215,6 +217,7 @@ export default function App() {
   return (
     <PluginContextProvider registry={pluginRegistry}>
     <WsContext.Provider value={{ subscribeLogs, subscribeFileChange, wsRef }}>
+    <LiveSessionsRuntimeProvider>
     <SupervisorAgentProvider>
     <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} onToggleSidebar={toggleNav} />
     <SessionPicker open={sessionPickerOpen} onOpenChange={setSessionPickerOpen} />
@@ -346,10 +349,10 @@ export default function App() {
           </div>
         ))}
 
+        <PendingConfirmationBadge collapsed={navCollapsed} />
         <SupervisorAgentSidebarButton className={`mt-2 flex items-center rounded-md p-2 text-body-s text-accent hover:bg-bg-hover ${navCollapsed ? 'justify-center' : ''}`} />
         {/* Plugin sidebar panels (contributed through the `sidebar-panel` slot) */}
         <SidebarPanelSlot />
-        <SupervisorAgentSidebarButton className={`mt-2 flex items-center rounded-md p-2 text-body-s text-accent hover:bg-bg-hover ${navCollapsed ? 'justify-center' : ''}`} />
         {/* Watermark */}
         <div className={`mt-auto pt-4 pb-2 border-t border-border transition duration-[350ms] ${navCollapsed ? 'opacity-0 h-0 overflow-hidden p-0 m-0' : ''}`}>
           <div className="px-1">
@@ -392,6 +395,8 @@ export default function App() {
 
       {/* Mobile bottom tab bar — hidden when virtual keyboard is open */}
       <nav className={`md:hidden flex justify-around items-center bg-bg border-t border-border px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0.5rem))] ${keyboardOpen || isNativeApp ? 'hidden' : ''}`}>
+        {/* Narrow screens have no sidebar, so the badge rides the bottom bar instead. */}
+        <PendingConfirmationBadge collapsed />
         <SupervisorAgentSidebarButton className="px-2 py-1 text-2xs text-accent" />
         {visibleNav.map(n => (
           <button
@@ -412,6 +417,7 @@ export default function App() {
       <LiveSessionExtensionUiModal />
     </div>
     </SupervisorAgentProvider>
+    </LiveSessionsRuntimeProvider>
     </WsContext.Provider>
     </PluginContextProvider>
   )

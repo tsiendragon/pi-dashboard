@@ -14,8 +14,8 @@ interface LiveSubagentPanelProps {
 }
 
 type PanelItem =
-  | { kind: 'message'; index: number; role: string; text: string; thinking?: string; toolName?: string; toolCallId?: string; isError?: boolean }
-  | { kind: 'tool'; index: number; name: string; output: string; isError: boolean; toolCallId?: string }
+  | { kind: 'message'; anchor: string; index: number; role: string; text: string; thinking?: string; toolName?: string; toolCallId?: string; isError?: boolean }
+  | { kind: 'tool'; anchor: string; index: number; name: string; output: string; isError: boolean; toolCallId?: string }
 
 function textOf(value: unknown): string {
   if (typeof value === 'string') return value
@@ -77,6 +77,29 @@ function toolFromEntry(entry: unknown): { name: string; output: string; isError:
   }
 }
 
+/**
+ * Stable key for one panel row.
+ *
+ * Positions shift while the subagent works (stream placeholders are folded away and
+ * long transcripts are trimmed), and a shifted key remounts the row — which silently
+ * closes the「思考过程」or tool detail the reader had just opened.
+ */
+function panelItemAnchor(entry: unknown, index: number, toolCallId?: string): string {
+  if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+    const record = entry as Record<string, unknown>
+    if (typeof record.id === 'string' && record.id) return `entry:${record.id}`
+    const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
+    const message = data?.message && typeof data.message === 'object' && !Array.isArray(data.message)
+      ? data.message as Record<string, unknown>
+      : record.message && typeof record.message === 'object' && !Array.isArray(record.message)
+        ? record.message as Record<string, unknown>
+        : undefined
+    if (typeof message?.id === 'string' && message.id) return `message:${message.id}`
+  }
+  if (toolCallId) return `tool:${toolCallId}`
+  return `pos:${index}`
+}
+
 function panelItems(entries: unknown[]): PanelItem[] {
   const lastUpdate = entries.reduce((last, entry, index) => {
     if (entry && typeof entry === 'object' && !Array.isArray(entry) && (entry as Record<string, unknown>).type === 'message_update') return index
@@ -88,10 +111,10 @@ function panelItems(entries: unknown[]): PanelItem[] {
     const type = (entry as Record<string, unknown>).type
     if (type === 'message_end' || type === 'message' || (type === 'message_update' && index === lastUpdate)) {
       const message = messageFromEntry(entry)
-      if (message) items.push({ kind: 'message', index, ...message })
+      if (message) items.push({ kind: 'message', anchor: panelItemAnchor(entry, index, message.toolCallId), index, ...message })
     } else if (type === 'tool_execution_end') {
       const tool = toolFromEntry(entry)
-      if (tool) items.push({ kind: 'tool', index, ...tool })
+      if (tool) items.push({ kind: 'tool', anchor: panelItemAnchor(entry, index, tool.toolCallId), index, ...tool })
     }
   })
   // The same result can arrive twice: as the tool-execution event that finished
@@ -156,7 +179,7 @@ export default function LiveSubagentPanel({ summary, detail, loading = false, di
         {!loading && detail && items.length > 0 && <div className="space-y-2">
           {items.map(item => item.kind === 'tool' ? (
             <ToolResultCard
-              key={`${item.kind}-${item.index}`}
+              key={item.anchor}
               text={item.output.trim() ? item.output : '（无输出文本）'}
               toolName={item.name}
               toolCallId={item.toolCallId}
@@ -164,14 +187,14 @@ export default function LiveSubagentPanel({ summary, detail, loading = false, di
             />
           ) : item.role === 'toolResult' ? (
             <ToolResultCard
-              key={`${item.kind}-${item.index}`}
+              key={item.anchor}
               text={item.text}
               toolName={item.toolName}
               toolCallId={item.toolCallId}
               isError={item.isError}
             />
           ) : (
-            <article key={`${item.kind}-${item.index}`} className={`rounded border px-2.5 py-2 ${item.role === 'user' ? 'ml-8 border-accent bg-accent-subtle' : 'mr-2 border-border bg-card'}`}>
+            <article key={item.anchor} className={`rounded border px-2.5 py-2 ${item.role === 'user' ? 'ml-8 border-accent bg-accent-subtle' : 'mr-2 border-border bg-card'}`}>
               <div className="mb-1 text-2xs font-medium text-muted">{roleLabel(item.role)}</div>
               {item.thinking && <details className="mb-1 rounded bg-bg px-2 py-1 text-2xs text-muted">
                 <summary className="cursor-pointer">思考过程</summary>

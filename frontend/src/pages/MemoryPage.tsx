@@ -67,6 +67,17 @@ interface PromotionProposal {
   createdAt: number
 }
 
+interface MemoryDraft {
+  slug: string
+  type: string
+  title: string
+  status: string
+  strength?: string
+  content: string
+  targetHint: string
+  publishedPath?: string
+}
+
 interface NightlyReview {
   available: boolean
   generatedAt?: string
@@ -138,6 +149,9 @@ export default function MemoryPage() {
   const [usage, setUsage] = useState<MemoryUsageResponse | null>(null)
   const [proposals, setProposals] = useState<PromotionProposal[]>([])
   const [nightly, setNightly] = useState<NightlyReview | null>(null)
+  const [drafts, setDrafts] = useState<MemoryDraft[]>([])
+  const [draftMessage, setDraftMessage] = useState<string>('')
+  const [busySlug, setBusySlug] = useState<string>('')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -153,6 +167,8 @@ export default function MemoryPage() {
         const promotionPayload = (await api.memoryPromotions(50)) as { proposals?: PromotionProposal[] }
         setProposals(Array.isArray(promotionPayload?.proposals) ? promotionPayload.proposals : [])
         setNightly((await api.memoryNightly()) as NightlyReview)
+        const draftPayload = (await api.memoryDrafts()) as { drafts?: MemoryDraft[] }
+        setDrafts(Array.isArray(draftPayload?.drafts) ? draftPayload.drafts : [])
       }
       } catch (error) {
         setErrorText(error instanceof Error ? error.message : String(error))
@@ -177,6 +193,37 @@ export default function MemoryPage() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  const actOnDraft = useCallback(
+    async (draft: MemoryDraft, action: 'approve' | 'reject') => {
+      setBusySlug(draft.slug)
+      setDraftMessage('')
+      try {
+        const result = (action === 'approve' ? await api.approveMemoryDraft(draft.slug) : await api.rejectMemoryDraft(draft.slug)) as {
+          ok?: boolean
+          error?: string
+          publishedPath?: string
+          hint?: string
+        }
+        if (result?.ok) {
+          setDraftMessage(
+            action === 'approve'
+              ? `已发布：${draft.title} → ${result.publishedPath ?? ''}${result.hint ? `（${result.hint}）` : ''}`
+              : `已拒绝：${draft.title}`,
+          )
+        } else {
+          setDraftMessage(`没有发布：${draft.title} · ${result?.error ?? '未知原因'}`)
+        }
+        const payload = (await api.memoryDrafts()) as { drafts?: MemoryDraft[] }
+        setDrafts(Array.isArray(payload?.drafts) ? payload.drafts : [])
+      } catch (error) {
+        setDraftMessage(error instanceof Error ? error.message : String(error))
+      } finally {
+        setBusySlug('')
+      }
+    },
+    [],
+  )
 
   const needsAuth = useMemo(() => /authentication_required|401/.test(errorText), [errorText])
 
@@ -310,6 +357,41 @@ export default function MemoryPage() {
                   <div className="mt-1 break-words text-body-s text-text">{proposal.content}</div>
                 </div>
               ))}
+            </div>
+            <div className="space-y-2">
+              <div className="text-2xs text-muted">待你批准发布的草稿（{drafts.filter((draft) => draft.status === 'draft').length}）</div>
+              {draftMessage && <div className="rounded border border-border bg-card px-3 py-2 text-body-s text-text">{draftMessage}</div>}
+              {drafts.filter((draft) => draft.status === 'draft').length === 0 && (
+                <div className="text-body-s text-muted">没有待批准的草稿。夜里生成的草稿会出现在这里，批准后才会写到真实位置。</div>
+              )}
+              {drafts
+                .filter((draft) => draft.status === 'draft')
+                .map((draft) => (
+                  <div key={draft.slug} className="rounded-lg border border-border bg-card px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2 text-2xs text-muted">
+                      <span className="rounded bg-bg-hover px-1.5 py-0.5">{draft.type}</span>
+                      <span className={draft.strength === '强' ? 'text-success' : 'text-warning'}>证据{draft.strength ?? '未知'}</span>
+                      <span className="truncate" title={draft.targetHint}>发布到：{draft.targetHint}</span>
+                    </div>
+                    <div className="mt-2 whitespace-pre-wrap break-words text-body-s text-text">{draft.content}</div>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        className="rounded border border-border px-3 py-1 text-body-s hover:bg-bg-hover"
+                        disabled={busySlug === draft.slug || needsAuth}
+                        onClick={() => void actOnDraft(draft, 'approve')}
+                      >
+                        {busySlug === draft.slug ? '处理中…' : '批准并发布'}
+                      </button>
+                      <button
+                        className="rounded border border-border px-3 py-1 text-body-s text-muted hover:bg-bg-hover"
+                        disabled={busySlug === draft.slug || needsAuth}
+                        onClick={() => void actOnDraft(draft, 'reject')}
+                      >
+                        拒绝
+                      </button>
+                    </div>
+                  </div>
+                ))}
             </div>
             {nightly?.markdown && (
               <details className="rounded-lg border border-border bg-card px-4 py-3">

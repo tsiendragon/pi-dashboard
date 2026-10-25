@@ -189,7 +189,7 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
         ) : fileType === 'image' ? (
           <Suspense fallback={LOADING_FALLBACK}><ImageRenderer filePath={filePath} /></Suspense>
         ) : fileType === 'html' && mode === 'preview' ? (
-          <Suspense fallback={LOADING_FALLBACK}><HtmlRenderer content={content} onSelect={handleIframeSelect} reloadKey={htmlReloadKey} /></Suspense>
+          <Suspense fallback={LOADING_FALLBACK}><HtmlRenderer content={content} baseFilePath={filePath} onSelect={handleIframeSelect} reloadKey={htmlReloadKey} /></Suspense>
         ) : (
           <TextRenderer
             content={content}

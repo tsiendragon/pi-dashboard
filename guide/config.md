@@ -64,6 +64,7 @@
 | `large-read-pack.json` | 可选（**已否决，默认关闭**） | 大文件读取打包；代码保留，需要时在 Extension config 点「创建并保存」恢复 |
 | `tsien-memory.json` | 可选 | **按项目解析**（`<cwd>/.pi/`） |
 | `rtk-config.json` | 可选 | **按项目解析**（`<cwd>/.pi/`） |
+| `subagent-models.json` | 推荐 | 子任务模型档位（light/medium/heavy/ultra）与候选顺序，由 `pi-tsien-subagent-workbench` 读取；可用 `PI_SUBAGENT_MODEL_CONFIG` 指向别处。缺失时退回旧变量 `PI_SUBAGENT_EXECUTION_MODEL`，两者都没有则子任务直接报错，不再有内置默认模型。可在 **Settings → Subagent Models / 子任务模型** 编辑 |
 
 缺失即用扩展内置默认值；多数可在 dashboard 的 **Settings → general → Extension config** 改（见 §3）。
 
@@ -148,6 +149,7 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `AZURE_OPENAI_IMAGE_AUTH` | `bearer` 沿用 Toolkit 网关认证；原生 Azure API key 选 `api-key` | `bearer` |
 | `AZURE_FLUX2_API_KEY` / `AZURE_FLUX2_ENDPOINT` | 可选 FLUX.2 独立密钥与完整生成/参考图编辑 URL；不配置时沿用 Azure 图片密钥，从图片基础地址派生 `/providers/blackforestlabs/v1/flux-2-pro?api-version=preview`。参考图通过 `input_image` base64 提交。FLUX 1.1 Pro 独立沿用 `AZURE_OPENAI_IMAGE_API_KEY` 与图片基础地址，派生同前缀的 `/flux-pro-1.1?api-version=preview`，不使用此 FLUX.2 专用覆盖项 | 沿用/派生 |
 | `AZURE_MAI_IMAGE_API_KEY` / `AZURE_MAI_IMAGE_ENDPOINT` | 可选 MAI 独立密钥与基础地址；不配置时沿用 Azure 图片密钥，基础域名将 `.cognitiveservices.azure.com` 换成 `.services.ai.azure.com`；调用 `/mai/v1/images/generations?api-version=preview`，固定使用 `api-key` 认证 | 沿用/派生 |
+| `MEME_OUTPUT_DIR` | 表情包工坊的生成图片与历史索引保存目录；支持 `~/` 前缀，不存在时自动创建 | `~/.pi/dashboard/memes` |
 | `PI_BEDROCK_PROFILE` / `AWS_PROFILE` | Bedrock profile（未设 `AWS_PROFILE` 时回退） | 无 |
 
 > 语音输入使用 `DASHSCOPE_API_KEY` 和上述 DashScope 端点：浏览器通过同源 WebSocket 将 16 kHz 音频流交给 dashboard 后端，再调用 `qwen3-asr-flash-realtime`；录音停止后接收最终文本。它不需要新增环境变量。批量识别接口 `/api/asr/transcribe` 仍保留给非实时调用方。

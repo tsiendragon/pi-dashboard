@@ -11,13 +11,32 @@ export default function LiveSubagentStrip({ items, focusedId, confirmCloseId, cl
   onStop: (item: SubagentSessionItem) => void
 }) {
   const [hidden, setHidden] = useState<Record<string, string>>({})
+  /**
+   * Rows the reader asked to see again.
+   *
+   * A record whose process is gone is history: the parent agent does not come back to it
+   * and nobody reads it. Keeping those rows on screen is what left a dozen finished
+   * subagents in「需要处理」forever, so they collapse themselves. Failures stay — their
+   * reason is worth reading — and「恢复」brings every collapsed row back without deleting
+   * anything.
+   */
+  const [revealed, setRevealed] = useState<Record<string, string>>({})
   const signature = (item: SubagentSessionItem) => JSON.stringify([item.status, item.record?.latestRunId, item.record?.error, item.session?.processInstanceId])
-  const isHidden = (item: SubagentSessionItem) => item.bucket !== 'active' && hidden[item.id] === signature(item)
+  const isAutoHidden = (item: SubagentSessionItem) => !item.session
+    && item.bucket !== 'active'
+    && !isFailedSubagent(item.status)
+    && revealed[item.id] !== signature(item)
+  const isHidden = (item: SubagentSessionItem) => isAutoHidden(item)
+    || (item.bucket !== 'active' && hidden[item.id] === signature(item))
   const hiddenItems = items.filter(isHidden)
   const visible = items.filter(item => !isHidden(item))
   const groups = subagentGroups(visible)
   const failed = groups.attention.filter(item => isFailedSubagent(item.status))
   const attention = groups.attention.filter(item => !isFailedSubagent(item.status))
+  const restoreHidden = (): void => {
+    setHidden({})
+    setRevealed(Object.fromEntries(items.map(item => [item.id, signature(item)])))
+  }
   if (!items.length) return null
   const rows = (entries: SubagentSessionItem[]) => <div className="flex flex-wrap gap-1.5">
     {entries.map(item => <div key={item.id} className={`flex min-w-0 max-w-full items-center rounded border text-xs ${focusedId === item.id ? 'border-accent bg-accent-subtle' : 'border-border bg-card'}`}>
@@ -50,8 +69,8 @@ export default function LiveSubagentStrip({ items, focusedId, confirmCloseId, cl
       <div className="mt-1">{rows(groups[key])}</div>
     </details>)}
     {hiddenItems.length > 0 && <div className="flex flex-wrap items-center gap-2 text-2xs text-muted">
-      <span>本页已收起 · {hiddenItems.length}（历史未删除）</span>
-      <button type="button" className="rounded px-2 py-1 hover:text-accent focus-visible:outline-accent" onClick={() => setHidden({})}>恢复收起的记录</button>
+      <span>已收起 · {hiddenItems.length}（无实时连接的记录会自动收起；历史未删除）</span>
+      <button type="button" className="rounded px-2 py-1 hover:text-accent focus-visible:outline-accent" onClick={restoreHidden}>恢复收起的记录</button>
     </div>}
   </section>
 }

@@ -1167,17 +1167,17 @@ export default function ExtensionsPage() {
 
       {pending && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-lg rounded-lg border border-border bg-card p-4 shadow-xl">
-            <div className="flex items-center gap-2">
+          <div className="flex max-h-[min(90dvh,720px)] w-full max-w-lg flex-col rounded-lg border border-border bg-card p-4 shadow-xl">
+            <div className="flex shrink-0 items-center gap-2">
               <span className="text-sm font-semibold text-text-strong">{pending.title}</span>
               <TextButton title="取消（Esc）" onClick={() => setPending(null)}>✕</TextButton>
             </div>
-            <ul className="mt-2 space-y-1 rounded border border-border bg-bg/40 px-3 py-2 font-mono text-[11px] text-muted">
+            <ul className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto rounded border border-border bg-bg/40 px-3 py-2 font-mono text-[11px] text-muted">
               {pending.diff.map(line => <li key={line} className="break-all">{line}</li>)}
             </ul>
-            <div className="mt-2 text-[11px] text-amber-300">{pending.note}</div>
-            <div className="mt-1 text-[11px] text-muted">写前会把 settings.json 备份到 agent 目录的 backups/，改动是原子写入；取消不会写盘。</div>
-            <div className="mt-3 flex justify-end gap-2">
+            <div className="mt-2 shrink-0 text-[11px] text-amber-300">{pending.note}</div>
+            <div className="mt-1 shrink-0 text-[11px] text-muted">写前会把 settings.json 备份到 agent 目录的 backups/，改动是原子写入；取消不会写盘。</div>
+            <div className="mt-3 flex shrink-0 justify-end gap-2">
               <TextButton disabled={busy} onClick={() => setPending(null)}>取消（Esc）</TextButton>
               <TextButton
                 tone="ok"

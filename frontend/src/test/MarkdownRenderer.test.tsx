@@ -107,3 +107,31 @@ describe('TextRenderer markdown images', () => {
     )
   })
 })
+
+describe('MarkdownRenderer HTML preview button', () => {
+  it('offers a preview button next to an inline .html path and opens it on click', () => {
+    const onFileOpen = vi.fn()
+    render(<MarkdownRenderer content={'报告已生成：`/tmp/report/index.html`'} onFileOpen={onFileOpen} />)
+
+    const button = screen.getByRole('button', { name: '▶ 预览' })
+    expect(button).toHaveAttribute('data-preview-path', '/tmp/report/index.html')
+    fireEvent.click(button)
+    expect(onFileOpen).toHaveBeenCalledWith('/tmp/report/index.html')
+  })
+
+  it('offers a preview button next to a local .html link, but not for http links or other files', () => {
+    const onFileOpen = vi.fn()
+    render(
+      <MarkdownRenderer
+        content={'[报告](out/report.html) [外链](https://example.com/page.html) [笔记](notes/a.md)'}
+        onFileOpen={onFileOpen}
+      />,
+    )
+
+    const buttons = screen.getAllByRole('button', { name: '▶ 预览' })
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0]).toHaveAttribute('data-preview-path', 'out/report.html')
+    fireEvent.click(buttons[0])
+    expect(onFileOpen).toHaveBeenCalledWith('out/report.html')
+  })
+})

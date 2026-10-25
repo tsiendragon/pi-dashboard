@@ -56,6 +56,7 @@ export default {
         '2xs': ['11px', { lineHeight: '16px' }],
         meta: ['12px', { lineHeight: '18px' }],
         'body-s': ['13px', { lineHeight: '20px' }],
+        title: ['14px', { lineHeight: '20px' }],
       },
       borderRadius: {
         sm: 'var(--radius-sm)',
