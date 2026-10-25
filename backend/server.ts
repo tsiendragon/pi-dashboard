@@ -32,6 +32,7 @@ import {
   registerUsageRoutes,
   registerTimingRoutes,
   registerCodeChurnRoutes,
+  registerSubagentStatsRoutes,
   registerPtyRoutes,
   registerLarkRoutes,
   registerTaskRoutes,
@@ -67,6 +68,7 @@ import { UsageLedger } from './usage-ledger.js'
 import { UsageLimitsService } from './usage-limits.js'
 import { TimingLedger } from './timing-ledger.js'
 import { CodeChurnLedger } from './code-churn.js'
+import { SubagentStatsLedger } from './subagent-stats.js'
 import { handlePtyConnection, shutdownPtyClients } from './pty-manager.js'
 import { ASR_REALTIME_PATH, handleAsrRealtimeConnection } from './asr-realtime.js'
 
@@ -126,6 +128,7 @@ void timingLedger.start()
   .then(() => timingLedger.getReport('month'))
   .catch(error => console.error('[timing] Failed to load ledger:', error))
 const codeChurnLedger = new CodeChurnLedger()
+const subagentStatsLedger = new SubagentStatsLedger()
 void codeChurnLedger.start()
   .catch(error => console.error('[churn] Failed to scan session files:', error))
 let liveSessionRoutes: LiveSessionRoutes | undefined
@@ -979,6 +982,7 @@ registerIntegrationRoutes(routeDeps)
 registerUsageRoutes({ app, ledger: usageLedger, limits: usageLimits })
 registerTimingRoutes({ app, ledger: timingLedger })
 registerCodeChurnRoutes({ app, ledger: codeChurnLedger })
+registerSubagentStatsRoutes({ app, ledger: subagentStatsLedger })
 registerExtConfigRoutes({ app, auth: liveSessionAuth })
 registerPiExtListRoutes({ app })
 registerSubagentModelsRoutes({ app, manager, auth: liveSessionAuth })

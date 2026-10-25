@@ -2,19 +2,21 @@ import { useSearchParams } from 'react-router-dom'
 import UsagePage from './UsagePage'
 import TimePage from './TimePage'
 import ModelLeaderboard from './ModelLeaderboard'
+import SubagentStatsPage from './SubagentStatsPage'
 
-type TabId = 'cost' | 'time' | 'models'
+type TabId = 'cost' | 'time' | 'models' | 'subagents'
 
 const TABS: { id: TabId; label: string; title: string; subtitle: string }[] = [
   { id: 'cost', label: '成本', title: 'Cost · Time · 模型榜', subtitle: '成本、耗时与模型能力排行，统一入口' },
   { id: 'time', label: '耗时', title: 'Cost · Time · 模型榜', subtitle: '成本、耗时与模型能力排行，统一入口' },
   { id: 'models', label: '模型排行榜', title: 'Cost · Time · 模型榜', subtitle: '成本、耗时与模型能力排行，统一入口' },
+  { id: 'subagents', label: '子 Agent', title: 'Cost · Time · 模型榜', subtitle: '成本、耗时与模型能力排行，统一入口' },
 ]
 
 export default function InsightsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const tab: TabId = tabParam === 'time' || tabParam === 'models' ? tabParam : 'cost'
+  const tab: TabId = tabParam === 'time' || tabParam === 'models' || tabParam === 'subagents' ? tabParam : 'cost'
   const active = TABS.find(t => t.id === tab) ?? TABS[0]
 
   const selectTab = (id: TabId) => {
@@ -56,6 +58,7 @@ export default function InsightsPage() {
       {tab === 'cost' && <UsagePage embedded />}
       {tab === 'time' && <TimePage embedded />}
       {tab === 'models' && <ModelLeaderboard />}
+      {tab === 'subagents' && <SubagentStatsPage embedded />}
     </div>
   )
 }
