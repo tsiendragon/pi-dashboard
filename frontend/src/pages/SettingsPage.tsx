@@ -1,6 +1,8 @@
+import type React from 'react'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PageHeader, Card, CardTitle } from '../components/ui'
+import LineIcon, { type LineIconName } from '../components/LineIcon'
+import { useLocale, setLocale } from '../utils/i18n'
 import MaterialIcon from '../components/MaterialIcon'
 import InfoTip from '../components/InfoTip'
 import { api, j } from '../api/client'
@@ -45,48 +47,99 @@ type Tab = 'general' | 'model' | 'models' | 'subagent-models' | 'behavior' | 'te
 
 /* ── Shared form components ── */
 
-function Toggle({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
+/** 设置卡片：圆角、整卡一块；标题缩进与行一致，内部子块统一左右内边距。 */
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <label className="flex items-center justify-between cursor-pointer group py-2">
-      <div>
-        <span className="text-body-s text-text group-hover:text-text-strong transition-colors">{label}</span>
-        {hint && <div className="text-meta text-muted opacity-60 mt-0.5">{hint}</div>}
-      </div>
-      <div className={`w-9 h-5 rounded-full relative transition-colors shrink-0 ml-4 ${checked ? 'bg-accent' : 'bg-border'}`} onClick={() => onChange(!checked)}>
-        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+    <div className={`mb-4 overflow-hidden rounded-xl border border-border bg-card px-4 pb-1 ${className}`}>
+      {children}
+    </div>
+  )
+}
+
+function CardTitle({ children }: { children: React.ReactNode }) {
+  return <h3 className="m-0 flex items-center gap-2 pb-1 pt-3 text-title font-semibold text-text-strong">{children}</h3>
+}
+
+/** 行左侧：名称 + 说明；cfg 为对应的配置 key，以 code 标签附在说明后。 */
+function RowLabel({ label, hint, cfg }: { label: string; hint?: string; cfg?: string }) {
+  const { tr } = useLocale()
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="text-body-s font-medium text-text">{label}</div>
+      {(hint || cfg) && (
+        <div className="mt-0.5 text-meta text-muted">
+          {hint}
+          {hint && cfg ? ' · ' : ''}
+          {cfg && <>{tr('对应配置', 'Config')} <code className="rounded-sm bg-bg-accent px-1 font-mono text-2xs">{cfg}</code></>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Toggle({ label, hint, cfg, checked, onChange }: { label: string; hint?: string; cfg?: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-4 py-3">
+      <RowLabel label={label} hint={hint} cfg={cfg} />
+      <div className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-border'}`} onClick={() => onChange(!checked)}>
+        <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-card shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
       </div>
     </label>
   )
 }
 
-function SelectRow({ label, hint, value, options, onChange }: { label: string; hint?: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
+/** 分段按钮：选项少（≤6）时替代下拉，行为与下拉一致（单选、onChange(value)）。 */
+function Segmented({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
   return (
-    <div className="flex items-center justify-between py-2">
-      <div>
-        <span className="text-body-s text-text">{label}</span>
-        {hint && <div className="text-meta text-muted opacity-60 mt-0.5">{hint}</div>}
-      </div>
-      <select
-        className="bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-body-s text-text font-body outline-none cursor-pointer transition-colors focus-ring ml-4"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-      >
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+    <div role="radiogroup" aria-label={label} className="ml-4 inline-flex flex-wrap rounded-lg bg-bg-accent p-0.5">
+      {options.map(o => {
+        const on = o.value === value
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            className={`cursor-pointer rounded-md border-none px-2.5 py-1 text-meta transition-colors ${on ? 'bg-card font-medium text-accent shadow-sm' : 'bg-transparent text-muted hover:text-text'}`}
+            onClick={() => { if (!on) onChange(o.value) }}
+          >
+            {o.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-function NumberRow({ label, hint, value, onChange, min, max, step, placeholder }: { label: string; hint?: string; value: number | undefined; onChange: (v: number | undefined) => void; min?: number; max?: number; step?: number; placeholder?: string }) {
+function SelectRow({ label, hint, cfg, value, options, onChange, seg }: { label: string; hint?: string; cfg?: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void; seg?: boolean }) {
+  const asSegments = seg && options.length <= 6
   return (
-    <div className="flex items-center justify-between py-2">
-      <div>
-        <span className="text-body-s text-text">{label}</span>
-        {hint && <div className="text-meta text-muted opacity-60 mt-0.5">{hint}</div>}
-      </div>
+    <div className="flex items-center justify-between gap-4 py-3">
+      <RowLabel label={label} hint={hint} cfg={cfg} />
+      {asSegments ? (
+        <Segmented label={label} value={value} options={options} onChange={onChange} />
+      ) : (
+        <select
+          aria-label={label}
+          className="focus-ring ml-4 min-w-40 max-w-64 cursor-pointer rounded-lg border border-border bg-bg-elevated px-3 py-1.5 font-body text-body-s text-text outline-none transition-colors"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+        >
+          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      )}
+    </div>
+  )
+}
+
+function NumberRow({ label, hint, cfg, value, onChange, min, max, step, placeholder }: { label: string; hint?: string; cfg?: string; value: number | undefined; onChange: (v: number | undefined) => void; min?: number; max?: number; step?: number; placeholder?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <RowLabel label={label} hint={hint} cfg={cfg} />
       <input
         type="number"
-        className="w-28 bg-bg-elevated border border-border rounded-md px-2.5 py-1.5 text-body-s font-mono text-text outline-none focus-ring transition-colors text-right ml-4"
+        aria-label={label}
+        className="focus-ring ml-4 w-28 rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-right font-mono text-body-s text-text outline-none transition-colors"
         value={value ?? ''}
         onChange={e => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
         min={min}
@@ -98,15 +151,13 @@ function NumberRow({ label, hint, value, onChange, min, max, step, placeholder }
   )
 }
 
-function TextRow({ label, hint, value, onChange, placeholder, mono }: { label: string; hint?: string; value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
+function TextRow({ label, hint, cfg, value, onChange, placeholder, mono }: { label: string; hint?: string; cfg?: string; value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
   return (
-    <div className="flex items-center justify-between py-2">
-      <div className="min-w-0 mr-4">
-        <span className="text-body-s text-text">{label}</span>
-        {hint && <div className="text-meta text-muted opacity-60 mt-0.5">{hint}</div>}
-      </div>
+    <div className="flex items-center justify-between gap-4 py-3">
+      <RowLabel label={label} hint={hint} cfg={cfg} />
       <input
-        className={`w-64 bg-bg-elevated border border-border rounded-md px-2.5 py-1.5 text-body-s text-text outline-none focus-ring transition-colors text-right ml-4 ${mono ? 'font-mono' : 'font-body'}`}
+        aria-label={label}
+        className={`focus-ring ml-4 w-64 rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-right text-body-s text-text outline-none transition-colors ${mono ? 'font-mono' : 'font-body'}`}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
@@ -115,6 +166,10 @@ function TextRow({ label, hint, value, onChange, placeholder, mono }: { label: s
   )
 }
 
+function SettingsLoading() {
+  const { tr } = useLocale()
+  return <div className="py-4 text-body-s text-muted">{tr('正在加载设置…', 'Loading settings…')}</div>
+}
 
 /* ── Pi settings type ── */
 
@@ -190,6 +245,7 @@ function Feedback({ feedback }: { feedback: { type: 'ok' | 'err'; msg: string } 
 
 /* ── Shared settings hook ── */
 function usePiSettings() {
+  const { tr } = useLocale()
   const [settings, setSettings] = useState<PiSettings | null>(null)
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
   useEffect(() => {
@@ -200,10 +256,10 @@ function usePiSettings() {
     setSettings(next)
     const result = await putJson('/api/pi/settings', next)
     setFeedback(result.ok
-      ? { type: 'ok', msg: 'Saved' }
-      : { type: 'err', msg: result.hint ? `未保存：${result.error} —— ${result.hint}` : `未保存：${result.error}` })
+      ? { type: 'ok', msg: tr('已保存', 'Saved') }
+      : { type: 'err', msg: result.hint ? `${tr('未保存', 'Not saved')}：${result.error} —— ${result.hint}` : `${tr('未保存', 'Not saved')}：${result.error}` })
     setTimeout(() => setFeedback(null), result.ok ? 2000 : 8000)
-  }, [])
+  }, [tr])
 
   const set = useCallback((key: string, value: unknown) => {
     if (!settings) return
@@ -223,6 +279,7 @@ function usePiSettings() {
 type ModelOption = { id: string; name?: string; provider: string }
 
 function ModelTab() {
+  const { tr } = useLocale()
   const { settings, feedback, set, setNested, save } = usePiSettings()
   const [availableModels, setAvailableModels] = useState<ModelOption[]>([])
 
@@ -230,7 +287,7 @@ function ModelTab() {
     fetch('/api/models').then(j).then(r => setAvailableModels(r?.models || [])).catch(() => {})
   }, [])
 
-  if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
+  if (!settings) return <SettingsLoading />
 
   const currentDefaultModel = (() => {
     const raw = settings.defaultModel ? splitThinkingSuffix(settings.defaultModel).modelPattern : ''
@@ -263,24 +320,26 @@ function ModelTab() {
       <Feedback feedback={feedback} />
 
       <Card>
-        <CardTitle>Default Model <InfoTip text="Provider and model used for new sessions" /></CardTitle>
+        <CardTitle>{tr('默认模型', 'Default Model')} <InfoTip text={tr('新会话使用的服务商与模型', 'Provider and model used for new sessions')} /></CardTitle>
         <div className="divide-y divide-border">
           <SelectRow
-            label="Default Provider"
-            hint="LLM provider for new sessions"
+            label={tr('默认服务商', 'Default Provider')}
+            hint={tr('新会话使用的 LLM 服务商', 'LLM provider for new sessions')}
+            cfg="defaultProvider"
             value={settings.defaultProvider || ''}
             options={[
-              { value: '', label: '— default —' },
+              { value: '', label: tr('— 默认 —', '— default —') },
               ...providers.map(p => ({ value: p, label: p }))
             ]}
             onChange={v => set('defaultProvider', v || undefined)}
           />
           <SelectRow
-            label="Default Model"
-            hint="Model used for new sessions"
+            label={tr('默认模型', 'Default Model')}
+            hint={tr('新会话使用的模型', 'Model used for new sessions')}
+            cfg="defaultModel"
             value={currentDefaultModel}
             options={[
-              { value: '', label: '— default —' },
+              { value: '', label: tr('— 默认 —', '— default —') },
               ...providerModels.map(m => ({ value: modelFullId(m), label: m.name ? `${m.name} (${m.id})` : m.id }))
             ]}
             onChange={updateDefaultModel}
@@ -289,35 +348,37 @@ function ModelTab() {
       </Card>
 
       <Card>
-        <CardTitle>Thinking <InfoTip text="Controls how deeply the model reasons before responding" /></CardTitle>
+        <CardTitle>{tr('思考', 'Thinking')} <InfoTip text={tr('控制模型回答前推理的深度', 'Controls how deeply the model reasons before responding')} /></CardTitle>
         <div className="divide-y divide-border">
           <SelectRow
-            label="Default thinking level"
-            hint="Depth of reasoning for new sessions"
+            seg
+            label={tr('默认思考强度', 'Default thinking level')}
+            hint={tr('新会话的推理深度', 'Depth of reasoning for new sessions')}
+            cfg="defaultThinkingLevel"
             value={settings.defaultThinkingLevel || 'medium'}
             options={[
-              { value: 'off', label: 'Off' },
-              { value: 'minimal', label: 'Minimal' },
-              { value: 'low', label: 'Low' },
-              { value: 'medium', label: 'Medium' },
-              { value: 'high', label: 'High' },
-              { value: 'xhigh', label: 'Extra High' },
-              { value: 'max', label: 'Max' },
+              { value: 'off', label: tr('关', 'Off') },
+              { value: 'minimal', label: tr('极低', 'Minimal') },
+              { value: 'low', label: tr('低', 'Low') },
+              { value: 'medium', label: tr('中', 'Medium') },
+              { value: 'high', label: tr('高', 'High') },
+              { value: 'xhigh', label: tr('特高', 'Extra High') },
+              { value: 'max', label: tr('最高', 'Max') },
             ]}
             onChange={v => set('defaultThinkingLevel', v)}
           />
-          <Toggle label="Hide thinking blocks" hint="Collapse thinking output in the TUI" checked={settings.hideThinkingBlock ?? false} onChange={v => set('hideThinkingBlock', v)} />
+          <Toggle label={tr('隐藏思考块', 'Hide thinking blocks')} hint={tr('在 TUI 中折叠思考内容', 'Collapse thinking output in the TUI')} cfg="hideThinkingBlock" checked={settings.hideThinkingBlock ?? false} onChange={v => set('hideThinkingBlock', v)} />
         </div>
       </Card>
 
       <Card>
-        <CardTitle>Thinking Budgets <InfoTip text="Token budgets allocated per thinking level. Higher = more thorough reasoning but slower." /></CardTitle>
+        <CardTitle>{tr('思考预算', 'Thinking Budgets')} <InfoTip text={tr('每个思考强度分配的 token 预算。越高推理越充分，但越慢。', 'Token budgets allocated per thinking level. Higher = more thorough reasoning but slower.')} /></CardTitle>
         <div className="divide-y divide-border">
-          <NumberRow label="Minimal" hint="Tokens for 'minimal' thinking" value={settings.thinkingBudgets?.minimal} onChange={v => setNested('thinkingBudgets', 'minimal', v)} placeholder="1024" />
-          <NumberRow label="Low" hint="Tokens for 'low' thinking" value={settings.thinkingBudgets?.low} onChange={v => setNested('thinkingBudgets', 'low', v)} placeholder="2048" />
-          <NumberRow label="Medium" hint="Tokens for 'medium' thinking" value={settings.thinkingBudgets?.medium} onChange={v => setNested('thinkingBudgets', 'medium', v)} placeholder="4096" />
-          <NumberRow label="High" hint="Tokens for 'high' thinking" value={settings.thinkingBudgets?.high} onChange={v => setNested('thinkingBudgets', 'high', v)} placeholder="8192" />
-          <NumberRow label="Extra High" hint="Tokens for 'xhigh' thinking" value={settings.thinkingBudgets?.xhigh} onChange={v => setNested('thinkingBudgets', 'xhigh', v)} placeholder="16384" />
+          <NumberRow label={tr('极低', 'Minimal')} hint={tr("“minimal”思考的 token 数", "Tokens for 'minimal' thinking")} cfg="thinkingBudgets.minimal" value={settings.thinkingBudgets?.minimal} onChange={v => setNested('thinkingBudgets', 'minimal', v)} placeholder="1024" />
+          <NumberRow label={tr('低', 'Low')} hint={tr("“low”思考的 token 数", "Tokens for 'low' thinking")} cfg="thinkingBudgets.low" value={settings.thinkingBudgets?.low} onChange={v => setNested('thinkingBudgets', 'low', v)} placeholder="2048" />
+          <NumberRow label={tr('中', 'Medium')} hint={tr("“medium”思考的 token 数", "Tokens for 'medium' thinking")} cfg="thinkingBudgets.medium" value={settings.thinkingBudgets?.medium} onChange={v => setNested('thinkingBudgets', 'medium', v)} placeholder="4096" />
+          <NumberRow label={tr('高', 'High')} hint={tr("“high”思考的 token 数", "Tokens for 'high' thinking")} cfg="thinkingBudgets.high" value={settings.thinkingBudgets?.high} onChange={v => setNested('thinkingBudgets', 'high', v)} placeholder="8192" />
+          <NumberRow label={tr('特高', 'Extra High')} hint={tr("“xhigh”思考的 token 数", "Tokens for 'xhigh' thinking")} cfg="thinkingBudgets.xhigh" value={settings.thinkingBudgets?.xhigh} onChange={v => setNested('thinkingBudgets', 'xhigh', v)} placeholder="16384" />
         </div>
       </Card>
 
@@ -347,7 +408,7 @@ function ModelListTab() {
     return () => { cancelled = true }
   }, [])
 
-  if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
+  if (!settings) return <SettingsLoading />
 
   const enabledPatterns = settings.enabledModels || []
   const selectedIds = selectedModelIds(availableModels, enabledPatterns, defaultModels)
@@ -492,66 +553,71 @@ function ModelListTab() {
 
 /* ── BEHAVIOR TAB ── */
 function BehaviorTab() {
+  const { tr } = useLocale()
   const { settings, feedback, set, setNested } = usePiSettings()
-  if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
+  if (!settings) return <SettingsLoading />
 
   return (
     <div className="space-y-4">
       <Feedback feedback={feedback} />
 
       <Card>
-        <CardTitle>Interaction Mode <InfoTip text="How pi handles tool calls and follow-up messages" /></CardTitle>
+        <CardTitle>{tr('交互方式', 'Interaction Mode')} <InfoTip text={tr('pi 如何处理工具调用与后续消息', 'How pi handles tool calls and follow-up messages')} /></CardTitle>
         <div className="divide-y divide-border">
           <SelectRow
-            label="Steering mode"
-            hint="How multiple tool calls are handled"
+            seg
+            label={tr('引导模式', 'Steering mode')}
+            hint={tr('多个工具调用如何处理', 'How multiple tool calls are handled')}
+            cfg="steeringMode"
             value={settings.steeringMode || 'all'}
             options={[
-              { value: 'all', label: 'All at once' },
-              { value: 'one-at-a-time', label: 'One at a time' },
+              { value: 'all', label: tr('一次全部', 'All at once') },
+              { value: 'one-at-a-time', label: tr('逐条', 'One at a time') },
             ]}
             onChange={v => set('steeringMode', v)}
           />
           <SelectRow
-            label="Follow-up mode"
-            hint="How follow-up messages are processed"
+            seg
+            label={tr('后续消息模式', 'Follow-up mode')}
+            hint={tr('后续消息如何处理', 'How follow-up messages are processed')}
+            cfg="followUpMode"
             value={settings.followUpMode || 'all'}
             options={[
-              { value: 'all', label: 'All at once' },
-              { value: 'one-at-a-time', label: 'One at a time' },
+              { value: 'all', label: tr('一次全部', 'All at once') },
+              { value: 'one-at-a-time', label: tr('逐条', 'One at a time') },
             ]}
             onChange={v => set('followUpMode', v)}
           />
-          <Toggle label="Skill commands" hint="Enable /skill slash commands in the TUI" checked={settings.enableSkillCommands ?? true} onChange={v => set('enableSkillCommands', v)} />
-          <Toggle label="Quiet startup" hint="Suppress startup banners and messages" checked={settings.quietStartup ?? false} onChange={v => set('quietStartup', v)} />
-          <Toggle label="Collapse changelog" hint="Auto-collapse changelog on startup" checked={settings.collapseChangelog ?? false} onChange={v => set('collapseChangelog', v)} />
+          <Toggle label={tr('技能命令', 'Skill commands')} hint={tr('在 TUI 中启用 /skill 斜杠命令', 'Enable /skill slash commands in the TUI')} cfg="enableSkillCommands" checked={settings.enableSkillCommands ?? true} onChange={v => set('enableSkillCommands', v)} />
+          <Toggle label={tr('安静启动', 'Quiet startup')} hint={tr('隐藏启动横幅和提示信息', 'Suppress startup banners and messages')} cfg="quietStartup" checked={settings.quietStartup ?? false} onChange={v => set('quietStartup', v)} />
+          <Toggle label={tr('折叠更新日志', 'Collapse changelog')} hint={tr('启动时自动折叠更新日志', 'Auto-collapse changelog on startup')} cfg="collapseChangelog" checked={settings.collapseChangelog ?? false} onChange={v => set('collapseChangelog', v)} />
         </div>
       </Card>
 
       <Card>
-        <CardTitle>Compaction <InfoTip text="Automatic context compaction when conversation gets long" /></CardTitle>
+        <CardTitle>{tr('上下文压缩', 'Compaction')} <InfoTip text={tr('对话过长时自动压缩上下文', 'Automatic context compaction when conversation gets long')} /></CardTitle>
         <div className="divide-y divide-border">
-          <Toggle label="Enable compaction" hint="Automatically compact context when it exceeds limits" checked={settings.compaction?.enabled ?? true} onChange={v => setNested('compaction', 'enabled', v)} />
-          <NumberRow label="Reserve tokens" hint="Tokens reserved for compaction summary" value={settings.compaction?.reserveTokens} onChange={v => setNested('compaction', 'reserveTokens', v)} placeholder="8192" />
-          <NumberRow label="Keep recent tokens" hint="Recent tokens preserved during compaction" value={settings.compaction?.keepRecentTokens} onChange={v => setNested('compaction', 'keepRecentTokens', v)} placeholder="4096" />
+          <Toggle label={tr('启用压缩', 'Enable compaction')} hint={tr('超出上限时自动压缩上下文', 'Automatically compact context when it exceeds limits')} cfg="compaction.enabled" checked={settings.compaction?.enabled ?? true} onChange={v => setNested('compaction', 'enabled', v)} />
+          <NumberRow label={tr('预留 token', 'Reserve tokens')} hint={tr('为压缩摘要预留的 token', 'Tokens reserved for compaction summary')} cfg="compaction.reserveTokens" value={settings.compaction?.reserveTokens} onChange={v => setNested('compaction', 'reserveTokens', v)} placeholder="8192" />
+          <NumberRow label={tr('保留最近 token', 'Keep recent tokens')} hint={tr('压缩时保留的最近 token', 'Recent tokens preserved during compaction')} cfg="compaction.keepRecentTokens" value={settings.compaction?.keepRecentTokens} onChange={v => setNested('compaction', 'keepRecentTokens', v)} placeholder="4096" />
         </div>
       </Card>
 
       <Card>
-        <CardTitle>Branch Summary <InfoTip text="Settings for conversation branch summaries" /></CardTitle>
+        <CardTitle>{tr('分支摘要', 'Branch Summary')} <InfoTip text={tr('对话分支摘要的设置', 'Settings for conversation branch summaries')} /></CardTitle>
         <div className="divide-y divide-border">
-          <Toggle label="Skip summary prompt" hint="Skip the branch summary confirmation prompt" checked={settings.branchSummary?.skipPrompt ?? false} onChange={v => setNested('branchSummary', 'skipPrompt', v)} />
-          <NumberRow label="Reserve tokens" hint="Tokens reserved for branch summaries" value={settings.branchSummary?.reserveTokens} onChange={v => setNested('branchSummary', 'reserveTokens', v)} placeholder="4096" />
+          <Toggle label={tr('跳过摘要确认', 'Skip summary prompt')} hint={tr('跳过分支摘要的确认提示', 'Skip the branch summary confirmation prompt')} cfg="branchSummary.skipPrompt" checked={settings.branchSummary?.skipPrompt ?? false} onChange={v => setNested('branchSummary', 'skipPrompt', v)} />
+          <NumberRow label={tr('预留 token', 'Reserve tokens')} hint={tr('为分支摘要预留的 token', 'Tokens reserved for branch summaries')} cfg="branchSummary.reserveTokens" value={settings.branchSummary?.reserveTokens} onChange={v => setNested('branchSummary', 'reserveTokens', v)} placeholder="4096" />
         </div>
       </Card>
 
       <Card>
-        <CardTitle>Retry <InfoTip text="Automatic retry behavior when API calls fail" /></CardTitle>
+        <CardTitle>{tr('重试', 'Retry')} <InfoTip text={tr('API 调用失败时的自动重试行为', 'Automatic retry behavior when API calls fail')} /></CardTitle>
         <div className="divide-y divide-border">
-          <Toggle label="Enable retries" hint="Automatically retry failed API requests" checked={settings.retry?.enabled ?? true} onChange={v => setNested('retry', 'enabled', v)} />
-          <NumberRow label="Max retries" hint="Maximum number of retry attempts" value={settings.retry?.maxRetries} onChange={v => setNested('retry', 'maxRetries', v)} min={0} max={10} placeholder="3" />
-          <NumberRow label="Base delay (ms)" hint="Initial delay before first retry" value={settings.retry?.baseDelayMs} onChange={v => setNested('retry', 'baseDelayMs', v)} min={100} placeholder="1000" />
-          <NumberRow label="Max delay (ms)" hint="Maximum delay between retries" value={settings.retry?.maxDelayMs} onChange={v => setNested('retry', 'maxDelayMs', v)} min={100} placeholder="30000" />
+          <Toggle label={tr('启用重试', 'Enable retries')} hint={tr('自动重试失败的 API 请求', 'Automatically retry failed API requests')} cfg="retry.enabled" checked={settings.retry?.enabled ?? true} onChange={v => setNested('retry', 'enabled', v)} />
+          <NumberRow label={tr('最大重试次数', 'Max retries')} hint={tr('最多重试多少次', 'Maximum number of retry attempts')} cfg="retry.maxRetries" value={settings.retry?.maxRetries} onChange={v => setNested('retry', 'maxRetries', v)} min={0} max={10} placeholder="3" />
+          <NumberRow label={tr('初始延迟（毫秒）', 'Base delay (ms)')} hint={tr('第一次重试前的等待时间', 'Initial delay before first retry')} cfg="retry.baseDelayMs" value={settings.retry?.baseDelayMs} onChange={v => setNested('retry', 'baseDelayMs', v)} min={100} placeholder="1000" />
+          <NumberRow label={tr('最大延迟（毫秒）', 'Max delay (ms)')} hint={tr('两次重试之间的最长等待', 'Maximum delay between retries')} cfg="retry.maxDelayMs" value={settings.retry?.maxDelayMs} onChange={v => setNested('retry', 'maxDelayMs', v)} min={100} placeholder="30000" />
         </div>
       </Card>
     </div>
@@ -561,7 +627,7 @@ function BehaviorTab() {
 /* ── TERMINAL TAB ── */
 function TerminalTab() {
   const { settings, feedback, set, setNested } = usePiSettings()
-  if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
+  if (!settings) return <SettingsLoading />
 
   return (
     <div className="space-y-4">
@@ -643,7 +709,7 @@ function GeneralTab() {
     fetch('/api/pi/settings').then(j).then(setSettings).catch(() => {})
   }, [])
 
-  if (!settings) return <div className="text-muted text-body-s py-4">Loading settings…</div>
+  if (!settings) return <SettingsLoading />
 
   // Resource paths
   const resourceSections: { key: keyof PiSettings; label: string; hint: string; placeholder: string }[] = [
@@ -701,6 +767,7 @@ function GeneralTab() {
 
 /* ── CHAT TAB ── */
 function ChatTab() {
+  const { tr } = useLocale()
   const [config, setConfig] = useState<ChatConfig>(loadChatConfig)
 
   const set = <K extends keyof ChatConfig>(k: K, v: ChatConfig[K]) => {
@@ -712,12 +779,12 @@ function ChatTab() {
   return (
     <div className="space-y-4">
       <Card>
-        <CardTitle>Chat Behavior</CardTitle>
+        <CardTitle>{tr('对话行为', 'Chat Behavior')}</CardTitle>
         <div className="divide-y divide-border">
-          <Toggle label="Show message timestamps" hint="Display time next to each message" checked={config.showTimestamps} onChange={v => set('showTimestamps', v)} />
-          <Toggle label="Send on Enter" hint={config.sendOnEnter ? 'Shift+Enter for newline' : 'Click Send button to submit'} checked={config.sendOnEnter} onChange={v => set('sendOnEnter', v)} />
-          <Toggle label="History expanded by default" hint="Auto-expand session history in sidebar" checked={config.historyExpanded} onChange={v => set('historyExpanded', v)} />
-          <SelectRow label="Notification limit" hint="Max notifications to keep" value={String(config.notifLimit)} options={[
+          <Toggle label={tr('显示消息时间', 'Show message timestamps')} hint={tr('在每条消息旁显示时间', 'Display time next to each message')} cfg="showTimestamps" checked={config.showTimestamps} onChange={v => set('showTimestamps', v)} />
+          <Toggle label={tr('按 Enter 发送', 'Send on Enter')} hint={config.sendOnEnter ? tr('Shift+Enter 换行', 'Shift+Enter for newline') : tr('点击发送按钮提交', 'Click Send button to submit')} cfg="sendOnEnter" checked={config.sendOnEnter} onChange={v => set('sendOnEnter', v)} />
+          <Toggle label={tr('默认展开历史', 'History expanded by default')} hint={tr('自动展开侧栏中的会话历史', 'Auto-expand session history in sidebar')} cfg="historyExpanded" checked={config.historyExpanded} onChange={v => set('historyExpanded', v)} />
+          <SelectRow seg label={tr('通知数量上限', 'Notification limit')} hint={tr('最多保留的通知条数', 'Max notifications to keep')} cfg="notifLimit" value={String(config.notifLimit)} options={[
             { value: '25', label: '25' }, { value: '50', label: '50' },
             { value: '100', label: '100' }, { value: '200', label: '200' },
           ]} onChange={v => set('notifLimit', Number(v))} />
@@ -876,10 +943,10 @@ function VoiceTab() {
               type="button"
               disabled={!testText.trim() || voice.speaking}
               onClick={() => { void voice.speak(testText, config) }}
-              className="rounded-md border border-accent bg-accent px-3 py-1.5 text-xs text-accent-fg transition-opacity disabled:opacity-50"
+              className="rounded-md border border-accent bg-accent px-3 py-1.5 text-meta text-accent-fg transition-opacity disabled:opacity-50"
             ><MaterialIcon name="volume_up" className="inline h-3.5 w-3.5 align-[-2px]" /> 试听</button>
             {voice.speaking && (
-              <button type="button" onClick={voice.stop} className="inline-flex items-center gap-1 rounded-md border border-border bg-bg px-3 py-1.5 text-xs text-muted"><MaterialIcon name="stop" className="h-3 w-3" />停止</button>
+              <button type="button" onClick={voice.stop} className="inline-flex items-center gap-1 rounded-md border border-border bg-bg px-3 py-1.5 text-meta text-muted"><MaterialIcon name="stop" className="h-3 w-3" />停止</button>
             )}
             <span className="text-meta text-muted opacity-60">长回复会自动分段朗读（每段约 400 字）</span>
           </div>
@@ -896,6 +963,7 @@ function VoiceTab() {
 }
 
 function DisplayTab() {
+  const { tr } = useLocale()
   const { theme, preference, setTheme } = useTheme()
   const customStyle = useCustomStyle()
   const [newName, setNewName] = useState('')
@@ -904,7 +972,7 @@ function DisplayTab() {
 
   // Build unified theme list: built-in + custom
   const builtinCards = [
-    { id: 'system', label: '🖥 System', css: BUILTIN_THEMES[theme] || BUILTIN_THEMES.dark, builtin: true },
+    { id: 'system', label: tr('系统', 'System'), css: BUILTIN_THEMES[theme] || BUILTIN_THEMES.dark, builtin: true },
     ...THEMES.map(t => ({ id: t.id, label: t.label, css: BUILTIN_THEMES[t.id], builtin: true })),
   ]
   const customCards = customStyle.styles.map(name => ({
@@ -918,8 +986,8 @@ function DisplayTab() {
   return (
     <div className="space-y-4">
       <Card>
-        <CardTitle>Themes</CardTitle>
-        <div className="grid grid-cols-3 gap-2 py-2">
+        <CardTitle>{tr('主题', 'Themes')}</CardTitle>
+        <div className="grid grid-cols-3 gap-2 py-3">
           {allCards.map(card => {
             const vars = parseVars(card.css)
             const bg = vars['bg'] || '#12141a'
@@ -948,7 +1016,7 @@ function DisplayTab() {
                   ))}
                 </div>
                 <div className="text-meta truncate">{card.label}</div>
-                {!card.builtin && <span className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-2xs text-muted hover:text-danger transition-opacity" onClick={e => { e.stopPropagation(); if (confirm(`Delete "${(card as any).name}"?`)) customStyle.remove((card as any).name) }}>✕</span>}
+                {!card.builtin && <span className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-2xs text-muted hover:text-danger transition-opacity" onClick={e => { e.stopPropagation(); if (confirm(tr(`删除“${(card as any).name}”？`, `Delete "${(card as any).name}"?`))) customStyle.remove((card as any).name) }}>✕</span>}
               </button>
             )
           })}
@@ -956,31 +1024,31 @@ function DisplayTab() {
       </Card>
 
       <Card>
-        <CardTitle>Font</CardTitle>
-        <div className="text-body-s text-muted py-2">
-          Body: <span className="font-mono text-text">Space Grotesk</span> · Code: <span className="font-mono text-text">JetBrains Mono</span>
+        <CardTitle>{tr('字体', 'Font')}</CardTitle>
+        <div className="text-body-s text-muted py-3">
+          {tr('正文', 'Body')}: <span className="font-mono text-text">Space Grotesk</span> · {tr('代码', 'Code')}: <span className="font-mono text-text">JetBrains Mono</span>
         </div>
       </Card>
 
       <Card>
-        <CardTitle>Custom Styles</CardTitle>
+        <CardTitle>{tr('自定义样式', 'Custom Styles')}</CardTitle>
         <div className="divide-y divide-border">
           {customStyle.active && (
             <div className="py-2">
-              <button className="text-meta text-accent cursor-pointer bg-transparent border-none hover:underline" onClick={() => { if (editName === customStyle.active) { setEditName(null) } else { setEditName(customStyle.active); setEditCss(customStyle.styleContents[customStyle.active] || '') } }}>{editName === customStyle.active ? '▾ Close editor' : '▸ Edit CSS'}</button>
+              <button className="text-meta text-accent cursor-pointer bg-transparent border-none hover:underline" onClick={() => { if (editName === customStyle.active) { setEditName(null) } else { setEditName(customStyle.active); setEditCss(customStyle.styleContents[customStyle.active] || '') } }}>{editName === customStyle.active ? tr('▾ 关闭编辑器', '▾ Close editor') : tr('▸ 编辑 CSS', '▸ Edit CSS')}</button>
               {editName === customStyle.active && (
                 <div className="mt-2">
                   <textarea className="w-full h-48 bg-bg-elevated border border-border rounded-md px-3 py-2 text-body-s font-mono text-text outline-none resize-y focus-ring" value={editCss} onChange={e => setEditCss(e.target.value)} />
-                  <button className="mt-1 px-3 py-1.5 rounded-md text-body-s font-medium bg-accent text-accent-fg border-none cursor-pointer hover:bg-accent-hover transition" onClick={() => { customStyle.save(editName!, editCss); setEditName(null) }}>Save</button>
+                  <button className="mt-1 px-3 py-1.5 rounded-md text-body-s font-medium bg-accent text-accent-fg border-none cursor-pointer hover:bg-accent-hover transition" onClick={() => { customStyle.save(editName!, editCss); setEditName(null) }}>{tr('保存', 'Save')}</button>
                 </div>
               )}
             </div>
           )}
           <div className="flex items-center gap-2 py-2">
-            <input className="flex-1 bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-body-s text-text font-body outline-none focus-ring" placeholder="New style name…" value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) { customStyle.save(newName.trim(), `/* ${newName.trim()} */\n:root {\n  /* Override CSS variables here */\n}\n`); customStyle.activate(newName.trim()); setNewName('') } }} />
-            <button className="px-3 py-1.5 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30" disabled={!newName.trim()} onClick={() => { if (newName.trim()) { customStyle.save(newName.trim(), `/* ${newName.trim()} */\n:root {\n  /* Override CSS variables here */\n}\n`); customStyle.activate(newName.trim()); setNewName('') } }}>Create</button>
+            <input className="flex-1 bg-bg-elevated border border-border rounded-md px-3 py-1.5 text-body-s text-text font-body outline-none focus-ring" placeholder={tr('新样式名称…', 'New style name…')} value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) { customStyle.save(newName.trim(), `/* ${newName.trim()} */\n:root {\n  /* Override CSS variables here */\n}\n`); customStyle.activate(newName.trim()); setNewName('') } }} />
+            <button className="px-3 py-1.5 rounded-md text-body-s font-medium border border-accent text-accent bg-transparent cursor-pointer hover:bg-accent hover:text-accent-fg transition disabled:opacity-30" disabled={!newName.trim()} onClick={() => { if (newName.trim()) { customStyle.save(newName.trim(), `/* ${newName.trim()} */\n:root {\n  /* Override CSS variables here */\n}\n`); customStyle.activate(newName.trim()); setNewName('') } }}>{tr('创建', 'Create')}</button>
           </div>
-          <div className="py-2 text-2xs text-muted opacity-50">Tip: add <code className="font-mono">?reset-css=true</code> to the URL to disable custom styles if they break the UI.</div>
+          <div className="py-3 text-2xs text-muted">{tr('提示：若自定义样式弄坏了界面，在网址后加 ', 'Tip: add ')}<code className="font-mono">?reset-css=true</code>{tr(' 即可停用自定义样式。', ' to the URL to disable custom styles if they break the UI.')}</div>
         </div>
       </Card>
     </div>
@@ -1674,110 +1742,155 @@ function ShortcutsTab() {
 }
 
 /* ── SETTINGS PAGE ── */
-const SETTINGS_GROUPS: { group: string; tabs: { id: Tab; label: string; icon: string; hint: string }[] }[] = [
+interface SettingsTabMeta { id: Tab; label: [string, string]; icon: LineIconName; hint: [string, string] }
+const SETTINGS_GROUPS: { group: [string, string]; tabs: SettingsTabMeta[] }[] = [
   {
-    group: 'Agent',
+    group: ['Agent', 'Agent'],
     tabs: [
-      { id: 'models', label: 'Model List', icon: '☑️', hint: 'Choose providers and available models' },
-      { id: 'subagent-models', label: '子任务模型', icon: '🧩', hint: '子 Agent 按档位自动挑模型' },
-      { id: 'model', label: 'Model', icon: '🤖', hint: 'Default model & thinking level' },
-      { id: 'behavior', label: 'Behavior', icon: '⚙', hint: 'Permissions, tools, runtime' },
-      { id: 'skills', label: 'Skills', icon: '🛠', hint: 'Enable & manage skills' },
+      { id: 'models', label: ['模型列表', 'Model List'], icon: 'list', hint: ['选择服务商和可用模型', 'Choose providers and available models'] },
+      { id: 'subagent-models', label: ['子任务模型', 'Subagent Models'], icon: 'flow', hint: ['子 Agent 按档位自动挑模型', 'Subagents pick models automatically by tier'] },
+      { id: 'model', label: ['默认模型', 'Model'], icon: 'cpu', hint: ['新会话默认的模型与思考强度', 'Default model & thinking level'] },
+      { id: 'behavior', label: ['行为', 'Behavior'], icon: 'sliders', hint: ['权限、工具、运行方式', 'Permissions, tools, runtime'] },
+      { id: 'skills', label: ['技能', 'Skills'], icon: 'tool', hint: ['启用和管理技能', 'Enable & manage skills'] },
     ],
   },
   {
-    group: 'Interface',
+    group: ['界面', 'Interface'],
     tabs: [
-      { id: 'display', label: 'Display', icon: '🎨', hint: 'Theme & appearance' },
-      { id: 'chat', label: 'Chat', icon: '💬', hint: 'Composer & transcript' },
-      { id: 'voice', label: 'Voice', icon: '🔊', hint: '语音输出模型与音色' },
-      { id: 'terminal', label: 'Terminal', icon: '🖥', hint: 'Integrated terminal' },
-      { id: 'shortcuts', label: 'Shortcuts', icon: '⌨', hint: 'Keybindings' },
+      { id: 'display', label: ['外观', 'Display'], icon: 'palette', hint: ['主题与外观', 'Theme & appearance'] },
+      { id: 'chat', label: ['对话', 'Chat'], icon: 'chat', hint: ['输入框与对话记录', 'Composer & transcript'] },
+      { id: 'voice', label: ['语音', 'Voice'], icon: 'volume', hint: ['语音输出模型与音色', 'Voice output model & voice'] },
+      { id: 'terminal', label: ['终端', 'Terminal'], icon: 'terminal', hint: ['内置终端', 'Integrated terminal'] },
+      { id: 'shortcuts', label: ['快捷键', 'Shortcuts'], icon: 'keyboard', hint: ['按键绑定', 'Keybindings'] },
     ],
   },
   {
-    group: 'System',
+    group: ['资源与集成', 'Resources & Integrations'],
     tabs: [
-      { id: 'general', label: 'Packages', icon: '📦', hint: 'Context files & resources' },
-      { id: 'vault', label: 'Vault', icon: '📁', hint: 'Knowledge vault paths' },
-      { id: 'tasks', label: 'Tasks', icon: '🗂️', hint: 'Task panel sources & defaults' },
-      { id: 'lark', label: 'Lark', icon: '🕊', hint: 'Feishu / Lark bot accounts' },
-      { id: 'developer', label: 'Developer', icon: '🔧', hint: 'Advanced & debug' },
+      { id: 'general', label: ['扩展包', 'Packages'], icon: 'box', hint: ['上下文文件与资源', 'Context files & resources'] },
+      { id: 'vault', label: ['知识库', 'Vault'], icon: 'book', hint: ['知识库路径', 'Knowledge vault paths'] },
+      { id: 'tasks', label: ['任务', 'Tasks'], icon: 'checkCircle', hint: ['任务面板的来源与默认值', 'Task panel sources & defaults'] },
+      { id: 'lark', label: ['飞书', 'Lark'], icon: 'send', hint: ['飞书 / Lark 机器人账号', 'Feishu / Lark bot accounts'] },
+      { id: 'developer', label: ['开发者', 'Developer'], icon: 'code', hint: ['高级与调试', 'Advanced & debug'] },
     ],
   },
 ]
 
+/** 中 / EN 分段开关：调用 setLocale，选中项白底 + accent 字。 */
+function LanguageSwitch() {
+  const { locale } = useLocale()
+  return (
+    <div role="radiogroup" aria-label="界面语言 / Language" title="界面语言 / Language" className="inline-flex rounded-lg bg-bg-hover p-0.5">
+      {([['zh', '中'], ['en', 'EN']] as const).map(([id, text]) => (
+        <button
+          key={id}
+          type="button"
+          role="radio"
+          aria-checked={locale === id}
+          className={`cursor-pointer rounded-md border-none px-2.5 py-0.5 text-meta transition-colors ${locale === id ? 'bg-card font-medium text-accent shadow-sm' : 'bg-transparent text-muted hover:text-text'}`}
+          onClick={() => setLocale(id)}
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 const SETTINGS_LS_KEY = 'mc-settings-tab'
 
 export default function SettingsPage() {
+  const { tr } = useLocale()
   const [tab, setTab] = useState<Tab>(() => (localStorage.getItem(SETTINGS_LS_KEY) as Tab) || 'models')
   const selectTab = (id: Tab) => { setTab(id); localStorage.setItem(SETTINGS_LS_KEY, id) }
-  const activeMeta = SETTINGS_GROUPS.flatMap(g => g.tabs).find(t => t.id === tab)
+  const activeGroup = SETTINGS_GROUPS.find(g => g.tabs.some(t => t.id === tab))
+  const activeMeta = activeGroup?.tabs.find(t => t.id === tab)
+  // 原 PageHeader 在原生 App（iOS/Android 壳）里提供“返回 Chat”按钮，改版后保留该入口。
+  const isNativeApp = typeof navigator !== 'undefined' && (navigator.userAgent.includes('PiDash-iOS') || navigator.userAgent.includes('PiDash-Android'))
 
   return (
-    <>
-      <PageHeader title="Settings" subtitle="Configure Pi Dashboard and TUI preferences" />
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Vertical grouped nav */}
-        <nav className="hidden md:flex flex-col gap-4 w-[200px] shrink-0 overflow-y-auto border-r border-border px-3 py-4">
-          {SETTINGS_GROUPS.map(({ group, tabs }) => (
-            <div key={group}>
-              <div className="text-2xs font-semibold uppercase tracking-wider text-muted px-2 mb-1">{group}</div>
-              {tabs.map(t => (
-                <button
-                  key={t.id}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-body-s font-medium cursor-pointer transition border text-left ${tab === t.id ? 'bg-accent-subtle text-accent border-accent' : 'border-transparent text-muted bg-transparent hover:text-text hover:bg-bg-hover'}`}
-                  onClick={() => selectTab(t.id)}
-                  title={t.hint}
-                >
-                  <span className="shrink-0">{t.icon}</span>
-                  <span className="truncate">{t.label}</span>
-                </button>
-              ))}
-            </div>
-          ))}
-        </nav>
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      {/* Vertical grouped nav */}
+      <nav className="hidden w-[220px] shrink-0 flex-col overflow-y-auto border-r border-border bg-bg-accent px-2.5 py-3.5 md:flex">
+        <div className="mx-1.5 mb-2.5 flex items-center">
+          <h1 className="m-0 flex-1 text-title font-semibold text-text-strong">{tr('设置', 'Settings')}</h1>
+          <LanguageSwitch />
+        </div>
+        {SETTINGS_GROUPS.map(({ group, tabs }) => (
+          <div key={group[1]}>
+            <div className="mx-2 mb-1 mt-3 text-2xs font-semibold text-muted">{tr(group[0], group[1])}</div>
+            {tabs.map(t => (
+              <button
+                key={t.id}
+                aria-current={tab === t.id ? 'page' : undefined}
+                className={`flex w-full cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-body-s transition ${tab === t.id ? 'border-border bg-card font-medium text-accent shadow-sm' : 'border-transparent bg-transparent text-muted hover:bg-bg-hover hover:text-text'}`}
+                onClick={() => selectTab(t.id)}
+                title={tr(t.hint[0], t.hint[1])}
+              >
+                <LineIcon name={t.icon} className="h-4 w-4" />
+                <span className="truncate">{tr(t.label[0], t.label[1])}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+      </nav>
 
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Mobile horizontal nav */}
-        <div className="md:hidden flex flex-wrap gap-1.5 px-3 py-3 border-b border-border w-full">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-3 md:hidden">
+          <LanguageSwitch />
           {SETTINGS_GROUPS.flatMap(g => g.tabs).map(t => (
             <button
               key={t.id}
-              className={`px-3 py-1.5 rounded-md text-body-s font-medium cursor-pointer transition border ${tab === t.id ? 'bg-accent-subtle text-accent border-accent' : 'border-transparent text-muted bg-transparent hover:text-text hover:bg-bg-hover'}`}
+              className={`flex cursor-pointer items-center gap-1 rounded-md border px-3 py-1.5 text-body-s font-medium transition ${tab === t.id ? 'border-border bg-card text-accent' : 'border-transparent bg-transparent text-muted hover:bg-bg-hover hover:text-text'}`}
               onClick={() => selectTab(t.id)}
             >
-              {t.icon} {t.label}
+              <LineIcon name={t.icon} className="h-4 w-4" />
+              {tr(t.label[0], t.label[1])}
             </button>
           ))}
         </div>
 
         {/* Content pane */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 md:px-6 py-4 md:py-6">
-          {activeMeta && (
-            <div className="max-w-2xl mb-5 hidden md:block">
-              <h2 className="text-base font-semibold text-text-strong font-body">{activeMeta.icon} {activeMeta.label}</h2>
-              <p className="text-body-s text-muted mt-0.5">{activeMeta.hint}</p>
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-8 md:py-6">
+          <div className="mx-auto max-w-3xl">
+            {isNativeApp && (
+              <button
+                type="button"
+                className="mb-3 flex cursor-pointer items-center gap-1 border-none bg-transparent p-0 text-body-s font-medium text-accent hover:opacity-70"
+                onClick={() => window.history.back()}
+              >
+                <LineIcon name="chevronRight" className="h-4 w-4 rotate-180" />
+                Chat
+              </button>
+            )}
+            {activeMeta && activeGroup && (
+              <div className="mb-5 hidden md:block">
+                <div className="text-2xs text-muted">{tr(activeGroup.group[0], activeGroup.group[1])} / {tr(activeMeta.label[0], activeMeta.label[1])}</div>
+                <h2 className="mb-0.5 mt-0.5 text-title font-semibold text-text-strong font-body">{tr(activeMeta.label[0], activeMeta.label[1])}</h2>
+                <p className="m-0 text-body-s text-muted">{tr(activeMeta.hint[0], activeMeta.hint[1])}</p>
+              </div>
+            )}
+            <div>
+              {tab === 'models' && <ModelListTab />}
+              {tab === 'subagent-models' && <SubagentModelsTab />}
+              {tab === 'model' && <ModelTab />}
+              {tab === 'behavior' && <BehaviorTab />}
+              {tab === 'terminal' && <TerminalTab />}
+              {tab === 'general' && <GeneralTab />}
+              {tab === 'skills' && <SkillsTab />}
+              {tab === 'chat' && <ChatTab />}
+              {tab === 'voice' && <VoiceTab />}
+              {tab === 'display' && <DisplayTab />}
+              {tab === 'shortcuts' && <ShortcutsTab />}
+              {tab === 'vault' && <VaultTab />}
+              {tab === 'tasks' && <TasksTab />}
+              {tab === 'lark' && <LarkTab />}
+              {tab === 'developer' && <DeveloperTab />}
             </div>
-          )}
-          <div className="max-w-2xl">
-            {tab === 'models' && <ModelListTab />}
-            {tab === 'subagent-models' && <SubagentModelsTab />}
-            {tab === 'model' && <ModelTab />}
-            {tab === 'behavior' && <BehaviorTab />}
-            {tab === 'terminal' && <TerminalTab />}
-            {tab === 'general' && <GeneralTab />}
-            {tab === 'skills' && <SkillsTab />}
-            {tab === 'chat' && <ChatTab />}
-            {tab === 'voice' && <VoiceTab />}
-            {tab === 'display' && <DisplayTab />}
-            {tab === 'shortcuts' && <ShortcutsTab />}
-            {tab === 'vault' && <VaultTab />}
-            {tab === 'tasks' && <TasksTab />}
-            {tab === 'lark' && <LarkTab />}
-            {tab === 'developer' && <DeveloperTab />}
           </div>
         </div>
       </div>
-    </>
+    </div>
   )
 }
