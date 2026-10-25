@@ -80,6 +80,34 @@
 - 版式自检：用真实导航渲染 + 现有样式截图核对缩进层级（临时预览文件已删除）。
 - 改动文件：`frontend/src/App.tsx`、`frontend/src/pages/tasks/TasksSectionTabs.tsx`（新）、`frontend/src/pages/TasksPage.tsx`、`frontend/src/pages/EventLedgerPage.tsx`、`frontend/src/pages/tasks/TaskDetail.tsx`、`frontend/src/pages/SupervisorPage.tsx`、`frontend/src/test/tasksSection.test.tsx`、`frontend/src/test/supervisor.test.tsx`、本文件与 `guide/dashboard.md`。
 
+## 变更：写入确认改成“页面常驻卡片 + 侧栏角标”（用户要求 A）
+
+- 背景：弹窗在高参数下会被挤出屏幕；且确认弹窗完全盖住页面，看不到“到底是给哪个任务写什么”。用户选了 A：卡片常驻在对应页面 + 侧栏角标 + 弹窗降为小而矮的兜底。
+- 扩展（`../pi-tsien-extension/extensions/supervisor/index.ts`）：确认请求的 message 末尾追加一行机器可读标记 `[supervisor-confirm]{op,ref,sum}`（pi 的 UI 请求只有文本字段，目标对象只能随文本传）；dashboard 在展示前剔除这行。
+- 前端数据层：`frontend/src/features/supervisor/pendingConfirmation.ts` 解析标记、按 `objectRef` 过滤出待确认项；无法解析的请求继续由弹窗举。
+- 前端展示：
+  - `PendingConfirmations`：任务详情页与事件流水账页在顶部常驻显示“等你确认：…”，带「不允许 / 允许这次操作」，答完即消失；
+  - `PendingConfirmationBadge`：侧栏常驻“N 项待确认”，点开小列表可原地处理或跳到对应流水账；
+  - `LiveSessionExtensionUiModal`：只负责没有目标对象的请求，改为右下角小卡片（无全屏遮罩、无 aria-modal），不再遮挡页面。
+- 订阅收敛：新增 `LiveSessionsRuntimeProvider`，live-session WebSocket 在 App 根只挂一份（以前跟页面/主管弹窗挂，导致换页面收不到确认，且可能双连接）；`LiveSessionPage`/`Gallery`/`Graph` 改用 `useLiveSessionsRefresh()`，`SupervisorAgentProvider` 删除 `LiveBridge`。
+- 测试：新增 `pendingConfirmation.test.ts`（4 项：标记拆分、无标记回退、按目标过滤、坏标记不丢正文）与 `pendingConfirmations.test.tsx`（5 项：页面卡片渲染、其他对象不渲染、允许/不允许走 `answer_ui`、角标计数与空态）；前端全量 1293 通过 / 5 项既有失败（App×2、ModelLeaderboard、ToolSummary、LiveSessionsList 分组，均与本次无关，已用还原改动复测确认），typecheck 通过；扩展 25/25。
+- 生效：前端需用户重新构建（`./run.sh`）；扩展需重新加载后重启主会话。
+- 未验证：真实浏览器视觉与真实主 Agent 端到端未实测；标记行在 pi TUI（非 dashboard）里会显示为一行 JSON。
+
+## 修复：回「确认」也写不进去（用户反馈，第二次）
+
+- 现象：主 Agent 记录 EuFakeID 事件（含截图）连续失败三次，回执都是「确认窗口被关掉或选择了不允许」；用户按要求在对话里回了「确认」，仍然失败。
+- 证据（主会话 `2026-10-16T09-27-44…jsonl`）：三次 `event_append` 分别耗时 25.1s / 6.0s / 5.4s；第三次是用户 16:12:57 回复「确认」后 16:13:07 重发、16:13:12 失败；三次 `objectRef`/`type` 相同，`description` 文本被模型重述过。
+- 根因：对话内确认的凭据按「操作 + 完整参数哈希」匹配。模型重发时把 `description` 改了措辞 → 哈希变化 → 上一句「确认」不再算数 → 又弹窗 → 弹窗应答失败 → 回执「未通过」。用户看到的确认内容也被换成了模型的新版本。
+- 修复（`../pi-tsien-extension/extensions/supervisor/index.ts`）：
+  - 确认凭据改为绑定「操作 + 目标」（`confirmationTarget`：`objectRef`/`uid`/`id`/`path`/`type`，`task_create` 另加标题），不再对自由文本做哈希；
+  - 待确认请求保留**用户当时看到的那份参数**，一句「确认」后执行的就是这份原内容，模型重述的新文本不会顶替；
+  - 一次确认只授权一次写入，换目标/换操作/整句含别的诉求仍要重新询问。
+- 测试：扩展 237 项通过（新增「重述文本后一句确认仍生效，且执行的是原内容」「一次确认只授权一次写入」）。
+- 前端（同一症状的另一半）：`ExtensionUiModal`、`LiveSessionExtensionUiModal`、`ToolApprovalModal`、扩展写入确认框都加了「最高 90dvh + 正文内部滚动 + 按钮常驻」，长参数不再把按钮挤出屏幕。
+- 生效：扩展与前端都需用户重新构建并重启（前端 `./run.sh`），主 Agent 需「清空并重新加载」或结束旧主会话后重启才会加载新扩展代码。
+- 已知风险（未改）：确认弹窗依赖 live-session 运行时订阅，而该订阅目前由「主 Agent 弹窗可见」或「打开 Live Session 相关页面」触发；用户停在其他页面时，弹窗可能不出现（不点也不会自动拒绝，但用户会以为没反应）。是否改成全局常驻订阅需先治理重复连接，待用户决定。
+
 ## 修复：写入确认「总是被取消」（用户反馈）
 
 - 现象：`supervisor_task_update`（把任务标成完成）连续三次返回「操作被取消」，用户从未点过取消。

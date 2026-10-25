@@ -75,7 +75,7 @@ import LiveSessionsList from './LiveSessionsList'
 import ContextInspector from './ContextInspector'
 import { PendingDeliveryBar, pendingDeliveries, pendingDeliveryLabel, pendingDeliveryOf, pendingDeliveryTitle, queuedDeliveryFor } from './pendingDelivery'
 import { forkLiveSessionAtStep } from './forkPlacement'
-import { useLiveSessionsRuntime } from './useLiveSessions'
+import { useLiveSessionsRefresh } from './LiveSessionsRuntime'
 
 const DocumentPanel = lazy(() => import('../../components/DocumentPanel'))
 
@@ -2133,7 +2133,7 @@ export default function LiveSessionPage() {
   const graphNodeId = searchParams.get('node')
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
-  const { refresh } = useLiveSessionsRuntime()
+  const { refresh } = useLiveSessionsRefresh()
   const state = useAppSelector(root => root.liveSessions)
   const sessions = useMemo(() => Object.values(state.sessions), [state.sessions])
   // Sessions whose agent is blocked on an unanswered extension dialog.

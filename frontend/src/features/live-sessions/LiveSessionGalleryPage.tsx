@@ -6,7 +6,7 @@ import { authenticated } from '../../store/liveSessionsSlice'
 import { buildSessionTitles } from './sessionTitle'
 import MuyuIcon from '../../components/MuyuIcon'
 import { AuthPanel } from './LiveSessionPage'
-import { useLiveSessionsRuntime } from './useLiveSessions'
+import { useLiveSessionsRefresh } from './LiveSessionsRuntime'
 
 function statusLabel(status: LiveSessionSummary['status']): string {
   if (status === 'idle') return '等待输入'
@@ -29,7 +29,7 @@ function statusEmoji(status: LiveSessionSummary['status']): string {
 export default function LiveSessionGalleryPage() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
-  const { refresh } = useLiveSessionsRuntime()
+  const { refresh } = useLiveSessionsRefresh()
   const state = useAppSelector(root => root.liveSessions)
   const [filter, setFilter] = useState<'all' | LiveSessionSummary['status']>('all')
   const [query, setQuery] = useState('')

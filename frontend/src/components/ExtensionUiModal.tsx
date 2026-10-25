@@ -65,17 +65,17 @@ export default function ExtensionUiModal() {
         role="dialog"
         aria-modal="true"
         onKeyDown={onKeyDown}
-        className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,460px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-bg-elevated p-5 shadow-2xl"
+        className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(90dvh,760px)] w-[min(92vw,460px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-border bg-bg-elevated p-5 shadow-2xl"
       >
-        <div className="mb-3 text-sm font-semibold text-text-strong">
+        <div className="mb-3 shrink-0 text-sm font-semibold text-text-strong">
           {req.prompt || 'Extension request'}
         </div>
         {req.message && (
-          <div className="mb-3 whitespace-pre-wrap text-body-s text-muted">{req.message}</div>
+          <div className="mb-3 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap text-body-s text-muted">{req.message}</div>
         )}
 
         {req.method === 'confirm' && (
-          <div className="flex justify-end gap-2">
+          <div className="flex shrink-0 justify-end gap-2">
             <button
               className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:bg-bg disabled:opacity-40"
               onClick={cancel}
@@ -90,7 +90,7 @@ export default function ExtensionUiModal() {
         )}
 
         {req.method === 'select' && (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex shrink-0 flex-col gap-1.5">
             {(req.options || []).map((opt, i) => (
               <button
                 key={i}
@@ -116,7 +116,7 @@ export default function ExtensionUiModal() {
               onChange={(e) => setValue(e.target.value)}
               placeholder={req.placeholder}
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex shrink-0 justify-end gap-2">
               <button type="button" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:bg-bg disabled:opacity-40" onClick={cancel} disabled={submitting}>Cancel</button>
               <button type="submit" className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-40" disabled={submitting}>Submit</button>
             </div>
@@ -127,11 +127,11 @@ export default function ExtensionUiModal() {
           <form onSubmit={(e) => { e.preventDefault(); respond({ value }) }}>
             <textarea
               ref={firstFieldRef as React.RefObject<HTMLTextAreaElement>}
-              className="mb-3 h-40 w-full resize-y rounded-lg border border-border bg-bg px-3 py-2 font-mono text-body-s text-text outline-none focus:border-accent"
+              className="mb-3 h-40 max-h-[45dvh] w-full resize-y rounded-lg border border-border bg-bg px-3 py-2 font-mono text-body-s text-text outline-none focus:border-accent"
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex shrink-0 justify-end gap-2">
               <button type="button" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:bg-bg disabled:opacity-40" onClick={cancel} disabled={submitting}>Cancel</button>
               <button type="submit" className="rounded-lg border-none bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-40" disabled={submitting}>Save</button>
             </div>
