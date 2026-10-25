@@ -1,5 +1,10 @@
 # AGENTS.md
 
+## 默认 UI 目标（重要）
+
+- 用户日常面对的是 **Live Pi 会话页**（`frontend/src/features/live-sessions/LiveSessionPage.tsx`，含右边栏 `LiveSessionFeatures.tsx`），不是 `/chat` 的 ChatPage。
+- 凡是「界面上加按钮 / 快捷操作 / 面板」类需求，**没有特别说明时一律改 Live Pi**；ChatPage 只有在用户明确点名时才动。
+
 ## 文档维护（重要）
 
 - `guide/` 是部署/安装/配置的**唯一权威入口**：`guide/README.md`（总览）+ `guide/pi-runtime.md`（pi 宿主，fork 构建）+ `guide/extensions.md`（pi-tsien-extension）+ `guide/dashboard.md`（本服务）+ `guide/config.md`（配置总览）+ `guide/standalone-install.md`（手动逐步版）+ `guide/stack-update.md`（多机更新规范）。
