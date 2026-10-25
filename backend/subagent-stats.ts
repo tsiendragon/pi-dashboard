@@ -10,7 +10,6 @@ import type {
   SubagentStatsTotals,
 } from '../shared/src/subagent-stats.js'
 
-const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
 const OPEN = new Set(['queued', 'running', 'paused'])
 const MAX_FAILURES = 12
 
@@ -236,5 +235,3 @@ export class SubagentStatsLedger {
     }
   }
 }
-
-export { TERMINAL }
