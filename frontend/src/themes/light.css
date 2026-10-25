@@ -21,7 +21,7 @@
   --diff-del:rgba(220,38,38,.12);--diff-del-text:#cf222e;
   --diff-hunk:rgba(37,99,235,.12);--diff-hunk-text:#0550ae;
   --diff-meta-text:#1f2328;
-  --font-body:'Space Grotesk',-apple-system,BlinkMacSystemFont,sans-serif;
+  --font-body:'Inter',-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;
   --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;
   --shadow-color:220 40% 18%;
   --shadow-sm:0.5px 1px 1px hsl(var(--shadow-color)/0.1);

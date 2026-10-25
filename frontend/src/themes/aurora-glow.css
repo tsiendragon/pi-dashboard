@@ -32,7 +32,7 @@
   --glow-green:rgba(166,227,161,.42);
   --glow-peach:rgba(250,179,135,.36);
 
-  --font-body:'Space Grotesk',-apple-system,BlinkMacSystemFont,sans-serif;
+  --font-body:'Inter',-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;
   --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;
   --shadow-color:240 30% 5%;
   --shadow-sm:0.5px 1px 1px hsl(var(--shadow-color)/0.45);
