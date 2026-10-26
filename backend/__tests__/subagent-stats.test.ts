@@ -24,7 +24,17 @@ describe('SubagentStatsLedger', () => {
     const now = Date.now()
     const dir = await seed([
       row({ workId: 'work_ok', status: 'queued', role: 'code', tier: 'light', createdAt: now - 60_000 }),
-      row({ workId: 'work_ok', status: 'completed', role: 'code', tier: 'light', model: 'a/one', completedAt: now - 30_000 }),
+      row({
+        workId: 'work_ok',
+        status: 'completed',
+        role: 'code',
+        tier: 'light',
+        model: 'a/one',
+        completedAt: now - 30_000,
+        usage: { input: 10, output: 500, cacheRead: 1000, cacheWrite: 2000, cost: 0.01 },
+        toolCalls: 7,
+        modelCalls: 3,
+      }),
       row({ workId: 'work_bad', status: 'queued', role: 'read_only', createdAt: now - 50_000 }),
       row({ workId: 'work_bad', status: 'failed', role: 'read_only', model: 'a/two', error: 'boom', completedAt: now - 20_000 }),
       row({ workId: 'work_run', status: 'running', role: 'code', createdAt: now - 10_000 }),
@@ -53,6 +63,16 @@ describe('SubagentStatsLedger', () => {
     expect(report.byModel).toEqual(
       expect.arrayContaining([expect.objectContaining({ key: 'a/one', completed: 1 })]),
     )
+    expect(report.totals.usage).toMatchObject({
+      input: 10,
+      output: 500,
+      cacheRead: 1000,
+      cacheWrite: 2000,
+      cost: 0.01,
+      reported: 1,
+      toolCalls: 7,
+      modelCalls: 3,
+    })
     expect(report.recentFailures).toEqual([
       expect.objectContaining({ workId: 'work_bad', status: 'failed', error: 'boom', role: 'read_only' }),
     ])

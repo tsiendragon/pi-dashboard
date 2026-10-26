@@ -28,6 +28,15 @@ interface LedgerRow {
   at?: number
   tasks?: number
   tasksFailed?: number
+  usage?: {
+    input?: number
+    output?: number
+    cacheRead?: number
+    cacheWrite?: number
+    cost?: number
+  }
+  toolCalls?: number
+  modelCalls?: number
 }
 
 export interface SubagentStatsOptions {
@@ -71,6 +80,18 @@ function parseRow(line: string): LedgerRow | undefined {
     at: asNumber(raw.at),
     tasks: asNumber(raw.tasks),
     tasksFailed: asNumber(raw.tasksFailed),
+    usage:
+      raw.usage && typeof raw.usage === 'object'
+        ? {
+            input: asNumber((raw.usage as Record<string, unknown>).input),
+            output: asNumber((raw.usage as Record<string, unknown>).output),
+            cacheRead: asNumber((raw.usage as Record<string, unknown>).cacheRead),
+            cacheWrite: asNumber((raw.usage as Record<string, unknown>).cacheWrite),
+            cost: asNumber((raw.usage as Record<string, unknown>).cost),
+          }
+        : undefined,
+    toolCalls: asNumber(raw.toolCalls),
+    modelCalls: asNumber(raw.modelCalls),
   }
 }
 
@@ -110,14 +131,34 @@ function group(
     .sort((left, right) => right.launched - left.launched)
 }
 
-function totalsOf(entries: readonly { status: string; tasks?: number; tasksFailed?: number }[]): SubagentStatsTotals {
+function totalsOf(
+  entries: readonly {
+    status: string
+    tasks?: number
+    tasksFailed?: number
+    usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number }
+    toolCalls?: number
+    modelCalls?: number
+  }[],
+): SubagentStatsTotals {
   const bucket = emptyBuckets()
   let tasks = 0
   let tasksFailed = 0
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, reported: 0, toolCalls: 0, modelCalls: 0 }
   for (const entry of entries) {
     bump(bucket, entry.status)
     tasks += entry.tasks ?? 0
     tasksFailed += entry.tasksFailed ?? 0
+    if (entry.usage) {
+      usage.input += entry.usage.input ?? 0
+      usage.output += entry.usage.output ?? 0
+      usage.cacheRead += entry.usage.cacheRead ?? 0
+      usage.cacheWrite += entry.usage.cacheWrite ?? 0
+      usage.cost += entry.usage.cost ?? 0
+      usage.reported += 1
+    }
+    usage.toolCalls += entry.toolCalls ?? 0
+    usage.modelCalls += entry.modelCalls ?? 0
   }
   return {
     ...bucket,
@@ -125,6 +166,7 @@ function totalsOf(entries: readonly { status: string; tasks?: number; tasksFaile
     successRate: successRate(bucket.completed, bucket.failed),
     tasks,
     tasksFailed,
+    usage,
   }
 }
 

@@ -7,6 +7,18 @@ function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`
 }
 
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return String(Math.round(value))
+}
+
+function formatCost(value: number): string {
+  if (!value) return '$0'
+  if (value < 0.01) return `$${value.toFixed(4)}`
+  return `$${value.toFixed(2)}`
+}
+
 function formatTime(at: number): string {
   if (!at) return '—'
   return new Intl.DateTimeFormat(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(at))
@@ -212,6 +224,31 @@ export default function SubagentStatsPage({ embedded = false }: { embedded?: boo
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <MetricCard
+              label="子 Agent 输出 token"
+              value={totals.usage.reported > 0 ? formatTokens(totals.usage.output) : '—'}
+              hint={totals.usage.reported > 0
+                ? `输入 ${formatTokens(totals.usage.input)} · 缓存读 ${formatTokens(totals.usage.cacheRead)}`
+                : '还没有子任务写入用量'}
+            />
+            <MetricCard
+              label="子 Agent 费用"
+              value={totals.usage.reported > 0 ? formatCost(totals.usage.cost) : '—'}
+              hint={`${totals.usage.reported} 次任务记了用量`}
+            />
+            <MetricCard
+              label="每个任务工具调用"
+              value={totals.usage.reported > 0 ? (totals.usage.toolCalls / totals.usage.reported).toFixed(1) : '—'}
+              hint={totals.usage.reported > 0 ? `共 ${totals.usage.toolCalls} 次 · 模型调用 ${totals.usage.modelCalls}` : '累计工具调用数'}
+            />
+            <MetricCard
+              label="每个任务输出 token"
+              value={totals.usage.reported > 0 ? formatTokens(totals.usage.output / totals.usage.reported) : '—'}
+              hint="只统计写入了用量的任务"
+            />
+          </div>
+
           <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -256,7 +293,7 @@ export default function SubagentStatsPage({ embedded = false }: { embedded?: boo
           </section>
 
           <p className="text-2xs text-muted">
-            统计口径：一行一次事件，同一个 workId 取最后一行作为最终状态。工作流按整次派发计时，子任务数量单独列出。台账只记本机 Pi 进程的派发；其他机器或没写台账的旧记录不在统计内。
+            统计口径：一行一次事件，同一个 workId 取最后一行作为最终状态。工作流按整次派发计时，子任务数量单独列出。用量只从台账开始记录子任务用量的那次升级后才有；同一份消耗也记在子任务自己的会话文件里。主 Agent 的用量看「成本」标签，两个页面用同一个月份或时间窗才能对比。台账只记本机 Pi 进程的派发；其他机器或没写台账的旧记录不在统计内。
           </p>
         </>}
       </div>

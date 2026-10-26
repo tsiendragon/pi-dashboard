@@ -25,11 +25,25 @@ export interface SubagentStatsGroup {
   successRate: number
 }
 
+export interface SubagentUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  cost: number
+  /** Jobs whose ledger row carried usage; older rows have none. */
+  reported: number
+  toolCalls: number
+  modelCalls: number
+}
+
 export interface SubagentStatsTotals extends Omit<SubagentStatsGroup, 'key'> {
   /** Jobs that reached a terminal state. */
   settled: number
   tasks: number
   tasksFailed: number
+  /** Token and cost the children burned; only counted after the ledger started recording it. */
+  usage: SubagentUsage
 }
 
 export interface SubagentStatsFailure {
