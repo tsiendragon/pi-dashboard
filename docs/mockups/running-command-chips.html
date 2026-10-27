@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Mock: 运行中命令 chips</title>
+<style>
+  body{margin:0;font:13px/1.5 -apple-system,"PingFang SC",sans-serif;background:#f5f6f8;color:#222}
+  .wrap{max-width:1100px;margin:60px auto}
+  .msg{background:#fff;border:1px solid #e5e7eb;border-radius:12px;height:160px;margin-bottom:8px;padding:16px;color:#999}
+  .status{display:flex;align-items:center;gap:10px;padding:6px 8px;border-top:1px solid #eee;background:#fff}
+  .dots span{display:inline-block;width:7px;height:7px;border-radius:50%;background:#2f6fd6;margin-right:3px;animation:b 1.2s infinite}
+  .dots span:nth-child(2){animation-delay:.2s}.dots span:nth-child(3){animation-delay:.4s}
+  @keyframes b{0%,100%{opacity:.3}50%{opacity:1}}
+  .cur{color:#2f6fd6;white-space:nowrap}
+  .sep{width:1px;height:16px;background:#ddd}
+  .chips{display:flex;gap:6px;overflow-x:auto;flex:1}
+  .chip{display:flex;align-items:center;gap:6px;border:1px solid #d6dbe3;border-radius:999px;padding:2px 10px;background:#fafbfc;cursor:pointer;white-space:nowrap;max-width:260px}
+  .chip:hover{border-color:#2f6fd6;background:#eef4ff}
+  .chip code{overflow:hidden;text-overflow:ellipsis;font-size:12px}
+  .tag{font-size:11px;padding:0 6px;border-radius:6px}
+  .fg .tag{background:#e6f0ff;color:#2f6fd6}
+  .bg .tag{background:#f1eafe;color:#7a4bd1}
+  .t{color:#888;font-size:11px}
+  .done{opacity:.55}.done .tag{background:#e7f6ec;color:#1f8a4c}
+  .fail .tag{background:#fde8ea;color:#c0263d}
+  .input{background:#fff;border:1px solid #dde1e7;border-radius:14px;padding:14px 18px}
+  .input .ph{color:#999;margin-bottom:22px}
+  .bar{display:flex;justify-content:space-between;color:#555}
+  .stop{border:1px solid #ddd;border-radius:8px;padding:4px 12px;color:#c0263d;background:#fff}
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.3);display:none;align-items:center;justify-content:center}
+  .dlg{background:#fff;border-radius:12px;width:640px;padding:18px 20px;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+  .dlg h3{margin:0 0 10px;display:flex;gap:8px;align-items:center}
+  .kv{display:grid;grid-template-columns:80px 1fr;gap:4px 10px;margin-bottom:10px}
+  .kv b{color:#888;font-weight:normal}
+  pre{background:#0f1720;color:#cfe3d3;border-radius:8px;padding:10px;height:200px;overflow:auto;font-size:12px;margin:0}
+  .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+  button{border:1px solid #ccd;border-radius:8px;padding:5px 14px;background:#fff;cursor:pointer}
+  button.pri{background:#2f6fd6;color:#fff;border-color:#2f6fd6}
+  button.danger{color:#c0263d}
+  .hint{color:#888;font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="msg">（对话区域）<br><br><button onclick="newRound()">模拟：用户发送新一轮消息</button> <span class="hint">新一轮开始后，上一轮已结束的命令不再显示；仍在运行的后台命令继续保留。</span></div>
+  <div class="status">
+    <span class="dots"><span></span><span></span><span></span></span>
+    <span class="cur">执行工具 · bash</span>
+    <span class="sep"></span>
+    <div class="chips" id="chips"></div>
+  </div>
+  <div class="input">
+    <div class="ph">发送到运行中的 Pi...</div>
+    <div class="bar"><span>📎 🎤 | 插话 ▾ · claude-opus-5-5 ▾ · low ▾</span><span>Enter 发送 · Shift+Enter 换行 <span class="stop">■ 中止</span></span></div>
+  </div>
+</div>
+
+<div class="mask" id="mask" onclick="if(event.target===this)close_()">
+  <div class="dlg">
+    <h3 id="dTitle"></h3>
+    <div class="kv" id="dKv"></div>
+    <pre id="dLog"></pre>
+    <div class="hint" id="dHint"></div>
+    <div class="acts" id="dActs"></div>
+  </div>
+</div>
+
+<script>
+// round: 该命令所属的对话轮次。规则：仍在运行的一律显示；已结束的只显示当前轮次的
+let round=3;
+let cmds=[
+  {id:'tc_old1',round:1,kind:'bg',cmd:'ls -la',start:Date.now()-3600000,cwd:'~',state:'done'},
+  {id:'tc_old2',round:2,kind:'bg',cmd:'git status',start:Date.now()-1200000,cwd:'~',state:'done'},
+  {id:'tc_fg1',round:3,kind:'fg',cmd:'npm run build -- --mode production',start:Date.now()-42000,cwd:'/home/you/repos/pi-dashboard',state:'run'},
+  {id:'bash-a1b2',round:1,kind:'bg',title:'训练 ocr-v3',cmd:'python train.py --cfg ocr_v3.yaml',start:Date.now()-1860000,cwd:'/mnt/exp/ocr',state:'run'},
+  {id:'bash-c3d4',round:3,kind:'bg',title:'评测',cmd:'pytest tests/e2e -x',start:Date.now()-300000,cwd:'/home/you/repos/x',state:'fail'},
+  {id:'bash-e5f6',round:3,kind:'bg',cmd:'rsync -av data/ remote:/data',start:Date.now()-90000,cwd:'/mnt/data',state:'done'},
+];
+const visible=()=>cmds.filter(c=>c.state==='run'||c.round===round)
+  .sort((a,b)=>(a.state==='run'?0:1)-(b.state==='run'?0:1)||(a.kind==='fg'?0:1)-(b.kind==='fg'?0:1));
+function newRound(){round++;cmds.forEach(c=>{if(c.kind==='fg'&&c.state==='run')c.state='done'});
+  cmds.push({id:'tc_'+round,round,kind:'fg',cmd:'echo round '+round,start:Date.now(),cwd:'~',state:'run'});render()}
+const fmt=ms=>{const s=Math.floor(ms/1000);return s<60?s+'秒':s<3600?Math.floor(s/60)+'分'+s%60+'秒':Math.floor(s/3600)+'时'+Math.floor(s%3600/60)+'分'};
+const tagText=c=>c.state==='done'?'已完成':c.state==='fail'?'失败':c.kind==='fg'?'前台':'后台';
+let open=null;
+function render(){
+  const el=document.getElementById('chips');el.innerHTML='';
+  visible().forEach(c=>{
+    const d=document.createElement('div');
+    d.className='chip '+c.kind+(c.state==='done'?' done':'')+(c.state==='fail'?' fail':'');
+    d.title=c.cmd;
+    d.innerHTML=`<span class="tag">${tagText(c)}</span><code>${c.title||c.cmd}</code><span class="t">${fmt(Date.now()-c.start)}</span>`;
+    d.onclick=()=>show(c);el.appendChild(d);
+  });
+  if(open)show(open);
+}
+function show(c){
+  open=c;document.getElementById('mask').style.display='flex';
+  dTitle.innerHTML=`<span class="tag" style="font-size:12px">${tagText(c)}</span>${c.title||'命令详情'}`;
+  dKv.innerHTML=`<b>命令</b><code>${c.cmd}</code><b>目录</b><span>${c.cwd}</span><b>已运行</b><span>${fmt(Date.now()-c.start)}</span>`+(c.kind==='bg'?`<b>任务编号</b><span>${c.id}</span>`:'');
+  dLog.textContent=Array.from({length:12},(_,i)=>`[${i}] ${c.cmd.split(' ')[0]} ... step ${i*7}`).join('\n');
+  dLog.scrollTop=1e9;
+  let acts='';
+  if(c.kind==='fg'&&c.state==='run'){
+    acts+=`<button class="pri" onclick="toBg('${c.id}')">转到后台</button>`;
+    dHint.textContent='转到后台后：命令继续运行，Pi 不再等待它，可以接着干别的；结束时会通知 Pi。';
+  }else dHint.textContent='';
+  if(c.state==='run')acts+=`<button class="danger">停止命令</button>`;
+  acts+=`<button onclick="close_()">关闭</button>`;
+  dActs.innerHTML=acts;
+}
+function close_(){open=null;mask.style.display='none'}
+// 复用已有协议：feature_command { feature:'background-commands', command:{ type:'background', toolCallId } }
+function toBg(toolCallId){
+  console.log('send',{type:'feature_command',feature:'background-commands',command:{type:'background',toolCallId}});
+  const c=cmds.find(x=>x.id===toolCallId);c.kind='bg';render();}
+render();setInterval(render,1000);
+</script>
+</body>
+</html>

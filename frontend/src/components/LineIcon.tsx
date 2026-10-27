@@ -1,7 +1,7 @@
 /**
  * 统一的线条图标（1.7 线宽、圆角端点），Live Pi / 会话列表 / 右侧栏 / 设置页共用。
  * 与 MaterialIcon（实心）并存；新界面优先用这里，缺图标就在 PATHS 里补，不要再写一次性 svg。
- * 设计来源：docs/mock/live-activity-mock.html、docs/mock/live-shell-mock.html。
+ * 设计来源：docs/mockups/live-activity-mock.html、docs/mockups/live-shell-mock.html。
  */
 const PATHS = {
   attach: 'M21 11l-8.6 8.6a5 5 0 0 1-7-7L14 4a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4L15.6 7',

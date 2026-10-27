@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>会话列表 · 分组底色 + 木鱼放大 样例</title>
+<style>
+  /* 颜色取自真实主题 frontend/src/themes/light.css 与 dark.css */
+  .light{--bg:#fafafa;--elev:#fff;--hover:#f0f0f0;--card:#fff;--text:#3f3f46;--strong:#18181b;--muted:#71717a;--muted2:#52525b;--border:#e4e4e7;
+    --accent:#1d5aaf;--accent-s:rgba(29,90,175,.12);--ok:#11695e;--ok-s:rgba(17,105,94,.1);--aim:#7c3aed;--aim-s:rgba(124,58,237,.12);--cl:#d97706;--cl-s:rgba(217,119,6,.06)}
+  .dark{--bg:#12141a;--elev:#1a1d25;--hover:#262a35;--card:#181b22;--text:#e4e4e7;--strong:#fafafa;--muted:#a1a1aa;--muted2:#8b8b96;--border:#27272a;
+    --accent:#7aa2f7;--accent-s:rgba(122,162,247,.15);--ok:#2dd4bf;--ok-s:rgba(45,212,191,.14);--aim:#a78bfa;--aim-s:rgba(167,139,250,.15);--cl:#f59e0b;--cl-s:rgba(245,158,11,.05)}
+  /* 方案 B：加深一档（统一约 16% 浓度，橙色补到同级） */
+  .deep.light{--accent-s:rgba(29,90,175,.16);--ok-s:rgba(17,105,94,.15);--aim-s:rgba(124,58,237,.15);--cl-s:rgba(217,119,6,.14)}
+  .deep.dark{--accent-s:rgba(122,162,247,.2);--ok-s:rgba(45,212,191,.18);--aim-s:rgba(167,139,250,.2);--cl-s:rgba(245,158,11,.14)}
+  *{box-sizing:border-box}
+  body{margin:0;font:13px/1.55 Inter,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#e9ebef;color:#1f2329}
+  .mono{font-family:"JetBrains Mono","SF Mono",Menlo,monospace}
+  header{padding:14px 20px;background:#fff;border-bottom:1px solid #e4e4e7;display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+  header b{font-size:14px}
+  .seg{display:inline-flex;background:#f0f2f5;border-radius:9px;padding:2px}
+  .seg button{border:0;background:none;padding:4px 12px;border-radius:7px;cursor:pointer;font:12px inherit;color:#5b6370}
+  .seg button.on{background:#fff;color:#18181b;box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:500}
+  .note{font-size:12px;color:#71717a}
+  .wrap{display:flex;gap:20px;padding:20px;flex-wrap:wrap}
+  .col{display:flex;flex-direction:column;gap:6px}
+  .col h3{margin:0;font-size:12px;color:#52525b;font-weight:600}
+
+  .list{width:300px;height:640px;overflow:auto;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:4px 0}
+  section{margin:6px;border-radius:10px;padding-bottom:2px}
+  .t0{background:var(--accent-s)}.t1{background:var(--ok-s)}.t2{background:var(--aim-s)}.t3{background:var(--cl-s)}.t4{background:var(--elev)}
+  /* 方案 C：按标签色 —— 组头左侧一条彩色竖线 + 同色淡底 */
+  .bytag section{border-left:3px solid var(--c)}
+  .gh{display:flex;align-items:center;gap:4px;padding:5px 10px 3px;font-size:11px;color:var(--muted2);font-weight:600}
+  .gh .n{margin-left:auto;font-weight:400;color:var(--muted)}
+  .gh svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2}
+  .row{position:relative;display:flex;gap:8px;padding:6px 8px;margin:0 4px;border-radius:7px;cursor:pointer;min-height:35px}
+  .row:hover{background:var(--hover)}
+  .row.on{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .row.on::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+  .gut{flex:none;display:flex;justify-content:center}
+  .gut.small{width:12px;height:18px;align-items:center}
+  .gut.big{width:30px;margin-left:-4px;align-items:flex-start}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .d-wait{background:var(--cl)}.d-done{background:var(--ok)}.d-idle{border:1px solid var(--muted2);opacity:.6}
+  .b{flex:1;min-width:0}
+  .l1{display:flex;align-items:center;gap:6px}
+  .name{flex:1;min-width:0;font-size:12px;font-weight:500;color:var(--strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .time{font-size:11px;color:var(--muted)}
+  .l2{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+  .l2 .cwd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badge{font-size:10px;padding:0 5px;border-radius:4px;background:var(--hover);color:var(--muted2)}
+
+  /* 木鱼（与 index.css 同一套动画） */
+  .muyu{position:relative;display:inline-block;color:var(--accent)}
+  .muyu svg{display:block;width:100%;height:100%;overflow:visible}
+  .muyu.old{width:12px;height:18px}
+  .muyu.new{width:30px;height:36px}
+  .muyu.new svg{transform:translateY(2px)}
+  .mallet{transform-box:view-box;transform-origin:14.6px 6px;animation:swing 1.3s infinite}
+  .body{transform-box:view-box;transform-origin:7px 12.6px;animation:squash 1.3s infinite}
+  .tok{opacity:0;animation:tok 1.3s infinite}
+  .merit{position:absolute;left:-2px;top:4px;font-size:8px;font-weight:700;line-height:1;opacity:0;animation:merit 1.3s infinite}
+  @keyframes swing{0%{transform:rotate(8deg);animation-timing-function:cubic-bezier(.5,.05,.85,.4)}25%{transform:rotate(-21deg);animation-timing-function:ease-out}34%{transform:rotate(-14deg)}46%{transform:rotate(-17deg)}100%{transform:rotate(8deg)}}
+  @keyframes squash{0%,24%{transform:scale(1)}28%{transform:scale(1.05,.9)}38%{transform:scale(.98,1.03)}48%,100%{transform:scale(1)}}
+  @keyframes tok{0%,24%{opacity:0}27%{opacity:1}45%,100%{opacity:0}}
+  @keyframes merit{0%,24%{opacity:0;transform:translateY(2px)}32%{opacity:1;transform:translateY(0)}70%{opacity:.9;transform:translateY(-5px)}90%,100%{opacity:0;transform:translateY(-7px)}}
+</style>
+</head>
+<body>
+<header>
+  <b>会话列表样例</b>
+  <span class="note">分组底色：</span>
+  <div class="seg" id="tint"><button class="on" data-v="now">A 现在的实现</button><button data-v="deep">B 加深一档</button><button data-v="tag">C 按标签色</button></div>
+  <span class="note">木鱼：</span>
+  <div class="seg" id="muyu"><button data-v="old">放大前</button><button class="on" data-v="new">放大后</button></div>
+</header>
+
+<div class="wrap">
+  <div class="col"><h3>浅色主题</h3><div class="list light" id="L"></div></div>
+  <div class="col"><h3>深色主题</h3><div class="list dark" id="D"></div></div>
+</div>
+
+<template id="muyu-tpl"><span class="muyu new"><svg viewBox="0 0 16 16"><defs><mask id="MID" maskUnits="userSpaceOnUse" x="-2" y="-2" width="20" height="20"><rect x="-2" y="-2" width="20" height="20" fill="#fff"/><path d="M.2 9.9H5.4" stroke="#000" stroke-width=".75" stroke-linecap="round"/><circle cx="5.6" cy="9.9" r="1.05" fill="#000"/></mask></defs><path class="body" mask="url(#MID)" fill="currentColor" d="M1 12.6C.1 12.2 0 10.1.6 9 1.7 7.1 4.1 6.3 7 6.3c3.2 0 5.7 1.7 6.4 4.3.3 1.2-.1 2-.9 2C9 12.6 4 13 1 12.6z"/><path class="tok" d="M3.3 5.9 2.3 5.3M3.9 4.6 3.4 3.7" stroke="currentColor" stroke-width=".6" stroke-linecap="round" fill="none"/><g class="mallet"><line x1="6.4" y1="2.6" x2="14.6" y2="6" stroke="currentColor" stroke-width=".95" stroke-linecap="round"/><circle cx="6.3" cy="2.6" r="1.05" fill="currentColor"/></g></svg><span class="merit">+1</span></span></template>
+
+<script>
+const GROUPS = [
+  {name:'pi-extension', color:'#d6336c', rows:[
+    ['run','🎨 dashboard','4m','~/repos/pi-dashboard',true],
+    ['wait','实现 Pi 记忆自动召回','21m','~/repos/pi-tsien-memory'],
+    ['idle','sessions','57m','~/repos/pi-dashboard'],
+    ['done','🔧 subagent','1h','~/repos/pi-dashboard']]},
+  {name:'my-taskspace', color:'#1f9d61', rows:[['run','main','2m','~/repos/my-taskspace']]},
+  {name:'skills', color:'#7c4ddb', rows:[['idle','datahub','57m','~/repos/my-library'],['idle','skill2','57m','~/repos/my-library']]},
+  {name:'tools', color:'#c46a00', rows:[['idle','download','32m','~/repos/download_tools'],['run','train-hub','1m','~/repos/train-hub'],['idle','tgrid','58m','~/repos/task-grid']]},
+  {name:'未分组', color:'#8a919c', rows:[['idle','systemPrompt','24m','~/repos/my-library']]},
+];
+let uid=0;
+function muyu(){ const h=document.getElementById('muyu-tpl').innerHTML.replaceAll('MID','m'+(uid++)); return h }
+function render(el){
+  el.innerHTML = GROUPS.map((g,i)=>`<section class="t${i%5}" style="--c:${g.color}">
+    <div class="gh"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>${g.name}<span class="n mono">${g.rows.length}</span></div>
+    ${g.rows.map(([st,name,t,cwd,on])=>`<div class="row${on?' on':''}">
+      ${st==='run'?`<span class="gut big">${muyu()}</span>`:`<span class="gut small"><span class="dot d-${st}"></span></span>`}
+      <div class="b"><div class="l1"><span class="name">${name}</span><span class="time mono">${t}</span></div>
+      <div class="l2"><span>▭</span><span class="cwd mono">${cwd}</span>${st==='wait'?'<span class="badge">等你回复</span>':''}</div></div></div>`).join('')}
+  </section>`).join('');
+}
+render(L); render(D);
+function applyTint(v){
+  for(const el of [L,D]){
+    el.classList.toggle('deep', v!=='now');
+    el.classList.toggle('bytag', v==='tag');
+    el.querySelectorAll('section').forEach((s,i)=>{
+      if(v==='tag'){ s.className=''; s.style.background=`color-mix(in srgb, ${GROUPS[i].color} ${el===D?14:9}%, transparent)` }
+      else { s.className='t'+(i%5); s.style.background='' }
+    });
+  }
+}
+function applyMuyu(v){
+  document.querySelectorAll('.muyu').forEach(m=>{ m.className='muyu '+v; m.parentElement.className='gut '+(v==='new'?'big':'small') });
+}
+for(const [id,fn] of [['tint',applyTint],['muyu',applyMuyu]]){
+  document.querySelectorAll('#'+id+' button').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#'+id+' button').forEach(x=>x.classList.toggle('on',x===b)); fn(b.dataset.v);
+  });
+}
+</script>
+</body>
+</html>

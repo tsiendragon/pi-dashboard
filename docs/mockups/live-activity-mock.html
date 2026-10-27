@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Live Pi 活动视图 · 改版样例 v3</title>
+<style>
+  /* ===== 字体与配色规范（整页只用这些） =====
+     字体：正文 = 系统无衬线（PingFang SC / Inter）；代码、路径、数字 = 等宽（JetBrains Mono / SF Mono / Menlo）
+     字号：标题 14 / 正文 13 / 次要 12 / 标注 11，只用这 4 档
+     字重：600 只给标题和关键数字，其余 400
+     颜色：正文 #1f2329、次要 #5b6370、弱化 #8a919c；
+           蓝=进行中/链接、绿=完成/读取、橙=写入/定时、紫=用户说的话、红=危险 */
+  :root{
+    --sans:"Inter","PingFang SC","Hiragino Sans GB","Microsoft YaHei",-apple-system,sans-serif;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+    --fs-title:14px; --fs-body:13px; --fs-sub:12px; --fs-tag:11px;
+    --bg:#f6f7f9; --card:#fff; --border:#e6e8ec; --line:#f0f1f4;
+    --text:#1f2329; --text-2:#5b6370; --muted:#8a919c; --faint:#b0b5bd;
+    --accent:#2f6fde; --accent-soft:#eaf1fd;
+    --user:#7c4ddb; --user-soft:#f3eefc;
+    --ok:#1f9d61; --ok-soft:#e7f6ee;
+    --write:#c46a00; --write-soft:#fdf1e1;
+    --code-bg:#f3f4f6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:400 var(--fs-body)/1.55 var(--sans);color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased}
+  code,.mono{font-family:var(--mono);font-size:.92em}
+  code{background:var(--code-bg);padding:0 4px;border-radius:4px;color:#3d4450}
+    .main{padding:20px 16px 170px}
+  .page{max-width:900px;margin:0 auto}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px;font-size:var(--fs-tag);color:var(--muted)}
+  .legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:0}
+
+  /* 摘要条 */
+  .summary{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:16px}
+  .summary .goal{flex:1;min-width:0}
+  .lbl{font-size:var(--fs-tag);color:var(--muted)}
+  .summary .t{font-weight:600;font-size:var(--fs-title);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stat{text-align:center;padding:0 12px;border-left:1px solid var(--border)}
+  .stat .n{font:600 var(--fs-title) var(--mono)}
+
+  /* 时间线 */
+  .tl{position:relative;padding-left:26px}
+  .tl::before{content:"";position:absolute;left:9px;top:6px;bottom:6px;width:2px;background:var(--border)}
+  .item{position:relative;margin-bottom:10px}
+  .dot{position:absolute;left:-22px;top:13px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid #c4c9d1}
+  .dot.done{border-color:var(--ok);background:var(--ok)}
+  .dot.run{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+  .dot.idle{border-style:dashed}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px}
+  .card.run{border-color:#bcd2f7}
+  .head{display:flex;align-items:center;gap:8px;font-size:var(--fs-tag);color:var(--muted)}
+  .head .time{font-family:var(--mono)}
+  .chip{display:inline-flex;align-items:center;gap:3px;padding:0 7px;border-radius:999px;font-size:var(--fs-tag);line-height:18px}
+  .chip.user{background:var(--user-soft);color:var(--user)}
+  .chip.sched{background:var(--write-soft);color:var(--write)}
+  .status{margin-left:auto}
+  .status.run{background:var(--accent-soft);color:var(--accent)}
+  .status.ok{background:var(--ok-soft);color:var(--ok)}
+  .status.pend{background:#f0f2f5;color:var(--muted)}
+  .title{margin:4px 0 0;font-size:var(--fs-title);font-weight:600;line-height:1.45}
+  .title.user{color:var(--user)}
+  .group{display:flex;align-items:center;gap:10px;border:1px dashed #d5d9e0;border-radius:10px;padding:7px 14px;font-size:var(--fs-sub);color:var(--muted)}
+  .group .mono{font-size:var(--fs-tag)}
+  .group .more{margin-left:auto;color:var(--accent);cursor:pointer}
+
+  /* 步骤 + 文件 */
+  .steps{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+  .step{padding:5px 8px;border-radius:6px}
+  .step:hover{background:#f8f9fb}
+  .row{display:flex;align-items:center;gap:8px;font-size:var(--fs-sub);color:var(--text-2)}
+  .row b{font-weight:500;color:var(--text)}
+  .ic{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-size:10px;flex:none}
+  .ic.ok{background:var(--ok-soft);color:var(--ok)}
+  .ic.run{border:2px solid var(--accent);border-top-color:transparent;animation:spin .9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .cmd{font:var(--fs-tag) var(--mono);color:var(--text-2);background:var(--code-bg);padding:1px 6px;border-radius:4px;max-width:380px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dur{margin-left:auto;font:var(--fs-tag) var(--mono);color:var(--faint)}
+  .files{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 0 24px}
+  .file{display:inline-flex;align-items:center;gap:4px;font:var(--fs-tag) var(--mono);border:1px solid var(--border);border-radius:5px;padding:1px 6px 1px 2px;background:#fff;color:var(--text-2);cursor:pointer;max-width:320px}
+  .file:hover{border-color:var(--accent);color:var(--accent)}
+  .file .op{font-family:var(--sans);font-size:10px;line-height:14px;padding:0 4px;border-radius:3px}
+  .op.r{background:var(--ok-soft);color:var(--ok)}
+  .op.w{background:var(--write-soft);color:var(--write)}
+  .file .p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl}
+  .file.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+
+  .notes{margin-top:8px;border-top:1px solid var(--line);padding-top:6px}
+  .note{display:flex;gap:8px;font-size:var(--fs-sub);color:var(--text-2);padding:3px 0}
+  .note .k{flex:none;font-size:var(--fs-tag);color:var(--muted);width:52px}
+  .note .len{margin-left:auto;font:var(--fs-tag) var(--mono);color:var(--faint);flex:none}
+  .note a{color:var(--accent);font-size:var(--fs-tag);margin-left:6px;cursor:pointer}
+
+  /* 文件弹窗 */
+  .mask{position:fixed;inset:0;background:rgba(17,24,39,.38);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;z-index:50;padding:24px}
+  .mask.open{display:flex;animation:fade .15s}
+  @keyframes fade{from{opacity:0}}
+  .modal{width:min(820px,100%);max-height:82vh;background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.22);display:flex;flex-direction:column;overflow:hidden;animation:pop .18s ease-out}
+  @keyframes pop{from{transform:translateY(8px) scale(.98);opacity:0}}
+  .vh{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border)}
+  .vh .op{font-size:10px;line-height:16px;padding:0 5px;border-radius:4px}
+  .vh .path{font:500 var(--fs-sub) var(--mono);color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vh .ib{width:28px;height:28px}
+  .vmeta{padding:6px 16px;font-size:var(--fs-tag);color:var(--muted);border-bottom:1px solid var(--line);background:#fcfcfd}
+  pre{margin:0;flex:1;overflow:auto;padding:12px 0;font:12px/1.65 var(--mono);color:#24292f}
+  pre .ln{display:inline-block;width:42px;text-align:right;padding-right:14px;color:var(--faint);user-select:none}
+  pre .add{background:#e9f7ef;display:block}
+  pre .kw{color:#7c4ddb} pre .s{color:#1f7a4d} pre .c{color:var(--muted)}
+
+  /* 底部输入区 */
+  .dock{position:fixed;left:0;right:0;bottom:0;padding:8px 16px 16px;background:linear-gradient(to top,var(--bg) 72%,rgba(246,247,249,0))}
+  .dock .inner{max-width:900px;margin:0 auto}
+  .live{display:flex;align-items:center;gap:8px;font-size:var(--fs-sub);color:var(--text-2);margin:0 0 8px 6px}
+  .live .pulse{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 rgba(47,111,222,.45);animation:ring 1.6s infinite}
+  @keyframes ring{70%{box-shadow:0 0 0 6px rgba(47,111,222,0)}}
+  .live .tool{font:var(--fs-tag) var(--mono);color:var(--accent);background:var(--accent-soft);padding:1px 6px;border-radius:4px}
+  .live .t{margin-left:auto;font:var(--fs-tag) var(--mono);color:var(--faint)}
+  .composer{background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.06);transition:border-color .15s,box-shadow .15s}
+  .composer:focus-within{border-color:#b8cdf5;box-shadow:0 0 0 4px rgba(47,111,222,.08),0 8px 24px rgba(16,24,40,.06)}
+  .composer textarea{display:block;width:100%;border:0;outline:0;resize:none;font:var(--fs-body)/1.55 var(--sans);color:var(--text);padding:12px 16px 4px;min-height:44px;background:transparent}
+  .composer textarea::placeholder{color:var(--faint)}
+  .bar{display:flex;align-items:center;gap:2px;padding:4px 8px 8px}
+  .ib{width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;transition:background .12s,color .12s}
+  .ib:hover{background:#f2f3f5;color:var(--text)}
+  .ib svg,.sel svg,.btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .sep{width:1px;height:16px;background:var(--border);margin:0 6px}
+  .sel{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 8px;border-radius:8px;font-size:var(--fs-sub);color:var(--text-2);cursor:pointer}
+  .sel:hover{background:#f2f3f5;color:var(--text)}
+  .sel .m{font:500 var(--fs-tag) var(--mono);color:var(--text)}
+  .sel .lv{font-size:10px;color:var(--accent);background:var(--accent-soft);padding:0 5px;border-radius:4px;line-height:16px}
+  .sel svg.chev{width:12px;height:12px;color:var(--faint)}
+  .spacer{flex:1}
+  .hint{font-size:var(--fs-tag);color:var(--faint);margin-right:8px}
+  .hint kbd{font:10px var(--mono);border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--muted);background:#fafafa}
+  .btn{height:30px;display:inline-flex;align-items:center;gap:5px;border-radius:9px;border:0;padding:0 11px;font:500 var(--fs-sub) var(--sans);cursor:pointer}
+  .btn.stop{background:#fff;color:#c2264f;border:1px solid #f3cdd6}
+  .btn.stop:hover{background:#fff5f7}
+  .btn.stop svg{fill:currentColor;stroke:none;width:12px;height:12px}
+  .btn.send{width:30px;padding:0;justify-content:center;background:var(--accent);color:#fff;margin-left:6px}
+  .btn.send:hover{background:#255fc4}
+</style>
+</head>
+<body>
+<div class="main"><div class="page">
+  <div class="legend">
+    <span><i style="background:var(--user)"></i>用户说的话</span>
+    <span><i style="background:var(--accent)"></i>进行中 / 可点击</span>
+    <span><i style="background:var(--ok)"></i>完成 / 读取文件</span>
+    <span><i style="background:var(--write)"></i>写入文件 / 定时任务</span>
+    <span>点任意文件名 → 弹窗查看内容</span>
+  </div>
+
+  <div class="summary">
+    <div class="goal"><div class="lbl">当前目标</div><div class="t">训练 xdoc-qwen v1.4 全量微调并跟踪评测结果</div></div>
+    <div class="stat"><div class="n">43</div><div class="lbl">活动</div></div>
+    <div class="stat"><div class="n" style="color:var(--ok)">37</div><div class="lbl">已完成</div></div>
+    <div class="stat"><div class="n" style="color:var(--accent)">1</div><div class="lbl">进行中</div></div>
+  </div>
+
+  <div class="tl">
+    <div class="item"><span class="dot idle"></span>
+      <div class="group"><span>↻ 继续目标 × 4</span><span class="mono">08:53 · 09:13 · 09:33 · 09:53</span><span>均无可确认的执行步骤</span><span class="more">展开</span></div>
+    </div>
+
+    <div class="item"><span class="dot done"></span>
+      <div class="card">
+        <div class="head"><span>#42</span><span class="chip user">用户请求</span><span class="time">10:02</span><span class="chip status ok">已完成 · 3 步</span></div>
+        <div class="title user">把评测脚本里的阈值改成 0.85，再跑一次</div>
+        <ul class="steps">
+          <li class="step"><div class="row"><span class="ic ok">✓</span><b>读取文件</b><span class="dur">0.1s</span></div>
+            <div class="files"><span class="file" data-f="eval"><span class="op r">读</span><span class="p">scripts/eval_ocr.py</span></span></div></li>
+          <li class="step"><div class="row"><span class="ic ok">✓</span><b>修改文件</b><span class="dur">0.2s</span></div>
+            <div class="files"><span class="file" data-f="evalw"><span class="op w">写</span><span class="p">scripts/eval_ocr.py</span></span><span class="file" data-f="cfg"><span class="op w">写</span><span class="p">configs/eval/v1.4.yaml</span></span></div></li>
+          <li class="step"><div class="row"><span class="ic ok">✓</span><b>执行命令</b><span class="cmd">python scripts/eval_ocr.py --cfg configs/eval/v1.4.yaml</span><span class="dur">42s</span></div>
+            <div class="files"><span class="file" data-f="cfg"><span class="op r">读</span><span class="p">configs/eval/v1.4.yaml</span></span><span class="file" data-f="out"><span class="op w">写</span><span class="p">…/stage_3_full_sft/loop_02/eval/metrics.json</span></span></div></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="item"><span class="dot run"></span>
+      <div class="card run">
+        <div class="head"><span>#43</span><span class="chip sched">⏰ 定时任务 · schedule-5</span><span class="time">10:13</span><span class="chip status run">进行中 · 2/3</span></div>
+        <div class="title">查 TaskGrid <code>xdoc-v1.4-full-sft-001</code> 的训练进度</div>
+        <ul class="steps">
+          <li class="step"><div class="row"><span class="ic ok">✓</span><b>搜索代码或文件</b><span class="cmd">rg -n "loss" logs/train.log</span><span class="dur">0.4s</span></div>
+            <div class="files"><span class="file" data-f="log"><span class="op r">读</span><span class="p">…/loop_02/logs/train.log</span></span></div></li>
+          <li class="step"><div class="row"><span class="ic ok">✓</span><b>查看目录</b><span class="cmd">ls …/stage_3_full_sft/loop_02</span><span class="dur">0.1s</span></div></li>
+          <li class="step"><div class="row"><span class="ic run"></span><b>执行命令</b><span class="cmd">tstatus xdoc-v1.4-full-sft-001</span><span class="dur" style="color:var(--accent)">运行中 12s</span></div></li>
+        </ul>
+        <div class="notes">
+          <div class="note"><span class="k">进度说明</span><span>评测结果 <code>metrics.json</code> 已生成，再看训练任务是否结束。</span><span class="len">32 字</span></div>
+          <div class="note"><span class="k">回复</span><span>训练已跑到第 3 轮，loss 稳定下降……<a>展开</a><a>弹窗阅读</a></span><span class="len">1,458 字</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<div class="mask" id="mask"><div class="modal" role="dialog" aria-modal="true">
+  <div class="vh"><span id="vop" class="op r">读</span><span class="path" id="vpath"></span>
+    <button class="ib" title="复制路径"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button><button class="ib" title="在文件面板中完整打开"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button><button class="ib" id="vclose" title="关闭 (Esc)"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+  <div class="vmeta" id="vmeta"></div>
+  <pre id="vbody"></pre>
+</div></div>
+
+<div class="dock"><div class="inner">
+  <div class="live"><span class="pulse"></span>正在执行 <span class="tool">tstatus xdoc-v1.4-full-sft-001</span><span class="t">12s</span></div>
+  <div class="composer">
+    <textarea rows="1" placeholder="给运行中的 Pi 补充说明，或输入 / 调用命令…"></textarea>
+    <div class="bar">
+      <button class="ib" title="添加附件"><svg viewBox="0 0 24 24"><path d="m21 11-8.6 8.6a5 5 0 0 1-7-7L14 4a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4L15.6 7"/></svg></button>
+      <button class="ib" title="添加图片"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-9 9"/></svg></button>
+      <button class="ib" title="引用文件"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg></button>
+      <button class="ib" title="语音输入"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <span class="sep"></span>
+      <span class="sel" title="发送方式"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 10h8"/></svg>插话<svg viewBox="0 0 24 24" class="chev"><path d="m6 9 6 6 6-6"/></svg></span>
+      <span class="sel" title="模型与思考强度"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg><span class="m">claude-opus-5-5</span><span class="lv">low</span><svg viewBox="0 0 24 24" class="chev"><path d="m6 9 6 6 6-6"/></svg></span>
+      <span class="spacer"></span>
+      <span class="hint"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行</span>
+      <button class="btn stop" title="中止当前执行"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/></svg>中止</button>
+      <button class="btn send" title="发送"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+    </div>
+  </div>
+</div></div>
+
+<script>
+const FILES = {
+  eval:{path:'scripts/eval_ocr.py',op:'r',meta:'读取 · 第 1–12 行 · Python',lines:[
+    '<span class="kw">import</span> json','<span class="kw">from</span> pathlib <span class="kw">import</span> Path','',
+    'THRESHOLD = 0.80  <span class="c"># 字段置信度阈值</span>','','<span class="kw">def</span> score(pred, gold):','    hit = sum(p == g <span class="kw">for</span> p, g <span class="kw">in</span> zip(pred, gold))','    <span class="kw">return</span> hit / max(len(gold), 1)']},
+  evalw:{path:'scripts/eval_ocr.py',op:'w',meta:'写入 · 改动 1 行（绿色为新内容）',lines:[
+    '<span class="kw">import</span> json','<span class="kw">from</span> pathlib <span class="kw">import</span> Path','',
+    '<span class="add">THRESHOLD = 0.85  <span class="c"># 字段置信度阈值</span></span>','','<span class="kw">def</span> score(pred, gold):']},
+  cfg:{path:'configs/eval/v1.4.yaml',op:'w',meta:'YAML · 9 行',lines:[
+    'model: <span class="s">xdoc-qwen-v1.4</span>','dataset: <span class="s">kyc_llm/ocr_gold_v7</span>','threshold: 0.85','batch_size: 32','output: <span class="s">…/loop_02/eval</span>']},
+  out:{path:'…/stage_3_full_sft/loop_02/eval/metrics.json',op:'w',meta:'JSON · 新文件',lines:[
+    '{','  <span class="s">"field_acc"</span>: 0.913,','  <span class="s">"doc_acc"</span>: 0.842,','  <span class="s">"samples"</span>: 4120','}']},
+  log:{path:'…/stage_3_full_sft/loop_02/logs/train.log',op:'r',meta:'读取 · 末尾 5 行',lines:[
+    'step 2900 loss=0.412 lr=1.8e-5','step 2950 loss=0.405 lr=1.8e-5','step 3000 loss=0.398 lr=1.7e-5','<span class="c">[eval] field_acc=0.913</span>','step 3050 loss=0.391 lr=1.7e-5']},
+};
+const mask=document.getElementById('mask');
+function openFile(key, el){
+  const f=FILES[key];
+  const isW=el.querySelector('.op').classList.contains('w');
+  const op=document.getElementById('vop'); op.className='op '+(isW?'w':'r'); op.textContent=isW?'写':'读';
+  document.getElementById('vpath').textContent=f.path;
+  document.getElementById('vmeta').textContent=f.meta;
+  document.getElementById('vbody').innerHTML=f.lines.map((l,i)=>`<span class="ln">${i+1}</span>${l}`).join('\n');
+  mask.classList.add('open');
+}
+const closeFile=()=>mask.classList.remove('open');
+document.querySelectorAll('.file').forEach(el=>el.addEventListener('click',()=>openFile(el.dataset.f, el)));
+document.getElementById('vclose').onclick=closeFile;
+mask.addEventListener('click',e=>{if(e.target===mask)closeFile()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeFile()});
+</script>
+</body>
+</html>
