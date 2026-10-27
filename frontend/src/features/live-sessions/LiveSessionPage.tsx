@@ -2995,7 +2995,10 @@ export default function LiveSessionPage() {
   return (
     <div className="relative flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
       {sessionSidebarVisible && <LiveSessionsList sessions={sessions} sessionTitles={sessionTitles} subagentStatuses={subagentStatuses} activeId={activeId} onRefresh={refresh} pendingUiCounts={pendingUiCounts} onSelect={id => navigate(`/live-sessions/${encodeURIComponent(id)}`)} />}
-      <main className={`min-w-0 flex-1 flex flex-col bg-bg ${summary && detail ? 'md:pr-[84px]' : ''}`}>
+      {/* 右栏（LiveSessionFeatures）放在下面那一行里当普通列，不覆盖 main。
+          以前它用绝对定位盖在页面右侧全高，会从最顶端把标题栏的右端和白底横线截掉，
+          看起来像被切开；改成并排后，标题栏横跨整宽，下面才是「内容 + 右栏」两列。 */}
+      <main className="min-w-0 flex-1 flex flex-col bg-bg">
         <div className="flex h-8 min-w-0 items-center justify-between gap-2 border-b border-border bg-card px-2 text-2xs text-muted">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {summary?.parentSessionId && <button type="button" onClick={() => parentSession ? navigate(`/live-sessions/${encodeURIComponent(parentSession.processInstanceId)}`) : navigate('/live-sessions/gallery')} className="shrink-0 rounded border border-accent bg-accent-subtle px-2 py-0.5 text-2xs text-accent hover:border-accent">← 返回主 Agent</button>}
@@ -3137,7 +3140,7 @@ export default function LiveSessionPage() {
                   <button type="button" onClick={handleChatCommentsReview} className="shrink-0 rounded border border-accent px-2 py-0.5 text-accent hover:bg-accent-subtle">发送批注</button>
                 </div>}
               </div>
-              <div className="md:absolute md:inset-y-0 md:right-0 md:z-30 md:flex md:items-stretch">
+              <div className="flex min-h-0 shrink-0 items-stretch">
                 <LiveSessionFeatures
                   features={features}
                   busy={busy}
