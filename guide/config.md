@@ -28,6 +28,7 @@
 | 用哪个 pi | `PI_SCRIPT`（`dashboard.env`） |
 | live session 可见目录 / 启动命令 | `~/.pi/dashboard.json` 的 `liveSessions` |
 | 常用仓库清单（路径、标签、Git Graph） | `~/.pi/dashboard.json` 的 `repos`（dashboard **Repos** 页可增删） |
+| 服务面板登记哪些服务、怎么启停 | `~/.pi/services.json`（独立文件，见 [services.md](services.md)） |
 | 装哪些扩展 / 加载顺序 | `<agent dir>/extensions.config.json`（同步器）+ dashboard **Extensions** 页 |
 | 某扩展的开关（bash-digest 等） | `<agent dir>/<name>.json`（**Settings → Extension config**） |
 | 某项目的记忆 / rtk 配置 | `<cwd>/.pi/<name>.json` |
@@ -251,6 +252,12 @@ export ANTHROPIC_API_KEY=sk-ant-...
 改法：Settings 页（`PUT /api/dash/config`），或直接编辑该文件。
 
 ---
+
+### 4.2 服务面板：`~/.pi/services.json`
+
+和服务页面（`/services`）配套的清单，**不在 `dashboard.json` 里**：它是一个独立文件，按机器维护「有哪些服务、怎么启停、探哪个地址」。字段与语义见 [services.md](services.md)。
+
+只改这个文件就能增删服务，刷新页面即生效，不需要重启 dashboard。
 
 ### 主 Agent 工作监督（可选，默认关闭）
 

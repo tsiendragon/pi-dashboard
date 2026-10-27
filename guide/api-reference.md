@@ -9,6 +9,7 @@
 
 - [REST API](#rest-api)
   - [Dashboard & System](#dashboard--system)
+  - [Services](#services)
   - [Chat Slots](#chat-slots)
   - [Chat Messaging](#chat-messaging)
   - [Session History](#session-history)
@@ -94,6 +95,55 @@ Host system information (CPU, memory, disk, network, process stats).
   "net_rx_kbs": null,
   "net_tx_kbs": null
 }
+```
+
+---
+
+### Services
+
+Registry-backed service panel (`/services` page). The registry lives outside the repo, at `~/.pi/services.json`; see `guide/services.md` for the field table. Commands are never accepted from the request — only an `id`.
+
+#### `GET /api/services`
+
+Registry rows plus a live probe result for each. Does not require browser auth.
+
+**Response:**
+```json
+{
+  "services": [
+    {
+      "id": "presentation-center",
+      "label": "Presentation Center",
+      "group": "本机",
+      "canStart": true,
+      "canStop": true,
+      "logPath": "/tmp/pc.log",
+      "status": { "id": "presentation-center", "status": "up", "httpStatus": 200, "latencyMs": 12, "checkedAt": "2026-10-26T12:00:00.000Z" }
+    }
+  ],
+  "configPath": "/home/you/.pi/services.json",
+  "seeded": false
+}
+```
+
+`status` is `up` (probe matched `okStatus`, default 2xx/3xx), `down` (failed or unexpected code), or `unknown` (no probe configured). `seeded: true` means the registry file was just created from built-in defaults.
+
+#### `POST /api/services/:id/start` · `stop` · `restart`
+
+Runs the registered command for that id. Detached spawn for `start`; `stop` prefers the registered `stop` command and falls back to signalling the pid listening on the probe port. **Requires browser auth** (Live Pi cookie); otherwise `401`, or `403` for a disallowed origin. Unknown id: `404`.
+
+**Response:**
+```json
+{ "ok": true, "action": "start", "pid": 12345, "logPath": "~/.pi/logs/services/xdoc-monitor.log", "status": { "status": "up", "httpStatus": 200 } }
+```
+
+#### `GET /api/services/:id/logs?lines=120`
+
+Tail of the registered log file (default 120 lines, max 400).
+
+**Response:**
+```json
+{ "lines": ["..."], "truncated": true, "logPath": "/tmp/pc.log" }
 ```
 
 ---

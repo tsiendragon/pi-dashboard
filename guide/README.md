@@ -116,6 +116,7 @@ npm install --no-audit --no-fund && npm run build-frontend
 | 端口 / 监听地址 | `PI_DASH_PORT` / `PI_DASH_HOST` |
 | dashboard 自身（live session） | `~/.pi/dashboard.json` |
 | 可选主 Agent 工作监督与事件档案 | `dashboard.json` 的 `supervisor`；Skill 在 pi-dashboard、Extension 在 pi-tsien-extension，详见 [config.md](config.md) §4 |
+| 服务面板（看状态、启停本机服务） | `~/.pi/services.json`，见 [services.md](services.md) |
 | 可选机器出站会话索引与受限控制 | `<agent dir>/machine-connector.json`（私有 0600 文件，缺失即禁用；见 [config.md](config.md)） |
 | 机器远程输入防重放 | 启用控制时自动维护 `<agent dir>/machine-input-replay.json`（0600，勿删除；见 [config.md](config.md)） |
 
@@ -145,6 +146,7 @@ npm install --no-audit --no-fund && npm run build-frontend
 - 更换 pi fork 版本 / 补丁 API 集合 → 更新 [pi-runtime.md](pi-runtime.md)。
 - 改动安装脚本（`scripts/install-standalone.sh`）行为或参数 → 更新 [§3](#3-一键安装推荐) 与 [dashboard.md](dashboard.md)。
 - 影响端口、监听地址、认证、远程访问 → 更新 [dashboard.md](dashboard.md)；实验性远程接入组件状态同步更新 [cloudflare-mobile-gateway.md](cloudflare-mobile-gateway.md)。
+- 新增/修改服务登记字段、启停语义或服务页面行为 → 更新 [services.md](services.md)，并在 [dashboard.md](dashboard.md) §6 页面表同步。
 - 找不到该更新的位置时，先补到本文件，再决定是否需要新拆一份模块文档。
 
 ---

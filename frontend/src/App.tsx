@@ -17,6 +17,7 @@ import MarkdownRenderer from './components/MarkdownRenderer'
 import ErrorBoundary from './components/ErrorBoundary'
 import ConnectionOverlay from './components/ConnectionOverlay'
 import SystemPage from './pages/SystemPage'
+import ServicesPage from './pages/ServicesPage'
 import MemoryPage from './pages/MemoryPage'
 import LogsPage from './pages/LogsPage'
 import JobsPage from './pages/JobsPage'
@@ -60,6 +61,7 @@ const NAV_ITEMS = [
   { path: '/repos', id: 'repos', label: 'Repos', group: 'Tools', icon: <><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="9" r="2" /><path d="M6 7v10" /><path d="M18 11c0 4-6 3-12 6" /></> },
   { path: '/extensions', id: 'extensions', label: 'Extensions', group: 'Tools', icon: <><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h10" /><circle cx="18" cy="17" r="2" /></> },
   { path: '/logs', id: 'logs', label: 'Logs', group: 'Tools', icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></> },
+  { path: '/services', id: 'services', label: '服务', group: 'Tools', icon: <><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01" /></> },
   { path: '/jobs', id: 'jobs', label: 'Jobs', group: 'Tools', icon: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></> },
 
   { path: '/memes', id: 'memes', label: '表情包', group: 'Tools', icon: <><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M7 14s2 3 5 3 5-3 5-3" /><circle cx="8" cy="9" r="1" /><circle cx="16" cy="9" r="1" /></> },
@@ -380,6 +382,7 @@ export default function App() {
             <Route path="/system" element={<SystemPage />} />
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/logs" element={<LogsPage />} />
+            <Route path="/services" element={<ServicesPage />} />
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/memes" element={<MemeStudioPage />} />
             <Route path="/events" element={<EventsRedirect enabled={tasksEnabled} />} />

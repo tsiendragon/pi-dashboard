@@ -263,6 +263,7 @@ live session 靠它，Settings 页可改（`/api/dash/config`）：
 | `POST/PUT/DELETE /api/*`（除 live-sessions / pty） | 无，仅 Origin 检查（防 CSRF，非认证） |
 | `WS /api/ws` | 无 |
 | `/api/pty`、`/api/live-sessions/*` | 有 cookie/token 认证 |
+| `POST /api/services/*` | 有 cookie/token 认证（页面上的启停按钮）；其余 `/api/services` 读接口无认证 |
 
 推荐做法：
 
@@ -289,6 +290,7 @@ PI_DASH_HOST=your-server PI_DASH_USER=you ./pi-dash-connect.sh
 | `/tasks/events?objectRef=<UID>` | 事件流水账（竖轴时间线，见下）与同页复盘分析；按现有 Task/Epic UID 关联。它是 Tasks 的下一级视图：**不在侧边栏占位**，入口是 Tasks 页顶部的「任务清单 / 事件流水账」切换（任务详情页里也有「在流水账中查看 →」）；旧链接 `/events` 会带上查询参数跳到 `/tasks/events` |
 | 全局主 Agent 弹窗 | 主 Agent 入口只在导航栏（窄屏在底部标签栏）出现一次，会话页右侧工具栏不再重复这个图标；同栏“通知”查看最近未处理待办与建议，点击检查进入同一弹窗；其他页面通过导航栏进入；显式启动、记录回复截图、创建/更新可写本地任务 |
 | `/extensions` | 扩展装载事实 + 管理，见 `guide/extensions-page.md` |
+| `/services` | 服务面板：各服务接口是否应答、页面链接、本机服务的启停，见 `guide/services.md` |
 | `/live-sessions` | live session 接管/分叉/导航 |
 | `/memory` | 记忆页：只读展示 `pi-tsien-memory` 扩展写入的记忆，见下 |
 | `/memes` | 表情包工坊：界面导览与模型、费用说明见本文「表情包工坊」 |
