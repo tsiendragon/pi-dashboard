@@ -44,9 +44,10 @@ export function ConfigSummary({ config }: { config: SupervisorConfig | null | un
   if (!config) return <p className="text-muted">配置缺失，主管不可启用。由管理员配置；此页面不会自动开启。</p>
   const missing = missingResources(config)
   return <div className="space-y-2 text-body-s break-words">
-    <p>{config.enabled ? '配置已启用' : '配置已禁用'} · {config.agentResources?.mode === 'coordinate' ? '协调模式' : '观察模式'}</p>
+    <p>{config.name || '主管'} · {config.enabled ? '配置已启用' : '配置已禁用'} · {config.agentResources?.mode === 'coordinate' ? '协调模式' : '观察模式'}</p>
     {!!missing.length && <p className="text-danger">缺少资源：{missing.join('、')}</p>}
     <dl className="space-y-2">
+      <div><dt className="text-muted">子 Agent</dt><dd>{config.agentResources?.subagents ? '已开启（只读辅助：流水账整理、会话巡查）' : '未开启'}</dd></div>
       <div><dt className="text-muted">工作目录</dt><dd>{config.cwd || '未配置'}</dd></div>
       <div><dt className="text-muted">角色文件</dt><dd>{config.agentResources?.rolePath || '未配置'}</dd></div>
       <div><dt className="text-muted">Skill 文件</dt><dd>{config.agentResources?.skillPaths?.join('、') || '未配置'}</dd></div>

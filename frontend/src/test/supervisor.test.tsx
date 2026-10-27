@@ -11,7 +11,7 @@ import TaskDetailPage from '../pages/tasks/TaskDetail'
 
 vi.mock('../features/live-sessions/useLiveSessions', () => ({ useLiveSessionsRuntime: () => ({ refresh: vi.fn() }) }))
 const config: SupervisorConfig = {
-  enabled: true, cwd: '/work', pollIntervalMs: 10_000, staleAfterMs: 60_000,
+  enabled: true, name: 'ts', cwd: '/work', pollIntervalMs: 10_000, staleAfterMs: 60_000,
   allowedObjects: ['journal:42'], allowedSessionIds: ['session-1'], allowedRoots: ['/work'],
   agentResources: { rolePath: '/work/role.md', skillPaths: ['/work/SKILL.md'], extensionPaths: ['/work/supervisor.ts'], allowedTools: ['supervisor_events'], mode: 'observe' },
 }
@@ -108,7 +108,7 @@ it('监督模式下任务抽屉不能直接录入，修改打开同一个主 Age
   renderWithProviders(<SupervisorAgentProvider><TaskDetailPage supervised task={state.tasks.tasks[0]} entry={undefined} sessions={[]} lanes={[]} planning={{}} authReady liveOptions={[]} onClose={vi.fn()} onUpdate={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} onStart={vi.fn()} onOpenSession={vi.fn()} /></SupervisorAgentProvider>)
   for (const input of screen.getAllByRole('textbox')) expect(input).toBeDisabled()
   fireEvent.click(screen.getByRole('button', { name: '通过主 Agent 记录或修改' }))
-  expect(await screen.findByRole('dialog', { name: '工作主管 Agent' })).toBeInTheDocument()
+  expect(await screen.findByRole('dialog', { name: 'ts · 工作主管' })).toBeInTheDocument()
   expect(screen.getByRole('textbox', { name: '给主管的消息' })).toBeEnabled()
 })
 it('监督模式仍可直接修改本地任务状态', async () => {
@@ -195,7 +195,7 @@ it('侧栏按钮打开原来的唯一主 Agent 弹窗', async () => {
   expect(button.querySelector('svg')).toHaveClass('stroke-current', 'fill-none')
   expect(button).toHaveAttribute('title', '打开全局主 Agent 对话')
   fireEvent.click(button)
-  expect(await screen.findByRole('dialog', { name: '工作主管 Agent' })).toBeInTheDocument()
+  expect(await screen.findByRole('dialog', { name: 'ts · 工作主管' })).toBeInTheDocument()
   expect(screen.getAllByRole('dialog')).toHaveLength(1)
 })
 
@@ -205,7 +205,7 @@ it('侧栏按钮打开原来的唯一主 Agent 弹窗', async () => {
     expect(await screen.findByText(/扩展代码已更新（主会话仍在用启动时的版本）/)).toBeInTheDocument()
     renderWithProviders(<SupervisorAgentProvider><SupervisorAgentSidebarButton className="sidebar-button" /></SupervisorAgentProvider>)
     fireEvent.click(screen.getAllByRole('button', { name: '打开主 Agent' })[0])
-    expect(await screen.findByRole('dialog', { name: '工作主管 Agent' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'ts · 工作主管' })).toBeInTheDocument()
     expect(screen.getAllByText(/扩展代码已更新（主会话仍在用启动时的版本）/).length).toBeGreaterThan(0)
   })
 
@@ -213,7 +213,7 @@ it('资源已变更但旧主会话已结束时仍可启动', async () => {
   installFetch(url => url.endsWith('/state') ? response({ ...state, agent: { ...state.agent, resourceState: 'pending' as const, connected: false, processInstanceId: undefined, sessionId: 'session-stale' } }) : undefined)
   renderWithProviders(<SupervisorAgentProvider><SupervisorAgentSidebarButton className="sidebar-button" /></SupervisorAgentProvider>)
   fireEvent.click(screen.getByRole('button', { name: '打开主 Agent' }))
-  await screen.findByRole('dialog', { name: '工作主管 Agent' })
+  await screen.findByRole('dialog', { name: 'ts · 工作主管' })
   expect(await screen.findByText(/旧主会话已结束（当前未连接）/)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '启动 / 重试启动' })).toBeEnabled()
 })
@@ -237,7 +237,7 @@ it('通知展示真实未处理事项，点击检查只打开主 Agent 草稿而
   expect(screen.getByText('建议补测试')).toBeInTheDocument()
   expect(screen.queryByText('已做完的事项')).not.toBeInTheDocument()
   fireEvent.click(screen.getAllByRole('button', { name: '交给主 Agent 检查' })[0])
-  expect(await screen.findByRole('dialog', { name: '工作主管 Agent' })).toBeInTheDocument()
+  expect(await screen.findByRole('dialog', { name: 'ts · 工作主管' })).toBeInTheDocument()
   expect((screen.getByRole('textbox', { name: '给主管的消息' }) as HTMLTextAreaElement).value).toContain('todo-1')
   expect(fetchMock.mock.calls.some(call => String(call[0]).endsWith('/agent/input'))).toBe(false)
 })
@@ -250,7 +250,7 @@ describe('主管唯一弹窗', () => {
     renderAgent()
     const trigger = screen.getByRole('button', { name: '入口一' })
     trigger.focus(); fireEvent.click(trigger)
-    const dialog = screen.getByRole('dialog', { name: '工作主管 Agent' })
+    const dialog = screen.getByRole('dialog', { name: 'ts · 工作主管' })
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     expect(dialog).toHaveClass('max-w-[960px]')
     const composer = screen.getByRole('textbox', { name: '给主管的消息' })

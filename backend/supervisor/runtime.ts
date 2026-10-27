@@ -8,7 +8,7 @@ import type { LiveSessionConfig } from '../live-sessions/config.js'
 import type { LiveSessionDetail, LiveSessionSummary } from '../../shared/src/live-sessions.js'
 import type { SupervisorConfig, SupervisorRequest, SupervisorSession, SupervisorState } from '../../shared/src/supervisor.js'
 import type { SupervisorService } from './service.js'
-import { supervisorRoot, validateSupervisorResources } from './config.js'
+import { normalizeSupervisorName, supervisorRoot, validateSupervisorResources } from './config.js'
 import { digestSession } from './digest.js'
 
 type AgentRecord = { sessionId?: string; processInstanceId?: string; pid?: number; revision?: string; extensionsRevision?: string; sessionFile?: string; loaded?: boolean; coordination?: Record<string, { at: number; count: number }> }
@@ -195,7 +195,7 @@ export class SupervisorRuntime {
     // The launch outcome is validated right below; the two call paths differ in extra fields only.
     let result: { processInstanceId: string; sessionId: string }
     try {
-      const outcome = this.options.launch ? await this.options.launch(launchArgs, this.config.cwd, this.record.sessionFile) : await new LivePiLauncher({ registry: this.options.registry, roots: this.options.liveConfig.roots, launch: { ...this.options.liveConfig.launch, args: launchArgs }, }).start({ cwd: this.config.cwd, title: '主 Agent · 工作监督', sessionFile: this.record.sessionFile, tmuxPrefix: 'supervisor' })
+      const outcome = this.options.launch ? await this.options.launch(launchArgs, this.config.cwd, this.record.sessionFile) : await new LivePiLauncher({ registry: this.options.registry, roots: this.options.liveConfig.roots, launch: { ...this.options.liveConfig.launch, args: launchArgs }, }).start({ cwd: this.config.cwd, title: `${normalizeSupervisorName(this.config.name)} · 工作监督`, sessionFile: this.record.sessionFile, tmuxPrefix: 'supervisor' })
       result = outcome as { processInstanceId: string; sessionId: string }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

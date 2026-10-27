@@ -260,6 +260,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 {
   "supervisor": {
     "enabled": true,
+    "name": "ts",
     "cwd": "~/repos/pi-dashboard",
     "pollIntervalMs": 120000,
     "staleAfterMs": 900000,
@@ -275,7 +276,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
         "~/repos/pi-tsien-extension/packages/pi-tsien-live-session/src/index.ts",
         "~/repos/pi-tsien-extension/packages/pi-tsien-goal/src/index.ts"
       ],
-      "mode": "observe"
+      "mode": "observe",
+      "subagents": true
     }
   }
 }
@@ -285,6 +287,9 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 **资源路径可以省略，省略时按仓库位置推导**：`cwd`、`rolePath`、`skillPaths` 取面板仓库自身（`agent/supervisor/…`），`extensionPaths` 取与面板仓库同级的 `pi-tsien-extension`。因此整个仓库搬到新位置后不需要改这一段配置；只有资源放在非常规位置时才显式写绝对路径。保存配置（`PUT /api/supervisor/config`）时只写与这些默认值不同的路径项，不会把推导出来的机器绝对路径写回 `~/.pi/dashboard.json`。
 
+- `name`：界面上怎么称呼这个主会话（弹窗标题、会话标题），同时写进它的系统提示，用户可以直接用这个名字指代它。不填或不合规（1–16 个字母/数字/下划线/连字符，支持中文）时回落到 `ts`。改名算配置变更，正在跑的主会话需要结束后重启才生效。
+- `agentResources.subagents`：开启后给主会话加上子 Agent 工具（`subagent_start` 等）并自动加载 `pi-tsien-subagent-workbench` 扩展。子 Agent 只读：流水账整理和会话巡查在子 Agent 里跑，档案写入、待办和通知仍由主会话用 `supervisor_*` 完成。默认关闭。
+- **清空 ≠ 换配置**：主会话里的 `/supervisor-clear`（或界面「清空并重新加载」）只重建会话运行时。它会重新读取角色文件、Skill 文件和扩展**代码**，所以改这些内容清空后即生效；但扩展清单（`extensionPaths`）、系统提示文本（含 `name`）和工具白名单来自进程启动参数，清空不会更新，也不和后端重新握手。改名或开关 `subagents` 后必须结束旧主会话进程再启动；配置指纹不一致时后端也会直接拒绝清空。
 - `allowedObjects`：空数组不授权任何任务；`*` 才显式授权全部可用任务，可限制为具体 UID 或 `local:*`。限制范围时创建本地任务需包含允许本地创建的范围。
 - **截图怎么进档案**：用户在弹窗里上传的截图由页面存档并把 `attachmentIds` 写进消息；用户在会话面板里直接粘贴的截图由扩展在回合开始时自动存档（`attachment_put`，仅用户轮允许），随后把 id 作为本轮提示交给主 Agent，记录时带进 `attachmentIds`。日志只记录真实 id；正文不落 base64。
 - **写入授权按回合来源判定**：自动巡查轮由服务在提示前加机器标签 `[supervisor-auto-patrol]`，扩展据此把该轮标为 `userTurn: false`，其中的创建/修改一律拒绝；其余提示（用户在弹窗、会话页或面板里直接说的话）都算真实用户轮，主 Agent 可以直接记录，不需要用户可见的授权标记。弹窗消息额外带 `[supervisor-user-grant:…]`，只用于把用户原话写成事件的审计引用。用户轮会把自己的原话随请求发给服务，服务据此解析**这一轮要做什么**：「帮我把这个记录到…」「帮我记一下…」可直接授权记录；「不要创建任务」这类否定或提问不会因此获得授权，只会退化为针对该动作的一次界面确认。`task_update done`、破坏性 `event_correct`、`action done` 仍需针对该操作的界面确认。

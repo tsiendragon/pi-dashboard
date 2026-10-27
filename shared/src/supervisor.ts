@@ -5,6 +5,8 @@ export type SupervisorMode = 'observe' | 'coordinate'
 export type SupervisorOperation = 'context' | 'events' | 'query' | 'record' | 'correct' | 'task_create' | 'task_update' | 'working_state' | 'action' | 'report' | 'analyze' | 'inspect' | 'coordinate' | 'attachment_put'
 export interface SupervisorConfig {
   enabled: boolean
+  /** Display name used by the UI and injected into the main session's system prompt. */
+  name?: string
   cwd: string
   pollIntervalMs: number
   staleAfterMs: number
@@ -13,7 +15,7 @@ export interface SupervisorConfig {
   allowedRoots: string[]
   /** Accepted event categories. Replaces the standard vocabulary when set; normalization always fills it. */
   eventTypes?: string[]
-  agentResources: { rolePath: string; skillPaths: string[]; extensionPaths: string[]; allowedTools: string[]; mode: SupervisorMode }
+  agentResources: { rolePath: string; skillPaths: string[]; extensionPaths: string[]; allowedTools: string[]; mode: SupervisorMode; /** Adds the read-only helper agents (workbench extension plus subagent tools). */ subagents?: boolean }
 }
 /** Default event vocabulary; keep the main Agent Skill in sync when changing it. */
 export const SUPERVISOR_STANDARD_EVENT_TYPES = ['progress', 'reply', 'blocked', 'resumed', 'decision', 'result']

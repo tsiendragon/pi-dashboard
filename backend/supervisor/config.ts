@@ -26,12 +26,31 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
  */
 export const goalExtensionPath = path.resolve(repo, '../pi-tsien-extension/packages/pi-tsien-goal/src/index.ts')
 export const supervisorTools = ['supervisor_context', 'event_objects', 'event_list', 'event_query', 'event_get', 'event_append', 'event_correct', 'supervisor_task_create', 'supervisor_task_update', 'supervisor_working_state', 'supervisor_action', 'supervisor_analyze', 'supervisor_report', 'supervisor_inspect', 'supervisor_coordinate']
+/**
+ * Helper agents stay read-only: they scan and draft, the main session still does every write. The tools
+ * and the workbench extension are only part of the launch set when `agentResources.subagents` is on.
+ */
+export const supervisorSubagentTools = ['subagent_start', 'subagent_results', 'subagent_cancel', 'subagent_workflow']
+export const supervisorAllTools = [...supervisorTools, ...supervisorSubagentTools]
+export const supervisorSubagentExtensionPath = path.resolve(repo, '../pi-tsien-extension/packages/pi-tsien-subagent-workbench/src/index.ts')
+export const supervisorDefaultName = 'ts'
+const supervisorNamePattern = /^[\p{L}\p{N}_-]{1,16}$/u
+/** Falls back to the default for an empty or unusable name instead of failing the whole config. */
+export function normalizeSupervisorName(value: unknown): string {
+  const name = typeof value === 'string' ? value.trim() : ''
+  return supervisorNamePattern.test(name) ? name : supervisorDefaultName
+}
 export function normalizeSupervisorConfig(raw: unknown): SupervisorConfig {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<SupervisorConfig>
   const a = r.agentResources
   const strings = (value: unknown, defaults: string[] = []): string[] => Array.isArray(value) ? value.filter((s): s is string => typeof s === 'string' && !!s.trim()) : defaults
+  const subagents = a?.subagents === true
+  const allowedTools = strings(a?.allowedTools, supervisorTools)
+  if (subagents) for (const tool of supervisorSubagentTools) if (!allowedTools.includes(tool)) allowedTools.push(tool)
+  const extensionPaths = strings(a?.extensionPaths, [path.resolve(repo, '../pi-tsien-extension/extensions/supervisor/index.ts'), path.resolve(repo, '../pi-tsien-extension/packages/pi-tsien-live-session/src/index.ts'), goalExtensionPath])
+  if (subagents && !extensionPaths.includes(supervisorSubagentExtensionPath)) extensionPaths.push(supervisorSubagentExtensionPath)
   return {
-    enabled: r.enabled === true, cwd: typeof r.cwd === 'string' ? r.cwd : repo,
+    enabled: r.enabled === true, name: normalizeSupervisorName(r.name), cwd: typeof r.cwd === 'string' ? r.cwd : repo,
     pollIntervalMs: Math.max(60000, Number(r.pollIntervalMs) || 120000),
     staleAfterMs: Math.max(60000, Number(r.staleAfterMs) || 900000),
     allowedObjects: strings(r.allowedObjects), allowedSessionIds: strings(r.allowedSessionIds), allowedRoots: strings(r.allowedRoots),
@@ -39,8 +58,7 @@ export function normalizeSupervisorConfig(raw: unknown): SupervisorConfig {
     agentResources: {
       rolePath: a?.rolePath || path.join(repo, 'agent/supervisor/role.md'),
       skillPaths: strings(a?.skillPaths, [path.join(repo, 'agent/supervisor/skills/dashboard-supervisor')]),
-      extensionPaths: strings(a?.extensionPaths, [path.resolve(repo, '../pi-tsien-extension/extensions/supervisor/index.ts'), path.resolve(repo, '../pi-tsien-extension/packages/pi-tsien-live-session/src/index.ts'), goalExtensionPath]),
-      allowedTools: strings(a?.allowedTools, supervisorTools), mode: a?.mode === 'coordinate' ? 'coordinate' : 'observe',
+      extensionPaths, allowedTools, subagents, mode: a?.mode === 'coordinate' ? 'coordinate' : 'observe',
     },
   }
 }
@@ -56,7 +74,9 @@ export function minimalSupervisorConfig(config: SupervisorConfig): Partial<Super
   const sameList = (left: string[], right: string[]): boolean => left.length === right.length && left.every((value, index) => value === right[index])
   const persisted: Record<string, unknown> = { ...config }
   if (config.cwd === defaults.cwd) delete persisted.cwd
+  if ((config.name ?? '') === defaults.name) delete persisted.name
   const resources: Record<string, unknown> = { ...config.agentResources }
+  if (!config.agentResources.subagents) delete resources.subagents
   if (config.agentResources.rolePath === defaults.agentResources.rolePath) delete resources.rolePath
   if (sameList(config.agentResources.skillPaths, defaults.agentResources.skillPaths)) delete resources.skillPaths
   if (sameList(config.agentResources.extensionPaths, defaults.agentResources.extensionPaths)) delete resources.extensionPaths
@@ -106,8 +126,8 @@ export async function validateSupervisorResources(config: SupervisorConfig): Pro
     const metadata = text.match(/^---[^\S\r\n]*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1]
     if (!metadata || !/^name:[^\S\r\n]*\S.+$/m.test(metadata) || !/^description:[^\S\r\n]*\S.+$/m.test(metadata)) throw new Error('invalid_skill_metadata')
   }
-  if (!config.agentResources.allowedTools.length || config.agentResources.allowedTools.some(t => !supervisorTools.includes(t))) throw new Error('invalid_supervisor_tool_allowlist')
-  const role = await readFile(config.agentResources.rolePath, 'utf8')
+  if (!config.agentResources.allowedTools.length || config.agentResources.allowedTools.some(t => !supervisorAllTools.includes(t))) throw new Error('invalid_supervisor_tool_allowlist')
+  const role = `# 你的名字\n\n用户与界面用「${normalizeSupervisorName(config.name)}」称呼你；正文回答不必重复这个名字。\n\n` + await readFile(config.agentResources.rolePath, 'utf8')
   const skills = await Promise.all(config.agentResources.skillPaths.map(p => readFile(path.join(p, 'SKILL.md'), 'utf8')))
   const revision = createHash('sha256').update(JSON.stringify(config)).update(canonical.join('\n')).update(gatingContent.join('\n')).digest('hex')
   const extensionsRevision = createHash('sha256').update(extensionCanonical.join('\n')).update(extensionContent.join('\n')).digest('hex')

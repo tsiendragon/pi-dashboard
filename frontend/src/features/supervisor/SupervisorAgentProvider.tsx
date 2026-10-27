@@ -177,7 +177,7 @@ function AgentRoot({ children }: { children: ReactNode }) {
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-2 sm:p-6">
       <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="supervisor-agent-title" data-supervisor-dialog tabIndex={-1} className="flex w-full max-w-[960px] max-h-[94dvh] flex-col rounded-xl border border-border bg-bg-elevated shadow-2xl">
         <header className="flex items-start justify-between gap-3 border-b border-border p-4">
-          <div><h2 id="supervisor-agent-title" className="font-semibold text-lg">工作主管 Agent</h2><p className="text-muted text-body-s">唯一主会话 · {objectRef ? <ObjectLink uid={objectRef} /> : '全局授权范围'}</p></div>
+          <div><h2 id="supervisor-agent-title" className="font-semibold text-lg">{(config.data?.name || '主管') + ' · 工作主管'}</h2><p className="text-muted text-body-s">唯一主会话 · {objectRef ? <ObjectLink uid={objectRef} /> : '全局授权范围'}</p></div>
           <button className={buttonClass} onClick={close} aria-label="关闭主管弹窗">关闭</button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">

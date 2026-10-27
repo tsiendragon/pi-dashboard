@@ -10,7 +10,7 @@ export default function SupervisorNotifications({ className, openAgent }: { clas
   const actions = (state.data?.actions || []).filter(action => action.state === 'open' || action.state === 'suggested').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   return <div className="relative">
     <button type="button" className={className} aria-label="打开最近待办通知" aria-expanded={open} onClick={() => setOpen(value => !value)} title="查看当前授权范围内的待办与建议">
-      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-current" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg><span className="truncate">通知</span>{actions.length > 0 && <span className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-accent px-1 text-center text-[9px] font-semibold leading-[15px] text-accent-fg">{actions.length}</span>}
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-[18px] w-[18px] shrink-0 fill-none stroke-current" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>{actions.length > 0 && <span className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-accent px-1 text-center text-[9px] font-semibold leading-[15px] text-accent-fg">{actions.length}</span>}
     </button>
     {open && <>
       <div className="fixed inset-0 z-30" aria-hidden="true" onClick={() => setOpen(false)} />
