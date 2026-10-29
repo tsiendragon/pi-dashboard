@@ -44,6 +44,7 @@ const FEATURE_LABEL: Record<'btw' | 'schedule' | 'subagent' | 'commands' | 'prom
 const QUICK_PROMPTS: { id: string; label: string; text: string; icon: LineIconName; tone: string }[] = [
   { id: 'handoff', label: '交接存档', text: '帮我把目前的进展更新到相关的任务文档里（按 session-handoff 流程写一份交接摘要），我接下来要 clear context，会用新的 session 接着工作。', icon: 'send', tone: 'text-accent' },
   { id: 'wrap-up', label: '收尾自查 + 提交', text: '把这次会话的所有改动自 review 一遍：确认只包含本任务需要的文件、没有误伤无关改动，按 git 规范 commit（一次一个逻辑改动），然后告诉我提交了什么、还有什么没验证。', icon: 'checkCircle', tone: 'text-ok' },
+  { id: 'commit-remote', label: '提交并同步远端', text: '把 pi-tsien-extension 和 pi-dashboard 两个仓库本地的改动都 commit：先各自检查 origin 有没有新提交，有就先 pull，再把本地改动 rebase 到远端之上；遇到 conflict 逐个分析，确认现有功能不会被破坏，最后告诉我每个仓库提交了什么、rebase 结果，以及冲突是怎么解决的。', icon: 'code', tone: 'text-accent' },
   { id: 'continue', label: '新 session 接续', text: '我要在这个目录接着上一个 session 工作：先读任务文档（目标、当前状态、下一步），告诉我你理解到的进展和待办，确认无误后继续。', icon: 'repeat', tone: 'text-warn' },
   { id: 'acceptance', label: '验收前完整检查', text: '这个任务准备验收了：对照验收标准逐条过一遍，该跑的测试/检查都跑掉，没验证的明确列出来，不要凭感觉说完成。', icon: 'search', tone: 'text-accent' },
   { id: 'report', label: '日报/周报素材', text: '汇总我最近在这个项目做了什么：完成了什么、卡在哪、下一步计划，用能直接贴进汇报的格式。', icon: 'edit', tone: 'text-ok' },
