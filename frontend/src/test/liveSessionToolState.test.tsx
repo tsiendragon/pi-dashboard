@@ -52,3 +52,23 @@ describe('live-session stale tool states', () => {
     expect(deriveAgentState('idle', [], new Map(), false).label).toBe('等待输入')
   })
 })
+
+describe('tool_execution_end error slot', () => {
+  const call = { type: 'message_end', data: { message: { role: 'assistant', content: [{ type: 'toolCall', id: 'bash-1', name: 'bash', arguments: { command: 'ls' } }] } } }
+  const start = { type: 'tool_execution_start', data: { toolCallId: 'bash-1', toolName: 'bash' } }
+  const end = (extra: Record<string, unknown> = {}) => ({
+    type: 'tool_execution_end',
+    data: { toolCallId: 'bash-1', toolName: 'bash', result: { content: [{ type: 'text', text: 'config.yaml\nmodel.onnx\n' }] }, isError: false, ...extra },
+  })
+
+  it('keeps a successful result out of the error text', () => {
+    const state = collectToolStates([call, start, end()]).get('bash-1')
+
+    expect(state).toMatchObject({ executionResult: 'config.yaml\nmodel.onnx\n', isError: false })
+    expect(state?.errorText).toBeUndefined()
+  })
+
+  it('still keeps a real error field', () => {
+    expect(collectToolStates([call, start, end({ isError: true, error: '权限不足' })]).get('bash-1')?.errorText).toBe('权限不足')
+  })
+})

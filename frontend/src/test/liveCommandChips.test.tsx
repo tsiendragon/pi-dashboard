@@ -72,7 +72,8 @@ describe('LiveCommandChips', () => {
     expect(within(dialog).getByText('compiling…')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: '转到后台' }))
     expect(onMove).toHaveBeenCalledWith('toolu_1')
-    await waitFor(() => expect(within(dialog).getByRole('button', { name: '转到后台' })).not.toBeDisabled())
+    // 转完按钮就地变成「已转到后台」，避免重复点击。
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: '已转到后台' })).toBeDisabled())
 
     fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
     fireEvent.click(screen.getByRole('listitem', { name: '后台命令：python train.py' }))

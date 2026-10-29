@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mock · 活动视图命令 chip（可点开详情 + 转后台）</title>
+<style>
+  :root{
+    --bg:#fafafa;--bg-elevated:#fff;--bg-hover:#f0f0f0;--card:#fff;
+    --text:#3f3f46;--text-strong:#18181b;--muted:#71717a;--muted-strong:#52525b;--faint:#a1a1aa;
+    --border:#e4e4e7;--border-strong:#d4d4d8;
+    --accent:#1d5aaf;--accent-subtle:rgba(29,90,175,.12);
+    --ok:#11695e;--ok-subtle:rgba(17,105,94,.1);
+    --warn:#935b06;--warn-subtle:rgba(147,91,6,.1);
+    --danger:#c8196a;--danger-subtle:rgba(200,25,106,.1);
+    --aim:#7c3aed;--aim-subtle:rgba(124,58,237,.12);
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --shadow-lg:1px 2px 3px hsl(220 40% 18%/.08),3px 6px 10px hsl(220 40% 18%/.07),6px 12px 22px hsl(220 40% 18%/.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:400 13px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+  .page{max-width:1040px;margin:0 auto;padding:26px 20px 90px}
+  h1{margin:0 0 4px;font-size:16px;color:var(--text-strong)}
+  h2{margin:26px 0 8px;font-size:13px;color:var(--text-strong)}
+  .lede{margin:0;color:var(--muted);font-size:12px}
+  .lede code,.kbd{font-family:var(--mono);background:var(--bg-elevated);border:1px solid var(--border);border-radius:4px;padding:0 4px;font-size:11px}
+
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+  .panel + .panel{margin-top:14px}
+  .panel.old{border-style:dashed}
+  .panel-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .tag{display:inline-flex;align-items:center;border-radius:999px;padding:1px 8px;font-size:11px;line-height:18px;white-space:nowrap}
+  .tag.grey{background:var(--bg-hover);color:var(--muted-strong)}
+  .tag.blue{background:var(--accent-subtle);color:var(--accent)}
+  .panel-hd .note{font-size:11px;color:var(--muted)}
+
+  /* 活动卡片 */
+  .act{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--card)}
+  .act-hd{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+  .act-hd .idx{font-family:var(--mono)}
+  .chip-user{background:var(--aim-subtle);color:var(--aim);border-radius:999px;padding:0 7px;font-size:11px;line-height:18px}
+  .ask{margin:5px 0 4px;color:var(--aim)}
+  .steps{list-style:none;margin:0;padding:0}
+  .step{padding:3px 4px;border-radius:6px}
+  .step:hover{background:var(--bg-hover)}
+  .row{display:flex;min-width:0;align-items:center;gap:8px;font-size:12px}
+  .ic{width:16px;height:16px;flex:none;border-radius:50%;display:grid;place-items:center;font-size:10px}
+  .ic.ok{background:var(--ok-subtle);color:var(--ok)}
+  .ic.err{background:var(--danger-subtle);color:var(--danger);font-weight:600}
+  .ic.run{border:2px solid var(--accent);border-top-color:transparent;animation:spin .9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .label{flex:none;white-space:nowrap;color:var(--text)}
+  .label.running{font-weight:500;color:var(--text-strong)}
+
+  /* 旧：短命令简介（不可点） */
+  .mini{min-width:0;max-width:52%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+        font-family:var(--mono);font-size:11px;color:var(--muted-strong);
+        background:var(--bg-elevated);border:1px solid var(--border);border-radius:4px;padding:0 5px}
+
+  /* 新：可点的命令 chip —— 更长、带一眼可见的展开提示 */
+  .cmd-chip{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:440px;
+            background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:7px;
+            padding:1px 6px 1px 7px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--muted-strong)}
+  .cmd-chip:hover{border-color:var(--accent);background:var(--accent-subtle);color:var(--accent)}
+  .cmd-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .cmd-chip .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cmd-chip .open{flex:none;width:12px;height:12px;opacity:.55}
+  .cmd-chip:hover .open{opacity:1}
+
+  /* 行内「转后台」按钮 */
+  .st{margin-left:auto;flex:none;font-size:11px;color:var(--muted);white-space:nowrap}
+  .st.running{color:var(--accent);font-family:var(--mono)}
+  .to-bg{flex:none;display:inline-flex;align-items:center;gap:4px;font-size:11px;line-height:18px;
+         border:1px solid var(--border-strong);border-radius:999px;background:var(--bg-elevated);color:var(--muted-strong);
+         padding:0 8px;cursor:pointer;white-space:nowrap}
+  .to-bg:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-subtle)}
+  .to-bg[disabled]{cursor:default;border-color:var(--border);color:var(--faint);background:var(--bg)}
+  .to-bg .dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+  .moved{flex:none;font-size:11px;color:var(--ok);white-space:nowrap}
+
+  /* 弹层（详情） */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;padding:20px;z-index:60}
+  .mask.on{display:flex}
+  .modal{width:100%;max-width:720px;max-height:84vh;display:flex;flex-direction:column;background:var(--card);
+         border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);overflow:hidden}
+  .modal-hd{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--bg-elevated)}
+  .modal-hd .ttl{min-width:0;flex:1;font-size:12px;font-weight:600;color:var(--text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ghost{border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--muted);font-size:12px;padding:2px 10px;cursor:pointer}
+  .ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .primary{border:1px solid var(--accent);border-radius:6px;background:var(--accent);color:#fff;font-size:12px;padding:2px 10px;cursor:pointer}
+  .primary:hover{filter:brightness(1.08)}
+  .primary[disabled]{background:var(--bg);border-color:var(--border);color:var(--faint);cursor:default;filter:none}
+  .modal-bd{padding:10px 12px;overflow:auto}
+  dl.fields{display:grid;grid-template-columns:4.5rem 1fr;gap:4px 12px;margin:0 0 10px;font-size:12px}
+  dl.fields dt{color:var(--muted)}
+  dl.fields dd{margin:0;color:var(--text);font-family:var(--mono);font-size:11px;word-break:break-all;white-space:pre-wrap}
+  .out-hd{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);margin-bottom:4px}
+  pre.out{margin:0;max-height:34vh;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;
+          padding:8px 10px;font-family:var(--mono);font-size:11px;line-height:1.55;color:var(--muted-strong)}
+  .modal-ft{display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--border);background:var(--bg-elevated)}
+  .modal-ft .grow{flex:1;font-size:11px;color:var(--muted)}
+
+  /* 待评审清单 */
+  ol.review{margin:6px 0 0;padding-left:20px;font-size:12px;color:var(--text)}
+  ol.review li{margin:4px 0}
+  ol.review code{font-family:var(--mono);font-size:11px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:4px;padding:0 4px}
+  .q{color:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>活动视图：命令做成可点的 chip，运行中可以转后台</h1>
+  <p class="lede">这一页是真的能点的：点任意命令 chip 打开详情，点「转后台」看状态变化。<span class="kbd">Esc</span> 关闭弹层。</p>
+
+  <h2>① 现在线上是这样（刚做完的短简介，不可点）</h2>
+  <div class="panel old">
+    <div class="panel-hd"><span class="tag grey">改动前</span><span class="note">命令被截到 72 字，只能看，不能点，也没有操作</span></div>
+    <div class="act">
+      <div class="act-hd"><span class="idx">#5</span><span class="chip-user">用户请求</span><span>23:28</span></div>
+      <div class="ask">自动推进整个项目还有什么障碍吗？</div>
+      <ul class="steps">
+        <li class="step"><div class="row">
+          <span class="ic ok">✓</span><span class="label">搜索代码或文件</span>
+          <span class="mini">rg -n '执行命令' --no-heading -g '!dist' -g '!node_mo…</span>
+        </div></li>
+        <li class="step"><div class="row">
+          <span class="ic run"></span><span class="label running">运行回归测试</span>
+          <span class="mini">npx vitest run src/test/liveToolEntries.test.ts src/test/liveSessio…</span>
+          <span class="st running">运行中 12s</span>
+        </div></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>② 方案：更长的命令 chip（可点开详情）＋ 前台运行时可「转后台」</h2>
+  <div class="panel">
+    <div class="panel-hd"><span class="tag blue">改动后</span><span class="note">命令最长约 60 字符宽，点开看全文 / 目录 / 输出；前台运行中才有转后台按钮</span></div>
+    <div class="act">
+      <div class="act-hd"><span class="idx">#5</span><span class="chip-user">用户请求</span><span>23:28</span></div>
+      <div class="ask">自动推进整个项目还有什么障碍吗？</div>
+      <ul class="steps">
+        <li class="step"><div class="row">
+          <span class="ic ok">✓</span><span class="label">搜索代码或文件</span>
+          <button class="cmd-chip" type="button"
+            data-cmd="rg -n '执行命令' --no-heading -g '!dist' -g '!node_modules' | head -50"
+            data-kind="done" data-label="已完成 · 前台" data-elapsed="0.4 秒" data-cwd="/home/you/repos/pi-dashboard"
+            data-exit="0"
+            data-out="frontend/src/features/live-sessions/LiveSessionPage.tsx:889:    return { label: '执行命令', isTest: false }
+frontend/src/test/liveToolEntries.test.ts:44:    expect(evidence[0]?.label).toBe('执行命令')
+docs/mockups/live-activity-mock.html:174: ...">
+            <span class="txt">rg -n '执行命令' --no-heading -g '!dist' -g '!node_modules' | head -50</span>
+            <svg class="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <span class="st">0.4s</span>
+        </div></li>
+
+        <li class="step"><div class="row">
+          <span class="ic run"></span><span class="label running">运行回归测试</span>
+          <button class="cmd-chip" type="button"
+            data-cmd="npx vitest run src/test/liveToolEntries.test.ts src/test/liveSessionToolState.test.tsx"
+            data-kind="running" data-label="前台运行中" data-elapsed="12 秒" data-cwd="/home/you/repos/pi-dashboard/frontend"
+            data-out="RUN  v4.1.5 /home/you/repos/pi-dashboard/frontend
+
+ ✓ frontend/src/test/liveToolEntries.test.ts (31 tests) 1841ms
+ ✓ frontend/src/test/liveSessionToolState.test.tsx (18 tests) 322ms
+
+测试仍在跑，等待最后汇总…">
+            <span class="txt">npx vitest run src/test/liveToolEntries.test.ts src/test/liveSessionToolState.test.tsx</span>
+            <svg class="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <span class="st running">运行中 12s</span>
+          <button class="to-bg" type="button" data-move="1"><span class="dot"></span>转后台</button>
+        </div></li>
+
+        <li class="step"><div class="row">
+          <span class="ic run"></span><span class="label running">运行类型检查</span>
+          <button class="cmd-chip" type="button"
+            data-cmd="npm --prefix frontend run typecheck"
+            data-kind="running" data-label="前台运行中" data-elapsed="4 秒" data-cwd="/home/you/repos/pi-dashboard"
+            data-out="> pi-dashboard@1.0.0 typecheck
+> tsc -b --noEmit">
+            <span class="txt">npm --prefix frontend run typecheck</span>
+            <svg class="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <span class="st running">运行中 4s</span>
+          <button class="to-bg" type="button" data-move="1"><span class="dot"></span>转后台</button>
+        </div></li>
+
+        <li class="step"><div class="row">
+          <span class="ic run"></span><span class="label running">运行脚本</span>
+          <button class="cmd-chip" type="button"
+            data-cmd="python scripts/eval_ocr.py --cfg configs/eval/v1.4.yaml --split test_full_2026q1 --out eval/metrics.json"
+            data-kind="running-bg" data-label="后台运行中" data-elapsed="8 分 20 秒" data-cwd="/home/you/repos/pi-dashboard"
+            data-out="[stage 3] evaluating 4,812 images…
+progress 3120/4812  (64.8%)  loss=0.184  acc=0.943">
+            <span class="txt">python scripts/eval_ocr.py --cfg configs/eval/v1.4.yaml --split test_full_2026q1 --out eval/metrics.json</span>
+            <svg class="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <span class="st running">运行中 8m20s</span>
+          <span class="moved">已在后台</span>
+        </div></li>
+
+        <li class="step"><div class="row">
+          <span class="ic err">!</span><span class="label">执行命令</span>
+          <button class="cmd-chip" type="button"
+            data-cmd="npm test -- --runInBand src/test/missing.test.ts"
+            data-kind="failed" data-label="失败 · 前台" data-elapsed="1.2 秒" data-cwd="/home/you/repos/pi-dashboard"
+            data-exit="1"
+            data-out="Error: No test files found, exiting with code 1
+filter: src/test/missing.test.ts">
+            <span class="txt">npm test -- --runInBand src/test/missing.test.ts</span>
+            <svg class="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <span class="st">失败</span>
+        </div></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>③ 点开一个 chip 之后（弹层＝现有「命令详情」的复用）</h2>
+  <div class="panel">
+    <div class="panel-hd"><span class="tag grey">详情</span><span class="note">就这样展示，不用新造一套样式；把上面任意 chip 点开对比</span></div>
+    <p class="lede" style="margin:0">字段顺序：命令全文 → 目录 → 已运行 / 耗时 → 退出码（结束了才有）→ 错误（失败才有）→ 输出末尾（可滚动）。底部按钮：前台运行中有「转为后台运行」，否则只有「关闭」。</p>
+  </div>
+
+  <h2>④ 需要你 review 的点</h2>
+  <div class="panel">
+    <ol class="review">
+      <li><b>chip 宽度</b>：现在最长到 <code>440px</code>（约 60 字符）。再长就整块换两行？
+        <div class="q">我的建议：保持单行截断，点开看全文；换行会让一屏步骤变高。</div></li>
+      <li><b>可点提示</b>：现在用 hover 变蓝 + 右侧小箭头。<span class="q">要不要换成「⋯ 全文」这种文字提示，更明确？</span></li>
+      <li><b>转后台按钮的出现条件</b>：只在前台 + 运行中出现；已结束、已在后台的都不出现（已在后台显示灰字「已在后台」）。
+        <div class="q">要不要把「已经跑很久（比如 >60s）的前台命令」也主动提示一下可以转后台？</div></li>
+      <li><b>转后台之后</b>：行内状态从「运行中 12s」变成「后台运行中」，按钮换成灰字「已在后台」，右侧「后台命令」面板里能看到它。
+        <div class="q">是否需要弹一条可撤销的提示（“已转到后台 · 撤回”）？我的建议：先不做，避免多一层状态。</div></li>
+      <li><b>失败的命令</b>：chip 仍然可点，弹层里能看错误和退出码；行内不加额外按钮。</li>
+      <li><b>窄屏（窗口宽 &lt; 560px 或右侧栏很窄）</b>：一行塞不下 标签＋chip＋状态＋转后台，chip 会被挤到只剩「npx vit…」。
+        <div class="q">我的建议：窗口窄时命令换到第二行（独占一行），一行只放 标签＋状态＋按钮；你觉得可以就按这个做。</div></li>
+      <li><b>点开后取什么数据</b>：能复用现有「命令详情」所用的字段（命令、目录、开始/结束时间、输出末尾、退出码）。
+        <div class="q">若想要更详尽（完整输出流、重跑按钮），得后端多提供一点数据，不在这一轮范围。</div></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ===== 详情弹层 ===== -->
+<div class="mask" id="mask">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="命令详情">
+    <div class="modal-hd">
+      <span class="tag blue" id="m-tag">前台运行中</span>
+      <span class="ttl" id="m-ttl">命令详情</span>
+      <button class="ghost" type="button" id="m-close">关闭</button>
+    </div>
+    <div class="modal-bd">
+      <dl class="fields">
+        <dt>命令</dt><dd id="m-cmd"></dd>
+        <dt>目录</dt><dd id="m-cwd"></dd>
+        <dt id="m-time-k">已运行</dt><dd id="m-time"></dd>
+        <dt id="m-exit-k" hidden>退出码</dt><dd id="m-exit" hidden></dd>
+      </dl>
+      <div class="out-hd"><span>输出末尾</span><span style="color:var(--faint)">只保留最后一段，避免撑爆弹层</span></div>
+      <pre class="out" id="m-out"></pre>
+    </div>
+    <div class="modal-ft">
+      <span class="grow" id="m-note"></span>
+      <button class="primary" type="button" id="m-move" hidden>转为后台运行</button>
+      <button class="ghost" type="button" id="m-close2">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const mask = document.getElementById('mask')
+  const mTag = document.getElementById('m-tag'), mTtl = document.getElementById('m-ttl')
+  const mCmd = document.getElementById('m-cmd'), mCwd = document.getElementById('m-cwd')
+  const mTimeK = document.getElementById('m-time-k'), mTime = document.getElementById('m-time')
+  const mExitK = document.getElementById('m-exit-k'), mExit = document.getElementById('m-exit')
+  const mOut = document.getElementById('m-out'), mMove = document.getElementById('m-move'), mNote = document.getElementById('m-note')
+  let current = null
+
+  const tagOf = kind => kind === 'running' ? ['tag blue', '前台运行中']
+    : kind === 'running-bg' ? ['tag grey', '后台运行中']
+    : kind === 'failed' ? ['tag grey', '失败 · 前台']
+    : ['tag grey', '已完成 · 前台']
+
+  function openDialog(chip) {
+    current = chip
+    const [cls, text] = tagOf(chip.dataset.kind)
+    mTag.className = cls; mTag.textContent = text
+    mTtl.textContent = chip.parentElement.querySelector('.label').textContent.trim() + ' · 命令详情'
+    mCmd.textContent = chip.dataset.cmd
+    mCwd.textContent = chip.dataset.cwd
+    const running = chip.dataset.kind === 'running' || chip.dataset.kind === 'running-bg'
+    mTimeK.textContent = running ? '已运行' : '耗时'
+    mTime.textContent = chip.dataset.elapsed
+    mExitK.hidden = !chip.dataset.exit; mExit.hidden = !chip.dataset.exit
+    mExit.textContent = chip.dataset.exit ? chip.dataset.exit : ''
+    mOut.textContent = chip.dataset.out || '（还没有输出）'
+    const canMove = chip.dataset.kind === 'running'
+    mMove.hidden = !canMove; mMove.disabled = false; mMove.textContent = '转为后台运行'
+    mNote.textContent = chip.dataset.moved === '1' ? '这条命令已在后台运行' : canMove ? '前台命令会占住当前这一轮，转到后台后可以继续做别的' : ''
+    mask.classList.add('on')
+  }
+  function closeDialog() { mask.classList.remove('on'); current = null }
+
+  document.querySelectorAll('.cmd-chip').forEach(chip => {
+    chip.addEventListener('click', () => openDialog(chip))
+  })
+  document.getElementById('m-close').addEventListener('click', closeDialog)
+  document.getElementById('m-close2').addEventListener('click', closeDialog)
+  mask.addEventListener('click', event => { if (event.target === mask) closeDialog() })
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDialog() })
+
+  function moveToBackground(chip) {
+    chip.dataset.kind = 'running-bg'
+    chip.dataset.moved = '1'
+    const row = chip.parentElement
+    const btn = row.querySelector('.to-bg')
+    const stamp = document.createElement('span')
+    stamp.className = 'moved'; stamp.textContent = '已转到后台'
+    if (btn) btn.replaceWith(stamp)
+    const st = row.querySelector('.st')
+    if (st) { st.classList.remove('running'); st.textContent = '后台运行中' }
+  }
+
+  document.querySelectorAll('.to-bg').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const chip = btn.parentElement.querySelector('.cmd-chip')
+      moveToBackground(chip)
+    })
+  })
+
+  mMove.addEventListener('click', () => {
+    if (!current) return
+    moveToBackground(current)
+    mMove.disabled = true; mMove.textContent = '已转为后台'
+    mNote.textContent = '已转到后台，右侧「后台命令」里能看到它'
+    mTag.className = 'tag grey'; mTag.textContent = '后台运行中'
+  })
+</script>
+</body>
+</html>

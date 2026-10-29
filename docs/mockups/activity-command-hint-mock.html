@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mock · 活动视图 执行命令后面显示命令简介</title>
+<style>
+  /* ===== 取色与字号直接对齐 frontend/src/themes/light.css + tailwind 的 meta/2xs ===== */
+  :root{
+    --bg:#fafafa;--bg-elevated:#fff;--bg-hover:#f0f0f0;--card:#fff;
+    --text:#3f3f46;--text-strong:#18181b;--muted:#71717a;--muted-strong:#52525b;
+    --border:#e4e4e7;--border-strong:#d4d4d8;
+    --accent:#1d5aaf;--accent-subtle:rgba(29,90,175,.12);
+    --ok:#11695e;--ok-subtle:rgba(17,105,94,.1);
+    --danger:#c8196a;--danger-subtle:rgba(200,25,106,.1);
+    --aim:#7c3aed;--aim-subtle:rgba(124,58,237,.12);
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --radius-lg:12px;--radius-md:8px;--radius-sm:6px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:400 13px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+  .page{max-width:1040px;margin:0 auto;padding:28px 20px 80px}
+  h1{margin:0 0 4px;font-size:16px;color:var(--text-strong)}
+  .lede{margin:0 0 18px;color:var(--muted);font-size:12px}
+  .lede code{font-family:var(--mono);background:var(--bg-elevated);border:1px solid var(--border);border-radius:4px;padding:0 4px;font-size:11px}
+
+  /* 对照两栏 */
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px}
+  .compare>*{min-width:0}
+  @media (max-width:820px){.compare{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px 16px}
+  .panel.after{border-color:rgba(29,90,175,.35);box-shadow:0 0 0 3px var(--accent-subtle)}
+  .panel-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .tag{display:inline-flex;align-items:center;border-radius:999px;padding:1px 8px;font-size:11px;line-height:18px}
+  .tag.before{background:var(--bg-hover);color:var(--muted-strong)}
+  .tag.after{background:var(--accent-subtle);color:var(--accent)}
+  .panel-hd .note{font-size:11px;color:var(--muted)}
+
+  /* 活动卡片：还原真实结构 #5 用户请求 / 步骤 / 回复 */
+  .act{border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px;background:var(--card)}
+  .act:last-child{margin-bottom:0}
+  .act-hd{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+  .act-hd .idx{font-family:var(--mono)}
+  .chip-user{display:inline-flex;background:var(--aim-subtle);color:var(--aim);border-radius:999px;padding:0 7px;font-size:11px;line-height:18px}
+  .act-hd .time{font-family:var(--mono)}
+  .ask{margin:5px 0 2px;color:var(--aim);font-size:13px}
+  .steps{list-style:none;margin:6px 0 0;padding:0}
+  .step{padding:3px 6px;border-radius:var(--radius-sm)}
+  .step:hover{background:var(--bg-hover)}
+  .row{display:flex;min-width:0;align-items:center;gap:8px;font-size:12px;overflow:hidden}
+  .ic{width:16px;height:16px;flex:none;border-radius:50%;display:grid;place-items:center;font-size:10px}
+  .ic.ok{background:var(--ok-subtle);color:var(--ok)}
+  .ic.err{background:var(--danger-subtle);color:var(--danger);font-weight:600}
+  .ic.run{width:16px;height:16px;border:2px solid var(--accent);border-top-color:transparent;animation:spin .9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+  .label.running{font-weight:500;color:var(--text-strong)}
+  /* 就是这次改动新增的那一小块：命令简介 */
+  .cmd{min-width:0;max-width:52%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+       font-family:var(--mono);font-size:11px;color:var(--muted-strong);
+       background:var(--bg-elevated);border:1px solid var(--border);border-radius:4px;padding:0 5px}
+  .st{margin-left:auto;flex:none;font-size:11px;color:var(--muted)}
+  .st.running{color:var(--accent)}
+  .reply{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+  .reply b{color:var(--muted-strong);font-weight:500}
+  .missing{font-size:11px;color:#b0b5bd;padding:0 4px}
+
+  /* 例子表 */
+  table{width:100%;min-width:660px;border-collapse:collapse;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;font-size:12px}
+  .table-wrap{overflow-x:auto;border-radius:var(--radius-md)}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+  th{font-size:11px;font-weight:500;color:var(--muted);background:var(--bg)}
+  tr:last-child td{border-bottom:none}
+  td code{font-family:var(--mono);font-size:11px;color:var(--muted-strong);background:var(--bg-elevated);border:1px solid var(--border);border-radius:4px;padding:0 4px;word-break:break-all}
+  .hint{margin:16px 0 0;color:var(--muted);font-size:11px;line-height:1.7}
+  .hint b{color:var(--muted-strong);font-weight:500}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>活动视图：在「执行命令」后面显示具体命令</h1>
+  <p class="lede">
+    左＝改动前，右＝改动后。灰底等宽小块就是新增的「命令简介」；过长会截断成 <code>…</code>，鼠标悬停看完整命令。
+  </p>
+
+  <div class="compare">
+    <!-- ================= 改前 ================= -->
+    <div class="panel">
+      <div class="panel-hd"><span class="tag before">改动前</span><span class="note">只知道“执行命令”，不知道跑的是什么</span></div>
+
+      <div class="act">
+        <div class="act-hd"><span class="idx">#5</span><span class="chip-user">用户请求</span><span class="time">23:28</span></div>
+        <div class="ask">自动推进整个项目还有什么障碍吗？</div>
+        <ul class="steps">
+          <li class="step"><div class="row">
+            <span class="ic ok">✓</span><span class="label">执行命令</span>
+            <span class="missing">（不显示任何命令）</span>
+            <span class="st"></span>
+          </div></li>
+          <li class="step"><div class="row">
+            <span class="ic run"></span><span class="label running">执行命令</span>
+            <span class="missing">（不显示任何命令）</span>
+            <span class="st running">运行中</span>
+          </div></li>
+        </ul>
+        <div class="reply"><b>进度说明</b> 接着做了：执行命令</div>
+      </div>
+    </div>
+
+    <!-- ================= 改后 ================= -->
+    <div class="panel after">
+      <div class="panel-hd"><span class="tag after">改动后</span><span class="note">标签说“在做什么”，后面说“跑的是哪条命令”</span></div>
+
+      <div class="act">
+        <div class="act-hd"><span class="idx">#5</span><span class="chip-user">用户请求</span><span class="time">23:28</span></div>
+        <div class="ask">自动推进整个项目还有什么障碍吗？</div>
+        <ul class="steps">
+          <li class="step"><div class="row">
+            <span class="ic ok">✓</span><span class="label">搜索代码或文件</span>
+            <span class="cmd" title="rg -n '执行命令' --no-heading -g '!dist' -g '!node_modules' | head -50">rg -n '执行命令' --no-heading -g '!dist' -g '!node_mo…</span>
+            <span class="st"></span>
+          </div></li>
+          <li class="step"><div class="row">
+            <span class="ic run"></span><span class="label running">运行回归测试</span>
+            <span class="cmd" title="npx vitest run src/test/liveToolEntries.test.ts src/test/liveSessionToolState.test.tsx">npx vitest run src/test/liveToolEntries.test.ts src/test/liveSessio…</span>
+            <span class="st running">运行中</span>
+          </div></li>
+          <li class="step"><div class="row">
+            <span class="ic ok">✓</span><span class="label">执行命令</span>
+            <span class="cmd" title="docker compose up -d api worker">docker compose up -d api worker</span>
+            <span class="st"></span>
+          </div></li>
+        </ul>
+        <div class="reply"><b>进度说明</b> 接着做了：搜索代码或文件、运行回归测试</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th style="width:34%">实际跑的命令</th><th style="width:22%">现在的标签</th><th>标签后面的命令简介</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>cd /home/you/repos/pi-dashboard &amp;&amp; rg -n '执行命令' -g '!dist'</code></td>
+        <td>搜索代码或文件</td>
+        <td><span class="cmd">rg -n '执行命令' -g '!dist'</span> <span class="hint-inline" style="color:var(--muted);font-size:11px">（前面的 <code>cd … &amp;&amp;</code> 被去掉）</span></td>
+      </tr>
+      <tr>
+        <td><code>npm --prefix frontend run typecheck</code></td>
+        <td>运行类型检查</td>
+        <td><span class="cmd">npm --prefix frontend run typecheck</span></td>
+      </tr>
+      <tr>
+        <td><code>npx vitest run src/test/liveToolEntries.test.ts</code></td>
+        <td>运行回归测试</td>
+        <td><span class="cmd">npx vitest run src/test/liveToolEntries.test.ts</span></td>
+      </tr>
+      <tr>
+        <td><code>git status --short</code></td>
+        <td>检查代码变更</td>
+        <td><span class="cmd">git status --short</span></td>
+      </tr>
+      <tr>
+        <td><code>python scripts/eval_ocr.py --cfg configs/eval/v1.4.yaml --split test_full_2026q1</code></td>
+        <td>运行脚本</td>
+        <td><span class="cmd" title="python scripts/eval_ocr.py --cfg configs/eval/v1.4.yaml --split test_full_2026q1">python scripts/eval_ocr.py --cfg configs/eval/v1.4.yaml --split test_full…</span></td>
+      </tr>
+      <tr>
+        <td><code>curl -s http://127.0.0.1:7777/api/live-sessions | jq '.items | length'</code></td>
+        <td>执行命令</td>
+        <td><span class="cmd">curl -s http://127.0.0.1:7777/api/live-sessions | jq '.items | length'</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="hint">
+    <b>规则：</b>最多压成一行 72 个字符，超出加 <code>…</code>，鼠标悬停看完整命令；开头的 <code>cd 路径 &amp;&amp;</code> 视为噪声先去掉。<br>
+    <b>注意：</b>这是静态假页面，用来看观感，不代表真实会话数据；真实页面需要重新构建前端（<code>./run.sh</code>）后才会变。
+  </p>
+</div>
+</body>
+</html>

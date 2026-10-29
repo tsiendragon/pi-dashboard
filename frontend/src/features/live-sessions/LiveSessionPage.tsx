@@ -32,8 +32,8 @@ import {
 } from '../../store/liveSessionsSlice'
 import { liveSessionApi, LiveSessionApiError } from './api'
 import LiveSessionComposer from './LiveSessionComposer'
-import LiveCommandChips, { collectCommandChips } from './LiveCommandChips'
-import ActivityTimeline, { type ActivityImage, type ActivityNote, type ActivityReply, type ActivityStep, type LiveActivity } from './ActivityTimeline'
+import LiveCommandChips, { RUNNING_COMMAND_TASK, backgroundTasks, collectCommandChips } from './LiveCommandChips'
+import ActivityTimeline, { type ActivityCommand, type ActivityImage, type ActivityNote, type ActivityReply, type ActivityStep, type LiveActivity } from './ActivityTimeline'
 import FullContentModal from '../../components/FullContentModal'
 import LineIcon from '../../components/LineIcon'
 import { SelectionQuoteMenu, QuoteCommentPopover } from '../../components/SelectionQuoteMenu'
@@ -802,8 +802,9 @@ export function collectToolStates(entries: unknown[]): ToolStateMap {
       state.abandoned = false
       state.isError = data.isError === true || data.isError === 'true'
       state.executionResult = partialText(data.result)
-      const errorText = state.executionResult || (typeof data.error === 'string' ? data.error : '')
-      if (errorText) state.errorText = errorText
+      // `result` 是工具的正常输出（成功时同样有），不能当错误文本，否则弹层里
+      // 「错误」永远等于输出全文；pi 的 tool_execution_end 只有 `error` 是错误通道。
+      if (typeof data.error === 'string' && data.error) state.errorText = data.error
     }
     if (record.type === 'tool_execution_update') state.partialText = partialText(data.partialResult)
   }
@@ -848,7 +849,16 @@ function shortTarget(value: unknown, max = 42): string | undefined {
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized
 }
 
-function activityAction(toolName: string, argsText?: string, detail?: string): { label: string; detail?: string; path?: string; isTest: boolean } {
+/** 命令简介：去掉无信息量的 `cd xxx &&` 前缀，压成一行并截断，让用户扫一眼就知道在跑什么。 */
+function commandHint(command?: string): string | undefined {
+  if (!command) return undefined
+  const stripped = command.trim().replace(/^cd\s+[^&|;]+?\s*&&\s*/, '')
+  if (!stripped) return undefined
+  const compact = compactCommand(stripped)
+  return stripped.length > compact.length ? `${compact}…` : compact
+}
+
+function activityAction(toolName: string, argsText?: string, detail?: string): { label: string; detail?: string; path?: string; isTest: boolean; isShell?: boolean } {
   const name = toolName.toLowerCase().replace(/[_-]+/g, ' ')
   const args = objectArgs(argsText)
   const pathValue = typeof args.path === 'string' ? args.path : typeof args.filePath === 'string' ? args.filePath : typeof args.file_path === 'string' ? args.file_path : undefined
@@ -875,20 +885,64 @@ function activityAction(toolName: string, argsText?: string, detail?: string): {
   }
   const shellLike = name === 'bash' || name === 'shell' || name === 'sh'
   if (shellLike || typeof args.command === 'string') {
+    const hint = commandHint(command)
+    // 摘要标签告诉你「在做什么」，命令简介告诉你「具体跑的是哪条命令」。
+    const withHint = (label: string) => ({ label, ...(hint ? { detail: hint } : {}), isTest: false, isShell: true })
     const testRunners = ['npm run test', 'npm test', 'pnpm test', 'yarn test', 'pytest', 'vitest', 'jest', 'mocha', 'cargo test']
     const commandTokens = normalizedCommand.split(' ').filter(Boolean)
     const runner = testRunners.find(value => normalizedCommand.includes(value))
       || (['npm', 'pnpm', 'yarn'].includes(commandTokens[0] || '') && commandTokens.includes('test') ? 'test' : undefined)
-    if (runner) return { label: '运行回归测试', detail: runner, isTest: true }
-    if (['tsc', 'typecheck', 'mypy', 'pyright'].some(value => normalizedCommand.includes(value))) return { label: '运行类型检查', detail: '类型检查', isTest: false }
-    if (['eslint', 'ruff', 'flake8', 'pylint'].some(value => normalizedCommand.includes(value))) return { label: '运行代码检查', detail: 'lint', isTest: false }
-    if (['build', 'vite build', 'webpack', 'rollup'].some(value => normalizedCommand.includes(value))) return { label: '构建项目', detail: 'build', isTest: false }
-    if (['rg ', 'grep ', 'find ', 'fd '].some(value => normalizedCommand.includes(value))) return { label: '搜索代码或文件', isTest: false }
-    if (['git status', 'git diff', 'git log', 'git show'].some(value => normalizedCommand.includes(value))) return { label: '检查代码变更', detail: 'git', isTest: false }
-    if (['python', 'node ', 'ruby '].some(value => normalizedCommand.includes(value))) return { label: '运行脚本', isTest: false }
-    return { label: '执行命令', isTest: false }
+    if (runner) return { label: '运行回归测试', ...(hint ? { detail: hint } : { detail: runner }), isTest: true, isShell: true }
+    if (['tsc', 'typecheck', 'mypy', 'pyright'].some(value => normalizedCommand.includes(value))) return withHint('运行类型检查')
+    if (['eslint', 'ruff', 'flake8', 'pylint'].some(value => normalizedCommand.includes(value))) return withHint('运行代码检查')
+    if (['build', 'vite build', 'webpack', 'rollup'].some(value => normalizedCommand.includes(value))) return withHint('构建项目')
+    if (['rg ', 'grep ', 'find ', 'fd '].some(value => normalizedCommand.includes(value))) return withHint('搜索代码或文件')
+    if (['git status', 'git diff', 'git log', 'git show'].some(value => normalizedCommand.includes(value))) return withHint('检查代码变更')
+    if (['python', 'node ', 'ruby '].some(value => normalizedCommand.includes(value))) return withHint('运行脚本')
+    return withHint('执行命令')
   }
   return { label: '调用外部工具', isTest: false }
+}
+
+const textOf = (value: unknown): string | undefined => typeof value === 'string' && value ? value : undefined
+const numberOf = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) ? value : undefined
+
+/** `background-commands` 快照按 toolCallId 建索引：认出「已经在后台」的那条命令。 */
+function backgroundTaskMap(features?: Record<string, unknown>): Map<string, Record<string, unknown>> {
+  const map = new Map<string, Record<string, unknown>>()
+  if (!features) return map
+  for (const task of backgroundTasks(features)) {
+    const id = textOf(task.toolCallId)
+    if (id) map.set(id, task)
+  }
+  return map
+}
+
+/**
+ * 命令类步骤的完整信息：活动视图里的 chip、详情弹层、以及「转后台」都靠它。
+ * 状态优先取工具事件（更及时），快照补齐目录 / 退出码 / 是否已在后台。
+ */
+function activityCommand(command: string | undefined, toolCallId: string | undefined, state: ToolState | undefined, task?: Record<string, unknown>): ActivityCommand | undefined {
+  const text = command?.trim()
+  if (!text) return undefined
+  const startedAt = state?.startedAtMs ?? numberOf(task?.startedAt)
+  const endedAt = state?.endedAtMs ?? numberOf(task?.endedAt)
+  const output = state?.result?.text || state?.partialText || textOf(task?.outputTail)
+  const exitCode = typeof task?.exitCode === 'number' || typeof task?.exitCode === 'string' ? task.exitCode as number | string : undefined
+  const error = state?.errorText || textOf(task?.error)
+  // 快照里 mode 为 foreground 的是前台镜像，同一进程已经转走或本来就是后台才算后台任务。
+  const background = Boolean(task) && task?.mode !== 'foreground'
+  return {
+    command: text,
+    ...(toolCallId ? { toolCallId } : {}),
+    ...(textOf(task?.cwd) ? { cwd: textOf(task?.cwd) as string } : {}),
+    ...(startedAt !== undefined ? { startedAt } : {}),
+    ...(endedAt !== undefined ? { endedAt } : {}),
+    ...(output ? { output } : {}),
+    ...(exitCode !== undefined ? { exitCode } : {}),
+    ...(error ? { error } : {}),
+    ...(background ? { background } : {}),
+  }
 }
 
 function passingTestCount(text: string): string | undefined {
@@ -897,9 +951,11 @@ function passingTestCount(text: string): string | undefined {
   return count ? `${count} 项通过` : undefined
 }
 
-function collectLiveActivityEvidence(entries: unknown[]): ActivityStep[] {
+function collectLiveActivityEvidence(entries: unknown[], features?: Record<string, unknown>): ActivityStep[] {
   const candidates = new Map<string, ActivityCandidate>()
   const states = collectToolStates(entries)
+  // 没显式给快照时自己从条目里取：调用方（含测试）不必先拼一遍 features。
+  const tasks = backgroundTaskMap(features ?? collectLiveFeatures(entries))
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index]
@@ -973,29 +1029,35 @@ function collectLiveActivityEvidence(entries: unknown[]): ActivityStep[] {
     .sort((left, right) => left.index - right.index)
     .map(candidate => {
       const state = candidate.toolCallId ? states.get(candidate.toolCallId) : undefined
+      const task = candidate.toolCallId ? tasks.get(candidate.toolCallId) : undefined
+      // 有些命令只有后台快照、没有工具事件；这种“还在跑”不能算未完成。
+      const taskRunning = typeof task?.status === 'string' && RUNNING_COMMAND_TASK.has(task.status)
       const isError = candidate.isError || state?.result?.isError === true || state?.isError === true || state?.abandoned === true
       const status: ActivityStep['status'] = isError
         ? 'error'
         : state?.result || state?.ended || candidate.ended
           ? 'done'
-          : state?.started || candidate.started
+          : state?.started || candidate.started || taskRunning
             ? 'running'
             : 'pending'
-      const action = activityAction(candidate.toolName, candidate.argsText, candidate.detail || state?.command)
+      const rawCommand = candidate.detail || state?.command
+      const action = activityAction(candidate.toolName, candidate.argsText, rawCommand)
       const testCount = action.isTest && status === 'done' ? passingTestCount(state?.result?.text || '') : undefined
+      const command = action.isShell ? activityCommand(rawCommand, candidate.toolCallId, state, candidate.toolCallId ? tasks.get(candidate.toolCallId) : undefined) : undefined
       return {
         id: candidate.key,
         label: action.label,
         detail: [action.detail, testCount].filter(Boolean).join(' · ') || undefined,
         ...(action.path ? { path: action.path } : {}),
+        ...(command ? { command } : {}),
         status,
         entryIndex: candidate.index,
       }
     })
 }
 
-export function buildLiveActivityEvidence(entries: unknown[]): ActivityStep[] {
-  return collectLiveActivityEvidence(entries).slice(-6)
+export function buildLiveActivityEvidence(entries: unknown[], features?: Record<string, unknown>): ActivityStep[] {
+  return collectLiveActivityEvidence(entries, features).slice(-6)
 }
 
 function entryChannel(entry: unknown): string | undefined {
@@ -1105,9 +1167,9 @@ function goalActivityReport(entry: unknown, index: number): ActivityReport | und
   }
 }
 
-export function buildLiveActivities(entries: unknown[], sessionStatus: string, goal: SessionGoalSummary | null): LiveActivity[] {
+export function buildLiveActivities(entries: unknown[], sessionStatus: string, goal: SessionGoalSummary | null, features?: Record<string, unknown>): LiveActivity[] {
   const evidenceByIndex = new Map<number, ActivityStep[]>()
-  for (const step of collectLiveActivityEvidence(entries)) {
+  for (const step of collectLiveActivityEvidence(entries, features)) {
     const existing = evidenceByIndex.get(step.entryIndex) || []
     existing.push(step)
     evidenceByIndex.set(step.entryIndex, existing)
@@ -2216,7 +2278,7 @@ export default function LiveSessionPage() {
       : sessionGoalSummary?.status === 'complete'
         ? 'complete'
         : sessionGoalSummary?.status === 'paused' ? 'paused' : 'idle'
-  const activities = useMemo(() => buildLiveActivities(detail?.entries || [], activityStatus, sessionGoalSummary), [detail?.entries, activityStatus, sessionGoalSummary])
+  const activities = useMemo(() => buildLiveActivities(detail?.entries || [], activityStatus, sessionGoalSummary, features), [detail?.entries, activityStatus, sessionGoalSummary, features])
   const [busy, setBusy] = useState(false)
   const [commandNotice, setCommandNotice] = useState<string>()
   /** Same guard for closing the file panel while it has unsaved edits. */
@@ -2491,7 +2553,7 @@ export default function LiveSessionPage() {
     setDocumentPreview({ filePath, content: '', loading: true, error: null })
     try {
       const response = await fetch('/api/file-read?path=' + encodeURIComponent(filePath))
-      if (!response.ok) throw new Error(`Unable to read file (${response.status})`)
+      if (!response.ok) throw new Error(response.status === 413 ? '文件过大，不在页面中预览，请点右上角「下载」' : `Unable to read file (${response.status})`)
       const content = await response.text()
       setDocumentPreview(current => current?.filePath === filePath
         ? { filePath, content, loading: false, error: null }
@@ -3101,7 +3163,7 @@ export default function LiveSessionPage() {
                             onReadStart={pauseTimelineFollow}
                             compacting={!!summary.compacting}
                           />)
-                      : <ActivityTimeline activities={activities} onFileOpen={openTimelineFile} />}
+                      : <ActivityTimeline activities={activities} onFileOpen={openTimelineFile} onMoveToBackground={moveToBackground} />}
                   </div>
                 </div>
                 {summary.compacting && <div role="status" aria-label="上下文压缩中" className="flex items-center gap-2 border-t border-border bg-accent-subtle px-3 py-1 text-2xs text-accent">

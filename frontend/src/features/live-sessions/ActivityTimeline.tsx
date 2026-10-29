@@ -2,9 +2,26 @@ import { useState } from 'react'
 import FullContentModal from '../../components/FullContentModal'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import LineIcon from '../../components/LineIcon'
+import CommandDetailDialog, { type CommandDetail } from './CommandDetailDialog'
+import { formatCommandElapsed } from './LiveCommandChips'
 
 export type ActivityStepStatus = 'pending' | 'running' | 'done' | 'error' | 'blocked'
 export type ActivityStatus = 'pending' | 'running' | 'done' | 'incomplete'
+
+/** 命令类步骤的完整信息：展开详情、以及前台运行中的「转后台」都要用。 */
+export interface ActivityCommand {
+  command: string
+  /** 前台工具调用 id；有它才能转后台。 */
+  toolCallId?: string
+  cwd?: string
+  startedAt?: number
+  endedAt?: number
+  output?: string
+  exitCode?: number | string
+  error?: string
+  /** 已由后台任务接管（快照里存在且不是前台镜像）。 */
+  background?: boolean
+}
 
 export interface ActivityStep {
   id: string
@@ -12,6 +29,8 @@ export interface ActivityStep {
   detail?: string
   /** 详情对应的真实文件路径，用于在 Dashboard 里点开看内容。 */
   path?: string
+  /** 命令类步骤的具体命令；有它就把 detail 换成可点的命令 chip。 */
+  command?: ActivityCommand
   status: ActivityStepStatus
   entryIndex: number
 }
@@ -148,19 +167,61 @@ function FileChip({ step, onFileOpen }: { step: ActivityStep; onFileOpen: (path:
   </button>
 }
 
-function StepList({ steps, numbered, className, onFileOpen }: { steps: ActivityStep[]; numbered: boolean; className: string; onFileOpen?: (path: string) => void }) {
+/** 命令压成一行：真实命令经常是多行脚本。 */
+function oneLine(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+/** 命令块：一条长一点的 chip，点开看全文 / 目录 / 输出。 */
+function CommandChip({ step, onOpen }: { step: ActivityStep; onOpen: (step: ActivityStep) => void }) {
+  const command = step.command as ActivityCommand
+  return <button
+    type="button"
+    onClick={() => onOpen(step)}
+    aria-label={`查看命令详情：${oneLine(command.command)}`}
+    title={command.command}
+    className="flex min-h-5 min-w-[15rem] max-w-[26rem] flex-1 cursor-pointer items-center gap-1 rounded-md border border-border-strong bg-bg-elevated py-px pl-1.5 pr-1 font-mono text-2xs text-muted-strong hover:border-accent hover:bg-accent-subtle hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+  >
+    <span className="min-w-0 flex-1 truncate text-left">{oneLine(command.command)}</span>
+    <LineIcon name="chevronRight" className="h-2.5 w-2.5 shrink-0 opacity-50" />
+  </button>
+}
+
+function StepList({ steps, numbered, className, onFileOpen, onCommandOpen, onMoveToBackground, canMove }: {
+  steps: ActivityStep[]
+  numbered: boolean
+  className: string
+  onFileOpen?: (path: string) => void
+  onCommandOpen: (step: ActivityStep) => void
+  onMoveToBackground?: (toolCallId: string) => void
+  canMove?: (step: ActivityStep) => boolean
+}) {
   return <ol className={className}>
     {steps.map((step, stepIndex) => {
       const stepStatus = STEP_STATUS[step.status]
       const chip = Boolean(step.path && onFileOpen)
+      const command = step.command
+      const movable = command?.toolCallId && canMove?.(step) && onMoveToBackground
       return (
         <li key={step.id} className="rounded-sm px-1.5 py-0.5 hover:bg-bg-hover">
-          <div className="flex min-w-0 items-center gap-2 text-meta">
-            {numbered && <span className="w-4 shrink-0 text-right font-mono text-2xs text-muted">{stepIndex + 1}</span>}
-            <StepIcon status={step.status} />
-            <span className={`min-w-0 truncate ${step.status === 'running' ? 'font-medium text-text-strong' : 'text-text'}`} title={step.detail ? `${step.label} · ${step.detail}` : step.label}>{step.label}</span>
-            {step.detail && !chip && <span className="min-w-0 truncate rounded bg-bg-elevated px-1.5 font-mono text-2xs text-muted-strong" title={step.detail}>{step.detail}</span>}
-            <span className={`ml-auto shrink-0 text-2xs ${stepStatus.className}`}>{step.status === 'done' ? '' : stepStatus.label}</span>
+          <div className="flex min-w-0 items-start gap-x-2 text-meta">
+            {numbered && <span className="w-4 shrink-0 pt-0.5 text-right font-mono text-2xs text-muted">{stepIndex + 1}</span>}
+            <span className="flex shrink-0 pt-0.5"><StepIcon status={step.status} /></span>
+            {/* 标签和命令自成一组：窗口窄时命令掉到第二行，状态和按钮始终留在第一行右侧。 */}
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+              <span className={`min-w-0 shrink-0 truncate ${step.status === 'running' ? 'font-medium text-text-strong' : 'text-text'}`} title={step.detail ? `${step.label} · ${step.detail}` : step.label}>{step.label}</span>
+              {command
+                // 命令类步骤用可点 chip：长命令也能点开看全文，不用挤在行里。
+                ? <CommandChip step={step} onOpen={onCommandOpen} />
+                : step.detail && !chip && <span className="max-w-[52%] min-w-0 truncate rounded bg-bg-elevated px-1.5 font-mono text-2xs text-muted-strong" title={step.detail}>{step.detail}</span>}
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+              <span className={`shrink-0 text-2xs ${stepStatus.className}`}>{step.status === 'done' ? '' : stepStatus.label}</span>
+              {command?.background && step.status === 'running' && <span className="shrink-0 text-2xs text-muted">已在后台</span>}
+              {movable
+                ? <button type="button" onClick={() => onMoveToBackground?.(command.toolCallId as string)} title="转到后台后命令继续运行，Pi 不再等它" className="shrink-0 rounded-full border border-border-strong bg-bg-elevated px-2 text-2xs leading-[18px] text-muted-strong hover:border-accent hover:bg-accent-subtle hover:text-accent">转后台</button>
+                : null}
+            </div>
           </div>
           {chip && <div className={`mt-0.5 flex flex-wrap gap-1 ${numbered ? 'ml-12' : 'ml-6'}`}><FileChip step={step} onFileOpen={onFileOpen as (path: string) => void} /></div>}
         </li>
@@ -267,13 +328,64 @@ function sourceChip(sourceLabel: string): { className: string; icon?: 'clock' } 
   return { className: 'bg-bg-elevated text-muted-strong' }
 }
 
-export default function ActivityTimeline({ activities, onFileOpen }: { activities: LiveActivity[]; onFileOpen?: (path: string) => void }) {
+export default function ActivityTimeline({ activities, onFileOpen, onMoveToBackground }: {
+  activities: LiveActivity[]
+  onFileOpen?: (path: string) => void
+  /** 把前台运行的命令转到后台；没有它就不显示「转后台」。 */
+  onMoveToBackground?: (toolCallId: string) => Promise<void> | void
+}) {
+  const [commandStep, setCommandStep] = useState<ActivityStep>()
+  const [movedTools, setMovedTools] = useState<Record<string, boolean>>({})
   const [expandedActivities, setExpandedActivities] = useState<Record<string, boolean>>({})
   const [expandedFollowUps, setExpandedFollowUps] = useState<Record<string, boolean>>({})
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({})
   const [readingReply, setReadingReply] = useState<ActivityReply | null>(null)
   const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+
+  /** 前台 + 还在跑 + 没被转到后台，才给按钮；转完乐观地先收起按钮。 */
+  const canMoveToBackground = (step: ActivityStep): boolean => {
+    const command = step.command
+    return Boolean(onMoveToBackground && command?.toolCallId && step.status === 'running' && !command.background && !movedTools[command.toolCallId])
+  }
+  const moveToBackground = (toolCallId: string): void => {
+    setMovedTools(previous => ({ ...previous, [toolCallId]: true }))
+    void Promise.resolve(onMoveToBackground?.(toolCallId)).catch(() => {
+      setMovedTools(previous => {
+        const next = { ...previous }
+        delete next[toolCallId]
+        return next
+      })
+    })
+  }
+
+  const commandDetail = (step: ActivityStep): CommandDetail | undefined => {
+    const command = step.command
+    if (!command) return undefined
+    const running = step.status === 'running'
+    const elapsed = command.startedAt === undefined
+      ? undefined
+      : formatCommandElapsed((command.endedAt ?? Date.now()) - command.startedAt)
+    const tag = step.status === 'error'
+      ? { text: '失败', className: 'bg-danger-subtle text-danger' }
+      : command.background || movedTools[command.toolCallId || '']
+        ? { text: '后台命令', className: 'bg-warn-subtle text-warn' }
+        : running
+          ? { text: '前台运行中', className: 'bg-accent-subtle text-accent' }
+          : { text: '已完成', className: 'bg-ok-subtle text-ok' }
+    return {
+      tag,
+      title: `${step.label} · ${command.background || movedTools[command.toolCallId || ''] ? '后台命令' : running ? '前台命令' : '已结束'}`,
+      command: command.command,
+      ...(command.cwd ? { cwd: command.cwd } : {}),
+      ...(elapsed ? { time: elapsed, timeLabel: running && command.endedAt === undefined ? '已运行' : '耗时' } : {}),
+      ...(command.exitCode !== undefined ? { exitCode: command.exitCode } : {}),
+      ...(command.error ? { error: command.error } : {}),
+      output: command.output,
+      running,
+      ...(canMoveToBackground(step) && command.toolCallId ? { onMoveToBackground: () => moveToBackground(command.toolCallId as string) } : {}),
+    }
+  }
 
   return (
     <section className="relative space-y-2.5 pl-[26px] before:absolute before:bottom-2 before:left-[9px] before:top-2 before:w-0.5 before:rounded-full before:bg-border" aria-label="会话活动时间线">
@@ -365,7 +477,7 @@ export default function ActivityTimeline({ activities, onFileOpen }: { activitie
 
               {activity.steps.length === 0
                 ? <p className="mt-1 text-meta text-muted">尚无可确认的执行步骤</p>
-                : <StepList steps={visibleSteps} numbered={false} className="-mx-1.5 mt-1.5 space-y-px" onFileOpen={onFileOpen} />}
+                : <StepList steps={visibleSteps} numbered={false} className="-mx-1.5 mt-1.5 space-y-px" onFileOpen={onFileOpen} onCommandOpen={setCommandStep} onMoveToBackground={moveToBackground} canMove={canMoveToBackground} />}
                 {activity.status === 'running' && activity.steps.length > 0 && <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-bg-elevated"><i className="block h-full rounded-full bg-accent transition-all" style={{ width: `${Math.round(doneSteps / activity.steps.length * 100)}%` }} /></div>}
                 {activity.steps.length > 5 && <button
                   type="button"
@@ -383,7 +495,7 @@ export default function ActivityTimeline({ activities, onFileOpen }: { activitie
                     <RelatedNote related={line.related} />
                   </div>
                 ))}
-                {activity.plan.items.length > 0 && <StepList steps={activity.plan.items} numbered={false} className="mt-1 space-y-1" onFileOpen={onFileOpen} />}
+                {activity.plan.items.length > 0 && <StepList steps={activity.plan.items} numbered={false} className="mt-1 space-y-1" onFileOpen={onFileOpen} onCommandOpen={setCommandStep} onMoveToBackground={moveToBackground} canMove={canMoveToBackground} />}
               </div>}
 
               {timeline.length > 0 && <div className="mt-2 space-y-1 border-t border-border/70 pt-1.5">
@@ -448,6 +560,10 @@ export default function ActivityTimeline({ activities, onFileOpen }: { activitie
             </div>
           )
         })}
+      {commandStep && (() => {
+        const detail = commandDetail(commandStep)
+        return detail ? <CommandDetailDialog detail={detail} onClose={() => setCommandStep(undefined)} /> : null
+      })()}
       {readingReply && <FullContentModal content={readingReply.text} meta={`${replyLineCount(readingReply)} 行`} onFileOpen={onFileOpen} showRaw={false} onClose={() => setReadingReply(null)} />}
       {previewImage && <div
         role="dialog"

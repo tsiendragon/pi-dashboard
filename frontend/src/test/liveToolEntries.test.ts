@@ -149,6 +149,28 @@ describe('activity timeline', () => {
     expect(evidence[0]?.detail).toContain('npm test')
   })
 
+  it('shows the concrete command behind a generic shell step', () => {
+    // 用户要看到“在跑什么命令”，而不是只看到“执行命令”。
+    const evidence = buildLiveActivityEvidence([
+      { type: 'tool_execution_start', data: { toolCallId: 'run-1', toolName: 'bash', command: 'cd /repo && docker compose up -d api worker' } },
+    ])
+
+    expect(evidence[0]?.label).toBe('执行命令')
+    // 前置 cd 路径只是噪声，摘要从真正的命令开始。
+    expect(evidence[0]?.detail).toBe('docker compose up -d api worker')
+  })
+
+  it('folds long commands into one truncated line', () => {
+    const longCommand = `python scripts/${'deep/'.repeat(20)}run.py --flag value`
+    const evidence = buildLiveActivityEvidence([
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'run-2', name: 'bash', arguments: { command: longCommand } }] } },
+    ])
+
+    expect(evidence[0]?.detail?.endsWith('…')).toBe(true)
+    expect((evidence[0]?.detail || '').length).toBeLessThan(longCommand.length)
+    expect(evidence[0]?.detail).not.toContain('\n')
+  })
+
   it('summarizes tool calls as human-readable actions and uses test output as evidence', () => {
     const evidence = buildLiveActivityEvidence([
       { type: 'message', message: { role: 'user', content: '修复精简阅读中的 Bash 卡片' } },
