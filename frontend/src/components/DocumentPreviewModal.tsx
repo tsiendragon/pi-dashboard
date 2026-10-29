@@ -68,9 +68,12 @@ function isHtmlPath(path: string): boolean {
   return /\.html?$/i.test(path)
 }
 
+/** Highlighting + sanitizing a huge file freezes the tab; above this we show plain text. */
+const HIGHLIGHT_MAX_CHARS = 2 * 1024 * 1024
+
 function HighlightedSource({ content, language }: { content: string; language: LanguageInfo | null }) {
   const highlighted = useMemo(() => {
-    if (!language || !hljs.getLanguage(language.id)) return null
+    if (!language || content.length > HIGHLIGHT_MAX_CHARS || !hljs.getLanguage(language.id)) return null
     try {
       return DOMPurify.sanitize(hljs.highlight(content, { language: language.id }).value)
     } catch {
@@ -143,14 +146,18 @@ export default function DocumentPreviewModal({ filePath, content, loading = fals
     }
   }, [content])
 
+  // onClose is usually an inline arrow (new every parent render). Keep it in a ref
+  // so focus is taken once on open — re-running it stole focus from the comment input.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   useEffect(() => {
     closeRef.current?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  }, [])
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 md:p-8" role="dialog" aria-modal="true" aria-label={`Preview ${filePath}`}>

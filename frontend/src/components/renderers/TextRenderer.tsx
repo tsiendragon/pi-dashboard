@@ -39,6 +39,7 @@ hljs.registerLanguage('markdown', markdown)
 hljs.registerLanguage('md', markdown)
 import DOMPurify from 'dompurify'
 import MarkdownRenderer from '../MarkdownRenderer'
+import { VoiceInputButton } from '../VoiceInputButton'
 import type { Comment } from '../../hooks/usePanelState'
 import { describeCommentTarget } from '../../utils/reviewComments'
 
@@ -94,8 +95,9 @@ export function CommentInput({ range, quote, onSave, onCancel }: { range: { star
   return (
     <div className="ml-[3em] pl-3 py-1.5 border-l-2 border-cyan-400 bg-cyan-500/5">
       <div className="text-2xs text-muted mb-1 truncate" title={describeCommentTarget(range.start, range.end, quote)}>Comment on {describeCommentTarget(range.start, range.end, quote)}</div>
-      <textarea ref={ref} className="w-full bg-bg border border-border rounded px-2 py-1 text-meta text-text outline-none focus:border-accent resize-none" rows={2} placeholder="Add a comment..." value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (value.trim()) onSave(value.trim()) } if (e.key === 'Escape') onCancel() }} />
-      <div className="flex gap-1 mt-1">
+      <textarea ref={ref} className="w-full bg-bg border border-border rounded px-2 py-1 text-meta text-text outline-none focus:border-accent resize-none" rows={2} placeholder="Add a comment..." value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (value.trim()) onSave(value.trim()) } if (e.key === 'Escape') { e.stopPropagation(); onCancel() } }} />
+      <div className="flex flex-wrap items-center gap-1 mt-1">
+        <VoiceInputButton onAppend={setValue} />
         <button className="px-2 py-0.5 rounded border border-accent text-accent text-2xs cursor-pointer hover:bg-accent-subtle" onClick={() => { if (value.trim()) onSave(value.trim()) }}>Save</button>
         <button className="px-2 py-0.5 rounded border border-border text-muted text-2xs cursor-pointer hover:bg-bg-hover" onClick={onCancel}>Cancel</button>
       </div>

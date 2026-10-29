@@ -1,5 +1,6 @@
 import { memo, useState, useCallback, useRef } from 'react'
 import type { Comment } from '../hooks/usePanelState'
+import { VoiceInputButton } from './VoiceInputButton'
 
 interface Props {
   comments: Comment[]
@@ -89,9 +90,11 @@ export default memo(function InlineComments({ comments, onAdd, onEdit, onDelete,
                 className="bg-bg border border-border rounded px-2 py-1 text-meta text-text outline-none"
                 value={editValue}
                 onChange={e => setEditValue(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); setEditingId(null) } }}
                 autoFocus
               />
-              <div className="flex gap-1">
+              <div className="flex flex-wrap items-center gap-1">
+                <VoiceInputButton onAppend={setEditValue} />
                 <button className="px-2 py-0.5 rounded border border-accent text-accent text-2xs cursor-pointer" onClick={handleSaveEdit}>Save</button>
                 <button className="px-2 py-0.5 rounded border border-border text-muted text-2xs cursor-pointer" onClick={() => setEditingId(null)}>Cancel</button>
               </div>
@@ -120,9 +123,14 @@ export default memo(function InlineComments({ comments, onAdd, onEdit, onDelete,
             placeholder="Add a comment..."
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Escape') { e.stopPropagation(); onCancelInput() }
+              else if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); handleSaveNew() }
+            }}
             autoFocus
           />
-          <div className="flex gap-1 mt-1">
+          <div className="flex flex-wrap items-center gap-1 mt-1">
+            <VoiceInputButton onAppend={setInputValue} />
             <button className="px-2 py-0.5 rounded border border-accent text-accent text-2xs cursor-pointer" onClick={handleSaveNew}>Save</button>
             <button className="px-2 py-0.5 rounded border border-border text-muted text-2xs cursor-pointer" onClick={onCancelInput}>Cancel</button>
           </div>
