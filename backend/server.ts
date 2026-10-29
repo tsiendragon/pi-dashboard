@@ -56,6 +56,7 @@ import { SupervisorRuntime } from './supervisor/runtime.js'
 import { registerSupervisorRoutes, protectSupervisorFiles } from './routes/supervisor.js'
 import { registerRepoRoutes } from './routes/repos.js'
 import { RepoStore, sanitizeEntries } from './repos/store.js'
+import { JiraStatusStore } from './jira/status.js'
 import { TaskService } from './tasks/service.js'
 import { parseLiveSessionConfig } from './live-sessions/config.js'
 import { LiveSessionBrowserAuth } from './live-sessions/auth.js'
@@ -1007,6 +1008,8 @@ const taskService = new TaskService({
     title: s.sessionName,
     tags: [],
   })),
+  // Jira statuses are cached on disk and refreshed only when the user asks for it.
+  jira: new JiraStatusStore(),
 })
 registerTaskRoutes({ app, service: taskService })
 const supervisorStore = new SupervisorStore(supervisorRoot)

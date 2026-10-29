@@ -39,6 +39,7 @@ function toFact(providerId: string, label: string, raw: Record<string, unknown>)
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : undefined,
     writable: false,
     sourceLabel: label,
+    ...(typeof raw.jiraKey === 'string' && raw.jiraKey.trim() ? { jiraKey: raw.jiraKey.trim() } : {}),
     raw,
   }
 }

@@ -1,13 +1,55 @@
 import { existsSync } from 'node:fs'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
-import type { TaskFact } from '@shared/tasks.js'
+import type { TaskFact, TaskStageProgress } from '@shared/tasks.js'
 import type { TaskProvider } from '../types.js'
 import { mapCompletion } from '../mapping.js'
 
-interface EpicRecord { key?: string; title?: string; status?: string; path?: string }
-interface TaskRecord { key?: string; title?: string; status?: string; path?: string; stages?: string[] }
+interface EpicRecord { key?: string; jira_key?: string | null; title?: string; status?: string; path?: string; parent_epic?: string }
+interface TaskRecord { key?: string; jira_key?: string | null; title?: string; status?: string; path?: string; stages?: string[] }
+/** The parts of a taskspace `stage-dag.yaml` this provider reads. */
+interface StageDag { active_stage?: string | null; updated?: string | null; stages?: Array<{ id?: string; status?: string }> }
+
+/** `PROJ-104`, `ABC-7` — what Jira itself accepts in a browse URL. */
+const JIRA_KEY = /^[A-Z][A-Z0-9]*-\d+$/
+/**
+ * A journal row's Jira identity: the explicit `jira_key` when set, otherwise the key itself when the
+ * key already is a Jira issue key (most epics/tasks are named after their ticket). `null`/absent means
+ * "not tracked in Jira", which is a normal state, not an error.
+ */
+function jiraKeyOf(record: { key?: string; jira_key?: string | null }): string | undefined {
+  const explicit = typeof record.jira_key === 'string' ? record.jira_key.trim() : ''
+  if (explicit) return explicit
+  const key = String(record.key ?? '').trim()
+  return JIRA_KEY.test(key) ? key : undefined
+}
+
+/**
+ * Stage progress + last-changed time for one task directory.
+ *
+ * `task.yaml` only lists stage ids; the real progress lives in `stage-dag.yaml` (`stages[].status` plus
+ * `active_stage`). A missing or broken file simply means "no stage info", never a failed task.
+ */
+async function readStage(dir: string | undefined): Promise<{ stage?: TaskStageProgress; updatedAt?: string }> {
+  if (!dir) return {}
+  const file = join(dir, 'stage-dag.yaml')
+  try {
+    const dag = (await readYaml(file)) as StageDag | null
+    if (!dag) return {}
+    const stages = Array.isArray(dag.stages) ? dag.stages : []
+    const done = stages.filter(stage => String(stage?.status ?? '') === 'done').length
+    const active = typeof dag.active_stage === 'string' && dag.active_stage.trim() ? dag.active_stage.trim() : undefined
+    const declared = typeof dag.updated === 'string' && dag.updated.trim() ? dag.updated.trim() : undefined
+    const updatedAt = declared || (await stat(file)).mtime.toISOString()
+    return {
+      ...(stages.length ? { stage: { done, total: stages.length, ...(active ? { active } : {}) } } : {}),
+      updatedAt,
+    }
+  } catch {
+    return {}
+  }
+}
 
 async function readYaml(file: string): Promise<any | null> {
   try {
@@ -60,14 +102,19 @@ export class TaskJournalProvider implements TaskProvider {
         if (!epicKey) continue
         const epicUid = `${this.id}:${epicKey}`
         const epicMap = mapCompletion(epic?.status)
+        const epicJira = jiraKeyOf(epic)
+        // A nested epic declares `parent_epic`; the title is resolved later, once every epic is known.
+        const parentEpic = typeof epic?.parent_epic === 'string' ? epic.parent_epic.trim() : ''
         out.push({
           uid: epicUid,
           providerId: this.id,
           id: epicKey,
           kind: 'epic',
+          ...(parentEpic ? { parentUid: `${this.id}:${parentEpic}` } : {}),
           title: String(epic?.title ?? epicKey),
           completion: epicMap.completion,
           ...(epicMap.completionRaw ? { completionRaw: epicMap.completionRaw } : {}),
+          ...(epicJira ? { jiraKey: epicJira } : {}),
           archived: String(epic?.status) === 'archived',
           plannable: true,
           path: epic?.path ? join(this.root, String(epic.path)) : undefined,
@@ -86,6 +133,9 @@ export class TaskJournalProvider implements TaskProvider {
           const key = String(task?.key ?? '')
           if (!key) continue
           const mapped = mapCompletion(task?.status)
+          const taskJira = jiraKeyOf(task)
+          const dir = task?.path ? join(this.root, String(task.path)) : undefined
+          const stage = await readStage(dir)
           out.push({
             uid: `${this.id}:${key}`,
             providerId: this.id,
@@ -96,9 +146,12 @@ export class TaskJournalProvider implements TaskProvider {
             title: String(task?.title ?? key),
             completion: mapped.completion,
             ...(mapped.completionRaw ? { completionRaw: mapped.completionRaw } : {}),
+            ...(taskJira ? { jiraKey: taskJira } : {}),
+            ...(stage.stage ? { stage: stage.stage } : {}),
+            ...(stage.updatedAt ? { updatedAt: stage.updatedAt } : {}),
             archived: false,
             plannable: true,
-            path: task?.path ? join(this.root, String(task.path)) : undefined,
+            path: dir,
             tags: [domainKey],
             writable: false,
             sourceLabel: this.label,

@@ -7,11 +7,14 @@ import { useSupervisorResource } from '../../features/supervisor/useSupervisorRe
 import { SupervisorAgentButton } from '../../features/supervisor/SupervisorAgentProvider'
 import { PendingConfirmations } from '../../features/supervisor/PendingConfirmations'
 import type { LaneDef, PlanningEntry, SessionRef, TaskFact } from '@shared/tasks.js'
-import { COMPLETION_LABEL, KIND_LABEL, laneOf, statusChipClass, statusLabel } from './helpers'
+import { COMPLETION_LABEL, JIRA_DOT, JIRA_DRIFT_LABEL, KIND_LABEL, jiraDrift, laneOf, relativeTime, stageLabel, statusChipClass, statusLabel } from './helpers'
 import type { Completion, PlanningOverlay } from '@shared/tasks.js'
 
 interface Props {
   supervised?: boolean
+  /** Jira 状态是显式刷新（服务端跑 acli）；这里只触发，不轮询。 */
+  onRefreshJira?: () => void
+  jiraBusy?: boolean
   task: TaskFact
   entry: PlanningEntry | undefined
   sessions: SessionRef[]
@@ -44,8 +47,9 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-export default function TaskDetailPage({ supervised = false, task, entry, sessions, lanes, planning, authReady, liveOptions, onClose, onUpdate, onEdit, onDelete, onStart, onOpenSession }: Props) {
+export default function TaskDetailPage({ supervised = false, onRefreshJira, jiraBusy = false, task, entry, sessions, lanes, planning, authReady, liveOptions, onClose, onUpdate, onEdit, onDelete, onStart, onOpenSession }: Props) {
   const lane = laneOf(task, lanes, planning)
+  const drift = jiraDrift(task)
   const canEdit = task.writable && (!supervised || task.providerId === 'local')
   const [picking, setPicking] = useState(false)
   // The timeline is the first thing to read when a task opens, so it loads on selection and never polls.
@@ -75,7 +79,39 @@ export default function TaskDetailPage({ supervised = false, task, entry, sessio
                 <span className="text-2xs text-muted" title="原始状态值">({task.completionRaw})</span>
               )}
               {task.archived && <span className="text-2xs px-1.5 py-0.5 rounded bg-bg-elevated text-muted border border-border">归档</span>}
+              {task.jiraUrl && (
+                <a
+                  href={task.jiraUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-2xs px-1.5 py-0.5 rounded border border-info/40 text-info hover:bg-info/10 inline-flex items-center gap-1"
+                  title={task.jiraStatus
+                    ? `Jira：${task.jiraStatus.name}${task.jiraStatus.assignee ? ` · ${task.jiraStatus.assignee}` : ''}${task.jiraStatus.readAt ? `（读取于 ${relativeTime(task.jiraStatus.readAt)}）` : ''}`
+                    : `在 Jira 打开 ${task.jiraKey}`}
+                >
+                  {task.jiraStatus && <span className={`w-1.5 h-1.5 rounded-full ${JIRA_DOT[task.jiraStatus.category]}`} />}
+                  {task.jiraStatus ? `${task.jiraStatus.name} ↗` : 'Jira ↗'}
+                </a>
+              )}
+              {drift && (
+                <span className="text-2xs px-1.5 py-0.5 rounded bg-warn-subtle text-warn border border-warn/40" title={JIRA_DRIFT_LABEL[drift]}>
+                  状态不一致
+                </span>
+              )}
             </div>
+            {task.stage && (
+              <div className="mt-2 flex items-center gap-2">
+                <div className="h-1 w-40 max-w-full overflow-hidden rounded-full bg-bg-hover">
+                  <div
+                    className={`h-full rounded-full ${task.stage.done === task.stage.total ? 'bg-ok' : 'bg-accent'}`}
+                    style={{ width: `${Math.round((task.stage.done / task.stage.total) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-2xs text-muted">
+                  阶段 {stageLabel(task)}{task.stage.active ? ` · 当前 ${task.stage.active}` : ''}
+                </span>
+              </div>
+            )}
             {canEdit ? (
               <input
                 aria-label="任务标题"
@@ -100,7 +136,16 @@ export default function TaskDetailPage({ supervised = false, task, entry, sessio
                 <p className="mt-1 text-2xs text-muted">按时间查看任务变化和工作记录</p>
               </div>
               <span className="text-2xs text-muted">{timeline.data ? `${timeline.data.length} 条记录` : timeline.loading ? '读取中…' : ''}</span>
-              <Link to={`/tasks/events?objectRef=${encodeURIComponent(task.uid)}`} onClick={onClose} className="ml-auto shrink-0 text-2xs text-accent hover:underline">查看流水账 →</Link>
+              {onRefreshJira && task.jiraUrl && (
+                <button
+                  type="button"
+                  onClick={onRefreshJira}
+                  disabled={jiraBusy}
+                  className="ml-auto shrink-0 rounded border border-border px-2 py-1 text-2xs text-muted hover:bg-bg-hover disabled:opacity-50"
+                  title="用 acli 重新读一次这张单的 Jira 状态"
+                >{jiraBusy ? '读取中…' : '刷新 Jira'}</button>
+              )}
+              <Link to={`/tasks/events?objectRef=${encodeURIComponent(task.uid)}`} onClick={onClose} className={`${onRefreshJira && task.jiraUrl ? '' : 'ml-auto '}shrink-0 text-2xs text-accent hover:underline`}>查看流水账 →</Link>
             </div>
             {timeline.error
               ? <p className="text-2xs text-danger">事件读取失败：{errorText(timeline.error)}</p>
@@ -176,9 +221,42 @@ export default function TaskDetailPage({ supervised = false, task, entry, sessio
         <div className="rounded-xl border border-border bg-card px-4 py-3">
           <Row label="类型">{KIND_LABEL[task.kind] ?? task.kind}</Row>
           <Row label="来源">{task.sourceLabel}</Row>
-          {task.parentTitle && <Row label="所属">{task.parentTitle}</Row>}
+          {task.jiraUrl && (
+            <Row label="Jira">
+              <a href={task.jiraUrl} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline font-mono text-meta" title={`在 Jira 打开 ${task.jiraKey}`}>
+                {task.jiraKey} ↗
+              </a>
+              {task.jiraStatus ? (
+                <span className="ml-2 text-meta">
+                  <span className={`mr-1 inline-block w-1.5 h-1.5 rounded-full ${JIRA_DOT[task.jiraStatus.category]}`} />
+                  {task.jiraStatus.name}
+                  {task.jiraStatus.assignee && <span className="text-muted"> · {task.jiraStatus.assignee}</span>}
+                  {task.jiraStatus.priority && <span className="text-muted"> · {task.jiraStatus.priority}</span>}
+                </span>
+              ) : (
+                <span className="ml-2 text-2xs text-muted">状态未读取{onRefreshJira ? '（点「刷新 Jira」）' : ''}</span>
+              )}
+              {task.jiraStatus?.readAt && (
+                <div className="mt-0.5 text-2xs text-muted">Jira 状态读取于 {relativeTime(task.jiraStatus.readAt)}</div>
+              )}
+              {drift && <div className="mt-0.5 text-2xs text-warn">{JIRA_DRIFT_LABEL[drift]}：建议在 Jira 或任务系统里对齐一边</div>}
+            </Row>
+          )}
+          {task.parentTitle && (
+            <Row label="所属">
+              {task.parentUid
+                ? <Link to={`/tasks/${encodeURIComponent(task.parentUid)}`} className="text-accent hover:underline">{task.parentTitle}</Link>
+                : task.parentTitle}
+            </Row>
+          )}
+          {task.stage && (
+            <Row label="阶段">
+              {stageLabel(task)}{task.stage.active ? <span className="ml-1 font-mono text-meta text-muted">· {task.stage.active}</span> : null}
+            </Row>
+          )}
           {task.path && <Row label="目录"><span className="font-mono text-meta break-all">{task.path}</span></Row>}
           {task.progress && <Row label="进度">{task.progress.done}/{task.progress.total}</Row>}
+          {task.updatedAt && <Row label="更新"><span title={task.updatedAt}>{relativeTime(task.updatedAt)}</span></Row>}
         </div>
 
         <div className="rounded-xl border border-border bg-card px-4 py-3">

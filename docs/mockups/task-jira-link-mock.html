@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>任务页 Jira 链接 · mock（仅供 review）</title>
+<style>
+  /* ====== pi-dashboard 主题令牌（取自 frontend/src/themes/dark.css / light.css） ====== */
+  :root[data-theme="dark"]{
+    --bg:#12141a;--bg-accent:#14161d;--bg-elevated:#1a1d25;--bg-hover:#262a35;
+    --card:#181b22;--text:#e4e4e7;--text-strong:#fafafa;--muted:#a1a1aa;--muted-strong:#8b8b96;
+    --border:#27272a;--border-strong:#3f3f46;
+    --accent:#7aa2f7;--accent-hover:#9bb8ff;--accent-subtle:rgba(122,162,247,.15);
+    --ok:#2dd4bf;--ok-subtle:rgba(45,212,191,.14);
+    --warn:#e8c547;--warn-subtle:rgba(232,197,71,.14);
+    --danger:#f07178;--danger-subtle:rgba(240,113,120,.14);
+    --info:#3b82f6;
+  }
+  :root[data-theme="light"]{
+    --bg:#fafafa;--bg-accent:#f5f5f5;--bg-elevated:#ffffff;--bg-hover:#f0f0f0;
+    --card:#ffffff;--text:#3f3f46;--text-strong:#18181b;--muted:#71717a;--muted-strong:#52525b;
+    --border:#e4e4e7;--border-strong:#d4d4d8;
+    --accent:#1d5aaf;--accent-hover:#2a6cc4;--accent-subtle:rgba(29,90,175,.12);
+    --ok:#11695e;--ok-subtle:rgba(17,105,94,.1);
+    --warn:#935b06;--warn-subtle:rgba(147,91,6,.1);
+    --danger:#c8196a;--danger-subtle:rgba(200,25,106,.1);
+    --info:#2563eb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:400 14px/1.55 'Inter',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;
+       letter-spacing:-.01em;padding:20px 24px 56px}
+  .mono{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+  a{color:inherit}
+
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  h1{font-size:16px;margin:0;color:var(--text-strong)}
+  .badge{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--warn-subtle);color:var(--warn)}
+  .spacer{flex:1}
+  button.toggle{font-size:12px;padding:4px 10px;border-radius:8px;border:1px solid var(--border);
+                background:var(--bg-elevated);color:var(--text);cursor:pointer}
+  button.toggle:hover{border-color:var(--accent);color:var(--accent)}
+  .sub{font-size:12px;color:var(--muted);margin:6px 0 18px;max-width:78ch}
+
+  h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:26px 0 10px}
+
+  /* ====== 任务卡片（同 frontend/src/pages/TasksPage.tsx 的 TaskCard） ====== */
+  .lanes{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+  .lane{width:340px;flex:0 0 340px;background:var(--bg-accent);border:1px solid var(--border);border-radius:12px;padding:10px}
+  .lane-head{display:flex;align-items:center;gap:8px;padding:2px 4px 10px;font-size:11px;
+             letter-spacing:.06em;text-transform:uppercase;color:var(--text-strong);font-weight:600}
+  .lane-count{color:var(--muted-strong);font-weight:400}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px;
+        margin-bottom:8px;cursor:pointer;transition:border-color .12s ease}
+  .card:hover{border-color:var(--border-strong)}
+  .card:last-child{margin-bottom:0}
+  .row1{display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:999px;flex:0 0 8px}
+  .dot.doing{background:var(--accent)}
+  .dot.todo{background:var(--muted)}
+  .dot.done{background:var(--ok)}
+  .cid{font-size:11px;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prio{font-size:11px;color:var(--warn)}
+  .star{margin-left:auto;font-size:11px;color:var(--muted);opacity:0;flex:0 0 auto}
+  .card:hover .star{opacity:1}
+  .ctitle{font-size:13px;color:var(--text-strong);margin-top:6px;line-height:1.45;
+          display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .badges{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .chip{font-size:10px;padding:2px 6px;border-radius:4px;white-space:nowrap}
+  .chip.kind{background:var(--accent-subtle);color:var(--accent)}
+  .chip.provider{background:var(--bg-elevated);color:var(--muted);border:1px solid var(--border)}
+  .chip.note{color:var(--muted)}
+  /* 新增：Jira 小标签（真实实现里是 text-info + border-info/40） */
+  .chip.jira{color:var(--info);border:1px solid color-mix(in srgb, var(--info) 40%, transparent);
+             text-decoration:none;transition:background .12s ease}
+  .chip.jira:hover{background:color-mix(in srgb, var(--info) 12%, transparent)}
+
+  /* ====== 任务详情页（同 frontend/src/pages/tasks/TaskDetail.tsx） ====== */
+  .detail{background:var(--bg);max-width:760px}
+  .head{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;
+        display:flex;align-items:flex-start;gap:12px}
+  .head .hbody{min-width:0;flex:1}
+  .head .hid{font-size:11px;color:var(--accent)}
+  .status{font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid var(--border-strong);color:var(--text)}
+  .status.doing{border-color:color-mix(in srgb, var(--accent) 45%, transparent);color:var(--accent);background:var(--accent-subtle)}
+  .htitle{font-size:15px;color:var(--text-strong);margin-top:6px;font-weight:600;line-height:1.4}
+  .infocard{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-top:12px}
+  .kv{display:flex;gap:12px;padding:6px 0;font-size:13px}
+  .kv .k{width:80px;flex:0 0 80px;color:var(--muted)}
+  .kv .v{min-width:0;flex:1;color:var(--text);word-break:break-word}
+  .link{color:var(--accent);text-decoration:none;font-size:11px;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
+  .link:hover{text-decoration:underline}
+  .dim{color:var(--muted);font-size:12px}
+  .kw{outline:2px dashed color-mix(in srgb, var(--info) 45%, transparent);outline-offset:3px;border-radius:4px}
+
+  table{border-collapse:collapse;font-size:12.5px;margin-top:6px}
+  th,td{border:1px solid var(--border);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--bg-elevated);color:var(--text-strong);font-weight:600}
+  code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11.5px;
+       background:var(--bg-elevated);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+  .callout{border-left:3px solid var(--info);background:var(--bg-elevated);padding:10px 14px;
+           border-radius:0 8px 8px 0;font-size:12.5px;color:var(--text);max-width:78ch}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>任务页 Jira 链接 · mock</h1>
+  <span class="badge">静态 mock · 代码已写、未构建</span>
+  <span class="spacer"></span>
+  <button class="toggle" id="theme">切换浅色 / 深色</button>
+</header>
+<p class="sub">
+  本页只是给 review 用的静态效果图，不是真实页面；里面的链接是**真链**，点开会真的打开 Jira（新标签页）。
+  下面所有任务标题、key、状态都取自 `~/repos/my-taskspace` 的真实数据。
+</p>
+
+<h2>① 任务清单（泳道卡片）</h2>
+<div class="lanes">
+  <div class="lane">
+    <div class="lane-head">长期 <span class="lane-count">3</span></div>
+
+    <div class="card">
+      <div class="row1">
+        <span class="dot doing"></span>
+        <span class="cid mono">PROJ-101</span>
+        <span class="star">☆</span>
+      </div>
+      <div class="ctitle">[EagleEye][Doc] 7 国证件类型「整证件化」重梳理 — 单面→whole-document card_type 管理</div>
+      <div class="badges">
+        <span class="chip kind">Epic</span>
+        <span class="chip provider">Task Journal</span>
+        <a class="chip jira" href="https://example.atlassian.net/browse/PROJ-101" target="_blank" rel="noreferrer noopener" title="在 Jira 打开 PROJ-101">Jira ↗</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row1">
+        <span class="dot doing"></span>
+        <span class="cid mono">global-passport-cardtype-v1</span>
+        <span class="star">☆</span>
+      </div>
+      <div class="ctitle">[EagleEye][Doc] 全球护照类型覆盖（拉数据、聚类分型、回填 e2e 数据集、CardLib 建新类型）</div>
+      <div class="badges">
+        <span class="chip kind">Epic</span>
+        <span class="chip provider">Task Journal</span>
+        <!-- key 不是 Jira 号，但 yaml 里写了 jira_key: PROJ-102 -->
+        <a class="chip jira" href="https://example.atlassian.net/browse/PROJ-102" target="_blank" rel="noreferrer noopener" title="在 Jira 打开 PROJ-102">Jira ↗</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row1">
+        <span class="dot doing"></span>
+        <span class="cid mono">card-router-ocr-fusion</span>
+        <span class="star">☆</span>
+      </div>
+      <div class="ctitle">[EagleEye][Doc] Card Router 多模态优化（轻量 OCR 文字+布局，EU/US 存量数据）</div>
+      <div class="badges">
+        <span class="chip kind">Epic</span>
+        <span class="chip provider">Task Journal</span>
+        <span class="chip note" title="本地命名、没有绑 Jira">无 Jira</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="lane">
+    <div class="lane-head">短期 <span class="lane-count">2</span></div>
+
+    <div class="card">
+      <div class="row1">
+        <span class="dot doing"></span>
+        <span class="cid mono">PROJ-103</span>
+        <span class="prio">P1</span>
+        <span class="star">☆</span>
+      </div>
+      <div class="ctitle">[EagleEye][Doc] 六国 kyc_llm_e2e_train/val/benchmark 清理 — 旧单面 card_type 迁到整证件新名</div>
+      <div class="badges">
+        <span class="chip kind">Task</span>
+        <span class="chip provider">Task Journal</span>
+        <a class="chip jira" href="https://example.atlassian.net/browse/PROJ-103" target="_blank" rel="noreferrer noopener" title="在 Jira 打开 PROJ-103">Jira ↗</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row1">
+        <span class="dot done"></span>
+        <span class="cid mono">task-key-jira-decoupling-v1</span>
+        <span class="star">☆</span>
+      </div>
+      <div class="ctitle">任务本地 key 与 Jira key 解耦</div>
+      <div class="badges">
+        <span class="chip kind">Task</span>
+        <span class="chip provider">Task Journal</span>
+        <span class="chip note" title="本地命名、没有绑 Jira">无 Jira</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:1 1 260px;min-width:240px">
+    <div class="callout">
+      卡片上只放一个 <b>Jira ↗</b> 小标签（不重复显示号：左边 key 往往就是号）。
+      <br>鼠标移上去有底色；点它是开 Jira，<b>不会</b>打开任务详情（真实实现里 `stopPropagation`）。
+      <br>没有 Jira 号的任务不放这个标签，位置不留空；上面两个「无 Jira」是给你看对比的，真实页面里连那个灰字都没有。
+    </div>
+  </div>
+</div>
+
+<h2>② 任务详情页（信息卡里多一行 Jira）</h2>
+<div class="detail">
+
+  <div class="head">
+    <div class="hbody">
+      <span class="hid mono">global-passport-cardtype-v1</span>
+      <span class="status doing">进行中</span>
+      <div class="htitle">[EagleEye][Doc] 全球护照类型覆盖（拉数据、聚类分型、回填 e2e 数据集、CardLib 建新类型）</div>
+    </div>
+  </div>
+
+  <div class="infocard">
+    <div class="kv"><span class="k">类型</span><span class="v">Epic</span></div>
+    <div class="kv"><span class="k">来源</span><span class="v">Task Journal</span></div>
+    <div class="kv kw"><span class="k">Jira</span><span class="v">
+      <a class="link" href="https://example.atlassian.net/browse/PROJ-102" target="_blank" rel="noreferrer noopener" title="在 Jira 打开 PROJ-102">PROJ-102 ↗</a>
+    </span></div>
+    <div class="kv"><span class="k">目录</span><span class="v mono" style="font-size:11.5px">/home/you/repos/my-taskspace/tasks/card-router/global-passport-cardtype-v1</span></div>
+  </div>
+
+  <div class="infocard">
+    <div class="kv"><span class="k">类型</span><span class="v">Epic</span></div>
+    <div class="kv"><span class="k">来源</span><span class="v">Task Journal</span></div>
+    <div class="kv"><span class="k">目录</span><span class="v mono" style="font-size:11.5px">/home/you/repos/my-taskspace/tasks/card-router/card-router-ocr-fusion</span></div>
+    <div class="kv"><span class="k"></span><span class="v dim">← 没有 Jira 号时，这一行整行不出现（不留空行）</span></div>
+  </div>
+
+</div>
+
+<h2>③ 规则与来源（给 review 对照）</h2>
+<table>
+  <tr><th>卡片 / 详情显示</th><th>这个任务的 Jira 号从哪来</th><th>例子</th></tr>
+  <tr>
+    <td><span class="chip jira">Jira 🔗</span> / <code>PROJ-102 ↗</code></td>
+    <td>yaml 里显式写了 <code>jira_key</code>（优先级最高）</td>
+    <td><code>global-passport-cardtype-v1</code> → <code>jira_key: PROJ-102</code></td>
+  </tr>
+  <tr>
+    <td><span class="chip jira">Jira 🔗</span> / <code>PROJ-101 ↗</code></td>
+    <td>没写 <code>jira_key</code>，但 key 本身就是 Jira 号</td>
+    <td><code>PROJ-101</code>、<code>PROJ-103</code></td>
+  </tr>
+  <tr>
+    <td>不显示</td>
+    <td>两者都没有：本地命名的 Epic/Task；<code>jira_key: null</code> 也算未绑定（正常状态，不是同步失败）</td>
+    <td><code>card-router-ocr-fusion</code>、<code>task-key-jira-decoupling-v1</code></td>
+  </tr>
+</table>
+
+<p class="sub" style="margin-top:14px">
+  链接前缀由配置决定：<code>tasks.jiraBaseUrl</code>，默认 <code>https://example.atlassian.net/browse/</code>。
+  换站点只改这一处；URL 在后端一处拼好，前端只负责显示，所以大小写/斜杠不会两处不一致。
+  <br>后端只产出 key（<code>jiraKey</code>）+ 完整链接（<code>jiraUrl</code>），因此任何新任务来源接进来都自动有链接。
+</p>
+
+<script>
+  const root = document.documentElement
+  document.getElementById('theme').addEventListener('click', () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'
+  })
+</script>
+</body>
+</html>

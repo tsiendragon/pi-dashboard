@@ -16,12 +16,38 @@ import { TaskJournalProvider } from './providers/task-journal.js'
 import { detectJournalRoots } from './detect.js'
 import { ExternalTaskProvider } from './providers/external.js'
 import { linkSessions, type LiveSessionInput } from './session-linker.js'
+import { JiraStatusStore } from '../jira/status.js'
+import type { JiraStatus } from '@shared/tasks.js'
+
+/** Fallback browse base when `tasks.jiraBaseUrl` is absent; only the prefix matters, the key is appended. */
+export const DEFAULT_JIRA_BASE = 'https://example.atlassian.net/browse/'
 
 export interface TaskServiceOptions {
   getConfig: () => TasksConfig
   listLiveSessions: () => LiveSessionInput[]
   planningStore?: PlanningStore
   historyStore?: HistoryStore
+  /** Jira status cache; omitted in tests and in any deployment that does not want acli reads. */
+  jira?: JiraStatusStore
+}
+
+/** Epic rollups and parent titles need the whole set, so they are computed once per snapshot. */
+function withHierarchy(tasks: TaskFact[]): TaskFact[] {
+  const byUid = new Map(tasks.map(task => [task.uid, task]))
+  const rollup = new Map<string, { done: number; total: number }>()
+  for (const task of tasks) {
+    if (!task.parentUid) continue
+    const current = rollup.get(task.parentUid) ?? { done: 0, total: 0 }
+    current.total += 1
+    if (task.completion === 'done') current.done += 1
+    rollup.set(task.parentUid, current)
+  }
+  return tasks.map(task => {
+    const progress = rollup.get(task.uid)
+    const parent = task.parentUid ? byUid.get(task.parentUid) : undefined
+    if (!progress && (!parent || task.parentTitle)) return task
+    return { ...task, ...(progress ? { progress } : {}), ...(parent && !task.parentTitle ? { parentTitle: parent.title } : {}) }
+  })
 }
 
 export interface PlanningUpdateResult {
@@ -88,10 +114,13 @@ export class TaskService {
 
   async snapshot(): Promise<TasksResponse> {
     const cfg = this.options.getConfig()
+    // One place builds the ticket URL: providers only report the key, so a moved Jira is one config change.
+    const jiraBase = (cfg.jiraBaseUrl || DEFAULT_JIRA_BASE).replace(/\/+$/, '') + '/'
+    const withJiraUrl = (task: TaskFact): TaskFact => task.jiraKey ? { ...task, jiraUrl: jiraBase + encodeURIComponent(task.jiraKey) } : task
     const providers = this.buildProviders(cfg)
     const results = await Promise.all(providers.map(p => this.runProvider(p)))
 
-    const tasks: TaskFact[] = []
+    let tasks: TaskFact[] = []
     const warnings: string[] = []
     const descriptors: ProviderDescriptor[] = []
     for (const r of results) {
@@ -103,7 +132,19 @@ export class TaskService {
         capabilities: r.capabilities,
       })
       if (r.warning) warnings.push(r.warning)
-      tasks.push(...r.tasks)
+      tasks.push(...r.tasks.map(withJiraUrl))
+    }
+    tasks = withHierarchy(tasks)
+
+    // Jira statuses come from the local cache only: rendering a page must never wait on `acli`.
+    let jira: TasksResponse['jira']
+    if (this.options.jira) {
+      const keys = tasks.map(task => task.jiraKey).filter((key): key is string => !!key)
+      if (keys.length) {
+        const cached = await this.options.jira.peek(keys)
+        jira = cached.meta
+        tasks = tasks.map(task => (task.jiraKey && cached.statuses[task.jiraKey] ? { ...task, jiraStatus: cached.statuses[task.jiraKey] } : task))
+      }
     }
 
     const { overlay } = await this.store.snapshot()
@@ -130,6 +171,7 @@ export class TaskService {
       warnings,
       lanes: cfg.lanes as LaneDef[],
       defaultView: cfg.defaultView,
+      ...(jira ? { jira } : {}),
     }
   }
 
@@ -143,6 +185,41 @@ export class TaskService {
       }
     }
     return null
+  }
+
+  /**
+   * Keys an explicit refresh should ask acli for: tickets that are still open.
+   *
+   * Closed and archived tasks would only cost time — they cannot drift in a way anybody still acts on,
+   * and they are roughly half of the journal. Their cached status stays visible either way.
+   */
+  async jiraRefreshKeys(): Promise<{ keys: string[]; skippedDone: number; skippedArchived: number }> {
+    const snapshot = await this.snapshot()
+    // A child of an archived epic is history too, even though the journal never marks tasks archived.
+    const archivedUids = new Set(snapshot.tasks.filter(task => task.archived).map(task => task.uid))
+    const keys = new Set<string>()
+    let skippedDone = 0
+    let skippedArchived = 0
+    for (const task of snapshot.tasks) {
+      if (!task.jiraKey) continue
+      if (task.archived || (task.parentUid && archivedUids.has(task.parentUid))) { skippedArchived += 1; continue }
+      if (task.completion === 'done') { skippedDone += 1; continue }
+      keys.add(task.jiraKey)
+    }
+    return { keys: [...keys], skippedDone, skippedArchived }
+  }
+
+  /**
+   * Explicit refresh: the only path that runs acli. Never throws on a read error, and never clears the
+   * previous values — the page keeps showing what it already had (plus the error) until a read succeeds.
+   */
+  async refreshJira(): Promise<{ statuses: Record<string, JiraStatus>; meta: NonNullable<TasksResponse['jira']>; scope: { keys: number; skippedDone: number; skippedArchived: number } }> {
+    if (!this.options.jira) {
+      return { statuses: {}, meta: { available: false, stale: false, error: 'jira_disabled' }, scope: { keys: 0, skippedDone: 0, skippedArchived: 0 } }
+    }
+    const { keys, skippedDone, skippedArchived } = await this.jiraRefreshKeys()
+    const result = await this.options.jira.refresh(keys)
+    return { ...result, scope: { keys: keys.length, skippedDone, skippedArchived } }
   }
 
   async planning(): Promise<{ version: number; overlay: PlanningOverlay }> {

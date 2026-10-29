@@ -52,11 +52,23 @@ export interface TaskFact {          // 只读，来自 Provider
   archived: boolean
   plannable: boolean     // 身份是否稳定到可被规划（见 §5）
   path?: string          // 执行目录 → session 唯一鲁棒纽带
-  progress?: { done: number; total: number }  // 仅源提供时
+  progress?: { done: number; total: number }  // 仅源提供时；Epic 由 service 汇总子任务
+  jiraKey?: string      // 显式 jira_key，或 key 本身是 Jira 号（PROJ-104）
+  jiraUrl?: string      // service 用 tasks.jiraBaseUrl 拼好的可点链接
+  jiraStatus?: JiraStatus // 本地缓存的 Jira 状态（绝不在渲染时读远端）
+  stage?: { done: number; total: number; active?: string } // 来自 stage-dag.yaml
   tags: string[]
-  updatedAt?: string
+  updatedAt?: string    // journal 取 stage-dag.updated，缺省用文件 mtime
   writable: boolean
   raw?: unknown
+}
+
+export interface JiraStatus {          // 通过 acli 批量读回并缓存
+  name: string                         // 真实状态名（Development / Feasibility / Done）
+  category: 'todo' | 'inprogress' | 'done' | 'unknown'   // statusCategory 归并
+  assignee?: string
+  priority?: string
+  readAt: string                       // 读取时间；过期只标黄，不自动重读
 }
 
 export interface PlanningEntry {     // 可写，key = uid
@@ -199,7 +211,8 @@ interface LaneDef { id: string; label: string; match: { kind?: TaskKind[]; tag?:
 ## 10. 后端 API
 
 ```
-GET  /api/tasks                 → { tasks: TaskFact[], warnings, providers, planning, sessionRefs }
+GET  /api/tasks                 → { tasks: TaskFact[], warnings, providers, planning, sessionRefs, jira? }
+POST /api/tasks/jira-status/refresh → { jira: { available, readAt, stale, error? }, statuses, scope }  // 唯一会跑 acli 的入口；scope = {keys, skippedDone, skippedArchived}，只读未完成/未归档的单
 GET  /api/tasks/providers       → { providers: [{id,label,capabilities,available}] }
 GET  /api/tasks/:uid            → { task }
 GET  /api/tasks/planning        → { planning }

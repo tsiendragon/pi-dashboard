@@ -13,12 +13,17 @@ import TrendPanel from './tasks/TrendPanel'
 import {
   COMPLETION_DOT,
   COMPLETION_LABEL,
+  JIRA_DOT,
+  JIRA_DRIFT_LABEL,
   KIND_LABEL,
   isFocused,
+  jiraDrift,
   laneOf,
   matchesSearch,
   matchesStatus,
+  relativeTime,
   sortTasks,
+  stageLabel,
   type StatusFilter,
 } from './tasks/helpers'
 
@@ -35,6 +40,14 @@ const STATUS_CHIPS: Array<{ id: StatusFilter; label: string }> = [
   { id: 'archived', label: '归档' },
   { id: 'all', label: '全部' },
 ]
+
+/** 3px left edge = completion at a glance; the dot alone was too easy to miss in a dense list. */
+const LEFT_BAR: Record<TaskFact['completion'], string> = {
+  todo: 'border-l-border-strong',
+  doing: 'border-l-info',
+  done: 'border-l-ok',
+  paused: 'border-l-warn',
+}
 
 function TaskCard({
   task,
@@ -61,12 +74,13 @@ function TaskCard({
   onTogglePin: () => void
   onOpenSession: (pid: string) => void
 }) {
+  const drift = jiraDrift(task)
   return (
     <div
       onClick={onOpen}
       draggable={draggable}
       onDragStart={draggable ? e => { e.dataTransfer.setData('text/plain', task.uid); e.dataTransfer.effectAllowed = 'move' } : undefined}
-      className={`group relative bg-card border border-border rounded-lg p-3 cursor-pointer hover:border-border-strong transition ${task.archived ? 'opacity-60' : ''} ${dragging ? 'opacity-40' : ''}`}
+      className={`group relative bg-card border border-border border-l-[3px] rounded-lg p-3 cursor-pointer hover:border-border-strong transition ${LEFT_BAR[task.completion]} ${task.archived ? 'opacity-60' : ''} ${dragging ? 'opacity-40' : ''}`}
     >
       <div className="flex items-center gap-2">
         {onDragHandle && (
@@ -81,6 +95,12 @@ function TaskCard({
         <span className={`w-2 h-2 rounded-full shrink-0 ${COMPLETION_DOT[task.completion]}`} title={COMPLETION_LABEL[task.completion]} />
         <span className="font-mono text-2xs text-accent truncate">{task.id}</span>
         {entry?.priority != null && <span className="text-2xs text-warn shrink-0">P{entry.priority}</span>}
+        {task.stage && (
+          <span
+            className="text-2xs px-1.5 py-0.5 rounded border border-border text-muted-strong shrink-0"
+            title={task.stage.active ? `当前阶段：${task.stage.active}` : '阶段进度'}
+          >阶段 {stageLabel(task)}</span>
+        )}
         <button
           onClick={e => { e.stopPropagation(); onTogglePin() }}
           className={`ml-auto shrink-0 w-6 h-6 grid place-items-center rounded text-2xs ${focused ? 'text-accent' : 'text-muted opacity-0 group-hover:opacity-100'} hover:bg-bg-hover`}
@@ -95,19 +115,54 @@ function TaskCard({
         {showProvider && (
           <span className="text-2xs px-1.5 py-0.5 rounded bg-bg-elevated text-muted border border-border">{task.sourceLabel}</span>
         )}
+        {task.kind !== 'epic' && task.parentTitle && (
+          <span className="text-2xs text-muted truncate max-w-[15rem]" title={`所属：${task.parentTitle}`}>↑ {task.parentTitle}</span>
+        )}
+        {task.jiraUrl && (
+          <a
+            href={task.jiraUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            onClick={e => e.stopPropagation()}
+            title={task.jiraStatus ? `Jira：${task.jiraStatus.name}${task.jiraStatus.assignee ? ` · ${task.jiraStatus.assignee}` : ''}` : `在 Jira 打开 ${task.jiraKey}`}
+            className="text-2xs px-1.5 py-0.5 rounded border border-info/40 text-info hover:bg-info/10 inline-flex items-center gap-1"
+          >
+            {task.jiraStatus && <span className={`w-1.5 h-1.5 rounded-full ${JIRA_DOT[task.jiraStatus.category]}`} />}
+            {task.jiraStatus ? `${task.jiraStatus.name} ↗` : 'Jira ↗'}
+          </a>
+        )}
+        {drift && (
+          <span
+            className="text-2xs px-1.5 py-0.5 rounded bg-warn-subtle text-warn border border-warn/40"
+            title={`${JIRA_DRIFT_LABEL[drift]}${task.jiraStatus?.readAt ? `（Jira 读取于 ${relativeTime(task.jiraStatus.readAt)}）` : ''}`}
+          >状态不一致</span>
+        )}
         {entry?.note && <span className="text-2xs text-muted" title={entry.note}>✎</span>}
         {task.completionRaw && <span className="text-2xs text-muted">({task.completionRaw})</span>}
         <span className="flex-1" />
+        {task.updatedAt && <span className="text-2xs text-muted-strong whitespace-nowrap" title={`最后改动：${task.updatedAt}`}>{relativeTime(task.updatedAt)}</span>}
         {sessions.length > 0 && (
           <button
             onClick={e => { e.stopPropagation(); const pid = sessions.find(s => s.processInstanceId)?.processInstanceId; if (pid) onOpenSession(pid) }}
-            className="text-2xs text-info hover:underline"
-            title={sessions.map(s => s.title || s.cwd || s.sessionId).join('\n')}
+            className={`text-2xs hover:underline inline-flex items-center gap-1 ${sessions.some(s => s.live) ? 'text-ok' : 'text-info'}`}
+            title={sessions.map(s => `${s.title || s.cwd || s.sessionId}${s.live ? '（live）' : ''}`).join('\n')}
           >
-            ● {sessions.length}
+            <span className={`w-1.5 h-1.5 rounded-full ${sessions.some(s => s.live) ? 'bg-ok' : 'bg-info'}`} />
+            {sessions.length}
           </button>
         )}
       </div>
+      {task.progress && task.progress.total > 0 && (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-bg-hover">
+            <div
+              className={`h-full rounded-full ${task.progress.done === task.progress.total ? 'bg-ok' : 'bg-accent'}`}
+              style={{ width: `${Math.round((task.progress.done / task.progress.total) * 100)}%` }}
+            />
+          </div>
+          <span className="shrink-0 text-2xs text-muted">子任务 {task.progress.done}/{task.progress.total}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -273,6 +328,30 @@ export default function TasksPage() {
     }
   }, [load])
 
+  /**
+   * Jira 状态是外部读取（服务端跑 acli），只在用户点的时候发生。
+   * 列表平时只显示缓存值 + 读取时间，过期了也只是标黄，不会自己去拉。
+   */
+  const [jiraBusy, setJiraBusy] = useState(false)
+  const [jiraNote, setJiraNote] = useState('')
+  const refreshJira = useCallback(async () => {
+    if (jiraBusy) return
+    setJiraBusy(true)
+    try {
+      // 上次结果一直显示着，刷新只更新缓存；失败时旧值不会被清掉。
+      const res = await api.refreshTaskJira()
+      setError(res.jira?.error ? `Jira：${res.jira.error}` : '')
+      setJiraNote(res.scope
+        ? `已刷新 ${res.scope.keys} 张未完成单${res.scope.skippedDone ? ` · 跳过 ${res.scope.skippedDone} 张已完成` : ''}${res.scope.skippedArchived ? ` · ${res.scope.skippedArchived} 张归档` : ''}`
+        : '')
+      await load()
+    } catch (e: any) {
+      setError(e?.message || '刷新 Jira 状态失败')
+    } finally {
+      setJiraBusy(false)
+    }
+  }, [jiraBusy, load])
+
   const authReady = auth === 'authenticated'
 
   useEffect(() => {
@@ -383,6 +462,8 @@ export default function TasksPage() {
       <div className="mb-3"><TasksSectionTabs active="list" /></div>
       <TaskDetailPage
         supervised={supervised}
+        jiraBusy={jiraBusy}
+        onRefreshJira={() => void refreshJira()}
         task={selectedTask}
         entry={planning[selectedTask.uid]}
         sessions={sessionRefs[selectedTask.uid] ?? []}
@@ -491,6 +572,22 @@ export default function TasksPage() {
             {providers.map(p => <option key={p.id} value={p.id}>{p.label}{p.available ? '' : '（不可用）'}</option>)}
           </select>
         )}
+        <button
+          type="button"
+          onClick={() => void refreshJira()}
+          disabled={jiraBusy}
+          className="px-2.5 py-1 rounded-md text-body-s border border-border text-muted hover:bg-bg-hover disabled:opacity-50"
+          title={data?.jira?.error
+            ? `上次读取失败：${data.jira.error}`
+            : data?.jira?.readAt
+              ? `Jira 状态读取于 ${data.jira.readAt}`
+              : '还没有读过 Jira 状态；点一下用 acli 读一次'}
+        >
+          {jiraBusy ? '读取中…' : '刷新 Jira'}
+          {data?.jira?.stale && !!data.jira.readAt && <span className="ml-1 text-warn">· 过期</span>}
+          {data?.jira?.readAt && <span className="ml-1 text-2xs text-muted-strong">{relativeTime(data.jira.readAt)}</span>}
+        </button>
+        {jiraNote && <span className="text-2xs text-muted">{jiraNote}</span>}
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}

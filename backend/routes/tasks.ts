@@ -31,6 +31,19 @@ export function registerTaskRoutes({ app, service }: TaskRouteOptions): void {
     }
   })
 
+  /**
+   * Explicit Jira refresh. Reading Jira runs `acli` against the authenticated site, so it is a user
+   * action: the task list itself only ever shows the cached value.
+   */
+  app.post('/api/tasks/jira-status/refresh', async (_req: Request, res: Response) => {
+    try {
+      const { meta, statuses, scope } = await service.refreshJira()
+      res.json({ jira: meta, statuses, scope })
+    } catch (error) {
+      fail(res, error)
+    }
+  })
+
   // Register concrete paths before the `:uid` catch-all.
   app.get('/api/tasks/providers', async (_req: Request, res: Response) => {
     try {

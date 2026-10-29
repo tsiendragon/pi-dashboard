@@ -12,6 +12,22 @@
 export type TaskKind = 'epic' | 'task' | 'todo' | 'item'
 export type Completion = 'todo' | 'doing' | 'done' | 'paused'
 
+/** Stage progress parsed from a taskspace `stage-dag.yaml`: how many stages closed, which is running. */
+export interface TaskStageProgress { done: number; total: number; active?: string }
+
+/** Coarse bucket of a Jira status, used for the dot colour and for drift checks. */
+export type JiraCategory = 'todo' | 'inprogress' | 'done' | 'unknown'
+
+/** One ticket's state as read from Jira by `acli` and cached locally. */
+export interface JiraStatus {
+  name: string
+  category: JiraCategory
+  assignee?: string
+  priority?: string
+  /** When this value was read from Jira (ISO). */
+  readAt: string
+}
+
 export interface TaskProgress {
   done: number
   total: number
@@ -35,6 +51,14 @@ export interface TaskFact {
   plannable: boolean
   /** Execution directory — the robust link to sessions. */
   path?: string
+  /** Jira issue key when the source knows one (`PROJ-104`). Absent ⇒ no ticket, which is normal. */
+  jiraKey?: string
+  /** Ready-to-open Jira URL built from `tasks.jiraBaseUrl`; absent whenever `jiraKey` is. */
+  jiraUrl?: string
+  /** Ticket state from the local Jira cache (never fetched while rendering). */
+  jiraStatus?: JiraStatus
+  /** taskspace stage progress; absent when the task has no `stage-dag.yaml`. */
+  stage?: TaskStageProgress
   progress?: TaskProgress
   tags: string[]
   updatedAt?: string
@@ -91,6 +115,8 @@ export interface TasksConfig {
   journal: { autoDetect: boolean; roots: string[]; enabled: boolean }
   lanes: LaneDef[]
   defaultView: TaskViewMode
+  /** Where a Jira issue key opens, e.g. `https://example.atlassian.net/browse/`. Trailing slash optional. */
+  jiraBaseUrl?: string
   /** Config-declared external sources (no code change needed to add one). */
   providers?: ExternalProviderConfig[]
 }
@@ -114,6 +140,8 @@ export interface TasksResponse {
   warnings: string[]
   lanes: LaneDef[]
   defaultView: TaskViewMode
+  /** Freshness of the Jira statuses attached to `tasks`; refreshing is an explicit user action. */
+  jira?: { available: boolean; readAt?: string; stale: boolean; error?: string }
 }
 
 /** Point-in-time counts of non-archived tasks by completion (plus archived). */

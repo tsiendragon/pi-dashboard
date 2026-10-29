@@ -109,6 +109,7 @@ const DEFAULT_TASKS_CONFIG: TasksConfig = {
     { id: 'adhoc', label: '临时', match: { kind: ['todo', 'item'] } },
   ],
   defaultView: 'execute',
+  jiraBaseUrl: 'https://example.atlassian.net/browse/',
   providers: [],
 }
 
@@ -157,6 +158,9 @@ function normalizeTasksConfig(raw: unknown): TasksConfig {
     },
     lanes,
     defaultView: r.defaultView === 'survey' ? 'survey' : 'execute',
+    jiraBaseUrl: typeof r.jiraBaseUrl === 'string' && /^https?:\/\/\S+$/i.test(r.jiraBaseUrl.trim())
+      ? r.jiraBaseUrl.trim()
+      : DEFAULT_TASKS_CONFIG.jiraBaseUrl,
     providers: sanitizeExternalProviders(r.providers),
   }
 }

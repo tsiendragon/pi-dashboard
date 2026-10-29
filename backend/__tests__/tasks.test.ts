@@ -39,6 +39,9 @@ function makeJournal(): string {
     "    title: 'Archived epic'",
     '    status: archived',
     '    path: tasks/ocr/_archive/PROJ-0-epic',
+    "  - key: local-epic",
+    "    title: 'Not tracked in Jira'",
+    '    status: active',
     '',
   ].join('\n'))
   writeFileSync(join(root, 'tasks', 'ocr', 'PROJ-1-epic', 'task.yaml'), [
@@ -51,6 +54,7 @@ function makeJournal(): string {
     '    path: tasks/ocr/PROJ-1-epic/PROJ-2-task',
     '  - key: PROJ-3',
     '    title: Weird status',
+    '    jira_key: PROJ-77',
     '    status: Feasibility',
     '    path: tasks/ocr/PROJ-1-epic/PROJ-2-task',
     '',
@@ -71,6 +75,12 @@ describe('task-journal provider', () => {
       expect(byId.get('PROJ-1')?.completion).toBe('doing')
       expect(byId.get('PROJ-0')?.archived).toBe(true)
 
+      // Jira identity: derived from the key when the key already is a ticket, explicit `jira_key` wins,
+      // and a locally named epic simply has none.
+      expect(byId.get('PROJ-1')?.jiraKey).toBe('PROJ-1')
+      expect(byId.get('PROJ-0')?.jiraKey).toBe('PROJ-0')
+      expect(byId.get('local-epic')?.jiraKey).toBeUndefined()
+
       const task2 = byId.get('PROJ-2')
       expect(task2?.kind).toBe('task')
       expect(task2?.completion).toBe('doing')
@@ -79,6 +89,7 @@ describe('task-journal provider', () => {
       expect(task2?.plannable).toBe(true)
 
       const weird = byId.get('PROJ-3')
+      expect(weird?.jiraKey).toBe('PROJ-77')
       expect(weird?.completion).toBe('todo')
       expect(weird?.completionRaw).toBe('Feasibility')
 
@@ -89,6 +100,38 @@ describe('task-journal provider', () => {
       expect(todos.find(t => t.title.includes('Done'))?.completion).toBe('done')
     } finally {
       rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('jira links', () => {
+  it('builds one browsable URL per ticket from the configured base and skips untracked tasks', async () => {
+    const root = makeJournal()
+    const dir = mkdtempSync(join(tmpdir(), 'jiralinks-'))
+    try {
+      const service = new TaskService({
+        getConfig: () => ({ ...CONFIG, journal: { autoDetect: false, roots: [root], enabled: true } }),
+        listLiveSessions: () => [],
+        planningStore: new PlanningStore(join(dir, 'planning.json')),
+        historyStore: new HistoryStore(join(dir, 'history.json')),
+      })
+      const res = await service.snapshot()
+      const byId = new Map(res.tasks.map(t => [t.id, t]))
+      expect(byId.get('PROJ-1')?.jiraUrl).toBe('https://example.atlassian.net/browse/PROJ-1')
+      expect(byId.get('PROJ-3')?.jiraUrl).toBe('https://example.atlassian.net/browse/PROJ-77')
+      expect(byId.get('local-epic')?.jiraUrl).toBeUndefined()
+
+      const custom = new TaskService({
+        getConfig: () => ({ ...CONFIG, jiraBaseUrl: 'https://example.test/browse', journal: { autoDetect: false, roots: [root], enabled: true } }),
+        listLiveSessions: () => [],
+        planningStore: new PlanningStore(join(dir, 'planning2.json')),
+        historyStore: new HistoryStore(join(dir, 'history2.json')),
+      })
+      const overridden = (await custom.snapshot()).tasks.find(t => t.id === 'PROJ-1')
+      expect(overridden?.jiraUrl).toBe('https://example.test/browse/PROJ-1')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 })

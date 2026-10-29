@@ -287,6 +287,9 @@ PI_DASH_HOST=your-server PI_DASH_USER=you ./pi-dash-connect.sh
 | `/supervisor` | 工作监督台：授权会话状态、任务、人工待办、报告 |
 | `/tasks` | 任务清单（Tasks 的默认视图） |
 | `/tasks/<UID>` | 任务详情页：第一屏是该任务的时间线，见下 |
+| Jira 链接与状态 | 任务卡片和任务详情页都显示可点链接（新标签页打开）。Jira 号来源：`jira_key` → `key` 本身就是号（`PROJ-104`）→ 都没有就不显示（未绑定是正常状态）。卡片上的 Jira 徽章带状态色点与真实状态名（`Development` / `Done`…），详情页额外显示负责人、优先级、读取时间；**Jira 已 Done 但本地未关（或反过来）会标「状态不一致」**。状态来自本地缓存，只有点「刷新 Jira」才会跑 `acli`，且只重读未完成、未归档的单（跳过的继续显示上次结果）。链接前缀 `tasks.jiraBaseUrl`（默认 `https://example.atlassian.net/browse/`），细节见 `guide/config.md` §4.3 |
+| 阶段与进度 | 任务卡片显示「阶段 3/6」和当前阶段名（读任务目录里的 `stage-dag.yaml`），Epic 卡片显示子任务完成度进度条 `3/5`（后端按 children 汇总）。详情页头部有同样的阶段进度条。没有 `stage-dag.yaml` 的任务不显示这一格 |
+| 最近改动 | 卡片右下角显示「2 小时前」：journal 任务取 `stage-dag.yaml` 的 `updated`，缺省用该文件修改时间；本地任务用记录里的更新时间 |
 | `/tasks/events?objectRef=<UID>` | 事件流水账（竖轴时间线，见下）与同页复盘分析；按现有 Task/Epic UID 关联。它是 Tasks 的下一级视图：**不在侧边栏占位**，入口是 Tasks 页顶部的「任务清单 / 事件流水账」切换（任务详情页里也有「在流水账中查看 →」）；旧链接 `/events` 会带上查询参数跳到 `/tasks/events` |
 | 全局主 Agent 弹窗 | 主 Agent 入口只在导航栏（窄屏在底部标签栏）出现一次，会话页右侧工具栏不再重复这个图标；同栏“通知”查看最近未处理待办与建议，点击检查进入同一弹窗；其他页面通过导航栏进入；显式启动、记录回复截图、创建/更新可写本地任务 |
 | `/extensions` | 扩展装载事实 + 管理，见 `guide/extensions-page.md` |

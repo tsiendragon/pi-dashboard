@@ -18,6 +18,8 @@ interface LocalTaskRecord {
   status?: string
   parentId?: string | null
   path?: string
+  /** Jira issue key when this local task mirrors a ticket (optional; `null` means "not tracked"). */
+  jiraKey?: string
   tags?: string[]
   createdAt?: string
   updatedAt?: string
@@ -91,6 +93,7 @@ export class LocalTaskProvider implements TaskProvider {
       archived: record.status === 'archived',
       plannable: true,
       path: record.path,
+      ...(typeof record.jiraKey === 'string' && record.jiraKey.trim() ? { jiraKey: record.jiraKey.trim() } : {}),
       tags: Array.isArray(record.tags) ? record.tags : [],
       updatedAt: record.updatedAt,
       writable: true,

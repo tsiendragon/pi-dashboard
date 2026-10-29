@@ -104,6 +104,12 @@ export const api = {
   runJob: (id: string) => post('/api/jobs/' + encodeURIComponent(id) + '/run').then(j),
 
   tasks: () => get('/api/tasks').then(j) as Promise<TasksResponse>,
+  /** Explicit Jira read: runs acli on the server, so the list itself never waits on it. */
+  refreshTaskJira: () => post('/api/tasks/jira-status/refresh', {}).then(j) as Promise<{
+    jira: NonNullable<TasksResponse['jira']>
+    statuses: Record<string, unknown>
+    scope?: { keys: number; skippedDone: number; skippedArchived: number }
+  }>,
   taskProviders: () => get('/api/tasks/providers').then(j),
   taskPlanning: () => get('/api/tasks/planning').then(j),
   saveTaskPlanning: (patch: PlanningOverlay, expectedVersion?: number) =>

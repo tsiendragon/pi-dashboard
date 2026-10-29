@@ -253,6 +253,44 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 ---
 
+### 4.3 `tasks`：任务来源与 Jira 链接
+
+```json
+{
+  "tasks": {
+    "enabled": true,
+    "journal": { "autoDetect": true, "roots": ["~/repos/my-taskspace"], "enabled": true },
+    "jiraBaseUrl": "https://example.atlassian.net/browse/"
+  }
+}
+```
+
+| 字段 | 作用 |
+|---|---|
+| `journal.roots` | Task Journal（`tasks/DOMAINS.yaml` + `epic.yaml` + `task.yaml`）仓库根；空数组且 `autoDetect` 关掉就没有该来源 |
+| `journal.autoDetect` | 默认 `true`：从 `roots` 里挑第一个结构完整的仓库；关掉后只用 `roots[0]` |
+| `lanes` / `defaultView` | 泳道定义与默认视图，省略即用内置的三条泳道 |
+| `providers` | 配置声明的外部任务源（`command` 或 `file`，只读） |
+| `jiraBaseUrl` | **Jira 链接前缀**，默认 `https://example.atlassian.net/browse/`。任务页把「任务的身份」拼在它后面生成可点链接；换成别的 Jira 站点只改这一处，不需要改代码。必须是 `http(s)://` 开头的绝对地址，否则回落到默认值 |
+
+**任务从哪里拿到 Jira 号**（顺序固定）：
+1. `epic.yaml` / `task.yaml` 里显式写的 `jira_key`（例如 `jira_key: PROJ-102`）优先；
+2. 没写时，如果 `key` 本身就是 Jira 号（`^[A-Z][A-Z0-9]*-\d+$`，例如 `PROJ-104`）就直接用它；
+3. 都没有（例如 `task-key-jira-decoupling-v1` 这种本地 key）就**不显示链接**——「未绑定 Jira」是正常状态，不是同步失败；`jira_key: null` 同理。
+
+本地任务（`~/.pi/tasks/tasks.json`）里可选 `jiraKey` 字段，写了就同样渲染链接；不写就没有。
+
+**Jira 真实状态（可选，显式刷新）**：任务页可以显示每张单在 Jira 上的真实状态（`Development` / `Feasibility` / `Done` 等）、负责人和优先级，并据此标出「本地已完成但 Jira 未关」/「Jira 已 Done 但本地还没关」这两种不一致。
+
+- 读取走 `acli`（`example.atlassian.net`，本机已登录），命令是
+  `acli jira workitem search -j "key in (PROJ-103, …)" --fields "key,status,assignee,priority" --json`，
+  一次批量读多张单（每 50 个 key 一批）。**这是外部请求，只在用户点「刷新 Jira」时发生**，页面渲染永远只读缓存。
+- **刷新只读「还开着」的单**：已完成（done）和已归档（含归档 Epic 的子任务）的 key 不重复读——它们不会再变，界面继续显示上次缓存值。点刷新时按钮旁会写明本次读了几张、跳过了多少。
+- 缓存文件：`~/.pi/dashboard/jira-status.json`（0600）。30 分钟（`JIRA_TTL_MS`）后视为过期，界面标「· 过期」但不自动重读。
+- `acli` 不可用、未登录、单子被删或没权限时：界面保留旧缓存并显示原因，任务列表照常渲染，不会因为 Jira 失败而报错。
+- 实测规模（2026-10-28）：全量 278 个 Jira 号时约 19 秒；收窄到未完成的 47 个 key 后约 3.3 秒，跳过 34 张已完成 + 197 条归档；界面仍能显示 274 个已知状态。
+- 已知限制：这版 `acli` 的 `--fields` 不接受 `duedate`（报 `field 'duedate' is not allowed`），Sprint/故事点同样需要另找字段名，所以截止日、Sprint、故事点暂不显示。
+
 ### 4.2 服务面板：`~/.pi/services.json`
 
 和服务页面（`/services`）配套的清单，**不在 `dashboard.json` 里**：它是一个独立文件，按机器维护「有哪些服务、怎么启停、探哪个地址」。字段与语义见 [services.md](services.md)。

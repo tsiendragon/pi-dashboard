@@ -1,4 +1,4 @@
-import type { Completion, LaneDef, PlanningOverlay, TaskFact } from '@shared/tasks.js'
+import type { Completion, JiraCategory, LaneDef, PlanningOverlay, TaskFact } from '@shared/tasks.js'
 
 export const COMPLETION_LABEL: Record<Completion, string> = {
   todo: '待办',
@@ -84,4 +84,60 @@ export function matchesSearch(task: TaskFact, q: string): boolean {
   if (!q) return true
   const needle = q.toLowerCase()
   return task.title.toLowerCase().includes(needle) || task.id.toLowerCase().includes(needle)
+}
+
+/** Jira status → the three colours the list uses; `unknown` stays neutral. */
+export const JIRA_DOT: Record<JiraCategory, string> = {
+  todo: 'bg-muted',
+  inprogress: 'bg-info',
+  done: 'bg-ok',
+  unknown: 'bg-border-strong',
+}
+
+/**
+ * Local completion vs Jira's own category.
+ *
+ * Both directions matter: a task closed in the journal while the ticket is still open, and (the case
+ * that actually bit us) a ticket already Done while the journal still says in_progress.
+ */
+export type JiraDrift = 'jira_ahead' | 'local_ahead'
+
+export function jiraDrift(task: TaskFact): JiraDrift | undefined {
+  const category = task.jiraStatus?.category
+  // Epics are visibility-tracked (active/archived), so comparing their completion would be noise.
+  if (!category || category === 'unknown' || task.kind === 'epic') return undefined
+  const localDone = task.completion === 'done'
+  if (localDone && category !== 'done') return 'local_ahead'
+  if (!localDone && category === 'done') return 'jira_ahead'
+  return undefined
+}
+
+export const JIRA_DRIFT_LABEL: Record<JiraDrift, string> = {
+  jira_ahead: 'Jira 已完成，本地未关',
+  local_ahead: '本地已完成，Jira 未关',
+}
+
+/** "2 小时前" — date-only values are treated as local midnight, so ordering stays sane. */
+export function relativeTime(value: string | null | undefined, now = Date.now()): string {
+  if (!value) return ''
+  const raw = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value
+  const time = Date.parse(raw)
+  if (Number.isNaN(time)) return ''
+  const diff = now - time
+  if (diff < 0) return '刚刚'
+  const minutes = Math.floor(diff / 60_000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} 天前`
+  if (days < 30) return `${Math.floor(days / 7)} 周前`
+  if (days < 365) return `${Math.floor(days / 30)} 个月前`
+  return `${Math.floor(days / 365)} 年前`
+}
+
+/** Stage progress shown next to the stage's own name: `2/4`, empty when unknown. */
+export function stageLabel(task: TaskFact): string {
+  return task.stage ? `${task.stage.done}/${task.stage.total}` : ''
 }
