@@ -66,15 +66,14 @@ it('real extension tools create/update local tasks, record evidence and retain h
   await user('修正那条事件')
   const corrected = await tool('event_correct',{id:event.id,expectedVersion:1,patch:{occurredAt:'2026-10-08T10:00:00+08:00'},reason:'补充发生时间'})
   expect(corrected.version).toBe(2); expect(context.ui.confirm).not.toHaveBeenCalled()
-  await user('把任务状态改为已完成')
+  await user('把任务状态改为已完成的')
   await tool('supervisor_task_update',{uid:created.task.uid,status:'done',evidence:'用户已完成联调验收'})
-  expect((await provider.get(created.task.id))!.completion).toBe('done'); expect(context.ui.confirm).toHaveBeenCalled()
-  await user('不要创建任务')
-  context.ui.confirm.mockResolvedValueOnce(false)
-  await expect(tool('supervisor_task_create', { title: '不能误建' })).rejects.toThrow('确认未通过')
-  expect(await provider.list()).toHaveLength(2)
+  // No popup stands in the way of a user turn's write, completion included.
+  expect((await provider.get(created.task.id))!.completion).toBe('done'); expect(context.ui.confirm).not.toHaveBeenCalled()
+  // An automatic patrol turn is the one write boundary left: the gateway refuses it.
   await handlers.get('before_agent_start')!({prompt:'[supervisor-auto-patrol]自动巡查，不是用户新授权'})
-  await expect(tool('supervisor_task_update',{uid:created.task.uid,status:'doing'})).rejects.toThrow()
+  await expect(tool('supervisor_task_update',{uid:created.task.uid,status:'doing'})).rejects.toThrow('不能创建或修改任务')
+  expect(await provider.list()).toHaveLength(2)
   // Screenshots pasted in the pane are archived through the same store, then referenced by a record.
   const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(32, 5)]).toString('base64')
   const stored = await service.execute({ operation: 'attachment_put', args: { name: '粘贴截图.png', mime: 'image/png', data: png } }, { actor: '主 Agent', sessionId: 'supervisor-main', userInitiated: true }) as { attachmentId: string; bytes: number }

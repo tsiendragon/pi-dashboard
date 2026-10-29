@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { uiAnswered } from '../../store/liveSessionsSlice'
@@ -105,6 +106,30 @@ export function PendingConfirmations({ objectRef, className = '' }: { objectRef:
   )
 }
 
+interface PanelBox { left: number; top?: number; bottom?: number; width: number; maxHeight: number }
+
+/**
+ * Place the panel next to its trigger without any ancestor being able to clip it.
+ *
+ * The badge lives in the sidebar, which is a scroll container with `overflow-x-hidden`; an
+ * absolutely positioned panel there lost its right half — including the approve button — so the
+ * panel is portalled to the body and positioned from the trigger's viewport rect instead.
+ */
+function panelBox(trigger: DOMRect): PanelBox {
+  const margin = 8
+  const width = Math.min(22 * 16, window.innerWidth - margin * 2)
+  const left = Math.min(Math.max(trigger.left, margin), Math.max(margin, window.innerWidth - width - margin))
+  const cap = Math.min(window.innerHeight * 0.6, 26 * 16)
+  const spaceAbove = trigger.top - margin
+  const spaceBelow = window.innerHeight - trigger.bottom - margin
+  // Sidebar badges sit near the top of the page, the mobile badge sits on the bottom bar: pick
+  // whichever side has room and cap the height so the panel always stays on screen.
+  if (spaceAbove >= Math.min(cap, 220) || spaceAbove >= spaceBelow) {
+    return { left, bottom: window.innerHeight - trigger.top + 6, width, maxHeight: Math.max(160, Math.min(cap, spaceAbove)) }
+  }
+  return { left, top: trigger.bottom + 6, width, maxHeight: Math.max(160, Math.min(cap, spaceBelow)) }
+}
+
 /**
  * Sidebar fallback: a count plus a short list, so a pending write is never invisible while the
  * user is on an unrelated page. Each row can be answered right here.
@@ -114,10 +139,33 @@ export function PendingConfirmationBadge({ collapsed = false }: { collapsed?: bo
   const answer = useAnswer()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [box, setBox] = useState<PanelBox | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open) { setBox(null); return }
+    const place = (): void => {
+      const trigger = btnRef.current
+      if (trigger) setBox(panelBox(trigger.getBoundingClientRect()))
+    }
+    place()
+    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') setOpen(false) }
+    // Capture scroll events: the sidebar scrolls, and the panel must follow its trigger.
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
   if (!items.length) return null
   return (
     <div className="relative mt-1 shrink-0">
       <button
+        ref={btnRef}
         type="button"
         aria-expanded={open}
         aria-label={`${items.length} 项待确认`}
@@ -128,14 +176,14 @@ export function PendingConfirmationBadge({ collapsed = false }: { collapsed?: bo
         <span className={collapsed ? 'text-xs' : ''}>{collapsed ? items.length : '待确认'}</span>
         {!collapsed && <span className="rounded-full bg-accent px-1.5 text-2xs font-semibold text-accent-fg">{items.length}</span>}
       </button>
-      {open && (
+      {open && box && createPortal(
         <>
-          <div className="fixed inset-0 z-30" aria-hidden="true" onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 z-[9998]" aria-hidden="true" onClick={() => setOpen(false)} />
           <section
             role="dialog"
             aria-label="待确认的主 Agent 写入"
-            onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setOpen(false) } }}
-            className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(60vh,26rem)] w-[min(22rem,calc(100vw-1.5rem))] overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-xl"
+            className="fixed z-[9999] overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-xl"
+            style={{ left: box.left, top: box.top, bottom: box.bottom, width: box.width, maxHeight: box.maxHeight }}
           >
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-body-s font-semibold text-text-strong">待确认的主 Agent 写入</h2>
@@ -166,7 +214,8 @@ export function PendingConfirmationBadge({ collapsed = false }: { collapsed?: bo
               })}
             </ul>
           </section>
-        </>
+        </>,
+        document.body
       )}
     </div>
   )

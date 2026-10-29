@@ -182,6 +182,32 @@
 - 修改：报错文案改为“监督资源已变更（配置或角色/Skill/扩展文件被修改）：主会话的读取与写入通道都已暂停，请结束旧主会话并重新启动后再操作。”；新增回归用例断言读、写同时 403 且错误文案不再只说“写入”。
 - 已知代价（未改）：被加载的扩展源码也在指纹里，而 `pi-tsien-extension` 是活跃开发仓库，改它会让在跑的主会话通道暂停。是否把扩展源码移出指纹（只在配置/角色/Skill 变化时暂停）待用户决定。
 
+## 变更：内容改动不再停通道 + 写入门槛可关（用户要求：“ts 可以直接写入，不要每次点按钮”）
+
+- 用户报的现象：主 Agent 的写入反复失败；先以为“确认按钮被关掉或选了不允许”，后来网关返回 403“监督资源已变更（配置或角色/Skill/扩展文件被修改）：主会话的读取与写入通道都已暂停”。实测核对：`runtime.json` 记录 `revision=815e8be1…`，按当前磁盘重算为 `38a3888b…`，两者不等（`contentRevision`/`extensionsRevision` 也都变了）——即上一条说明里的指纹门禁在起作用，属于“读和写一起停”，不是点不点按钮的问题。
+- 根因拆成两个闸门：
+  1. **启动形状闸门**（`ensureResourcesCurrent()`）：任何指纹不一致 → 403，读写全停。原指纹把**角色/Skill 文本**也算进去，导致改一段提示词就得结束会话重启（本次主会话自 10-16 启动，`role.md`/`SKILL.md`/`dashboard.json` 于 10-26 改过，因此一直 403）。
+  2. **写入确认闸门**（`gateway()` 里 `userInitiated`）：真实用户轮里，用户原话必须能解析出该操作，否则 403 `explicit_operation_confirmation_required`，扩展据此弹「等你确认」卡片 —— 这才是“必须点按钮”的来源（`record` 只有这一个来源；扩展自己只在完成/破坏性更正/关闭待办时预确认）。
+- 修改（`backend/supervisor/config.ts`）：`validateSupervisorResources` 拆成三个指纹——`revision`（门禁：启动形状 + 资源路径）、`contentRevision`（角色/Skill 文本）、`extensionsRevision`（扩展源码）。理由与之前把扩展源码移出门禁一致：**指令文本不是启动参数**，改它不该停通道。`requireWriteConfirmation` 也从门禁 JSON 里剔除（它只影响谁能写，不影响进程能做什么，改它不该触发重启）。
+- 修改（`backend/supervisor/runtime.ts`）：内容/扩展落后时不再 403，改为 `supervisor_context` 的 `resourceNotice`（“角色或 Skill 内容已更新……建议重启主会话生效”）；403 文案收窄为“监督配置已变更（工具白名单、扩展清单、模式或名字）”；新增配置项 `agentResources.requireWriteConfirmation`（默认 `true`），设为 `false` 时**真实用户轮不再需要点名操作或点确认**，自动巡查轮仍然不能写。
+- 保留：`task_update done`、破坏性 `event_correct`、`action done` 仍由扩展前置确认（不可逆动作）；服务端 `completion()` 的 `confirmed` 校验未改。
+- 代价（用户已知情并选择）：`requireWriteConfirmation: false` 后，主 Agent 可以在用户没点名写入的情况下自行落库；审计仍记录 `actor=主 Agent` 与来源会话，但不再有一次人工点击。想恢复严格模式只需把它改回 `true`（不需要重启主会话）。
+- 回归：`backend/__tests__/supervisor-runtime.test.ts` 19 项通过（改指纹用例改判“SKILL 改动不打门禁”，新增“配置改变仍 403”和“`requireWriteConfirmation:false` 下真实用户轮免点、巡查轮仍 403”）；`supervisor-service`/`-config-persist`/`-integration` 33 项通过；后端/前端类型检查通过。
+- 生效方式：后端代码改动需要用户重启 Dashboard 服务；服务重启后再结束旧主会话并按新代码启动一次（指纹方案换了，旧记录必然对不上）。之后改角色/Skill/扩展代码只需重启主会话（或等提示），不再需要“先结束再启动才能读”。
+
+## 变更：去掉指纹门禁与全部写入确认（用户要求：“搞得太麻烦”“去掉确认动作”）
+
+- 用户反馈三点：指纹比对为什么要有、太麻烦；确认动作去掉；剩下三个不可逆动作也免确认。
+- 指纹（`backend/supervisor/config.ts` 的三个哈希：`revision` 启动形状 / `contentRevision` 角色与 Skill 文本 / `extensionsRevision` 扩展源码）**仍保留，但不再拦任何调用**。`gateway()` 里原来的 `ensureResourcesCurrent()` 403 已删除，替换为 `enabled()`（只校验监督功能是否开启）；落后一律通过 `supervisor_context` 的 `resourceNotice` 提示“重启后生效”。理由：原文意图是防止“进程权限与最新配置不一致”，实际代价是改一段提示词就让在跑的主会话整条 403（本次故障即此），用户判定不值得，故降级为提示。`start()`/`clear()` 的“旧会话仍在跑/启动形状变了就别硬来”保护保留——那是“不要同时跑两个”，不是门禁。
+- 写入确认全链路删除：
+  - 后端 `runtime.ts`：`userInitiated = userTurn || currentUserTurn`。真实用户轮（含弹窗/会话页/面板）直接写，不再解析用户原话是否为该操作、不再返回 `explicit_operation_confirmation_required`；唯一保留的边界是自动巡查轮（`userTurn:false` 且无 grant）→ 仍然 403「本轮不是用户请求」。
+  - `shared/src/supervisor.ts`：删掉 `SupervisorContext.confirmed` 与 `agentResources.requireWriteConfirmation`（上一轮刚加的开关一并撤掉，避免死配置）。
+  - `backend/supervisor/service.ts`：`completion()` 不再要求 `confirmed`；`task_update done`/`action done` 只保留“必须真实用户轮”的判定，`event_correct` 不变。
+  - `pi-tsien-extension/extensions/supervisor/index.ts`：删除 `confirmationFor()`、`askConfirmation()`、`takeTextConfirmation()`、`pendingConfirmation`/`confirmedByText`、`isPlainConfirmation`/`isPlainRefusal`、`confirmationTarget/Marker/Summary`、`withoutRequestId`，以及拿到 403 后弹一次确认重试的分支；工具描述里“requires UI confirmation”的措辞同步改掉（模型会照着描述行动）。
+- 连带影响：`[supervisor-confirm]` 机器尾标不再产生，所以监督台的「等你确认」卡片与侧栏「待确认」角标不会再出现（前端代码与其修复保留，处于休眠状态）。`task_update done` 仍要求非空 `evidence`，`event_correct` 仍要求版本与原因——这些是数据质量校验，不是人工确认。
+- 取舍（用户已知情并选择）：主 Agent 可以在用户没点名写入的情况下自行落库；审计仍记录 `actor=主 Agent`、来源会话与 `messageRef`，但没有人工点击这一层。要恢复人工确认需要改代码，不是配置项。
+- 回归：后端 5 个监督测试文件 56 项通过（改写“未点名也放行”“配置变化只提示”“巡查轮仍拒绝”等用例）；扩展仓库 `test/supervisor.test.ts` 20 项通过；两端类型检查通过。前端的旧确认 UI 单测仍通过（组件保留）。
+
 ## 修复：资源指纹变更后无法启动（“等待重新加载”卡死）
 
 - 现象：弹窗显示 `资源状态：pending · 未连接` + 红字“资源发生变更，等待重新加载。请管理员处理旧主会话”，启动按钮灰掉，无法启用。

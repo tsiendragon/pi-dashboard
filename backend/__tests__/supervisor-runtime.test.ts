@@ -47,14 +47,18 @@ describe('supervisor resource isolation', () => {
     expect(normalizeSupervisorConfig({}).agentResources.extensionPaths).toContain(goalExtensionPath)
     expect(normalizeSupervisorConfig({}).agentResources.extensionPaths).toHaveLength(3)
     await writeFile(path.join(f.config.agentResources.skillPaths[0], 'SKILL.md'), '---\nname: supervisor\ndescription: Testing\n---\nChanged')
-    expect((await validateSupervisorResources(f.config)).revision).not.toBe(result.revision)
+    const afterSkill = await validateSupervisorResources(f.config)
+    expect(afterSkill.revision).toBe(result.revision)
+    expect(afterSkill.contentRevision).not.toBe(result.contentRevision)
   })
-  it('resource isolation keeps extension sources out of the gating revision but tracks them separately', async () => {
+  it('resource isolation keeps instruction text and extension sources out of the gating revision but tracks them separately', async () => {
     const f = await fixture(); const result = await validateSupervisorResources(f.config)
-    // Editing a skill/role gates the running session; editing an extension only asks for a restart.
+    // Editing role/Skill text or extension code only asks for a restart; the gated revision covers the
+    // launch shape (tool allowlist, extension list, mode, name, paths) alone.
     await writeFile(path.join(f.config.agentResources.skillPaths[0], 'SKILL.md'), '---\nname: supervisor\ndescription: Testing\n---\nChanged')
     const afterSkill = await validateSupervisorResources(f.config)
-    expect(afterSkill.revision).not.toBe(result.revision)
+    expect(afterSkill.revision).toBe(result.revision)
+    expect(afterSkill.contentRevision).not.toBe(result.contentRevision)
     expect(afterSkill.extensionsRevision).toBe(result.extensionsRevision)
     await writeFile(f.config.agentResources.extensionPaths[0], 'export default function changed() {}')
     const afterExtension = await validateSupervisorResources(f.config)
@@ -175,7 +179,7 @@ describe('supervisor runtime gates', () => {
     expect(refused.status).toBe(403)
     expect(String(refused.body.error)).toContain('自动巡查轮不能写附件')
   })
-  it('treats an untagged user turn as authorization, so no marker is needed', async () => {
+  it('treats an untagged user turn as authorization, so no marker or confirmation is needed', async () => {
     const f = await fixture(); await f.runtime.start()
     const credentials = JSON.parse(await readFile(path.join(f.runtime.root, 'credentials.json'), 'utf8'))
     await rpc(credentials.socketPath, credentials.token, '/loaded', { revision: credentials.revision, tools: credentials.allowedTools })
@@ -184,12 +188,11 @@ describe('supervisor runtime gates', () => {
     const allowed = await rpc(credentials.socketPath, credentials.token, '/execute', { ...command, userTurn: true })
     expect(allowed.status).toBe(200)
     expect(f.service.execute).toHaveBeenLastCalledWith(command.request, expect.objectContaining({ userInitiated: true }))
-    // The turn's own words still decide which operation it asked for: a refusal must not authorize a task.
-    const refusal = { request: { operation: 'task_create', args: {} }, userTurn: true, userPrompt: '不要创建任务' }
-    const refusedTask = await rpc(credentials.socketPath, credentials.token, '/execute', refusal)
-    expect(refusedTask.status).toBe(403)
-    expect(String(refusedTask.body.error)).toBe('explicit_operation_confirmation_required')
-    // The phrasing a user actually uses ("帮我把这个记录到对应任务的记录里") grants the record operation.
+    // The owner asked for no confirmation step: a user turn authorizes its writes whatever the wording is.
+    const plain = { request: { operation: 'task_create', args: {} }, userTurn: true, userPrompt: '这个 EU 项目你看着整理一下' }
+    const allowedTask = await rpc(credentials.socketPath, credentials.token, '/execute', plain)
+    expect(allowedTask.status).toBe(200)
+    // Any real-user wording works, including one that names no operation at all.
     const realPhrase = await rpc(credentials.socketPath, credentials.token, '/execute', { ...command, userTurn: true, userPrompt: '帮我把这个记录到对应任务的记录里 US的risktag gpu 推理优化' })
     expect(realPhrase.status).toBe(200)
     // An automatic patrol turn (or a batch that does not claim a user turn) stays read-only.
@@ -201,6 +204,17 @@ describe('supervisor runtime gates', () => {
     await f.runtime.patrol()
     const patrolText = (f.registry.sendBrowserCommand.mock.calls.at(-1) as unknown as [string, string, { text: string }])[2].text
     expect(patrolText.startsWith('[supervisor-auto-patrol]')).toBe(true)
+  })
+  it('自动巡查轮仍不能写：这是唯一保留的写入边界', async () => {
+    const f = await fixture(); await f.runtime.start()
+    const credentials = JSON.parse(await readFile(path.join(f.runtime.root, 'credentials.json'), 'utf8'))
+    await rpc(credentials.socketPath, credentials.token, '/loaded', { revision: credentials.revision, tools: credentials.allowedTools })
+    const patrol = await rpc(credentials.socketPath, credentials.token, '/execute', { request: { operation: 'task_create', args: {} }, userTurn: false })
+    expect(patrol.status).toBe(403)
+    expect(String(patrol.body.error)).toContain('不能创建或修改任务')
+    // The same write from a real user turn goes through without any confirmation flag.
+    const user = await rpc(credentials.socketPath, credentials.token, '/execute', { request: { operation: 'task_create', args: {} }, userTurn: true, userPrompt: '这个 EU 项目你看着整理一下' })
+    expect(user.status).toBe(200)
   })
   it('扩展源码更新只提示重启，不再暂停读写通道', async () => {
     const f = await fixture(); await f.runtime.start()
@@ -214,23 +228,27 @@ describe('supervisor runtime gates', () => {
     const state = await f.runtime.state()
     expect(state.agent.resourceState).toBe('loaded')
     expect(state.agent.extensionsStale).toBe(true)
-    // A real gating change (skill content) still pauses the channel.
+    // Instruction text is not a launch argument: an edited Skill keeps the channel open and the Agent is
+    // told its own instructions are older.
     await writeFile(path.join(f.config.agentResources.skillPaths[0], 'SKILL.md'), '---\nname: supervisor\ndescription: Testing supervisor\n---\nChanged after start')
-    expect((await rpc(credentials.socketPath, credentials.token, '/execute', { request: { operation: 'context', args: {} } })).status).toBe(403)
+    const afterSkill = await rpc(credentials.socketPath, credentials.token, '/execute', { request: { operation: 'context', args: {} } })
+    expect(afterSkill.status).toBe(200)
+    expect(JSON.stringify(afterSkill.body.result)).toContain('角色或 Skill 内容已更新')
   })
-  it('资源指纹变化后读写通道一起暂停，报错说明不是只拦写入', async () => {
+  it('启动形状变化也不再暂停通道，只给重启提示', async () => {
     const f = await fixture(); await f.runtime.start()
     const credentials = JSON.parse(await readFile(path.join(f.runtime.root, 'credentials.json'), 'utf8'))
     expect((await rpc(credentials.socketPath, credentials.token, '/loaded', { revision: credentials.revision, tools: credentials.allowedTools })).status).toBe(200)
     await f.runtime.input('查一下当前任务')
-    const grantRef = (f.registry.sendBrowserCommand.mock.calls[0] as unknown as [string, string, { text: string }])[2].text.match(/supervisor-user-grant:([^\]]+)/)![1]
-    // Change an approved resource file: the fingerprint no longer matches the running session's revision.
-    await writeFile(path.join(f.config.agentResources.skillPaths[0], 'SKILL.md'), '---\nname: supervisor\ndescription: Testing supervisor\n---\nChanged after start')
+    const grantRef = (f.registry.sendBrowserCommand.mock.calls[0] as unknown as [string, string, { text: string }])![2].text.match(/supervisor-user-grant:([^\]]+)/)![1]
+    // A launch-shape change (here: the tool allowlist) no longer matches the running session's revision.
+    f.config.agentResources.allowedTools.push('event_correct')
     const read = await rpc(credentials.socketPath, credentials.token, '/execute', { request: { operation: 'context', args: {} }, grantRef })
-    const write = await rpc(credentials.socketPath, credentials.token, '/execute', { request: { operation: 'record', args: {} }, grantRef, confirmed: true })
-    expect([read.status, write.status]).toEqual([403, 403])
-    expect(String(read.body.error)).toContain('读取与写入通道都已暂停')
-    expect(f.service.execute).not.toHaveBeenCalled()
+    const write = await rpc(credentials.socketPath, credentials.token, '/execute', { request: { operation: 'record', args: {} }, grantRef })
+    // The owner asked for zero gating: reads and writes keep working, the mismatch only shows up as a notice.
+    expect([read.status, write.status]).toEqual([200, 200])
+    expect(JSON.stringify(read.body.result)).toContain('监督配置已变更')
+    expect(f.service.execute).toHaveBeenCalled()
   })
   it('does not steal a human lease and revokes requests when config changes', async () => {
     const f = await fixture(); await f.runtime.start(); f.getDetail()!.summary.claim = { state: 'claimed', leaseId: 'human' }

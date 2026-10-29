@@ -227,16 +227,16 @@ describe('SupervisorService', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
-  it('requires real user initiation, ignores args.confirmed and checks completion context', async () => {
+  it('requires real user initiation and ignores args.confirmed', async () => {
     const { service, localTask, event } = await fixture()
     for (const operation of ['task_create', 'task_update', 'correct'] as const) await expect(service.execute({ operation, args: { requestId: operation, uid: localTask.uid, title: 'Agent' } }, agent)).rejects.toMatchObject({ code: 'user_request_required' })
     await expect(event(undefined, {}, agent)).rejects.toMatchObject({ code: 'user_request_required' })
     expect((await event(undefined, { type: 'suggestion' }, agent)).source.kind).toBe('agent')
-    const request = { operation: 'task_update' as const, args: { requestId: 'done', uid: localTask.uid, status: 'done', confirmed: true } }
-    await expect(service.execute(request, user)).rejects.toMatchObject({ code: 'confirmation_required' })
-    const result = await service.execute(request, { ...user, confirmed: true }) as { task: TaskFact }
+    // Completion is a real user turn's call; a client-sent confirmed flag is not part of the protocol any more.
+    const request = { operation: 'task_update' as const, args: { requestId: 'done', uid: localTask.uid, status: 'done' } }
+    await expect(service.execute(request, agent)).rejects.toMatchObject({ code: 'user_request_required' })
+    const result = await service.execute(request, user) as { task: TaskFact }
     expect(result.task.completion).toBe('done')
-    await expect(service.execute(request, user)).rejects.toMatchObject({ code: 'confirmation_required' })
   })
 
   it('allows agent suggestions/reports but user-gates action transitions and versions', async () => {
@@ -247,8 +247,8 @@ describe('SupervisorService', () => {
     await expect(service.execute({ operation: 'action', args: { requestId: 'auto-open', id: action.id, expectedVersion: 1, state: 'open' } }, agent)).rejects.toMatchObject({ code: 'user_request_required' })
     const opened = await service.execute({ operation: 'action', args: { requestId: 'open', id: action.id, expectedVersion: 1, state: 'open' } }, user) as SupervisorAction & { version: number }
     expect(opened.version).toBe(2)
-    await expect(service.execute({ operation: 'action', args: { requestId: 'finish', id: action.id, expectedVersion: 2, state: 'done', confirmed: true } }, user)).rejects.toMatchObject({ code: 'confirmation_required' })
-    await service.execute({ operation: 'action', args: { requestId: 'finish', id: action.id, expectedVersion: 2, state: 'done' } }, { ...user, confirmed: true })
+    await expect(service.execute({ operation: 'action', args: { requestId: 'finish', id: action.id, expectedVersion: 2, state: 'done' } }, agent)).rejects.toMatchObject({ code: 'user_request_required' })
+    await service.execute({ operation: 'action', args: { requestId: 'finish', id: action.id, expectedVersion: 2, state: 'done' } }, user)
     expect((await store.snapshot()).actionRevisions[action.id]).toHaveLength(2)
     const report = await service.execute({ operation: 'report', args: { requestId: 'report', objectRef: localTask.uid, content: 'Observed waiting', coverage: 'One recorded event', missing: ['No effort'], sourceRefs: [e.id] } }, agent) as SupervisorReport
     expect(report.inputVersions).toEqual({ [e.id]: 1 })

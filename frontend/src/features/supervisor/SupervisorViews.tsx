@@ -48,6 +48,7 @@ export function ConfigSummary({ config }: { config: SupervisorConfig | null | un
     {!!missing.length && <p className="text-danger">缺少资源：{missing.join('、')}</p>}
     <dl className="space-y-2">
       <div><dt className="text-muted">子 Agent</dt><dd>{config.agentResources?.subagents ? '已开启（只读辅助：流水账整理、会话巡查）' : '未开启'}</dd></div>
+      <div><dt className="text-muted">写入授权</dt><dd>真实用户轮直接写入（不再弹确认）；自动巡查轮只能读</dd></div>
       <div><dt className="text-muted">工作目录</dt><dd>{config.cwd || '未配置'}</dd></div>
       <div><dt className="text-muted">角色文件</dt><dd>{config.agentResources?.rolePath || '未配置'}</dd></div>
       <div><dt className="text-muted">Skill 文件</dt><dd>{config.agentResources?.skillPaths?.join('、') || '未配置'}</dd></div>

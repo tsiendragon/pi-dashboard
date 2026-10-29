@@ -77,6 +77,17 @@ describe('pending confirmations', () => {
     await waitFor(() => expect(command).toHaveBeenCalledWith('process-main', { type: 'answer_ui', id: 'ui-record', cancelled: true }))
   })
 
+  it('opens the sidebar list in a portal so a scroll container cannot clip its buttons', () => {
+    const store = createTestStore(state())
+    const { container } = renderWithProviders(<PendingConfirmationBadge />, { store })
+    fireEvent.click(screen.getByRole('button', { name: /1 项待确认/ }))
+    // Rendered outside the render root: the sidebar's overflow can no longer cut off the
+    // approve/deny buttons that used to live past its right edge.
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('[role="dialog"]')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '允许这次操作' })).toBeInTheDocument()
+  })
+
   it('hides the badge when nothing is pending', () => {
     const empty = state()
     empty.liveSessions = { ...empty.liveSessions, pendingUi: {} }

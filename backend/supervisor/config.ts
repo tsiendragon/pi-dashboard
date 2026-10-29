@@ -99,17 +99,19 @@ async function fingerprint(root: string): Promise<string> {
   }
   return parts.join('\n')
 }
-export async function validateSupervisorResources(config: SupervisorConfig): Promise<{ revision: string; extensionsRevision: string; role: string; args: string[] }> {
+export async function validateSupervisorResources(config: SupervisorConfig): Promise<{ revision: string; contentRevision: string; extensionsRevision: string; role: string; args: string[] }> {
   if (!path.isAbsolute(config.cwd)) throw new Error('absolute_cwd_required')
   const cwd = await stat(await realpath(config.cwd))
   if (!cwd.isDirectory()) throw new Error('invalid_supervisor_cwd')
   if (!config.agentResources.skillPaths.length || !config.agentResources.extensionPaths.length) throw new Error('supervisor_resources_required')
   const resources = [config.agentResources.rolePath, ...config.agentResources.skillPaths, ...config.agentResources.extensionPaths]
   const canonical: string[] = []
-  // Gating fingerprint: what the running session is allowed to do. Extension sources are hashed separately
-  // (extensionsRevision) because pi-tsien-extension is developed continuously; an edited extension must not
-  // pause a healthy main session, it only warrants a "restart to pick up new code" notice.
-  const gatingContent: string[] = []
+  // Three fingerprints, three consequences. `revision` gates the channel: it covers the launch shape
+  // (tool allowlist, extension list, mode, name) and the paths, i.e. what the running process was
+  // authorized to do. Instruction text is not a launch argument: editing role.md or a Skill must not
+  // pause a healthy session, it only warrants a "restart to pick up new text" notice (contentRevision),
+  // exactly like extension sources (extensionsRevision).
+  const instructionContent: string[] = []
   const extensionCanonical: string[] = []
   const extensionContent: string[] = []
   for (const p of resources) {
@@ -118,7 +120,7 @@ export async function validateSupervisorResources(config: SupervisorConfig): Pro
     if (canonical.includes(resolved)) throw new Error('duplicate_resource')
     canonical.push(resolved)
     const content = await fingerprint(resolved)
-    if (p === config.agentResources.rolePath || config.agentResources.skillPaths.includes(p)) gatingContent.push(content)
+    if (p === config.agentResources.rolePath || config.agentResources.skillPaths.includes(p)) instructionContent.push(content)
     else { extensionCanonical.push(resolved); extensionContent.push(content) }
   }
   for (const p of config.agentResources.skillPaths) {
@@ -129,7 +131,8 @@ export async function validateSupervisorResources(config: SupervisorConfig): Pro
   if (!config.agentResources.allowedTools.length || config.agentResources.allowedTools.some(t => !supervisorAllTools.includes(t))) throw new Error('invalid_supervisor_tool_allowlist')
   const role = `# 你的名字\n\n用户与界面用「${normalizeSupervisorName(config.name)}」称呼你；正文回答不必重复这个名字。\n\n` + await readFile(config.agentResources.rolePath, 'utf8')
   const skills = await Promise.all(config.agentResources.skillPaths.map(p => readFile(path.join(p, 'SKILL.md'), 'utf8')))
-  const revision = createHash('sha256').update(JSON.stringify(config)).update(canonical.join('\n')).update(gatingContent.join('\n')).digest('hex')
+  const revision = createHash('sha256').update(JSON.stringify(config)).update(canonical.join('\n')).digest('hex')
+  const contentRevision = createHash('sha256').update(instructionContent.join('\n')).digest('hex')
   const extensionsRevision = createHash('sha256').update(extensionCanonical.join('\n')).update(extensionContent.join('\n')).digest('hex')
-  return { revision, extensionsRevision, role, args: ['--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--no-builtin-tools', '--system-prompt', role + '\n\n' + skills.join('\n\n'), ...config.agentResources.skillPaths.flatMap(p => ['--skill', p]), ...config.agentResources.extensionPaths.flatMap(p => ['--extension', p])] }
+  return { revision, contentRevision, extensionsRevision, role, args: ['--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--no-builtin-tools', '--system-prompt', role + '\n\n' + skills.join('\n\n'), ...config.agentResources.skillPaths.flatMap(p => ['--skill', p]), ...config.agentResources.extensionPaths.flatMap(p => ['--extension', p])] }
 }

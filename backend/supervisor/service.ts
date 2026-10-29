@@ -74,10 +74,9 @@ function expected(value: unknown, current: number): void {
 function user(context: SupervisorContext): void {
   if (!context.userInitiated) return fail(403, 'user_request_required', 'A real user request is required; agent suggestions do not authorize task or state writes')
 }
-function completion(value: unknown, context: SupervisorContext): string | undefined {
+function completion(value: unknown): string | undefined {
   if (value === undefined) return undefined
   if (!['todo', 'doing', 'paused', 'done'].includes(String(value))) return fail(400, 'invalid_status')
-  if (value === 'done' && !context.confirmed) return fail(403, 'confirmation_required', 'Completion requires server-verified user confirmation')
   return value as string
 }
 
@@ -354,14 +353,14 @@ export class SupervisorService {
       // LocalTaskProvider generates local:t-<random ID>; only scopes covering the
       // entire generated namespace can authorize creation before the ID exists.
       if (!scope.some(s => s.endsWith('*') && matches('local:t-', [s]))) return fail(403, 'create_outside_scope', 'Local creation requires a wildcard scope covering generated local task IDs')
-      completion(patch.status, context)
+      completion(patch.status)
     } else if (request.operation === 'task_update') {
       const target = this.task(tasks, args.uid ?? args.objectRef)
       const provider = tasks.providers.find(p => p.id === target.providerId)
       if (!target.writable || provider?.type !== 'local' || !provider.capabilities.writable) return fail(403, 'read_only_source', 'This source is read-only; use Task Pilot for task-journal, Jira or Lark writes')
-      completion(patch.status, context)
+      completion(patch.status)
     } else if (!['correct', 'report', 'action'].includes(request.operation) && patch.objectRef !== undefined) this.task(tasks, patch.objectRef)
-    if (request.operation === 'action' && patch.state === 'done' && !context.confirmed) return fail(403, 'confirmation_required')
+    if (request.operation === 'action' && patch.state === 'done' && !context.userInitiated) return fail(403, 'user_request_required', 'A real user request is required; agent suggestions do not authorize state writes')
     const preflight = await this.options.store.snapshot()
     if (['report', 'action'].includes(request.operation) && patch.objectRef !== undefined) this.selectEvents(tasks, patch.objectRef, true, this.visible(preflight, tasks).events)
     if (request.operation === 'correct') {
@@ -374,11 +373,11 @@ export class SupervisorService {
       if (!action) return fail(404, 'action_not_found')
       if (action.objectRef) this.selectEvents(tasks, action.objectRef, true, this.visible(preflight, tasks).events)
       this.sourceRefs(action.sourceRefs, preflight, tasks)
-      if ((patch.state ?? action.state) === 'done' && !context.confirmed) return fail(403, 'confirmation_required')
+      if ((patch.state ?? action.state) === 'done' && !context.userInitiated) return fail(403, 'user_request_required', 'A real user request is required; agent suggestions do not authorize state writes')
     }
     if (request.operation === 'action' || request.operation === 'report') this.sourceRefs(patch.sourceRefs, preflight, tasks)
     const requestId = validateId(args.requestId)
-    // Client confirmed is never authorization and has no semantic effect on the hash.
+    // A stale client may still echo a confirmation flag inside args: it is data, never authorization.
     const { confirmed: _untrusted, ...cleanArgs } = args
     const payload = { operation: request.operation, args: cleanArgs, actor: context.actor, sessionId: context.sessionId, userInitiated: context.userInitiated }
     const hash = payloadHash(payload)
@@ -409,7 +408,7 @@ export class SupervisorService {
         return event
       }
       if (request.operation === 'task_create' || request.operation === 'task_update') {
-        const input = { ...(patch.title !== undefined ? { title: str(patch.title, 'title') } : {}), ...(patch.description !== undefined ? { description: str(patch.description, 'description', false) } : {}), ...(patch.status !== undefined ? { status: completion(patch.status, context) } : {}) }
+        const input = { ...(patch.title !== undefined ? { title: str(patch.title, 'title') } : {}), ...(patch.description !== undefined ? { description: str(patch.description, 'description', false) } : {}), ...(patch.status !== undefined ? { status: completion(patch.status) } : {}) }
         if (!Object.keys(input).length) return fail(400, 'empty_patch')
         const creation: { kind?: 'task' | 'epic' | 'todo' | 'item'; parentUid?: string; tags?: string[] } = {}
         if (request.operation === 'task_create') {
@@ -460,7 +459,7 @@ export class SupervisorService {
         const fields = { ...old, ...patch }
         const state = fields.state ?? 'suggested'
         if (!['suggested', 'open', 'done', 'dismissed'].includes(String(state))) return fail(400, 'invalid_action_state')
-        if (state === 'done' && !context.confirmed) return fail(403, 'confirmation_required')
+        if (state === 'done' && !context.userInitiated) return fail(403, 'user_request_required', 'A real user request is required; agent suggestions do not authorize state writes')
         const objectRef = fields.objectRef === undefined ? undefined : str(fields.objectRef, 'objectRef')
         if (objectRef) this.selectEvents(tasks, objectRef, true, this.visible(archive, tasks).events)
         const sourceRefs = this.sourceRefs(fields.sourceRefs, archive, tasks)

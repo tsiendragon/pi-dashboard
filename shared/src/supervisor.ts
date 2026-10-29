@@ -64,5 +64,5 @@ export interface SupervisorState {
   tasks: TasksResponse; sessions: SupervisorSession[]; events: SupervisorEvent[]; actions: SupervisorAction[]; reports: SupervisorReport[]; workingStates?: Record<string, SupervisorWorkingState>; archivedObjectRefs?: string[]; warnings: string[]; sampledAt: string
 }
 export interface SupervisorRequest { operation: SupervisorOperation; args?: Record<string, unknown> }
-export interface SupervisorContext { actor: string; sessionId?: string; messageRef?: string; userInitiated: boolean; confirmed?: boolean }
+export interface SupervisorContext { actor: string; sessionId?: string; messageRef?: string; userInitiated: boolean }
 export interface SupervisorTaskPatch { uid: string; status?: Completion; title?: string; description?: string }
