@@ -11,6 +11,9 @@ import type { RouteDeps } from './types.js'
 
 const expandHome = (p: string | undefined): string | undefined => p === '~' ? os.homedir() : p?.startsWith('~/') ? join(os.homedir(), p.slice(2)) : p
 
+/** Max bytes /api/file-read will return as text (matches frontend TEXT_PREVIEW_LIMIT). */
+const TEXT_READ_LIMIT = 50 * 1024 * 1024
+
 export function registerFileRoutes(deps: RouteDeps): void {
   const { app, versionStore, recentWrites, createVersion } = deps
 
@@ -140,8 +143,26 @@ export function registerFileRoutes(deps: RouteDeps): void {
           await fh.close()
         }
       }
+      // Guard server + browser memory: refuse to load huge files as text.
+      const st = await stat(filePath)
+      if (st.size > TEXT_READ_LIMIT) {
+        res.set('X-File-Size', String(st.size))
+        return res.status(413).json({ error: `file too large to preview (${st.size} bytes > ${TEXT_READ_LIMIT}); download instead`, size: st.size })
+      }
       const content = await readFile(filePath, 'utf-8')
       res.type('text/plain').send(content)
+    } catch (e: any) {
+      res.status(e.code === 'ENOENT' ? 404 : 500).json({ error: e.message })
+    }
+  })
+
+  // File size lookup so the UI can decide to skip rendering before fetching content.
+  app.get('/api/file-info', async (req: Request, res: Response) => {
+    const filePath = expandHome(req.query.path as string)
+    if (!filePath) return res.status(400).json({ error: 'path required' })
+    try {
+      const st = await stat(filePath)
+      res.json({ size: st.size, isFile: st.isFile() })
     } catch (e: any) {
       res.status(e.code === 'ENOENT' ? 404 : 500).json({ error: e.message })
     }

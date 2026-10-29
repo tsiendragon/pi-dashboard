@@ -19,7 +19,7 @@ export interface Comment {
   anchor?: string
 }
 
-export type FileType = 'text' | 'html' | 'pdf' | 'docx' | 'spreadsheet' | 'image' | 'unknown'
+export type FileType = 'text' | 'html' | 'pdf' | 'docx' | 'spreadsheet' | 'image' | 'download' | 'unknown'
 
 const EXT_MAP: Record<string, FileType> = {
   '.html': 'html',
@@ -35,6 +35,14 @@ const EXT_MAP: Record<string, FileType> = {
   '.gif': 'image',
   '.webp': 'image',
   '.svg': 'image',
+  // Archives / opaque binaries: never rendered, download only.
+  '.zip': 'download', '.rar': 'download', '.7z': 'download', '.tar': 'download',
+  '.gz': 'download', '.tgz': 'download', '.bz2': 'download', '.xz': 'download',
+  '.zst': 'download', '.iso': 'download', '.dmg': 'download', '.whl': 'download',
+  '.jar': 'download', '.exe': 'download', '.bin': 'download', '.so': 'download',
+  '.pt': 'download', '.pth': 'download', '.onnx': 'download', '.safetensors': 'download',
+  '.ckpt': 'download', '.parquet': 'download', '.mp4': 'download', '.mov': 'download',
+  '.avi': 'download', '.mkv': 'download', '.mp3': 'download', '.wav': 'download',
 }
 
 const TEXT_EXTS = new Set([

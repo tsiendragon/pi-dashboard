@@ -773,6 +773,23 @@ describe('GET /api/file-read', () => {
     expect(res.status).toBe(404)
   })
 
+  // Preview cap: the dashboard previews files up to 50 MB, so an 8 MB artifact
+  // (a generated review page) must load and only >50 MB earns the 413.
+  it('serves a file well above the old 2 MB cap', async () => {
+    fsPromises.stat.mockResolvedValueOnce({ size: 8 * 1024 * 1024 })
+    fsPromises.readFile.mockResolvedValueOnce('<html></html>')
+    const res = await get(port, '/api/file-read?path=' + encodeURIComponent('/tmp/sample-review.html'))
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('<html></html>')
+  })
+
+  it('returns 413 above 50 MB', async () => {
+    fsPromises.stat.mockResolvedValueOnce({ size: 51 * 1024 * 1024 })
+    const res = await get(port, '/api/file-read?path=' + encodeURIComponent('/tmp/huge.html'))
+    expect(res.status).toBe(413)
+    expect(await res.json()).toMatchObject({ size: 51 * 1024 * 1024 })
+  })
+
   it('returns 400 when path query param is missing', async () => {
     const res = await get(port, '/api/file-read')
     expect(res.status).toBe(400)

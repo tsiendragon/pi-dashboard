@@ -421,7 +421,7 @@ export default function ChatPage() {
     setDocumentPreview({ filePath, content: '', loading: true, error: null })
     try {
       const res = await fetch('/api/file-read?path=' + encodeURIComponent(filePath))
-      if (!res.ok) throw new Error(`Unable to read file (${res.status})`)
+      if (!res.ok) throw new Error(res.status === 413 ? '文件过大，不在页面中预览，请点右上角「下载」' : `Unable to read file (${res.status})`)
       const content = await res.text()
       setDocumentPreview(current => current?.filePath === filePath
         ? { filePath, content, loading: false, error: null }

@@ -4,12 +4,28 @@ import DiffView from './DiffView'
 import { detectFileType, type Comment } from '../hooks/usePanelState'
 import { useCommentSelection } from '../hooks/useCommentSelection'
 import { copyText } from '../utils/clipboard'
+import { formatBytes, previewLimitFor } from '../utils/previewLimits'
 
 const PdfRenderer = lazy(() => import('./renderers/PdfRenderer'))
 const DocxRenderer = lazy(() => import('./renderers/DocxRenderer'))
 const SpreadsheetRenderer = lazy(() => import('./renderers/SpreadsheetRenderer'))
 const ImageRenderer = lazy(() => import('./renderers/ImageRenderer'))
 const HtmlRenderer = lazy(() => import('./renderers/HtmlRenderer'))
+
+/** Size of the file on disk (null until known / unavailable). Lets us skip rendering huge files. */
+function useFileSize(filePath: string): number | null {
+  const [size, setSize] = useState<number | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    setSize(null)
+    fetch('/api/file-info?path=' + encodeURIComponent(filePath))
+      .then(r => (r.ok ? r.json() : null))
+      .then(info => { if (!cancelled && info && typeof info.size === 'number') setSize(info.size) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [filePath])
+  return size
+}
 
 const LOADING_FALLBACK = <div className="flex items-center justify-center h-full text-muted text-sm">Loading...</div>
 
@@ -59,6 +75,8 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
   // html is NOT binary — it keeps Save, the Preview/Source toggle, versions,
   // and Source-mode commenting enabled.
   const isBinary = fileType !== 'text' && fileType !== 'html'
+  const fileSize = useFileSize(filePath)
+  const noPreview = fileType === 'download' || (fileSize != null && fileSize > previewLimitFor(fileType))
 
   // Cheap rolling hash of content — bumps the iframe key on live-reload so the
   // artifact's scripts reliably re-execute when the file changes on disk.
@@ -177,8 +195,14 @@ export default memo(function DocumentPanel({ filePath, content, onContentChange,
           </div>
         </div>
       )}
-      <div className="flex-1 overflow-hidden p-4" onContextMenu={!diffMode && !isBinary ? handleContextMenu : undefined}>
-        {diffMode ? (
+      <div className="flex-1 overflow-hidden p-4" onContextMenu={!diffMode && !isBinary && !noPreview ? handleContextMenu : undefined}>
+        {noPreview ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted">
+            <div className="text-2xl">📦</div>
+            <div className="text-text">{fileType === 'download' ? '该类型文件不在页面中预览' : '文件过大，不在页面中预览'}{fileSize != null && `（${formatBytes(fileSize)}）`}</div>
+            <a href={`/api/local-file/download?path=${encodeURIComponent(filePath)}`} download={fileName} className="rounded-md border border-accent px-3 py-1.5 text-accent no-underline hover:bg-accent-subtle">⬇ 下载</a>
+          </div>
+        ) : diffMode ? (
           <DiffView oldContent={conflictContent ?? ''} newContent={content} oldLabel={conflictContent != null ? 'Disk' : 'Previous'} newLabel="Current" onClose={onToggleDiff} />
         ) : fileType === 'pdf' ? (
           <Suspense fallback={LOADING_FALLBACK}><PdfRenderer filePath={filePath} /></Suspense>
