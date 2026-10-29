@@ -119,6 +119,9 @@ npm install --no-audit --no-fund && npm run build-frontend
 | 可选主 Agent 工作监督与事件档案 | `dashboard.json` 的 `supervisor`；Skill 在 pi-dashboard、Extension 在 pi-tsien-extension，详见 [config.md](config.md) §4 |
 | 服务面板（看状态、启停本机服务） | `~/.pi/services.json`，见 [services.md](services.md) |
 | 可选机器出站会话索引与受限控制 | `<agent dir>/machine-connector.json`（私有 0600 文件，缺失即禁用；见 [config.md](config.md)） |
+| 数据目录（trace / 计时 / 会话别把 home 撑爆） | 环境变量 `PI_CODING_AGENT_DIR` / `PI_TRACE_DIR` / `PI_TIMING_DIR` / `PI_DASH_USAGE_DIR`，默认都在 `<agent dir>` 下且不自动清理，见 [config.md](config.md) §2.5 |
+| 子 Agent 用哪个模型（light/medium/heavy/ultra） | `<agent dir>/subagent-models.json`（或 `PI_SUBAGENT_MODEL_CONFIG`），见 [config.md](config.md) §3.1 |
+| 语音 / 表情包等旁路 API 要哪个 key | 见 [config.md](config.md) §2.6 的功能表与自检命令 |
 | 机器远程输入防重放 | 启用控制时自动维护 `<agent dir>/machine-input-replay.json`（0600，勿删除；见 [config.md](config.md)） |
 
 环境文件加载顺序（先到先得，shell 里已有的同名变量优先）：

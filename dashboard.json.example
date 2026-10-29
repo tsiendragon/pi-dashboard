@@ -12,17 +12,12 @@
   },
   "repos": [
     {
-      "id": "pi-dashboard",
-      "path": "/home/you/repos/pi-dashboard",
-      "name": "pi-dashboard",
-      "tags": ["pi"],
+      "id": "my-project",
+      "path": "/home/you/repos/my-project",
+      "name": "my-project",
+      "tags": ["demo"],
       "pinned": true,
-      "defaultBranch": "master"
-    },
-    {
-      "id": "my-taskspace",
-      "path": "/home/you/repos/my-taskspace",
-      "tags": ["task"]
+      "defaultBranch": "main"
     }
   ],
   "tasks": {
@@ -33,7 +28,7 @@
       "roots": ["/home/you/repos/my-taskspace"],
       "enabled": true
     },
-    "jiraBaseUrl": "https://example.atlassian.net/browse/",
+    "jiraBaseUrl": "https://your-org.atlassian.net/browse/",
     "lanes": [
       { "id": "long", "label": "长期", "match": { "kind": ["epic"] } },
       { "id": "short", "label": "短期", "match": { "kind": ["task"] } },
@@ -53,7 +48,7 @@
         "label": "我的看板",
         "enabled": true,
         "command": ["/home/you/bin/my-tracker-tasks", "--json"],
-        "cwd": "/home/you/repos/my-tracker",
+        "cwd": "/home/you/repos/my-project",
         "timeoutMs": 20000
       }
     ]

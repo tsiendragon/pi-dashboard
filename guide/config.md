@@ -169,8 +169,9 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 > 默认 `~/.pi/agent`。相关路由：`backend/routes/{chat,system,pi-ext-list}.ts`、`backend/settings-store.ts`、
 > `backend/live-sessions/ext-config.ts`。
 
-> `install-standalone.sh` 会自动把 `PI_SCRIPT` 与上面 5 个 `PI_DASH_*` 可移植数据目录写进
-> `<agent dir>/dashboard.env`（已存在的键不覆盖）。
+> `install-standalone.sh` 只写 `PI_SCRIPT` 到 `<agent dir>/dashboard.env`（已存在就不覆盖）。
+> 其余数据目录都有可移植的默认值（`<agent dir>/…`，见 §2.5），**不需要安装脚本代写**；
+> 要把 trace / 计时 / 用量挤到数据盘，按 §2.5 自己加几行即可。
 
 ### 2.3 三种用法
 
@@ -195,6 +196,67 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | 设了变量但 pi 里看不到 | 变量是在 dashboard **启动之后**才 export 的；重启 dashboard |
 | 想换回官方 pi | `.env` 去掉 `PI_SCRIPT`，或改成官方路径 |
 
+### 2.5 数据目录与磁盘占用（trace 别把 home 撑爆）
+
+`<agent dir>`（默认 `~/.pi/agent`，可用 `PI_CODING_AGENT_DIR` 改）是整个 pi 的数据根，下面这几处会持续长大：
+
+| 目录 | 谁写 | 会自动清理吗 |
+|---|---|---|
+| `sessions/` | pi 会话 jsonl，每个会话一份 | 不会，只增不减 |
+| `pi-traces/sessions/<sessionId>/events-<pid>.jsonl` | `trajectory-recorder` 扩展（轨迹回放用） | **不会**：代码里没有 retention/rotate |
+| `pi-timing/` | 同上，紧凑计时账本 | **不会** |
+| `archiv/` | `observation-pack` 大结果归档（扩展默认关闭） | 有开关：配置文件里 `cleanupEnabled`（默认 `false`）+ `retentionDays`（默认 30） |
+| `token-usage/` | dashboard 用量账本（`PI_DASH_USAGE_DIR`），按天分文件 | 不会 |
+| `extensions/`、`npm/`、`git/` | 装的扩展包（装一次就一直占着） | 不会，升级/卸载才变 |
+| `~/.pi/dashboard/` | Jira 状态缓存、监督档案、表情包历史索引 | 不会 |
+
+所以长期跑的机器别把这些留在 home：**在环境文件里把大件目录指到数据盘**（dashboard 启动时读取，并传给它的每个 pi 子进程）：
+
+```bash
+# <agent dir>/dashboard.env
+PI_TRACE_DIR=/data/pi/pi-traces
+PI_TIMING_DIR=/data/pi/pi-timing
+PI_OBSERVATION_DIR=/data/pi/archiv
+PI_DASH_USAGE_DIR=/data/pi/token-usage
+MEME_OUTPUT_DIR=/data/pi/memes
+```
+
+改完得重启 dashboard 才生效。只想挪一部分就只写这几行；要整体搬（连 `settings.json`、`auth.json`、`sessions/` 一起）就设 `PI_CODING_AGENT_DIR=/data/pi/agent`，并注意**终端里直接跑 `pi` 时也要有同一个变量**，否则会出现两套数据。
+
+把安装根放在数据盘时（例如 `~/pi-stack` 其实指向 `/data/pi-stack`），把上面几行跟着改成 `/data/pi-stack/data/...` 就行：**装在哪里和存数据在哪里可以是两件事**，没必要把 trace 跟着仓库走。
+
+没有自动清理的目录，一条 cron 就够：
+
+```bash
+# 每天 4 点删 30 天前的 trace / 计时账本（只是历史复盘数据，不影响当前会话）
+0 4 * * * find /data/pi/pi-traces /data/pi/pi-timing -type f -name '*.jsonl' -mtime +30 -delete
+```
+
+先看看占了多少：`du -sh /data/pi/pi-traces /data/pi/pi-timing <agent dir>/sessions`。删 trace 只会影响「按轨迹回放 / 统计」这类历史分析；dashboard 的 Token Cost 读的是 `token-usage/`（独立账本），不受影响。
+
+### 2.6 每个功能各要哪个 key（配之前先看这张表）
+
+模型对话靠 pi 自己的凭证；下面这些是 dashboard 后端直连的旁路 API，**缺 key 只有对应功能不可用，其它页面照常**：
+
+| 功能 | 需要的变量 | 缺了会怎样 |
+|---|---|---|
+| 语音输入（麦克风 → 实时转写） | `DASHSCOPE_API_KEY`（端点 `DASHSCOPE_BASE_URL`，一般不用改） | 按钮不可用；`GET /api/asr/config` 返回 `available:false` 和原因 |
+| 语音朗读（TTS） | `DASHSCOPE_API_KEY`（`DASHSCOPE_TTS_BASE_URL` 可单独指向 TTS 端点） | 报 `tts_api_key_missing`（503），消息里写明要配哪个变量 |
+| 批量转写 `POST /api/asr/transcribe` | `DASHSCOPE_API_KEY` | 报 `asr_api_key_missing`（503） |
+| 表情包工坊 | 二选一：`DASHSCOPE_API_KEY`（Qwen 图片）或 `AZURE_OPENAI_IMAGE_API_KEY` + `AZURE_OPENAI_IMAGE_ENDPOINT`；FLUX.2 / MAI 可用 `AZURE_FLUX2_API_KEY`+`AZURE_FLUX2_ENDPOINT` / `AZURE_MAI_IMAGE_API_KEY`+`AZURE_MAI_IMAGE_ENDPOINT` 单独指定 | 对应适配器不可用，页面显示缺哪个变量 |
+| Token Cost 的额度卡片 | 本机 Codex CLI 登录，或 `CLAUDE_CONFIG_DIR` 下的 Claude Code OAuth | 卡片显示「未提供」，不影响 Token Cost 原有统计 |
+| 任务页的 Jira 状态 | 本机 `acli` 已登录 | 保留旧缓存并在界面给出原因 |
+| 模型对话本身 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DASHSCOPE_API_KEY` 等，或 pi 里 `/login` | 会话发不出去 |
+
+**自检**（不用真开麦克风）：这两个接口只读环境变量、不发起外部请求，可以反复调：
+
+```bash
+curl -s localhost:7777/api/asr/config | jq '{available, reason}'
+curl -s localhost:7777/api/tts/config | jq '{available, reason, endpoint}'
+```
+
+先看用量再决定要不要开：语音输入每次录音都计费（DashScope 实时识别），表情包每张都计费（单价见页面上的估算）。注意 **dashboard 的 Token Cost 只统模型 token，不记这些旁路调用**（代码上 ledger 只读 pi 会话里的 usage），所以它们的花费要去 DashScope / Azure 控制台看账单；表情包页面会显示当次单价与计费口径（未核实的单价会明说不显示猜测金额）。
+
 ---
 
 ## 3. 每扩展一份 JSON（怎么改）
@@ -207,6 +269,53 @@ export ANTHROPIC_API_KEY=sk-ant-...
   - 保存前有校验，可「创建并保存」。
 - **例外（按项目）**：`tsien-memory.json`、`rtk-config.json` 从 `<cwd>/.pi/` 解析，不按机器。
 - 扩展详情与每个文件的作用见 [extensions.md](extensions.md) 与扩展仓库 README。
+
+### 3.1 `subagent-models.json`：子 Agent 用哪个模型
+
+子 Agent（`subagent_start` / `subagent_workflow`）不是固定一个模型，而是**按档位**取：`light` / `medium` / `heavy` / `ultra`，每档一个候选列表，按顺序试，遇到限流/额度/不可用就换下一个。配置在 `<agent dir>/subagent-models.json`（可用 `PI_SUBAGENT_MODEL_CONFIG` 指向别处），dashboard 的 **Settings → Subagent Models** 也能改。
+
+**没有这个文件时**：只剩旧变量 `PI_SUBAGENT_EXECUTION_MODEL` 一条，而且只进 `medium` 档；`light` / `heavy` / `ultra` 没有任何候选，选它们会直接失败。两个都没配 → 子 Agent 报错，没有内置默认模型。
+
+```json
+{
+  "version": 1,
+  "defaultTier": "medium",
+  "roles": { "read_only": "light", "research": "medium", "code": "light" },
+  "allowInherit": false,
+  "tiers": {
+    "light": {
+      "candidates": [
+        { "model": "dashscope/qwen3.8-flash" },
+        { "model": "llm-gateway/glm-5.3-flash" }
+      ],
+      "onExhausted": { "action": "wait_then_escalate", "maxWaitMs": 120000, "escalateTo": "medium" }
+    },
+    "medium": {
+      "candidates": [
+        { "model": "llm-gateway/claude-sonnet-5-5", "maxConcurrency": 2 }
+      ],
+      "onExhausted": { "action": "wait", "maxWaitMs": 600000 }
+    },
+    "heavy": { "candidates": [{ "model": "llm-gateway/claude-opus-5-5" }], "onExhausted": { "action": "fail" } },
+    "ultra": { "candidates": [{ "model": "llm-gateway/gpt-6-astra" }], "onExhausted": { "action": "fail" } }
+  },
+  "timeouts": { "workHardMs": 259200000, "workHardMaxMs": 1209600000 },
+  "budgets": { "maxModelCallsPerTask": 2000 }
+}
+```
+
+| 字段 | 作用 |
+|---|---|
+| `defaultTier` | 调用时不说档位就用它，默认 `medium` |
+| `roles` | `read_only` / `research` / `code` 三种角色各自的默认档位；不写就跟 `defaultTier`。**注意默认是 `medium`，不是 `light`** |
+| `tiers.<档>.candidates[].model` | 必须是精确的 `provider/model`；同一个模型不能出现在两处 |
+| `candidates[].thinking` / `maxConcurrency` / `quotaGroup` | 可选：思考级别、并发上限、额度分组（默认按 provider 分组） |
+| `tiers.<档>.spillover` | 默认 `true`：某个候选并发满了就**换下一个候选**；写 `false` 则不换，直接按 `onExhausted` 等或升级 |
+| `tiers.<档>.onExhausted` | 候选都用尽后怎么办：`wait`（等 `maxWaitMs`）、`wait_then_escalate`、`escalate`、`fail`。**只有 `light`/`medium` 能被自动升级到**，`heavy`/`ultra` 永远不会被自动触达 |
+| `allowInherit` | 默认 `false`：子 Agent 不能继承父会话模型，必须走档位（改成 `true` 才允许 `inheritModel`） |
+| `timeouts` / `budgets` | 单个任务的硬超时与模型调用次数上限 |
+
+看当前生效的档位：在 pi 里执行 `/subagent-models`。这个文件按修改时间自动重读，**不用重启 dashboard、也不用重开会话**，下次派子 Agent 就用新值；文件写坏时保留上一份可用配置并给出警告，不会静默退回内置模型。
 
 ---
 
@@ -292,6 +401,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | 字段 | 作用 |
 |---|---|
 | `journal.roots` | Task Journal（`tasks/DOMAINS.yaml` + `epic.yaml` + `task.yaml`）仓库根；空数组且 `autoDetect` 关掉就没有该来源 |
+
+**没有这类任务仓库也能用**：`roots` 留空（或删掉 `journal` 段）时，dashboard 根本不创建这个来源，**不会报错**——任务页照常显示本地任务，以及你在 `providers` 里登记的外部来源。所以团队里没有 taskspace 仓库的人，直接删掉 `journal.roots` 里的占位路径就行。
 | `journal.autoDetect` | 默认 `true`：从 `roots` 里挑第一个结构完整的仓库；关掉后只用 `roots[0]` |
 | `lanes` / `defaultView` | 泳道定义与默认视图，省略即用内置的三条泳道。`lanes` 结构见下；`defaultView` 取 `execute`（默认）或 `survey` |
 | `providers` | 配置声明的外部任务源（`command` 或 `file`，只读），见下面的「外部任务源」 |
