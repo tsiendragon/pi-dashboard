@@ -74,6 +74,7 @@ bash scripts/install-standalone.sh --ext-dir ~/src/pi-tsien-extension   # 复用
 bash scripts/install-standalone.sh --pi-release tsiendragon/pi@v0.85.1-tsien.1   # 指定 fork 构建
 bash scripts/install-standalone.sh --official-pi        # 改装官方 npm 版（功能会降级）
 bash scripts/install-standalone.sh --skip-pi --pi-prefix ~/pi/bin   # 自备 pi
+bash scripts/install-standalone.sh --data-dir /data/pi  # trace/计时/用量/表情包放数据盘
 ```
 
 全部参数见 `bash scripts/install-standalone.sh --help`。
@@ -88,8 +89,12 @@ bash scripts/install-standalone.sh --skip-pi --pi-prefix ~/pi/bin   # 自备 pi
 6. 装 pi：默认从 `tsiendragon/pi` 的 Release 下载 10 个 tgz，一起装到 `<安装根>/pi`，
    并把 `PI_SCRIPT=<安装根>/pi/bin/pi` 写进 `<agent dir>/dashboard.env`（dashboard 启动时自动加载，
    并传给每个 pi 子进程；见 [config.md](config.md) §2）
-7. （无需额外配置）dashboard 的数据目录默认就是 `<agent dir>/...`，不再需要往
-   `dashboard.env` 补 `PI_DASH_*` 变量；只有要沿用旧位置时才显式设置（见 [config.md](config.md) §2）
+7. 数据目录（trace / 计时 / 用量 / 表情包）：装到 `$HOME` 下时保持默认 `<agent dir>/...`，
+   装到数据盘（`--dir /data/pi-stack`）时自动写 `<安装根>/data` 下的 6 个变量；
+   也可以用 `--data-dir /data/pi` 显式指定。已存在的键一律不覆盖（见 [config.md](config.md) §2.5）
+
+   > 推荐：复制、构建可以放在 home，但 **trace 和用量账本放数据盘**——它们没有自动清理，
+   > 长期跑会一直长（见 [config.md](config.md) §2.5）。
 8. 可选：安装 systemd 服务（unit 带 `PI_CODING_AGENT_DIR`）/ 后台启动
 
 > 安全提示：同步器是**严格模式**——不在配置里的 package/extension 会从 Pi 设置移除，

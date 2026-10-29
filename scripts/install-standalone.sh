@@ -12,6 +12,7 @@
 #   bash scripts/install-standalone.sh --service       # 装成 systemd 服务（需 sudo）
 #   bash scripts/install-standalone.sh --dry-run       # 只打印将要执行的步骤
 #   bash scripts/install-standalone.sh --official-pi   # 改装官方 npm 版 pi（默认装 fork Release 构建）
+#   bash scripts/install-standalone.sh --data-dir /data/pi  # 数据（trace/计时/用量）放数据盘
 #
 # 详细说明见 guide/standalone-install.md。
 
@@ -26,6 +27,7 @@ EXT_DIR=""
 EXT_REPO="https://github.com/tsiendragon/pi-tsien-extension.git"
 EXT_CONFIG=""
 AGENT_DIR="${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}"
+DATA_DIR="${PI_DATA_DIR:-}"
 PORT="${PI_DASH_PORT:-7777}"
 INSTALL_PI=""
 INSTALL_PI_VERSION=""
@@ -71,7 +73,7 @@ configs_match() {
 }
 
 usage() {
-  sed -n '3,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '3,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   cat <<'EOF'
 
 选项:
@@ -82,6 +84,8 @@ usage() {
   --ext-config <path>     用自己的 Pi 扩展装载清单（默认仓库内 config/extensions.standalone.json；
                           模板见 config/examples/extensions.config.example.json）
   --agent-dir <path>      Pi agent 配置目录（默认 $PI_CODING_AGENT_DIR 或 ~/.pi/agent）
+  --data-dir <path>       数据落点（trace/计时/用量/表情包）；安装根不在 home 下时
+                          默认 <安装根>/data，否则默认留在 <agent dir> 下
   --port <n>              dashboard 端口（默认 7777）
   --install-pi [version]  等同 --official-pi：全局安装官方 npm 版 pi
   --official-pi [version] 安装官方 npm 版 pi（默认不装；不带版本用 latest）
@@ -106,6 +110,7 @@ while [[ $# -gt 0 ]]; do
     --ext-repo) EXT_REPO="$2"; shift 2 ;;
     --ext-config) EXT_CONFIG="$2"; shift 2 ;;
     --agent-dir) AGENT_DIR="$2"; shift 2 ;;
+    --data-dir) DATA_DIR="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --install-pi|--official-pi) PI_SOURCE="official"; INSTALL_PI=1; if [[ $# -ge 2 && "$2" != -* ]]; then INSTALL_PI_VERSION="$2"; shift; fi; shift ;;
     --pi-release)
@@ -276,19 +281,60 @@ else
   log "按 --skip-pi 跳过 pi 安装（请自备 0.85.1-tsien.1 或更新版本）"
 fi
 
-# 让 dashboard 启动的每个 pi 进程都用这个 pi：写进 dashboard 的环境文件（backend 启动时自动加载）
-if [[ -n "${PI_BIN}" ]]; then
-  ENV_FILE="${AGENT_DIR}/dashboard.env"
-  if [[ "${DRY_RUN}" == "1" ]]; then
-    printf '[dry-run] 写 %s（PI_SCRIPT=%s）\n' "${ENV_FILE}" "${PI_BIN}"
+# 让 dashboard 启动的每个 pi 进程都用这个 pi，并把数据目录定在合适的位置：
+# 写进 dashboard 的环境文件（backend 启动时自动加载，并传给每个 pi 子进程）。
+# 数据目录默认跟着安装位置：装在 home 里就保持 <agent dir>/...（不改变旧行为），
+# 装在数据盘（安装根不在 $HOME 下）就自动落到 <安装根>/data，不让 trace 涨在 home。
+expand_home() {
+  case "$1" in
+    "~") printf '%s' "${HOME}" ;;
+    "~/"*) printf '%s/%s' "${HOME}" "${1#\~/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+if [[ -n "${DATA_DIR}" ]]; then
+  DATA_DIR="$(expand_home "${DATA_DIR}")"
+  [[ "${DATA_DIR}" == /* ]] || DATA_DIR="${PWD}/${DATA_DIR}"
+else
+  case "${ROOT_DIR}" in
+    "${HOME}"/*|"~") : ;;
+    *) DATA_DIR="${ROOT_DIR}/data" ;;
+  esac
+fi
+
+ENV_FILE="${AGENT_DIR}/dashboard.env"
+# 只在键不存在时追加，手改过的值一律不覆盖
+env_append() {
+  local pair="$1" key="${1%%=*}"
+  if [[ -f "${ENV_FILE}" ]] && grep -q "^${key}=" "${ENV_FILE}"; then
+    warn "${ENV_FILE} 已设置 ${key}，保持不变（如需修改请手动编辑）"
+    return 0
+  fi
+  printf '%s\n' "${pair}" >> "${ENV_FILE}"
+  log "已写入 ${ENV_FILE} → ${pair}"
+}
+
+if [[ "${DRY_RUN}" == "1" ]]; then
+  [[ -n "${PI_BIN}" ]] && printf '[dry-run] 写 %s（PI_SCRIPT=%s）\n' "${ENV_FILE}" "${PI_BIN}"
+  if [[ -n "${DATA_DIR}" ]]; then
+    printf '[dry-run] 写 %s（PI_TRACE_DIR=%s/pi-traces 等 6 个数据目录）\n' "${ENV_FILE}" "${DATA_DIR}"
   else
-    run mkdir -p "${AGENT_DIR}"
-    if [[ -f "${ENV_FILE}" ]] && grep -q '^PI_SCRIPT=' "${ENV_FILE}"; then
-      warn "${ENV_FILE} 已设置 PI_SCRIPT，保持不变（如需切换请手动编辑）"
-    else
-      printf 'PI_SCRIPT=%s\n' "${PI_BIN}" >> "${ENV_FILE}"
-      log "已写入 ${ENV_FILE} → PI_SCRIPT=${PI_BIN}"
-    fi
+    printf '[dry-run] 数据目录保持默认：%s/...（要放数据盘可加 --data-dir <path>）\n' "${AGENT_DIR}"
+  fi
+else
+  run mkdir -p "${AGENT_DIR}"
+  [[ -n "${PI_BIN}" ]] && env_append "PI_SCRIPT=${PI_BIN}"
+  if [[ -n "${DATA_DIR}" ]]; then
+    run mkdir -p "${DATA_DIR}"
+    env_append "PI_TRACE_DIR=${DATA_DIR}/pi-traces"
+    env_append "PI_TIMING_DIR=${DATA_DIR}/pi-timing"
+    env_append "PI_OBSERVATION_DIR=${DATA_DIR}/archiv"
+    env_append "PI_DASH_TIMING_DIR=${DATA_DIR}/dashboard-timing"
+    env_append "PI_DASH_USAGE_DIR=${DATA_DIR}/token-usage"
+    env_append "MEME_OUTPUT_DIR=${DATA_DIR}/memes"
+    log "数据目录（trace/计时/用量/表情包）：${DATA_DIR}"
+  else
+    log "数据目录保持默认：${AGENT_DIR}/...（想挪到数据盘可重跑 --data-dir <path>）"
   fi
 fi
 

@@ -169,9 +169,7 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 > 默认 `~/.pi/agent`。相关路由：`backend/routes/{chat,system,pi-ext-list}.ts`、`backend/settings-store.ts`、
 > `backend/live-sessions/ext-config.ts`。
 
-> `install-standalone.sh` 只写 `PI_SCRIPT` 到 `<agent dir>/dashboard.env`（已存在就不覆盖）。
-> 其余数据目录都有可移植的默认值（`<agent dir>/…`，见 §2.5），**不需要安装脚本代写**；
-> 要把 trace / 计时 / 用量挤到数据盘，按 §2.5 自己加几行即可。
+> `install-standalone.sh` 会写 `PI_SCRIPT` 到 `<agent dir>/dashboard.env`，并在数据目录不采用默认位置时一并写 6 个数据目录变量（已存在的键一律不覆盖）。判规则：`--data-dir <path>` 或 `PI_DATA_DIR` 显式指定；否则看安装根——装在 `$HOME` 下就保持默认（`<agent dir>/…`），装到数据盘（如 `--dir /data/pi-stack`）自动用 `<安装根>/data`。细节见 §2.5。
 
 ### 2.3 三种用法
 
@@ -208,10 +206,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | `archiv/` | `observation-pack` 大结果归档（扩展默认关闭） | 有开关：配置文件里 `cleanupEnabled`（默认 `false`）+ `retentionDays`（默认 30） |
 | `token-usage/` | dashboard 用量账本（`PI_DASH_USAGE_DIR`），按天分文件 | 不会 |
 | `extensions/`、`npm/`、`git/` | 装的扩展包（装一次就一直占着） | 不会，升级/卸载才变 |
+| `~/.pi/tsien-memory/` | `pi-tsien-memory` 扩展的记忆库（`memory.db` 等） | 不会；需要时用 `PI_TSIEN_MEMORY_DIR` 指到数据盘 |
 | `~/.pi/dashboard/` | Jira 状态缓存、监督档案、表情包历史索引 | 不会 |
 
 所以长期跑的机器别把这些留在 home：**在环境文件里把大件目录指到数据盘**（dashboard 启动时读取，并传给它的每个 pi 子进程）：
-
 ```bash
 # <agent dir>/dashboard.env
 PI_TRACE_DIR=/data/pi/pi-traces
@@ -221,7 +219,7 @@ PI_DASH_USAGE_DIR=/data/pi/token-usage
 MEME_OUTPUT_DIR=/data/pi/memes
 ```
 
-改完得重启 dashboard 才生效。只想挪一部分就只写这几行；要整体搬（连 `settings.json`、`auth.json`、`sessions/` 一起）就设 `PI_CODING_AGENT_DIR=/data/pi/agent`，并注意**终端里直接跑 `pi` 时也要有同一个变量**，否则会出现两套数据。
+改完得重启 dashboard 才生效。用安装脚本的话可以一步搞定：`bash scripts/install-standalone.sh --data-dir /data/pi`（若安装根本身就在数据盘，不传这个参数它也会自动落到 `<安装根>/data`）；手写就按上面五行。只想挪一部分就只写其中几行；要整体搬（连 `settings.json`、`auth.json`、`sessions/` 一起）就设 `PI_CODING_AGENT_DIR=/data/pi/agent`，并注意**终端里直接跑 `pi` 时也要有同一个变量**，否则会出现两套数据。
 
 把安装根放在数据盘时（例如 `~/pi-stack` 其实指向 `/data/pi-stack`），把上面几行跟着改成 `/data/pi-stack/data/...` 就行：**装在哪里和存数据在哪里可以是两件事**，没必要把 trace 跟着仓库走。
 
