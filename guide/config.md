@@ -26,8 +26,12 @@
 | 默认模型 / 主题 / 启停模型 | pi 的 `settings.json`（dashboard Settings，整份读写） |
 | dashboard 端口 / 监听地址 | 环境变量 `PI_DASH_PORT` / `PI_DASH_HOST` |
 | 用哪个 pi | `PI_SCRIPT`（`dashboard.env`） |
-| live session 可见目录 / 启动命令 | `~/.pi/dashboard.json` 的 `liveSessions` |
-| 常用仓库清单（路径、标签、Git Graph） | `~/.pi/dashboard.json` 的 `repos`（dashboard **Repos** 页可增删） |
+| live session 可见目录 / 启动命令 | `~/.pi/dashboard.json` 的 `liveSessions`（§4.0） |
+| 常用仓库清单（路径、标签、Git Graph） | `~/.pi/dashboard.json` 的 `repos`（dashboard **Repos** 页可增删，§4.1） |
+| 任务从哪来 / 对外显示的任务源 / Jira 链接前缀 | `~/.pi/dashboard.json` 的 `tasks`（含 `journal` / `providers` / `jiraBaseUrl`，§4.2） |
+| 泳道（长期/短期/临时）怎么分 | `~/.pi/dashboard.json` 的 `tasks.lanes`（§4.2） |
+| Obsidian 笔记目录（System 页统计与日常笔记） | `~/.pi/dashboard.json` 的 `vault`（§4.4） |
+| 主 Agent 工作监督（可选） | `~/.pi/dashboard.json` 的 `supervisor`（§4.5） |
 | 服务面板登记哪些服务、怎么启停 | `~/.pi/services.json`（独立文件，见 [services.md](services.md)） |
 | 装哪些扩展 / 加载顺序 | `<agent dir>/extensions.config.json`（同步器）+ dashboard **Extensions** 页 |
 | 某扩展的开关（bash-digest 等） | `<agent dir>/<name>.json`（**Settings → Extension config**） |
@@ -78,7 +82,7 @@ dashboard 启动时加载，并传给它派生的**每个** pi 子进程（`back
 
 | 文件 | 谁读 | 必须？ | dashboard 能改？ |
 |---|---|---|---|
-| `~/.pi/dashboard.json`（`liveSessions.roots/launch/unsetEnv/disconnectGraceMs`） | dashboard 后端 | 是（live session 靠它） | ✅ `/api/dash/config` |
+| `~/.pi/dashboard.json`（`liveSessions` / `repos` / `tasks` / `vault` / `supervisor`，每段都有示例，整份模板见仓库根 `dashboard.json.example`） | dashboard 后端 | 是（live session 靠它） | ✅ `/api/dash/config`（需认证，**整份覆盖**：在 Settings 保存前先确认文件里有你手写的段） |
 | `<agent dir>/pi-web-sessions.json`（slot 元数据） | `backend/session-store.ts` | 自动 | 自动维护 |
 | `<agent dir>/machine-connector.json`（私有 WSS 出站会话索引与受限控制） | dashboard 后端启动时读取 | 否，缺失即禁用 | ❌；仅手动创建 0600 文件 |
 | `$HOME/.pi-dashboard-private/machine-input-replay.json`（远程输入持久防重放）及 `.lock` | dashboard 后端自动创建/读取 | 仅启用机器出站控制时必须安全可用 | ❌；不可通过 HTTP 访问或手动清空 |
@@ -208,26 +212,36 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 ## 4. dashboard 自身：`~/.pi/dashboard.json`
 
+**整份可直接复制的模板：[`dashboard.json.example`](../dashboard.json.example)**。复制成 `~/.pi/dashboard.json` 后把 `/home/you/…` 换成真实路径；用不到的段整段删掉，删掉即回到内置默认。JSON 不支持注释，所以字段解释都在本节。
+
+本节按段讲，每段都有示例：`liveSessions`（这个文件里唯一需要手填才能用起来的一段）、`repos`、`tasks`（含外部任务源）、`vault`、`supervisor`。默认值分别来自 `backend/pi-env.ts`、`backend/live-sessions/config.ts`、`backend/repos/store.ts`、`backend/supervisor/config.ts`。
+
+### 4.0 `liveSessions`：live session 扫描与启动
+
 ```json
 {
   "liveSessions": {
-    "enabled": true,
-    "roots": ["/home/you", "/path/to/repos"],
-    "repoRoots": ["/home/you/repos", "/path/to/repos"],
-    "launch": { "command": "/home/you/.local/bin/pi-clean", "args": [], "unsetEnv": [] },
-    "disconnectGraceMs": 60000
+    "roots": ["/home/you", "/home/you/repos"],
+    "repoRoots": ["/home/you/repos"],
+    "disconnectGraceMs": 60000,
+    "launch": { "command": "/home/you/pi-stack/pi/bin/pi", "args": [], "unsetEnv": [], "approve": true }
   }
 }
 ```
 
 | 字段 | 作用 |
 |---|---|
-| `roots` | live session 可发现的目录范围（默认写死开发机 worktree，新机器要改） |
-| `repoRoots` | 「启动 Live Pi」目录框关键词搜索的仓库根目录：只取每个目录的**下一级**子目录作为候选（不递归、跳过隐藏目录）。默认空＝不搜索；它只影响输入建议，能不能启动仍由 `roots` 决定 |
-| `launch.command` | live session 用哪个 pi（可指向自己的包装脚本） |
-| `unsetEnv` | 启动前从环境剔除的变量 |
+| `roots` | live session 可发现的目录范围。**这就是开关**：空数组（默认）＝关闭，填了才启用。**必须写绝对路径**：写 `~/repos` 会让路径校验直接报 `live session root must be absolute`，所有 live session 都启动不了 |
+| `repoRoots` | 「启动 Live Pi」目录框关键词搜索的仓库根目录：只取每个目录的**下一级**子目录（不递归、跳过隐藏目录与 `node_modules`，最多 400 个）。默认空＝不搜索；它只影响输入建议，能不能启动仍由 `roots` 决定。同样要绝对路径（写 `~/` 不会报错，但会静默搜不到） |
+| `launch.command` | live session 用哪个 pi（可指向自己的包装脚本；不写则用 `PATH` 里的 `pi`） |
+| `launch.args` | 追加在 dashboard 自己参数**之前**的参数（默认空），留给包装脚本以外的固定参数 |
+| `unsetEnv` / `launch.unsetEnv` | 启动前真正从 pane 环境删除的变量（`env -u`，不是置空）。**写在 `launch` 里面**，顶部写不会生效 |
 | `launch.approve` | `true` 给 pane 追加 `--approve`（信任工程内的 `.pi` 扩展/skills/settings），`false` 追加 `--no-approve`；不写则保留 pi 自己的行为——会弹「是否信任该目录」的交互提问，而 pane 里没人能回答，启动就会卡住 |
-| `disconnectGraceMs` | 断连宽限时间 |
+| `disconnectGraceMs` | 断连宽限时间（默认 15000 毫秒） |
+
+`enabled` 是派生值：实际是否启用看 `enabled && roots.length > 0`，所以**开关是 `roots`**；写 `"enabled": false` 可以强制关闭，写 `true` 不会把空 `roots` 变成开启。
+
+> `includeOutsideRoots`、`claimMode`、`leaseMs`、`snapshotEntryLimit` 这 4 个字段当前版本会解析并校验范围，但**没有任何代码读取它们**（已按代码核实），不要依赖它们调行为。
 
 ### 4.1 `repos`：常用仓库清单
 
@@ -253,14 +267,24 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 ---
 
-### 4.3 `tasks`：任务来源与 Jira 链接
+### 4.2 `tasks`：任务来源、Jira 与外部任务源
 
 ```json
 {
   "tasks": {
     "enabled": true,
-    "journal": { "autoDetect": true, "roots": ["~/repos/my-taskspace"], "enabled": true },
-    "jiraBaseUrl": "https://example.atlassian.net/browse/"
+    "defaultView": "execute",
+    "journal": { "autoDetect": true, "roots": ["/home/you/repos/my-taskspace"], "enabled": true },
+    "jiraBaseUrl": "https://example.atlassian.net/browse/",
+    "lanes": [
+      { "id": "long", "label": "长期", "match": { "kind": ["epic"] } },
+      { "id": "short", "label": "短期", "match": { "kind": ["task"] } },
+      { "id": "adhoc", "label": "临时", "match": { "kind": ["todo", "item"] } }
+    ],
+    "providers": [
+      { "kind": "file", "id": "extra-tasks", "label": "额外任务清单", "file": "/home/you/.pi/tasks/extra-tasks.json" },
+      { "kind": "command", "id": "my-tracker", "label": "我的看板", "command": ["/home/you/bin/my-tracker-tasks", "--json"], "cwd": "/home/you/repos/my-tracker", "timeoutMs": 20000 }
+    ]
   }
 }
 ```
@@ -269,9 +293,63 @@ export ANTHROPIC_API_KEY=sk-ant-...
 |---|---|
 | `journal.roots` | Task Journal（`tasks/DOMAINS.yaml` + `epic.yaml` + `task.yaml`）仓库根；空数组且 `autoDetect` 关掉就没有该来源 |
 | `journal.autoDetect` | 默认 `true`：从 `roots` 里挑第一个结构完整的仓库；关掉后只用 `roots[0]` |
-| `lanes` / `defaultView` | 泳道定义与默认视图，省略即用内置的三条泳道 |
-| `providers` | 配置声明的外部任务源（`command` 或 `file`，只读） |
+| `lanes` / `defaultView` | 泳道定义与默认视图，省略即用内置的三条泳道。`lanes` 结构见下；`defaultView` 取 `execute`（默认）或 `survey` |
+| `providers` | 配置声明的外部任务源（`command` 或 `file`，只读），见下面的「外部任务源」 |
 | `jiraBaseUrl` | **Jira 链接前缀**，默认 `https://example.atlassian.net/browse/`。任务页把「任务的身份」拼在它后面生成可点链接；换成别的 Jira 站点只改这一处，不需要改代码。必须是 `http(s)://` 开头的绝对地址，否则回落到默认值 |
+
+**泳道 `lanes`**：`match` 里三个条件任一命中就归入该泳道，按数组顺序取第一个命中的，都没命中归「未分类」。
+
+| 条件 | 例子 |
+|---|---|
+| `kind` | `{"kind": ["epic"]}` — 任务类型，取 `epic` / `task` / `todo` / `item` |
+| `tag` | `{"tag": "infra"}` — 任务带这个标签 |
+| `pathPrefix` | `{"pathPrefix": "/home/you/repos/"}` — 执行目录以它开头 |
+
+任务详情里的「泳道」选择会写进本地规划的覆盖值，优先级高于这里的匹配规则。
+
+**外部任务源 `providers`**：让不在这台机器 journal 里的任务（Jira 导出、自建看板、表格导出等）也出现在任务清单里。**全部只读**——状态只能在原系统里改，任务页不会回写。加一个源不需要改代码。
+
+```json
+{
+  "providers": [
+    { "kind": "file", "id": "extra", "label": "额外任务清单", "file": "~/.pi/tasks/extra.json" },
+    { "kind": "command", "id": "tracker", "label": "我的看板", "command": ["/path/to/tasks", "--json"], "cwd": "/path/to/repo", "timeoutMs": 20000 }
+  ]
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `kind` | `file` 读一个 JSON 文件；`command` 跑一个程序读它的 stdout（argv 直传，不经 shell） |
+| `file` | `kind: file` 时必填，支持 `~/` |
+| `command` | `kind: command` 时必填，**argv 数组**：第一个是程序，其余是参数 |
+| `cwd` / `timeoutMs` | 只对 `command` 生效：工作目录、超时（默认 20000 毫秒；stdout 上限 8 MB） |
+| `id` / `label` | `id` 必填且各源之间唯一，任务 uid 是 `<id>:<任务 id>`；`label` 是界面上显示的来源名，省略就用 `id` |
+| `enabled` | 写 `false` 可临时停用该源，不用删配置 |
+
+两种源的数据格式相同（`file` 是文件内容，`command` 是 stdout）：**JSON 数组，或 `{"tasks": [...]}`**。每一项：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `id` | 是 | 源内的唯一 id |
+| `title` / `description` | 否 | 不写标题就用 `id` |
+| `status` | 否 | 自由文本，按关键词归并：`to_do`/`todo`/`open`/`pending`/`backlog`/`planned` → 未开始；`in_progress`/`doing`/`active`/`wip`/`started` → 进行中；`done`/`complete`/`completed`/`closed`/`archived` → 已完成；`paused`/`blocked`/`on_hold`/`suspended` → 暂停。空格和连字符都当 `_`（`In Progress` 等于 `in_progress`）；其它文本按未开始处理并在界面上保留原文。完整映射见 `backend/tasks/mapping.ts` |
+| `kind` | 否 | `epic` / `task` / `todo` / `item`，默认 `task` |
+| `archived` | 否 | `true` 的条目不进默认的「活跃」筛选，只在「归档」里出现 |
+| `plannable` | 否 | 默认 `true`；`false` 表示不参与规划 |
+| `path` | 否 | 执行目录，支持 `~/`，用来关联会话 |
+| `progress` | 否 | `{"done": 3, "total": 5}` |
+| `tags` | 否 | 字符串数组 |
+| `updatedAt` | 否 | ISO 时间，界面显示「多久前」 |
+| `jiraKey` | 否 | 写了就显示 Jira 链接与状态（取号规则见下） |
+
+最小可用内容（文件内容或命令输出都一样）：
+
+```json
+[{ "id": "PROJ-105", "title": "开户流程改造", "status": "In Progress", "jiraKey": "PROJ-105" }]
+```
+
+读失败（文件不存在、命令非零退出、JSON 格式不对）只会让这一个来源在任务页显示一条警告，其它来源照常显示；任务页不会因此报错。
 
 **任务从哪里拿到 Jira 号**（顺序固定）：
 1. `epic.yaml` / `task.yaml` 里显式写的 `jira_key`（例如 `jira_key: PROJ-102`）优先；
@@ -291,13 +369,38 @@ export ANTHROPIC_API_KEY=sk-ant-...
 - 实测规模（2026-10-28）：全量 278 个 Jira 号时约 19 秒；收窄到未完成的 47 个 key 后约 3.3 秒，跳过 34 张已完成 + 197 条归档；界面仍能显示 274 个已知状态。
 - 已知限制：这版 `acli` 的 `--fields` 不接受 `duedate`（报 `field 'duedate' is not allowed`），Sprint/故事点同样需要另找字段名，所以截止日、Sprint、故事点暂不显示。
 
-### 4.2 服务面板：`~/.pi/services.json`
+### 4.3 服务面板：`~/.pi/services.json`
 
 和服务页面（`/services`）配套的清单，**不在 `dashboard.json` 里**：它是一个独立文件，按机器维护「有哪些服务、怎么启停、探哪个地址」。字段与语义见 [services.md](services.md)。
 
 只改这个文件就能增删服务，刷新页面即生效，不需要重启 dashboard。
 
-### 主 Agent 工作监督（可选，默认关闭）
+### 4.4 `vault`：Obsidian 笔记目录（可选）
+
+System 页的「Vault / 日常笔记」卡片从这里读：只统计各子目录里的 `.md` 文件数，按天读 `daily/<日期>.md`，**不建索引、不写入**。
+
+```json
+{
+  "vault": {
+    "path": "/home/you/notes",
+    "dirs": {
+      "daily": "Daily",
+      "tasks": "TaskNotes/Tasks",
+      "meetings": "Meeting Notes",
+      "people": "People",
+      "recipes": "Recipes"
+    }
+  }
+}
+```
+
+| 字段 | 作用 |
+|---|---|
+| `path` | vault 根目录，**必须写绝对路径**：`~/` 在这里不会展开（写 `~/notes` 会当成字面目录，统计全是 0）。空着或目录不存在时这些卡片显示 0，不报错、不影响其它页面 |
+| `dirs` | 子目录名，**相对 `path`**；省略则用上面示例里那组默认值。五个键含义：`daily` 日常笔记、`tasks` 任务笔记、`meetings` 会议、`people` 人物、`recipes` 菜谱 |
+| `dirs.daily` | 除了统计条数，「日常笔记」每天的内容也从这里读（`<dirs.daily>/YYYY-MM-DD.md`） |
+
+### 4.5 主 Agent 工作监督（可选，默认关闭）
 
 `dashboard.json` 的 `supervisor` 段控制专用主会话。它不是全局 Pi 扩展安装配置；普通会话不会加载这些资源。保留已有配置，只合并此段：
 
@@ -354,7 +457,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 档案保存在 `~/.pi/dashboard/supervisor/`，目录 0700、文件 0600；Unix 工具通道和凭证也在此目录，不分享凭证。截图持久保存而非临时目录，JPEG/PNG/WebP 每张最多 3 MiB，事件关联最多 4 张/共 6 MiB。第一版不自动删除历史；启用前确认备份/保留和敏感信息处理要求，不上传未经脱敏的凭证或私人截图。
 
-### 私有机器连接（可选，实验性）
+### 4.6 私有机器连接（可选，实验性）
 
 不通过环境变量传密钥。手动在 `<agent dir>/machine-connector.json` 创建权限严格为 `0600` 的普通文件（不可为符号链接），内容仅允许：
 

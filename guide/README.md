@@ -114,7 +114,8 @@ npm install --no-audit --no-fund && npm run build-frontend
 | 模型凭证 | `<agent dir>/dashboard.env`（或 `pi` 里 `/login`） |
 | 用哪个 pi | `PI_SCRIPT`（安装脚本自动写入 `dashboard.env`） |
 | 端口 / 监听地址 | `PI_DASH_PORT` / `PI_DASH_HOST` |
-| dashboard 自身（live session） | `~/.pi/dashboard.json` |
+| dashboard 自身（live session） | `~/.pi/dashboard.json`，整份模板见仓库根 [`dashboard.json.example`](../dashboard.json.example)（复制后改路径；字段说明见 [config.md](config.md) §4） |
+| 常用仓库清单 / 任务来源 / 外部任务源 / 笔记目录 | 同一个 `~/.pi/dashboard.json` 的 `repos` / `tasks` / `tasks.providers` / `vault`，每段都有可复制示例，见 [config.md](config.md) §4.1–4.4 |
 | 可选主 Agent 工作监督与事件档案 | `dashboard.json` 的 `supervisor`；Skill 在 pi-dashboard、Extension 在 pi-tsien-extension，详见 [config.md](config.md) §4 |
 | 服务面板（看状态、启停本机服务） | `~/.pi/services.json`，见 [services.md](services.md) |
 | 可选机器出站会话索引与受限控制 | `<agent dir>/machine-connector.json`（私有 0600 文件，缺失即禁用；见 [config.md](config.md)） |

@@ -1,0 +1,71 @@
+{
+  "liveSessions": {
+    "roots": ["/home/you", "/home/you/repos"],
+    "repoRoots": ["/home/you/repos"],
+    "disconnectGraceMs": 60000,
+    "launch": {
+      "command": "/home/you/pi-stack/pi/bin/pi",
+      "args": [],
+      "unsetEnv": [],
+      "approve": true
+    }
+  },
+  "repos": [
+    {
+      "id": "pi-dashboard",
+      "path": "/home/you/repos/pi-dashboard",
+      "name": "pi-dashboard",
+      "tags": ["pi"],
+      "pinned": true,
+      "defaultBranch": "master"
+    },
+    {
+      "id": "my-taskspace",
+      "path": "/home/you/repos/my-taskspace",
+      "tags": ["task"]
+    }
+  ],
+  "tasks": {
+    "enabled": true,
+    "defaultView": "execute",
+    "journal": {
+      "autoDetect": true,
+      "roots": ["/home/you/repos/my-taskspace"],
+      "enabled": true
+    },
+    "jiraBaseUrl": "https://example.atlassian.net/browse/",
+    "lanes": [
+      { "id": "long", "label": "长期", "match": { "kind": ["epic"] } },
+      { "id": "short", "label": "短期", "match": { "kind": ["task"] } },
+      { "id": "adhoc", "label": "临时", "match": { "kind": ["todo", "item"] } }
+    ],
+    "providers": [
+      {
+        "kind": "file",
+        "id": "extra-tasks",
+        "label": "额外任务清单",
+        "enabled": true,
+        "file": "/home/you/.pi/tasks/extra-tasks.json"
+      },
+      {
+        "kind": "command",
+        "id": "my-tracker",
+        "label": "我的看板",
+        "enabled": true,
+        "command": ["/home/you/bin/my-tracker-tasks", "--json"],
+        "cwd": "/home/you/repos/my-tracker",
+        "timeoutMs": 20000
+      }
+    ]
+  },
+  "vault": {
+    "path": "/home/you/notes",
+    "dirs": {
+      "daily": "Daily",
+      "tasks": "TaskNotes/Tasks",
+      "meetings": "Meeting Notes",
+      "people": "People",
+      "recipes": "Recipes"
+    }
+  }
+}

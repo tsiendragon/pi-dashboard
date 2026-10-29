@@ -205,6 +205,17 @@ pi            # 首次运行后执行 /login，或按提示写入 auth.json
 dashboard 启动日志里能看到 `[env] loaded env file(s): …`，说明环境文件被读到。
 完整规则（加载顺序、不覆盖已有变量、排查）见 [config.md](config.md) §2。
 
+### dashboard 自身配置（可选）
+
+环境文件管的是「怎么跑起来」；dashboard 自己还读一份 `~/.pi/dashboard.json`，里面的段都是可选的，**只有 live session 需要手填才能用**（`liveSessions.roots`，空数组＝关闭）：
+
+```bash
+cp dashboard.json.example ~/.pi/dashboard.json   # 在仓库根执行
+# 然后把 /home/you/... 换成你的真实路径；用不到的段整段删掉
+```
+
+模板里已经包含 `liveSessions`、`repos`、`tasks`（含 `journal` / `lanes` / `providers` 外部任务源）、`vault` 四段示例；每段字段的逐项说明（以及可选的 `supervisor` 示例）见 [config.md](config.md) §4。
+
 ### 开机自启（systemd）
 
 ```bash
