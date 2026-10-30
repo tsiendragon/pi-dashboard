@@ -3,6 +3,7 @@ import type { LiveSessionModelOption, LiveSessionSummary } from '../../../shared
 import type { Catalog } from './catalog.js'
 import { DashboardRequestError, type DashboardClient } from './dashboardClient.js'
 import type { Binding, Mapping } from './mapping.js'
+import { actionRow, buttonRow, card, escapeMarkdown, hr, inline, md, type ButtonSpec, type Reply, type RichReply, replyText } from './cards.js'
 
 export interface CommandContext {
   chatId: string
@@ -35,6 +36,19 @@ export function resetCommandState(): void {
   modelLists.clear()
 }
 
+/** Rows a card can hold before it gets unwieldy (and close to the size cap). */
+const LIST_CARD_MAX = 20
+const MODEL_CARD_MAX = 30
+
+/** Actions on the bound session, shown under /status and after /bind. */
+const SESSION_BUTTONS: ButtonSpec[] = [
+  { text: '📊 上下文', command: '/context' },
+  { text: '🧠 模型', command: '/model' },
+  { text: '🗜 压缩', command: '/compact' },
+  { text: '⏹ 中断', command: '/abort', type: 'danger' },
+  { text: '♻️ 重载', command: '/reload' },
+]
+
 const HELP = [
   '可用命令：',
   '/list                列出当前 dashboard 的在线会话',
@@ -64,12 +78,18 @@ const HELP = [
  * input text stream.
  */
 export async function handleCommand(text: string, ctx: CommandContext): Promise<string | null> {
+  const reply = await runCommand(text, ctx)
+  return reply === null ? null : replyText(reply)
+}
+
+/** Like `handleCommand`, but keeps the card rendering for transports that can show it. */
+export async function runCommand(text: string, ctx: CommandContext): Promise<Reply | null> {
   const [name, ...rest] = text.slice(1).trim().split(/\s+/)
   const arg = rest.join(' ').trim()
   switch (name) {
     case '':
     case 'help':
-      return HELP
+      return helpReply()
     case 'list':
       return listSessions(ctx)
     case 'bind':
@@ -107,6 +127,43 @@ export async function handleCommand(text: string, ctx: CommandContext): Promise<
   }
 }
 
+function helpReply(): Reply {
+  return {
+    text: HELP,
+    card: card({
+      title: 'pi-dashboard 命令',
+      template: 'blue',
+      elements: [
+        md('**会话**'),
+        buttonRow([
+          { text: '📋 会话列表', command: '/list', type: 'primary' },
+          { text: '📍 当前状态', command: '/status' },
+          { text: '解绑', command: '/unbind' },
+        ]),
+        md('**当前会话操作**'),
+        buttonRow(SESSION_BUTTONS),
+        hr(),
+        md(escapeMarkdown([
+          '需要参数的命令请直接发送：',
+          '/bind <序号或名称> · /new <cwd> [| 标题]',
+          '/model <序号|provider/id|名称片段> · /name <新名称>',
+          '/effort <off|minimal|low|medium|high|xhigh|max>',
+          '/shutdown confirm（关闭会话）',
+          '其它 /xxx（/clear、/goal、skill 命令等）会原样转给会话。',
+        ].join('\n')), { size: 'notation' }),
+      ],
+    }),
+  }
+}
+
+function statusIcon(status: LiveSessionSummary['status']): string {
+  switch (status) {
+    case 'running': return '🟢'
+    case 'reconnecting': return '🟡'
+    default: return '⚪'
+  }
+}
+
 function sessionLabel(summary: LiveSessionSummary): string {
   const name = summary.sessionName?.trim()
   if (name) return name
@@ -139,7 +196,7 @@ function describe(summary: LiveSessionSummary, ctx: CommandContext): string {
   return `「${sessionLabel(summary)}」\n   ${details.join('；')}\n   工作目录：${summary.cwd}`
 }
 
-async function listSessions(ctx: CommandContext): Promise<string> {
+async function listSessions(ctx: CommandContext): Promise<Reply> {
   // A failed refresh still answers from cache, but it must say WHY: a silent
   // fallback once hid a dead dashboard channel for a full day.
   let staleReason = ''
@@ -155,10 +212,52 @@ async function listSessions(ctx: CommandContext): Promise<string> {
       ? `暂时无法读取 dashboard 的 live-session：${staleReason}`
       : '当前 dashboard 没有在线的 live-session。'
   }
-  return [
+  const text = [
     `当前 dashboard 有 ${sessions.length} 个在线会话${staleReason ? `（缓存列表，刷新失败：${staleReason}）` : ''}（用 /bind <序号> 绑定到当前聊天）：`,
     ...sessions.map((summary, index) => `${index + 1}. ${describe(summary, ctx)}`),
   ].join('\n')
+  return { text, card: listCard(sessions, ctx, staleReason) }
+}
+
+/** One row per session with a bind button; the bound one gets an unbind button instead. */
+function listCard(sessions: LiveSessionSummary[], ctx: CommandContext, staleReason: string): RichReply['card'] {
+  const current = ctx.mapping.lookup(ctx.chatId, ctx.threadId)
+  const rows = sessions.slice(0, LIST_CARD_MAX).flatMap((summary, index) => {
+    const project = basename(summary.cwd.replace(/[\\/]+$/, '')) || summary.cwd
+    const isBoundHere = !!summary.sessionFile && current?.sessionFile === summary.sessionFile
+    const elsewhere = summary.sessionFile
+      ? ctx.mapping.lookupsBySession(summary.sessionFile).some(binding => binding.chatId !== ctx.chatId || binding.threadId !== ctx.threadId)
+      : false
+    const meta = [
+      `${statusIcon(summary.status)} ${statusLabel(summary.status)}`,
+      ...(summary.sessionName?.trim() ? [inline(project)] : []),
+      ...(summary.git?.branch ? [`⎇ ${inline(summary.git.branch)}`] : []),
+      ...(summary.model ? [inline(summary.model.id)] : []),
+      ...(isBoundHere ? ['**✅ 已绑定本聊天**'] : elsewhere ? ['🔗 已绑定其他聊天'] : []),
+    ].join(' · ')
+    const body = `**${index + 1}. ${inline(sessionLabel(summary))}**\n${meta}\n<font color='grey'>${inline(summary.cwd)}</font>`
+    const action: ButtonSpec | undefined = isBoundHere
+      ? { text: '解绑', command: '/unbind' }
+      : summary.sessionFile
+        ? { text: '绑定', command: `/bind ${index + 1}`, type: 'primary' }
+        : undefined
+    return [...(index > 0 ? [hr()] : []), actionRow(body, action)]
+  })
+  return card({
+    title: `在线会话（${sessions.length}）`,
+    subtitle: staleReason ? `缓存列表，刷新失败：${staleReason}` : '点「绑定」把会话接到当前聊天',
+    template: staleReason ? 'orange' : 'blue',
+    elements: [
+      ...rows,
+      ...(sessions.length > LIST_CARD_MAX ? [md(`还有 ${sessions.length - LIST_CARD_MAX} 个未显示，用 /bind <序号> 绑定。`, { size: 'notation' })] : []),
+      hr(),
+      buttonRow([
+        { text: '🔄 刷新', command: '/list' },
+        { text: '📍 当前状态', command: '/status' },
+        { text: '❓ 帮助', command: '/help' },
+      ]),
+    ],
+  })
 }
 
 /** Keep an error readable inside a chat bubble. */
@@ -171,7 +270,7 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-async function bindSession(arg: string, ctx: CommandContext): Promise<string> {
+async function bindSession(arg: string, ctx: CommandContext): Promise<Reply> {
   if (!arg) return '用法：/bind <序号或名称>；先用 /list 查看。'
   const target = ctx.catalog.resolve(arg)
   if (!target) return `未找到会话「${arg}」。用 /list 查看可用会话。`
@@ -179,7 +278,18 @@ async function bindSession(arg: string, ctx: CommandContext): Promise<string> {
   await ctx.mapping.bind(ctx.chatId, target.sessionFile, target.sessionName, ctx.threadId, ctx.messageId)
   // The numbered model list belongs to the session that was bound.
   modelLists.delete(scopeKey(ctx))
-  return `已绑定到「${sessionLabel(target)}」（${statusLabel(target.status)}）。之后直接发消息即可。`
+  const text = `已绑定到「${sessionLabel(target)}」（${statusLabel(target.status)}）。之后直接发消息即可。`
+  return {
+    text,
+    card: card({
+      title: `已绑定：${sessionLabel(target)}`,
+      template: 'green',
+      elements: [
+        md(`${statusIcon(target.status)} ${statusLabel(target.status)} · <font color='grey'>${inline(target.cwd)}</font>\n之后直接发消息即可进入该会话。`),
+        buttonRow(SESSION_BUTTONS),
+      ],
+    }),
+  }
 }
 
 async function unbindSession(ctx: CommandContext): Promise<string> {
@@ -268,19 +378,43 @@ function startFailureMessage(error: unknown): string {
   return `新建失败：${brief(raw)}`
 }
 
-async function status(ctx: CommandContext): Promise<string> {
+async function status(ctx: CommandContext): Promise<Reply> {
   const binding = ctx.mapping.lookup(ctx.chatId, ctx.threadId)
-  if (!binding) return '当前未绑定会话。用 /list 和 /bind 绑定。'
+  if (!binding) {
+    const text = '当前未绑定会话。用 /list 和 /bind 绑定。'
+    return { text, card: card({ title: '未绑定会话', template: 'grey', elements: [md(escapeMarkdown(text)), buttonRow([{ text: '📋 会话列表', command: '/list', type: 'primary' }])] }) }
+  }
   const summary = ctx.catalog.resolveBinding(binding.sessionFile)
   const state = summary ? `在线（${summary.status}）` : '离线（会话已结束或未连接）'
   const model = summary?.model ? `${summary.model.provider}/${summary.model.id}` : '—'
-  return [
-    `绑定：${summary ? sessionLabel(summary) : binding.sessionName || basename(binding.sessionFile)}`,
+  const name = summary ? sessionLabel(summary) : binding.sessionName || basename(binding.sessionFile)
+  const scope = binding.threadId ? '仅本话题' : '整个聊天'
+  const text = [
+    `绑定：${name}`,
     `状态：${state}`,
-    `作用域：${binding.threadId ? '仅本话题' : '整个聊天'}`,
+    `作用域：${scope}`,
     `模型：${model}`,
     `工作目录：${summary?.cwd ?? '—'}`,
   ].join('\n')
+  const fields = [
+    `**状态**：${summary ? `${statusIcon(summary.status)} ${statusLabel(summary.status)}` : '⚫ 离线（会话已结束或未连接）'}`,
+    `**作用域**：${scope}`,
+    `**模型**：${inline(model)}`,
+    `**工作目录**：${inline(summary?.cwd ?? '—')}`,
+    ...(summary?.git?.branch ? [`**分支**：${inline(summary.git.branch)}`] : []),
+  ].join('\n')
+  const actions: ButtonSpec[] = summary
+    ? [...SESSION_BUTTONS, { text: '解绑', command: '/unbind' }]
+    : [{ text: '📋 会话列表', command: '/list', type: 'primary' }, { text: '解绑', command: '/unbind' }]
+  return {
+    text,
+    card: card({
+      title: name,
+      subtitle: '当前绑定',
+      template: summary ? (summary.status === 'running' ? 'wathet' : 'green') : 'grey',
+      elements: [md(fields), hr(), buttonRow(actions)],
+    }),
+  }
 }
 
 // --- session commands -------------------------------------------------------
@@ -373,7 +507,7 @@ async function modelList(ctx: CommandContext, summary: LiveSessionSummary, bindi
   return models
 }
 
-async function modelCommand(arg: string, ctx: CommandContext): Promise<string> {
+async function modelCommand(arg: string, ctx: CommandContext): Promise<Reply> {
   const target = bound(ctx)
   if ('error' in target) return target.error
   const { binding, summary } = target
@@ -382,7 +516,7 @@ async function modelCommand(arg: string, ctx: CommandContext): Promise<string> {
 
   if (!arg) {
     if (models.length === 0) return `会话「${sessionLabel(summary)}」没有可切换的模型列表（旧版本扩展可能不支持）。`
-    return [
+    const text = [
       `会话「${sessionLabel(summary)}」当前模型：${current || '未知'}`,
       `用 /model <序号|provider/id|名称片段> 切换；共 ${models.length} 个：`,
       ...models.map((model, index) => {
@@ -391,6 +525,27 @@ async function modelCommand(arg: string, ctx: CommandContext): Promise<string> {
         return `${index + 1}. ${full}${label}${full === current ? ' ← 当前' : ''}`
       }),
     ].join('\n')
+    const rows = models.slice(0, MODEL_CARD_MAX).map((model, index) => {
+      const full = `${model.provider}/${model.id}`
+      const label = model.name && model.name !== model.id ? ` <font color='grey'>${inline(model.name)}</font>` : ''
+      const isCurrent = full === current
+      return actionRow(
+        `${isCurrent ? '**✅ ' : ''}${index + 1}. ${inline(full)}${isCurrent ? '**' : ''}${label}`,
+        isCurrent ? undefined : { text: '切换', command: `/model ${index + 1}` },
+      )
+    })
+    return {
+      text,
+      card: card({
+        title: `模型 · ${sessionLabel(summary)}`,
+        subtitle: `当前：${current || '未知'}`,
+        template: 'indigo',
+        elements: [
+          ...rows,
+          ...(models.length > MODEL_CARD_MAX ? [md(`还有 ${models.length - MODEL_CARD_MAX} 个未显示，用 /model <序号|名称片段> 切换。`, { size: 'notation' })] : []),
+        ],
+      }),
+    }
   }
 
   const picked = pickModel(arg, models)
@@ -462,15 +617,26 @@ async function rename(arg: string, ctx: CommandContext): Promise<string> {  if (
   return `会话已改名为「${arg}」。`
 }
 
-async function shutdown(arg: string, ctx: CommandContext): Promise<string> {
+async function shutdown(arg: string, ctx: CommandContext): Promise<Reply> {
   const target = bound(ctx)
   if ('error' in target) return target.error
   const { summary } = target
   if (arg.toLowerCase() !== 'confirm') {
-    return [
-      `这会关闭「${sessionLabel(summary)}」：结束它正在跑的 Pi 进程，未落盘的工作会丢。`,
-      '确认请发：/shutdown confirm',
-    ].join('\n')
+    const warning = `这会关闭「${sessionLabel(summary)}」：结束它正在跑的 Pi 进程，未落盘的工作会丢。`
+    return {
+      text: [warning, '确认请发：/shutdown confirm'].join('\n'),
+      card: card({
+        title: '关闭会话？',
+        template: 'red',
+        elements: [
+          md(escapeMarkdown(warning)),
+          buttonRow([
+            { text: '确认关闭', command: '/shutdown confirm', type: 'danger', confirm: { title: '关闭会话', text: `确定关闭「${sessionLabel(summary)}」？` } },
+            { text: '取消', command: '/status' },
+          ]),
+        ],
+      }),
+    }
   }
   await ctx.dashboard.command(summary.processInstanceId, { type: 'shutdown' })
   return `已请求关闭「${sessionLabel(summary)}」。绑定仍然保留，用 /list 可重新绑定。`
@@ -484,7 +650,7 @@ interface ContextViewLike {
   contextUsage?: { tokens?: number | null; contextWindow?: number; percent?: number | null }
 }
 
-async function contextUsage(ctx: CommandContext): Promise<string> {
+async function contextUsage(ctx: CommandContext): Promise<Reply> {
   const target = bound(ctx)
   if ('error' in target) return target.error
   const { summary } = target
@@ -494,11 +660,35 @@ async function contextUsage(ctx: CommandContext): Promise<string> {
   const percent = typeof usage?.percent === 'number' ? `${usage.percent.toFixed(1)}%` : '—'
   const window = typeof usage?.contextWindow === 'number' ? formatNumber(usage.contextWindow) : '—'
   const model = view?.model?.provider && view?.model?.id ? `${view.model.provider}/${view.model.id}` : '—'
-  return [
+  const text = [
     `上下文（会话：${sessionLabel(summary)}）`,
     `估算 tokens：${tokens === undefined ? '—' : formatNumber(tokens)} · 窗口占用：${percent} / ${window}`,
     `模型：${model}${view?.source ? `（${view.source}${view.format ? `, ${view.format}` : ''}）` : ''}`,
   ].join('\n')
+  const ratio = typeof usage?.percent === 'number' ? usage.percent : undefined
+  return {
+    text,
+    card: card({
+      title: `上下文 · ${sessionLabel(summary)}`,
+      template: ratio === undefined ? 'blue' : ratio >= 80 ? 'red' : ratio >= 60 ? 'orange' : 'green',
+      elements: [
+        md([
+          `**窗口占用**：${percent} / ${window}${ratio === undefined ? '' : `\n${usageBar(ratio)}`}`,
+          `**估算 tokens**：${tokens === undefined ? '—' : formatNumber(tokens)}`,
+          `**模型**：${inline(model)}`,
+        ].join('\n')),
+        buttonRow([
+          { text: '🗜 压缩上下文', command: '/compact', type: ratio !== undefined && ratio >= 60 ? 'primary' : 'default' },
+          { text: '🔄 刷新', command: '/context' },
+        ]),
+      ],
+    }),
+  }
+}
+
+function usageBar(percent: number): string {
+  const filled = Math.max(0, Math.min(20, Math.round(percent / 5)))
+  return `\`${'█'.repeat(filled)}${'░'.repeat(20 - filled)}\``
 }
 
 function formatNumber(value: number): string {

@@ -1,11 +1,13 @@
 import type { LiveSessionBrowserEvent, LiveSessionSummary } from '../../../shared/src/live-sessions.js'
 import { Catalog } from './catalog.js'
-import { handleCommand } from './commands.js'
+import { CARD_TEXT_LIMIT, noticeCard, replyText, type LarkCard, type Reply } from './cards.js'
+import { answerCard, describeTool, endedCard, progressCard, type ProgressStep } from './progress.js'
+import { runCommand } from './commands.js'
 import type { LarkGatewayConfig } from './config.js'
 import { DashboardClient } from './dashboardClient.js'
 import { Mapping } from './mapping.js'
 import { chunkText, extractAssistantText } from './render.js'
-import type { ImMessage, ImTransport } from './transport.js'
+import type { CardAction, ImMessage, ImTransport } from './transport.js'
 
 /**
  * Orchestrates the two directions:
@@ -14,6 +16,35 @@ import type { ImMessage, ImTransport } from './transport.js'
  */
 /** How long after a command the session's extension notices are relayed to the chat. */
 const NOTICE_WINDOW_MS = 30_000
+/** Lark rate-limits edits of one message; keep progress patches at most this often. */
+const PATCH_INTERVAL_MS = 1500
+/** Refresh the elapsed time on a progress card that has nothing new to show. */
+const TICK_MS = 15_000
+/** A run with no event for this long is treated as lost (missed `agent_settled`). */
+const RUN_STALE_MS = 10 * 60_000
+
+/** One chat-originated agent run and the progress card that tracks it. */
+interface Run {
+  scope: string
+  chatId: string
+  threadId: string | null
+  anchor?: string
+  sessionFile: string
+  title: string
+  startedAt: number
+  touchedAt: number
+  /** The live progress card; cleared once it became an answer. */
+  cardId?: string
+  /** Steps since the last answer (they fold into that answer). */
+  steps: ProgressStep[]
+  /** Serialises sends/patches for this run so they never race. */
+  chain: Promise<void>
+  timer?: NodeJS.Timeout
+  ticker?: NodeJS.Timeout
+  lastPatch: number
+  /** Cards are unavailable for this run: behave like plain forwarding. */
+  disabled?: boolean
+}
 
 export class Gateway {
   readonly catalog = new Catalog()
@@ -26,6 +57,12 @@ export class Gateway {
   private readonly seenMessageIds = new Set<string>()
   /** Chats waiting for an extension notice (chat scope -> expiry), opened by a command. */
   private readonly receiptUntil = new Map<string, number>()
+  /** Cards we sent -> their thread, so a button click answers in the same topic. */
+  private readonly cardThreads = new Map<string, string | null>()
+  /** Handled card-click callback ids (Lark redelivers a click it got no answer for). */
+  private readonly seenActionIds = new Set<string>()
+  /** Live runs started from a chat, by chat scope. */
+  private readonly runs = new Map<string, Run>()
 
   constructor(
     cfg: LarkGatewayConfig,
@@ -53,10 +90,13 @@ export class Gateway {
     await this.transport.start(
       message => this.onMessage(message),
       chatId => this.onBotAdded(chatId),
+      action => this.onCardAction(action),
     )
   }
 
   async stop(): Promise<void> {
+    for (const run of this.runs.values()) this.clearTimers(run)
+    this.runs.clear()
     this.dashboard.close()
     await this.transport.stop()
   }
@@ -88,9 +128,48 @@ export class Gateway {
     await this.reply(chatId, null, WELCOME)
   }
 
+  /**
+   * Send one card, falling back to `text` when the transport has no cards or the
+   * server rejects this one. Throws only when the text form failed too.
+   */
+  private async deliver(chatId: string, threadId: string | null, cardJson: LarkCard | undefined, text: string, anchor?: string): Promise<void> {
+    if (cardJson && this.transport.sendCard) {
+      try {
+        const messageId = await this.transport.sendCard(chatId, threadId, cardJson, anchor)
+        if (messageId) this.rememberCard(messageId, threadId)
+        return
+      } catch (error) {
+        // Not support (stdio) is expected; a rejected card is worth a line in the log.
+        if (!(error instanceof Error && error.name === 'CardsUnsupportedError')) {
+          console.warn(`[out] card failed, sending text -> ${scopeOf(chatId, threadId)}: ${errorText(error)}`)
+        }
+      }
+    }
+    for (const chunk of chunkText(text)) await this.transport.sendText(chatId, threadId, chunk, anchor)
+  }
+
+  private rememberCard(messageId: string, threadId: string | null): void {
+    this.cardThreads.set(messageId, threadId)
+    if (this.cardThreads.size > 2000) {
+      for (const id of [...this.cardThreads.keys()].slice(0, 1000)) this.cardThreads.delete(id)
+    }
+  }
+
   /** Send a reply to a chat, with a compact outbound log. */
-  private async reply(chatId: string, threadId: string | null, text: string): Promise<void> {
+  private async reply(chatId: string, threadId: string | null, reply: Reply): Promise<void> {
     const scope = scopeOf(chatId, threadId)
+    const text = replyText(reply)
+    const cardJson = typeof reply === 'string' ? noticeCard(text) : reply.card ?? noticeCard(text)
+    if (this.transport.sendCard) {
+      console.log(`[out] reply -> ${scope} (${text.length} chars, card)`)
+      try {
+        await this.deliver(chatId, threadId, cardJson, text)
+      } catch (error) {
+        console.error(`[out] reply failed -> ${scope}: ${errorText(error)}`)
+        throw new ReplyFailedError(errorText(error))
+      }
+      return
+    }
     // `/model` and `/list` can exceed a single Lark message.
     for (const chunk of chunkText(text)) {
       console.log(`[out] reply -> ${scope} (${chunk.length} chars)`)
@@ -121,6 +200,8 @@ export class Gateway {
       case 'live_session_detached': {
         const data = frame.data as { processInstanceId?: string }
         if (data.processInstanceId) {
+          const gone = this.catalog.findByProcessId(data.processInstanceId)
+          if (gone?.sessionFile) await this.endRuns(gone.sessionFile, '会话已断开')
           this.catalog.remove(data.processInstanceId)
           this.lastSequence.delete(data.processInstanceId)
         }
@@ -161,6 +242,23 @@ export class Gateway {
       return
     }
 
+    if (summary?.sessionFile) {
+      const type = record.event.type
+      const eventData = (record.event.data ?? {}) as { toolName?: unknown; toolCallId?: unknown; args?: unknown; isError?: unknown }
+      if (type === 'tool_execution_start' && typeof eventData.toolName === 'string') {
+        this.onToolStart(summary.sessionFile, eventData.toolName, eventData.args, typeof eventData.toolCallId === 'string' ? eventData.toolCallId : undefined)
+        return
+      }
+      if (type === 'tool_execution_end') {
+        this.onToolEnd(summary.sessionFile, typeof eventData.toolCallId === 'string' ? eventData.toolCallId : undefined, eventData.isError === true)
+        return
+      }
+      if (type === 'agent_settled') {
+        await this.endRuns(summary.sessionFile, '本轮结束')
+        return
+      }
+    }
+
     // A one-way `ctx.ui.notify` from an extension (e.g. `/effort` → level set). The
     // terminal and the web UI show these; the chat only gets them shortly after a
     // command, so background chatter stays out.
@@ -181,14 +279,49 @@ export class Gateway {
       // chat `reply_in_thread` makes Lark nest the answer into a new thread, and the
       // user's next message then arrives with a `thread_id` the chat key misses.
       const anchor = binding.threadId ? binding.replyMessageId : undefined
-      for (const chunk of chunkText(text)) {
-        try {
-          await this.transport.sendText(binding.chatId, binding.threadId, chunk, anchor)
-        } catch (error) {
-          // One failed chat/chunk must not swallow the remaining ones.
-          console.error(`[out] send failed -> ${scopeOf(binding.chatId, binding.threadId)}: ${errorText(error)}`)
+      const parts = chunkText(text, CARD_TEXT_LIMIT)
+      const run = this.liveRun(binding.chatId, binding.threadId, sessionFile)
+      const send = async (): Promise<void> => {
+        // The answer takes over the progress card, so the chat shows one message
+        // that went from "thinking" to the answer instead of two.
+        let cardId: string | undefined
+        let steps: ProgressStep[] = []
+        if (run) {
+          this.clearTimer(run)
+          cardId = run.cardId
+          steps = run.steps
+          run.cardId = undefined
+          run.steps = []
+          run.touchedAt = Date.now()
+        }
+        const model = summary.model ? `${summary.model.provider}/${summary.model.id}` : undefined
+        for (const [index, part] of parts.entries()) {
+          const cardJson = answerCard({
+            title: sessionTitle(summary),
+            text: part,
+            part: { index, total: parts.length },
+            steps,
+            elapsedMs: run ? Date.now() - run.startedAt : undefined,
+            model,
+          })
+          try {
+            if (index === 0 && cardId && this.transport.updateCard) {
+              try {
+                await this.transport.updateCard(cardId, cardJson)
+                continue
+              } catch (error) {
+                console.warn(`[out] progress->answer update failed, sending new card: ${errorText(error)}`)
+              }
+            }
+            await this.deliver(binding.chatId, binding.threadId, cardJson, part, anchor)
+          } catch (error) {
+            // One failed chat/chunk must not swallow the remaining ones.
+            console.error(`[out] send failed -> ${scopeOf(binding.chatId, binding.threadId)}: ${errorText(error)}`)
+          }
         }
       }
+      if (run) await this.enqueue(run, send)
+      else await send()
     }
   }
 
@@ -204,7 +337,7 @@ export class Gateway {
       if (!this.hasReceipt(binding.chatId, binding.threadId)) continue
       const scope = scopeOf(binding.chatId, binding.threadId)
       try {
-        await this.transport.sendText(binding.chatId, binding.threadId, `${icon} ${message}`)
+        await this.deliver(binding.chatId, binding.threadId, noticeCard(`${icon} ${message}`), `${icon} ${message}`)
         console.log(`[out] notice -> ${scope} (${message.length} chars)`)
       } catch (error) {
         console.error(`[out] notice failed -> ${scope}: ${errorText(error)}`)
@@ -266,12 +399,35 @@ export class Gateway {
     }
   }
 
+  /**
+   * A card button was clicked: run its command as if the user had typed it.
+   * Lark has already been answered (toast), so this runs detached.
+   */
+  private onCardAction(action: CardAction): void {
+    if (!this.isAllowed(action.userId)) {
+      console.log(`[in] card click ignored (not allowed): ${action.userId}`)
+      return
+    }
+    if (action.eventId) {
+      if (this.seenActionIds.has(action.eventId)) return
+      this.seenActionIds.add(action.eventId)
+      if (this.seenActionIds.size > 1000) {
+        for (const id of [...this.seenActionIds].slice(0, 500)) this.seenActionIds.delete(id)
+      }
+    }
+    const threadId = this.cardThreads.get(action.messageId) ?? null
+    console.log(`[in] card click ${scopeOf(action.chatId, threadId)} ${action.userId}: ${action.command}`)
+    void this.handleMessage({ chatId: action.chatId, threadId, userId: action.userId, text: action.command, messageId: action.messageId }).catch(
+      error => console.error(`[in] card click failed: ${errorText(error)}`),
+    )
+  }
+
   private async dispatch(message: ImMessage, text: string): Promise<void> {
     if (text.startsWith('/')) {
       // A command can make an extension emit `ctx.ui.notify` (`/effort high` →
       // "level set"); relay those for a short window so the chat gets a receipt.
       this.openReceipt(message.chatId, message.threadId)
-      const reply = await handleCommand(text, {
+      const reply = await runCommand(text, {
         chatId: message.chatId,
         threadId: message.threadId,
         messageId: message.messageId,
@@ -313,7 +469,137 @@ export class Gateway {
     } catch (error) {
       console.error(`[in] dashboard forwarding failed: ${errorText(error)}`)
       await this.reply(chatId, threadId, '消息暂时未能送达 Agent，请稍后重试。')
+      return
     }
+    // Commands forwarded verbatim (`/clear`, `/effort …`) are not agent runs.
+    if (!text.startsWith('/')) await this.startRun(chatId, threadId, binding.threadId ? binding.replyMessageId : undefined, summary)
+  }
+
+  // --- progress cards --------------------------------------------------------
+
+  private canShowProgress(): boolean {
+    return typeof this.transport.sendCard === 'function' && typeof this.transport.updateCard === 'function'
+  }
+
+  /** The run for this chat if it belongs to `sessionFile` and is still alive. */
+  private liveRun(chatId: string, threadId: string | null, sessionFile: string): Run | undefined {
+    const run = this.runs.get(scopeOf(chatId, threadId))
+    if (!run || run.sessionFile !== sessionFile || run.disabled) return undefined
+    return run
+  }
+
+  /** Put a "thinking" card in the chat right after its message reached the agent. */
+  private async startRun(chatId: string, threadId: string | null, anchor: string | undefined, summary: LiveSessionSummary): Promise<void> {
+    if (!this.canShowProgress() || !summary.sessionFile) return
+    const scope = scopeOf(chatId, threadId)
+    const existing = this.runs.get(scope)
+    if (existing && existing.sessionFile === summary.sessionFile && Date.now() - existing.touchedAt < RUN_STALE_MS) {
+      // A follow-up while the agent is still busy: the current card keeps tracking.
+      existing.touchedAt = Date.now()
+      return
+    }
+    if (existing) await this.finishRun(existing, '已被新消息接替')
+    const now = Date.now()
+    const run: Run = {
+      scope, chatId, threadId, anchor,
+      sessionFile: summary.sessionFile,
+      title: sessionTitle(summary),
+      startedAt: now, touchedAt: now, steps: [], chain: Promise.resolve(), lastPatch: now,
+    }
+    this.runs.set(scope, run)
+    run.ticker = setInterval(() => {
+      // Missed `agent_settled` (gateway reconnect mid-run): stop ticking eventually.
+      if (Date.now() - run.touchedAt > RUN_STALE_MS) void this.finishRun(run, '长时间无进展，已停止跟踪')
+      else this.schedulePatch(run)
+    }, TICK_MS)
+    run.ticker.unref?.()
+    await this.enqueue(run, () => this.sendProgress(run, 'thinking'))
+  }
+
+  /** Send a fresh progress card for `run` (first one, or after an intermediate answer). */
+  private async sendProgress(run: Run, phase: 'thinking' | 'working'): Promise<void> {
+    if (run.disabled || run.cardId || !this.transport.sendCard) return
+    try {
+      run.cardId = await this.transport.sendCard(run.chatId, run.threadId, progressCard(run.title, run.steps, Date.now() - run.startedAt, phase), run.anchor)
+      run.lastPatch = Date.now()
+      if (run.cardId) this.rememberCard(run.cardId, run.threadId)
+    } catch (error) {
+      // No cards here (stdio) or Lark refused: answers still arrive as before.
+      run.disabled = true
+      this.clearTimers(run)
+      if (!(error instanceof Error && error.name === 'CardsUnsupportedError')) {
+        console.warn(`[out] progress card failed -> ${run.scope}: ${errorText(error)}`)
+      }
+    }
+  }
+
+  private onToolStart(sessionFile: string, toolName: string, args: unknown, toolCallId?: string): void {
+    for (const run of this.runs.values()) {
+      if (run.sessionFile !== sessionFile || run.disabled) continue
+      run.touchedAt = Date.now()
+      run.steps.push({ tool: toolName, detail: describeTool(toolName, args), state: 'running', toolCallId })
+      if (run.cardId) this.schedulePatch(run)
+      else void this.enqueue(run, () => this.sendProgress(run, 'working'))
+    }
+  }
+
+  private onToolEnd(sessionFile: string, toolCallId: string | undefined, isError: boolean): void {
+    for (const run of this.runs.values()) {
+      if (run.sessionFile !== sessionFile || run.disabled) continue
+      run.touchedAt = Date.now()
+      const step = [...run.steps].reverse().find(candidate => candidate.state === 'running' && (!toolCallId || candidate.toolCallId === toolCallId))
+      if (step) step.state = isError ? 'error' : 'done'
+      this.schedulePatch(run)
+    }
+  }
+
+  /** Coalesce progress patches to one per PATCH_INTERVAL_MS. */
+  private schedulePatch(run: Run): void {
+    if (run.disabled || !run.cardId || run.timer || !this.transport.updateCard) return
+    const wait = Math.max(0, run.lastPatch + PATCH_INTERVAL_MS - Date.now())
+    run.timer = setTimeout(() => {
+      run.timer = undefined
+      void this.enqueue(run, async () => {
+        if (!run.cardId || !this.transport.updateCard) return
+        run.lastPatch = Date.now()
+        await this.transport.updateCard(run.cardId, progressCard(run.title, run.steps, Date.now() - run.startedAt, 'working'))
+      })
+    }, wait)
+    run.timer.unref?.()
+  }
+
+  /** The agent settled (or the session went away): close every run on that session. */
+  private async endRuns(sessionFile: string, reason: string): Promise<void> {
+    for (const run of [...this.runs.values()]) if (run.sessionFile === sessionFile) await this.finishRun(run, reason)
+  }
+
+  private async finishRun(run: Run, reason: string): Promise<void> {
+    this.clearTimers(run)
+    if (this.runs.get(run.scope) === run) this.runs.delete(run.scope)
+    await this.enqueue(run, async () => {
+      // A card still showing progress means no answer replaced it: say how it ended.
+      if (!run.cardId || !this.transport.updateCard) return
+      const cardId = run.cardId
+      run.cardId = undefined
+      await this.transport.updateCard(cardId, endedCard(run.title, run.steps, Date.now() - run.startedAt, reason))
+    })
+  }
+
+  private enqueue(run: Run, task: () => Promise<void>): Promise<void> {
+    const next = run.chain.then(task).catch(error => console.warn(`[out] progress update failed -> ${run.scope}: ${errorText(error)}`))
+    run.chain = next
+    return next
+  }
+
+  private clearTimer(run: Run): void {
+    if (run.timer) clearTimeout(run.timer)
+    run.timer = undefined
+  }
+
+  private clearTimers(run: Run): void {
+    this.clearTimer(run)
+    if (run.ticker) clearInterval(run.ticker)
+    run.ticker = undefined
   }
 }
 
@@ -362,6 +648,10 @@ function isSessionSummary(value: unknown): value is LiveSessionSummary {
     typeof value === 'object' &&
     typeof (value as { processInstanceId?: unknown }).processInstanceId === 'string'
   )
+}
+
+function sessionTitle(summary: LiveSessionSummary): string {
+  return summary.sessionName?.trim() || summary.cwd.split(/[\\/]/).filter(Boolean).pop() || 'Pi'
 }
 
 const WELCOME = [

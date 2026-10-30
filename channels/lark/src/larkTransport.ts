@@ -1,8 +1,9 @@
 import type { LarkGatewayConfig } from './config.js'
-import type { ImMessage, ImTransport } from './transport.js'
+import type { CardAction, ImMessage, ImTransport } from './transport.js'
 
 type Handler = (message: ImMessage) => void | Promise<void>
 type BotAddedHandler = (chatId: string) => void | Promise<void>
+type CardActionHandler = (action: CardAction) => void
 
 /**
  * Lark (Feishu) transport over the long-connection (WebSocket) event mode, so
@@ -23,7 +24,7 @@ export class LarkTransport implements ImTransport {
     return import(moduleName)
   }
 
-  async start(onMessage: Handler, onBotAdded?: BotAddedHandler): Promise<void> {
+  async start(onMessage: Handler, onBotAdded?: BotAddedHandler, onCardAction?: CardActionHandler): Promise<void> {
     if (!this.cfg.larkAppId || !this.cfg.larkAppSecret) {
       throw new Error('LARK_APP_ID / LARK_APP_SECRET are required for the Lark transport')
     }
@@ -48,6 +49,15 @@ export class LarkTransport implements ImTransport {
         const chatId: string | undefined = data?.chat_id
         if (chatId && onBotAdded) await onBotAdded(chatId)
       },
+      // A card button click. Lark wants an answer within 3s, and commands like
+      // /compact take longer, so acknowledge with a toast right away and let the
+      // command run on its own; its result arrives as a normal reply.
+      'card.action.trigger': async (data: any) => {
+        const action = parseCardAction(data)
+        if (!action || !onCardAction) return { toast: { type: 'warning', content: '无法识别的按钮' } }
+        onCardAction(action)
+        return { toast: { type: 'info', content: `已执行 ${action.command.slice(0, 40)}` } }
+      },
     })
 
     this.wsClient = new lark.WSClient({ appId: this.cfg.larkAppId, appSecret: this.cfg.larkAppSecret, domain })
@@ -68,6 +78,37 @@ export class LarkTransport implements ImTransport {
       params: { receive_id_type: 'chat_id' },
       data: { receive_id: chatId, msg_type: 'text', content: JSON.stringify({ text }) },
     })
+  }
+
+  async sendCard(chatId: string, _threadId: string | null, card: Record<string, unknown>, replyMessageId?: string): Promise<string | undefined> {
+    if (!this.client) throw new Error('LarkTransport has not been started')
+    const content = JSON.stringify(card)
+    const response = replyMessageId
+      ? await this.client.im.message.reply({
+          path: { message_id: replyMessageId },
+          data: { msg_type: 'interactive', content, reply_in_thread: true },
+        })
+      : await this.client.im.message.create({
+          params: { receive_id_type: 'chat_id' },
+          data: { receive_id: chatId, msg_type: 'interactive', content },
+        })
+    // The SDK resolves (not rejects) on some API-level failures; a card the server
+    // refused must surface so the caller can fall back to text.
+    if (response && typeof response.code === 'number' && response.code !== 0) {
+      throw new Error(`card rejected: ${response.code} ${response.msg ?? ''}`.trim())
+    }
+    return response?.data?.message_id
+  }
+
+  async updateCard(messageId: string, card: Record<string, unknown>): Promise<void> {
+    if (!this.client) throw new Error('LarkTransport has not been started')
+    const response = await this.client.im.message.patch({
+      path: { message_id: messageId },
+      data: { content: JSON.stringify(card) },
+    })
+    if (response && typeof response.code === 'number' && response.code !== 0) {
+      throw new Error(`card update rejected: ${response.code} ${response.msg ?? ''}`.trim())
+    }
   }
 
   async stop(): Promise<void> {
@@ -97,4 +138,16 @@ function extractText(message: any): string {
   } catch {
     return ''
   }
+}
+
+/** `card.action.trigger` (callback v2) -> a command click, or undefined when it is not one of ours. */
+export function parseCardAction(data: any): CardAction | undefined {
+  const value = data?.action?.value
+  const command = typeof value?.cmd === 'string' ? value.cmd.trim() : ''
+  if (!command.startsWith('/')) return undefined
+  const chatId: string | undefined = data?.context?.open_chat_id ?? data?.open_chat_id
+  const messageId: string | undefined = data?.context?.open_message_id ?? data?.open_message_id
+  const userId: string | undefined = data?.operator?.open_id ?? data?.open_id
+  if (!chatId || !messageId) return undefined
+  return { chatId, messageId, userId: userId || 'unknown', command, eventId: data?.event_id }
 }
