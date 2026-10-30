@@ -21,6 +21,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /** All credentials and traffic here are synthetic, confined to ephemeral loopback listeners. */
+private const val TOKEN = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 class LiveSessionClientTest {
     private lateinit var server: LoopbackHttpServer
     private lateinit var backend: Backend
@@ -48,18 +50,18 @@ class LiveSessionClientTest {
     }
     @After fun teardown() { scope.cancel(); repositories.forEach { it.close() }; client.close(); server.stop(0) }
 
-    @Test fun pairingUsesOriginAndIndependentCookieWithEdgeAuthorization() = runBlocking {
+    @Test fun tokenSignInUsesOriginAndIndependentCookieWithEdgeAuthorization() = runBlocking {
         handler = {
             when (it.requestURI.path) {
-                "/api/live-sessions/pair" -> {
+                "/api/live-sessions/auth" -> {
                     it.responseHeaders.add("Set-Cookie", "pi_live_session=$cookie; Path=/api/live-sessions; HttpOnly; SameSite=Strict")
                     reply(it, """{"ok":true,"browserClientId":"native-fixture"}""")
                 }
                 else -> reply(it, """{"sessions":[]}""")
             }
         }
-        client.pair("b".repeat(32))
-        assertTrue(client.paired)
+        client.authenticate(TOKEN)
+        assertTrue(client.authorized)
         client.list()
         assertEquals(backend.baseUrl, calls[0].origin)
         assertEquals("Bearer edge-fixture", calls[0].authorization)
@@ -114,8 +116,10 @@ class LiveSessionClientTest {
         assertTrue(calls.none { it.path.contains("/chat/") })
     }
 
-    @Test fun invalidCodeAndRelativePathFailBeforeNetwork() = runBlocking {
-        assertTrue(runCatching { client.pair("host-control-token-is-not-a-code") }.isFailure)
+    @Test fun malformedTokenAndRelativePathFailBeforeNetwork() = runBlocking {
+        // A 32-char pairing code is no longer a credential; the token is 64 hex chars.
+        assertTrue(runCatching { client.authenticate("b".repeat(32)) }.isFailure)
+        assertTrue(runCatching { client.authenticate("not-a-token") }.isFailure)
         assertTrue(runCatching { client.start("../outside", "", "", "") }.isFailure)
         assertTrue(calls.isEmpty())
     }
@@ -124,13 +128,13 @@ class LiveSessionClientTest {
         cookies.save(backend, cookie)
         handler = { reply(it, """{"error":"edge_unauthorized"}""", 401) }
         assertTrue(runCatching { client.list() }.isFailure)
-        assertTrue(client.paired)
+        assertTrue(client.authorized)
         handler = { reply(it, """{"error":"authentication_required"}""", 401) }
         assertTrue(runCatching { client.list() }.isFailure)
-        assertFalse(client.paired)
+        assertFalse(client.authorized)
     }
 
-    @Test fun redirectsNeverForwardAnyCredentialOrPairingCode() = runBlocking {
+    @Test fun redirectsNeverForwardAnyCredentialOrToken() = runBlocking {
         val destination = LoopbackHttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val destinationCalls = java.util.concurrent.atomic.AtomicInteger()
         destination.createContext("/") { destinationCalls.incrementAndGet(); reply(it, "{}") }
@@ -141,7 +145,7 @@ class LiveSessionClientTest {
                 it.responseHeaders.add("Location", "http://127.0.0.1:${destination.address.port}/stolen")
                 reply(it, "{}", 307)
             }
-            assertTrue(runCatching { client.pair("b".repeat(32)) }.isFailure)
+            assertTrue(runCatching { client.authenticate(TOKEN) }.isFailure)
             assertEquals(0, destinationCalls.get())
             assertEquals(1, calls.size)
         } finally { destination.stop(0) }
@@ -150,8 +154,8 @@ class LiveSessionClientTest {
     @Test fun failedLogoutStillDeletesLocalCookie() = runBlocking {
         cookies.save(backend, cookie)
         handler = { reply(it, "{}", 500) }
-        assertTrue(runCatching { client.unpair() }.isFailure)
-        assertFalse(client.paired)
+        assertTrue(runCatching { client.signOut() }.isFailure)
+        assertFalse(client.authorized)
         assertEquals("DELETE", calls.single().method)
     }
 
@@ -257,7 +261,7 @@ class LiveSessionClientTest {
         handler = { reply(it, """{"error":"authentication_required"}""", 401) }
         assertTrue(repo.refreshMachine(backend.id).isFailure)
         assertTrue(repo.organization.value.isEmpty())
-        assertTrue(repo.backendStates.value[backend.id]!!.needsPairing)
+        assertTrue(repo.backendStates.value[backend.id]!!.needsToken)
     }
 
     @Test fun plainInputSucceedsWithoutTakingControlEvenWhenAnotherClientHoldsIt() = runBlocking {

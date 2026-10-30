@@ -196,7 +196,7 @@ data class AggregatedLiveSession(
 )
 data class LiveBackendState(
     val connected: Boolean = false,
-    val needsPairing: Boolean = false,
+    val needsToken: Boolean = false,
     val message: String? = null,
 )
 @Serializable

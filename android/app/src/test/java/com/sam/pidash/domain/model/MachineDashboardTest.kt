@@ -64,7 +64,7 @@ class MachineDashboardTest {
     }
     @Test fun ordinaryChatConnectivityIsNeverUsedAsLiveConnectivity() {
         assertTrue(liveConnectionLabel(null).contains("正在检查"))
-        assertTrue(liveConnectionLabel(LiveBackendState(needsPairing = true)).contains("未配对"))
+        assertTrue(liveConnectionLabel(LiveBackendState(needsToken = true)).contains("未登录"))
         assertTrue(liveConnectionLabel(LiveBackendState(connected = true)).contains("已连接"))
         assertTrue(liveConnectionLabel(LiveBackendState()).contains("未连接"))
     }

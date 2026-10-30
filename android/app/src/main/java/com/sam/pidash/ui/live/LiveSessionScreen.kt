@@ -613,7 +613,7 @@ fun LiveSessionScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             val backend = backendStates[sessionKey.backendId]
             if (backend?.connected != true || backend.message != null) {
-                Text(backend?.message ?: if (backend?.needsPairing == true) "需要重新手机配对" else "连接中断或正在连接；下方可能是缓存内容。",
+                Text(backend?.message ?: if (backend?.needsToken == true) "需要重新输入访问令牌" else "连接中断或正在连接；下方可能是缓存内容。",
                     Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(

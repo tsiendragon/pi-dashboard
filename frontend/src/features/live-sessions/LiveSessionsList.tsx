@@ -365,26 +365,35 @@ function SessionRow(p: RowProps) {
                 is spelled out because the bare number read as an unexplained “几秒”. */}
             <span className={`flex shrink-0 items-center gap-0.5 font-mono text-2xs leading-none text-muted ${rowBusy ? 'hidden' : 'md:group-hover:hidden md:group-focus-within:hidden'}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}\n本会话启动于：${new Date(p.session.startedAt).toLocaleString()}`}><span>{relTime(p.session.lastActivityAt)}</span></span>
             <div className={`items-center gap-0.5 ${rowBusy ? 'flex' : 'max-md:flex hidden group-hover:flex group-focus-within:flex'}`}>
-            <button
-              type="button"
-              disabled={restartPending || !!p.restartDisabledReason}
-              aria-label={restartPending ? `正在重启 session ${p.title}` : restartArmed ? `确认重启 session ${p.title}` : `重启 session ${p.title}`}
-              title={p.restartDisabledReason || (restartPending ? '正在退出并恢复 Pi session…' : restartArmed ? '再点一次确认重启；未完成工作可能中断' : '重启 Pi 并恢复同一 session（需要二次确认）')}
-              onPointerDown={event => event.stopPropagation()}
-              onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
-              onClick={requestRestart}
-              className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-not-allowed disabled:opacity-40 ${restartArmed ? 'bg-danger-subtle text-danger opacity-100' : restartPending ? 'text-muted opacity-100' : 'text-muted opacity-50 hover:bg-accent-subtle hover:text-accent'}`}
-            ><MaterialIcon name="restore" spin={restartPending} className="h-3.5 w-3.5" />{restartArmed ? '确认' : ''}</button>
-            <button
-              type="button"
-              disabled={exitPending || !!p.shutdownDisabledReason}
-              aria-label={exitPending ? `正在退出 session ${p.title}` : exitArmed ? `确认退出 session ${p.title}` : `退出 session ${p.title}`}
-              title={p.shutdownDisabledReason || (exitPending ? '正在安全关闭 Pi…' : exitArmed ? '再点一次确认退出 Pi（会中断未完成工作）' : '退出 Pi（通过专用关闭指令）')}
-              onPointerDown={event => event.stopPropagation()}
-              onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
-              onClick={requestExit}
-              className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-wait ${exitArmed ? 'bg-danger-subtle text-danger opacity-100' : exitPending ? 'text-muted opacity-100' : 'text-muted opacity-50 hover:bg-danger-subtle hover:text-danger'}`}
-            >{exitPending ? '…' : exitArmed ? '确认' : '⏻'}</button>
+            {/* Disabled is a real state, so it must LOOK disabled while the row is
+                hovered: `group-hover:opacity-100` (specificity 0,3,0) otherwise beats
+                `disabled:opacity-40` (0,2,0) and the button reads as clickable.
+                The reason lives on the wrapper, because browsers do not reliably show
+                `title` tooltips on disabled controls. */}
+            <span className="flex shrink-0 items-center" title={p.restartDisabledReason ? `重启不可用：${p.restartDisabledReason}` : undefined}>
+              <button
+                type="button"
+                disabled={restartPending || !!p.restartDisabledReason}
+                aria-label={restartPending ? `正在重启 session ${p.title}` : restartArmed ? `确认重启 session ${p.title}` : `重启 session ${p.title}`}
+                title={p.restartDisabledReason ? undefined : (restartPending ? '正在退出并恢复 Pi session…' : restartArmed ? '再点一次确认重启；未完成工作可能中断' : '重启 Pi 并恢复同一 session（需要二次确认）')}
+                onPointerDown={event => event.stopPropagation()}
+                onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
+                onClick={requestRestart}
+                className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-not-allowed disabled:opacity-40 ${restartArmed ? 'bg-danger-subtle text-danger opacity-100' : restartPending ? 'text-muted opacity-100 cursor-wait' : 'text-muted opacity-50 enabled:hover:bg-accent-subtle enabled:hover:text-accent group-hover:opacity-100 group-hover:disabled:opacity-40 focus-visible:opacity-100'}`}
+              ><MaterialIcon name="restore" spin={restartPending} className="h-3.5 w-3.5" />{restartArmed ? '确认' : ''}</button>
+            </span>
+            <span className="flex shrink-0 items-center" title={p.shutdownDisabledReason ? `退出不可用：${p.shutdownDisabledReason}` : undefined}>
+              <button
+                type="button"
+                disabled={exitPending || !!p.shutdownDisabledReason}
+                aria-label={exitPending ? `正在退出 session ${p.title}` : exitArmed ? `确认退出 session ${p.title}` : `退出 session ${p.title}`}
+                title={p.shutdownDisabledReason ? undefined : (exitPending ? '正在安全关闭 Pi…' : exitArmed ? '再点一次确认退出 Pi（会中断未完成工作）' : '退出 Pi（通过专用关闭指令）')}
+                onPointerDown={event => event.stopPropagation()}
+                onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
+                onClick={requestExit}
+                className={`grid h-5 shrink-0 place-items-center rounded px-1 text-2xs transition-opacity disabled:cursor-not-allowed disabled:opacity-40 ${exitArmed ? 'bg-danger-subtle text-danger opacity-100' : exitPending ? 'text-muted opacity-100 cursor-wait' : 'text-muted opacity-50 enabled:hover:bg-danger-subtle enabled:hover:text-danger group-hover:opacity-100 group-hover:disabled:opacity-40 focus-visible:opacity-100'}`}
+              >{exitPending ? '…' : exitArmed ? '确认' : '⏻'}</button>
+            </span>
             <button
               type="button"
               aria-label={`设置 ${p.title} 的装扮`}

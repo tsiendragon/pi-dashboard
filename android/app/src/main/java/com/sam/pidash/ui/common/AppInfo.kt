@@ -21,7 +21,7 @@ fun backendOriginLabel(raw: String): String = raw.toHttpUrlOrNull()?.newBuilder(
 
 fun liveConnectionLabel(state: LiveBackendState?): String = when {
     state == null -> "Live Pi：正在检查"
-    state.needsPairing -> "Live Pi：未配对（需网页手机配对码）"
+    state.needsToken -> "Live Pi：未登录（需访问令牌）"
     state.connected -> "Live Pi：已连接"
     else -> "Live Pi：未连接"
 }

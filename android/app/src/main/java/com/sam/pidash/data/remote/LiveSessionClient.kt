@@ -29,7 +29,8 @@ class LiveSessionClient(
     private val base = validateLiveBaseUrl(backend.baseUrl)
     private val origin = base.newBuilder().encodedPath("/").query(null).fragment(null).build().toString().trimEnd('/')
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
-    val paired: Boolean get() = cookies.load(backend) != null
+    /** A stored session cookie from a previous token sign-in. */
+    val authorized: Boolean get() = cookies.load(backend) != null
 
     private fun request(path: String, method: String = "GET", body: JsonElement? = null, authenticate: Boolean = true): Request {
         require(path.startsWith("/api/") && !path.contains('\r') && !path.contains('\n'))
@@ -109,12 +110,18 @@ class LiveSessionClient(
     suspend fun post(path: String, body: JsonElement = buildJsonObject {}): JsonObject = withContext(Dispatchers.IO) {
         execute(request(path, "POST", body)).jsonObject
     }
-    suspend fun pair(code: String) = withContext(Dispatchers.IO) {
-        require(code.trim().matches(Regex("[a-fA-F0-9]{32}"))) { "请输入网页生成的 32 位一次性配对码" }
-        execute(request("/api/live-sessions/pair", "POST", buildJsonObject { put("code", code.trim().lowercase()) }, false), true)
+    /**
+     * Sign in with the dashboard control token — the same secret the web UI uses.
+     * There is no pairing code: the token buys one HttpOnly session cookie, and the
+     * cookie is what this app keeps.
+     */
+    suspend fun authenticate(token: String) = withContext(Dispatchers.IO) {
+        val value = token.trim()
+        require(value.matches(Regex("[a-fA-F0-9]{64}"))) { "访问令牌是 64 位十六进制字符串，请从 live-control-token 文件复制" }
+        execute(request("/api/live-sessions/auth", "POST", buildJsonObject { put("token", value.lowercase()) }, false), true)
         Unit
     }
-    suspend fun unpair() = withContext(Dispatchers.IO) {
+    suspend fun signOut() = withContext(Dispatchers.IO) {
         try { execute(request("/api/live-sessions/auth", "DELETE")) }
         finally { cookies.save(backend, null) }
         Unit

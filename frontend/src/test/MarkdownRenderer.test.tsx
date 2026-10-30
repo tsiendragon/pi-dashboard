@@ -29,6 +29,22 @@ describe('MarkdownRenderer local files', () => {
   // A shell command line reads as a path to PATH_RE, so clicking it used to ask
   // the backend for a file literally named `bash deploy/…` (404) and steal the
   // click meant to select the command.
+  it('copies fenced code when the Clipboard API is unavailable', () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    const copiedValues: string[] = []
+    const execCommand = vi.fn(() => {
+      copiedValues.push(document.querySelector('textarea')?.value ?? '')
+      return true
+    })
+    Object.defineProperty(document, 'execCommand', { value: execCommand, configurable: true })
+
+    render(<MarkdownRenderer content={'```bash\necho hello\nsudo reboot\n```'} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+
+    expect(execCommand).toHaveBeenCalledWith('copy')
+    expect(copiedValues).toEqual(['echo hello\nsudo reboot'])
+  })
+
   it('does not open a shell command line as a file', () => {
     const onFileOpen = vi.fn()
     const command = 'bash deploy/bench-ds-v41-all_new.sh              # 重启 + 测量 + 对比（约 15 分钟）'

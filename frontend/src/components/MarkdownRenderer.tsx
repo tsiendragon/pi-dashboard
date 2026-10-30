@@ -18,6 +18,7 @@ import java from 'highlight.js/lib/languages/java'
 import markdown from 'highlight.js/lib/languages/markdown'
 import { api } from '../api/client'
 import { resolveMarkdownAssetUrl } from '../utils/resolvePath'
+import { copyText } from '../utils/clipboard'
 import { useBlockAssembler } from '../hooks/useBlockAssembler'
 import DiffBlock from './DiffBlock'
 import ResizableImage from './ResizableImage'
@@ -138,7 +139,7 @@ const CodeBlock = memo(function CodeBlock({ code, lang, complete }: { code: stri
     <div className="relative group my-1">
       <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-2 py-1">
         <span className="text-muted text-2xs font-mono uppercase">{lang || 'code'}{lineCount > 1 && <span className="ml-1 text-muted opacity-50">{lineCount} lines</span>}</span>
-        <button className="text-muted text-2xs opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(code)}>Copy</button>
+        <button className="text-muted text-2xs opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => { void copyText(code) }}>Copy</button>
       </div>
       <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-2 overflow-x-auto">
         <HighlightedCode code={displayCode} lang={lang} className={lang ? `language-${lang}` : ''} />
@@ -181,7 +182,7 @@ const MD_COMPONENTS: Record<string, React.ComponentType<any>> = {
       <div className="relative group my-1">
         <div className="flex items-center justify-between bg-bg-elevated border border-border rounded-t-md px-2 py-1">
           <span className="text-muted text-2xs font-mono uppercase">{lang || 'code'}</span>
-          <button className="text-muted text-2xs opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => navigator.clipboard.writeText(codeStr)}>Copy</button>
+          <button className="text-muted text-2xs opacity-40 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-text" onClick={() => { void copyText(codeStr) }}>Copy</button>
         </div>
         <pre className="bg-bg-elevated border border-t-0 border-border rounded-b-md p-2 overflow-x-auto">
           <HighlightedCode code={codeStr} lang={lang} className={className || ''} />

@@ -6,16 +6,16 @@ import path from 'path'
 
 export const LIVE_SESSION_COOKIE_NAME = 'pi_live_session'
 /**
- * A browser that logged in with the host control token is a short-lived session.
- * A phone that went through the one-use pairing code is a *device*: re-pairing it
- * every 12 hours made the step feel permanent, so it keeps its own, longer window.
- * Revoking it is still explicit (unpair / logout) and it is bound to one backend.
+ * One credential, one kind of session: whoever presents the control token gets a
+ * cookie that slides while it is used and ends after a week of idleness.
+ *
+ * Pairing codes are gone. A phone signs in with the same token the web UI uses,
+ * so there is no second secret to hand out, rotate or leak, and no "device"
+ * concept to explain. Ending a session is logout; ending all of them is rotating
+ * the token file.
  */
-const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000
-const DEVICE_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 const WEBSOCKET_TICKET_TTL_MS = 30_000
-const PAIRING_CODE_TTL_MS = 3 * 60_000
-const PAIRING_CODE_CAPACITY = 32
 
 type HeaderSource = { headers: IncomingHttpHeaders }
 
@@ -23,17 +23,10 @@ export interface LiveSessionBrowserIdentity {
   browserClientId: string
   createdAt: number
   lastSeenAt: number
-  /** True only for an identity created by redeeming a pairing code. */
-  paired?: boolean
 }
 
 export interface BrowserAuthenticationResult extends LiveSessionBrowserIdentity {
   setCookie: string
-}
-
-export interface BrowserPairingCode {
-  code: string
-  expiresAt: number
 }
 
 export interface BrowserWebSocketTicket {
@@ -109,10 +102,6 @@ function urlMatchesRequest(url: URL, request: HeaderSource): boolean {
   return isDswGatewayOrigin(url, request)
 }
 
-function maxAgeOf(identity: { paired?: boolean }): number {
-  return identity.paired === true ? DEVICE_SESSION_MAX_AGE_MS : SESSION_MAX_AGE_MS
-}
-
 export class LiveSessionBrowserAuth {
   readonly tokenPath: string
   private readonly sessionsPath: string
@@ -120,8 +109,6 @@ export class LiveSessionBrowserAuth {
   private startPromise?: Promise<void>
   private readonly sessions = new Map<string, LiveSessionBrowserIdentity>()
   private readonly websocketTickets = new Map<string, { browserClientId: string; expiresAt: number }>()
-  // Short-lived secrets are hashed and never written to disk. No pairing creates a lease.
-  private readonly pairingCodes = new Map<string, { browserClientId: string; expiresAt: number }>()
   private persistence: Promise<void> = Promise.resolve()
   private readonly allowedOrigins: Set<string>
   private readonly now: () => number
@@ -143,7 +130,6 @@ export class LiveSessionBrowserAuth {
     await this.persistence.catch(() => {})
     this.sessions.clear()
     this.websocketTickets.clear()
-    this.pairingCodes.clear()
     this.token = undefined
     this.startPromise = undefined
   }
@@ -160,14 +146,13 @@ export class LiveSessionBrowserAuth {
     return this.createSession(secure)
   }
 
-  private async createSession(secure: boolean, paired = false): Promise<BrowserAuthenticationResult> {
+  private async createSession(secure: boolean): Promise<BrowserAuthenticationResult> {
     const cookieValue = randomBytes(32).toString('hex')
     const now = this.now()
     const identity: LiveSessionBrowserIdentity = {
       browserClientId: randomBytes(16).toString('hex'),
       createdAt: now,
       lastSeenAt: now,
-      ...(paired ? { paired: true } : {}),
     }
     this.sessions.set(cookieValue, identity)
     try { await this.persistSessions() } catch {
@@ -196,35 +181,9 @@ export class LiveSessionBrowserAuth {
     const identity = this.sessions.get(cookie)
     this.sessions.delete(cookie)
     if (identity) {
-      for (const [hash, code] of this.pairingCodes) if (code.browserClientId === identity.browserClientId) this.pairingCodes.delete(hash)
       for (const [ticket, value] of this.websocketTickets) if (value.browserClientId === identity.browserClientId) this.websocketTickets.delete(ticket)
     }
     await this.persistSessions()
-  }
-
-  issuePairingCode(request: HeaderSource): BrowserPairingCode | undefined {
-    const identity = this.getIdentity(request)
-    if (!identity) return undefined
-    // A newly generated code replaces this browser's previous unused code.
-    for (const [hash, value] of this.pairingCodes) if (value.browserClientId === identity.browserClientId) this.pairingCodes.delete(hash)
-    while (this.pairingCodes.size >= PAIRING_CODE_CAPACITY) this.pairingCodes.delete(this.pairingCodes.keys().next().value!)
-    const code = randomBytes(16).toString('hex')
-    const expiresAt = this.now() + PAIRING_CODE_TTL_MS
-    this.pairingCodes.set(createHash('sha256').update(code).digest('hex'), { browserClientId: identity.browserClientId, expiresAt })
-    return { code, expiresAt }
-  }
-
-  async redeemPairingCode(code: unknown, secure: boolean): Promise<BrowserAuthenticationResult | undefined> {
-    await this.start()
-    this.prune()
-    if (typeof code !== 'string' || !/^[a-f0-9]{32}$/.test(code)) return undefined
-    const hash = createHash('sha256').update(code).digest('hex')
-    const record = this.pairingCodes.get(hash)
-    // Consumption precedes all async persistence: concurrent redemption cannot win twice.
-    this.pairingCodes.delete(hash)
-    if (!record || record.expiresAt <= this.now()) return undefined
-    if (![...this.sessions.values()].some(identity => identity.browserClientId === record.browserClientId)) return undefined
-    return this.createSession(secure, true)
   }
 
   issueWebSocketTicket(request: HeaderSource): BrowserWebSocketTicket | undefined {
@@ -313,12 +272,11 @@ export class LiveSessionBrowserAuth {
       const now = this.now()
       for (const [cookie, identity] of Object.entries(parsed)) {
         if (identity && typeof identity.browserClientId === 'string' && typeof identity.lastSeenAt === 'number' &&
-          now - identity.lastSeenAt < maxAgeOf(identity)) {
+          now - identity.lastSeenAt < SESSION_MAX_AGE_MS) {
           this.sessions.set(cookie, {
             browserClientId: identity.browserClientId,
             createdAt: typeof identity.createdAt === 'number' ? identity.createdAt : now,
             lastSeenAt: identity.lastSeenAt,
-            ...(identity.paired === true ? { paired: true } : {}),
           })
         }
       }
@@ -342,13 +300,10 @@ export class LiveSessionBrowserAuth {
   private prune(): void {
     const now = this.now()
     for (const [cookie, identity] of this.sessions) {
-      if (now - identity.lastSeenAt >= maxAgeOf(identity)) this.sessions.delete(cookie)
+      if (now - identity.lastSeenAt >= SESSION_MAX_AGE_MS) this.sessions.delete(cookie)
     }
     for (const [ticket, value] of this.websocketTickets) {
       if (value.expiresAt < now) this.websocketTickets.delete(ticket)
-    }
-    for (const [hash, value] of this.pairingCodes) {
-      if (value.expiresAt <= now) this.pairingCodes.delete(hash)
     }
   }
 }

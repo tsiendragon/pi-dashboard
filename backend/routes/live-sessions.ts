@@ -186,7 +186,7 @@ export class LiveSessionRoutes {
   }
 
   private registerHttpRoutes(): void {
-    this.app.use(['/api/live-sessions/auth', '/api/live-sessions/pairing-code', '/api/live-sessions/pair'], (_req, res, next) => {
+    this.app.use(['/api/live-sessions/auth'], (_req, res, next) => {
       res.setHeader('Cache-Control', 'no-store')
       next()
     })
@@ -222,22 +222,6 @@ export class LiveSessionRoutes {
       }
       next()
     }
-
-    this.app.post('/api/live-sessions/pairing-code', requireMutationOrigin, requireAuth, (req: AuthenticatedRequest, res: Response) => {
-      const result = this.auth.issuePairingCode(req)
-      if (!result) return res.status(401).json({ error: 'authentication_required' })
-      res.json({ ok: true, result })
-    })
-
-    this.app.post('/api/live-sessions/pair', requireMutationOrigin, async (req: Request, res: Response) => {
-      if (!this.active) return res.status(503).json({ error: 'live_sessions_unavailable' })
-      try {
-        const result = await this.auth.redeemPairingCode(req.body?.code, this.auth.isSecure(req) || !!(req.socket as any).encrypted)
-        if (!result) return res.status(401).json({ error: 'authentication_failed' })
-        res.setHeader('Set-Cookie', result.setCookie)
-        res.json({ ok: true, browserClientId: result.browserClientId })
-      } catch (error) { res.status(500).json(errorBody(error)) }
-    })
 
     this.app.delete('/api/live-sessions/auth', requireMutationOrigin, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
       await this.respond(res, async () => {

@@ -267,6 +267,30 @@ describe('LiveSessionsList sidebar', () => {
     expect(screen.getByLabelText('重启 session pi 101')).toBeDisabled()
   })
 
+  it('keeps a disabled restart button looking disabled while the row is hovered', () => {
+    // The row fades its actions in on hover (`group-hover:opacity-100`, specificity
+    // 0,3,0), which used to beat `disabled:opacity-40` (0,2,0): the button looked
+    // clickable, the click did nothing, and the reason was invisible. The guard class
+    // and the wrapper `title` are what keep the disabled state honest and explained.
+    mockFetch()
+    render(<LiveSessionsList sessions={[session('pid-a', 101, { sessionFile: '/tmp/session-a.jsonl' })]} onSelect={() => {}} />)
+
+    const restart = screen.getByLabelText('重启 session pi 101')
+    expect(restart).toBeDisabled()
+    expect(restart.className).toContain('disabled:opacity-40')
+    expect(restart.className).toContain('group-hover:disabled:opacity-40')
+    expect(restart.parentElement).toHaveAttribute('title', '重启不可用：仅支持 dashboard 管理的 tmux session')
+  })
+
+  it('explains that a running session cannot be restarted yet', () => {
+    mockFetch({ meta: { 'session-pid-a': { tags: [], pinned: false, tmux: 'pi-dash-live-abc12345', updatedAt: '' } } })
+    render(<LiveSessionsList sessions={[session('pid-a', 101, { sessionFile: '/tmp/session-a.jsonl', status: 'running' })]} onSelect={() => {}} />)
+
+    const restart = screen.getByLabelText('重启 session pi 101')
+    expect(restart).toBeDisabled()
+    expect(restart.parentElement).toHaveAttribute('title', '重启不可用：请等 Pi 空闲后再重启')
+  })
+
   it('shows the animated working muyu without a redundant status label', () => {
     mockFetch()
     render(<LiveSessionsList sessions={[session('pid-a', 101, { status: 'running' })]} onSelect={() => {}} />)

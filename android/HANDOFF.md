@@ -1,7 +1,7 @@
 # PiDash Android · 当前交接
 
-> 当前实现：4.5 / versionCode 26。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
-> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi45)。
+> 当前实现：4.6 / versionCode 27。此文件记录进度与验证，不把编译/JVM 测试当作手机验收。
+> 安装、依赖、配置及部署唯一入口：[`guide/dashboard.md`](../guide/dashboard.md#android-live-pi46)。
 > 功能适配评估与后续范围：[`逐机器 Dashboard 设计`](../docs/android-machine-dashboard.md)。
 
 ## 1. 当前状态

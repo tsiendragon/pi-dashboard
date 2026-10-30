@@ -31,8 +31,6 @@ function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const liveSessionApi = {
-  pairingCode: () => post<{ ok: true; result: { code: string; expiresAt: number } }>('/api/live-sessions/pairing-code', {})
-    .then(result => result.result),
   authenticate: (token: string) => post<{ ok: true; browserClientId: string }>('/api/live-sessions/auth', { token }),
   websocketTicket: () => post<{ ok: true; result: { ticket: string; expiresAt: number } }>('/api/live-sessions/ws-ticket', {})
     .then(result => result.result),

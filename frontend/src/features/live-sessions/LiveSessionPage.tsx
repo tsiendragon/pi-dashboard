@@ -31,7 +31,6 @@ import {
   dismissSessionNotifications,
 } from '../../store/liveSessionsSlice'
 import { liveSessionApi, LiveSessionApiError } from './api'
-import MobilePairingButton from './MobilePairingButton'
 import LiveSessionComposer from './LiveSessionComposer'
 import LiveCommandChips, { RUNNING_COMMAND_TASK, backgroundTasks, collectCommandChips } from './LiveCommandChips'
 import ActivityTimeline, { type ActivityCommand, type ActivityImage, type ActivityNote, type ActivityReply, type ActivityStep, type LiveActivity } from './ActivityTimeline'
@@ -3076,7 +3075,6 @@ export default function LiveSessionPage() {
             </span>}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <MobilePairingButton />
             {summary && ownedLeaseId && <button type="button" disabled={busy} onClick={() => { void release().catch(() => {}) }} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted disabled:opacity-50">释放控制</button>}
             <button type="button" onClick={() => navigate(summary?.sessionFile ? `/live-sessions/graph?file=${encodeURIComponent(summary.sessionFile)}` : '/live-sessions/graph')} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent" title="在会话家族图谱中查看该会话">◈ 在图谱中查看</button>
             {/* 只读探查：旧会话（Pi 还在跑旧扩展）也保留入口，点开后会直接说明去重载，

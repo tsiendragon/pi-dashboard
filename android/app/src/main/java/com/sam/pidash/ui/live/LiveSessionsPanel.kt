@@ -46,8 +46,8 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     val organizations by repo.live.organization.collectAsState()
     val org = organizations[backendId] ?: LiveOrganization()
     val scope = rememberCoroutineScope()
-    var pairing by remember { mutableStateOf<Backend?>(null) }
-    var unpairing by remember { mutableStateOf<Backend?>(null) }
+    var signingIn by remember { mutableStateOf<Backend?>(null) }
+    var signingOut by remember { mutableStateOf<Backend?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable(backendId) { mutableStateOf("") }
     var runningOnly by rememberSaveable(backendId) { mutableStateOf(false) }
@@ -77,8 +77,8 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                     state?.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             }, trailingContent = { TextButton(onClick = {
-                if (state?.needsPairing != false) pairing = backend else unpairing = backend
-            }) { Text(if (state?.needsPairing != false) "配对" else "解除配对") } })
+                if (state?.needsToken != false) signingIn = backend else signingOut = backend
+            }) { Text(if (state?.needsToken != false) "登录" else "断开") } })
         }
         item {
             Column(Modifier.padding(horizontal = 12.dp)) {
@@ -157,46 +157,47 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
             groupError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = {}, dismissButton = { TextButton(enabled = !groupBusy, onClick = { moving = null }) { Text("取消") } }) }
-    pairing?.let { backend ->
-        LivePairingDialog(repo, backend, onDismiss = { pairing = null })
+    signingIn?.let { backend ->
+        LiveTokenDialog(repo, backend, onDismiss = { signingIn = null })
     }
-    unpairing?.let { backend ->
+    signingOut?.let { backend ->
         AlertDialog(
-            onDismissRequest = { unpairing = null },
-            title = { Text("解除 ${backend.name} 的手机配对？") },
-            text = { Text("此手机将无法控制 Live Pi，直到重新配对。普通 Chat 不受影响。") },
+            onDismissRequest = { signingOut = null },
+            title = { Text("断开 ${backend.name}？") },
+            text = { Text("这台手机将无法控制 Live Pi，直到重新输入访问令牌。普通 Chat 不受影响。") },
             confirmButton = {
                 TextButton(onClick = {
-                    unpairing = null
+                    signingOut = null
                     scope.launch {
-                        repo.live.unpair(backend.id).fold(
-                            onSuccess = { notice = "已解除配对" },
-                            onFailure = { notice = it.message ?: "解除配对失败" },
+                        repo.live.disconnect(backend.id).fold(
+                            onSuccess = { notice = "已断开连接" },
+                            onFailure = { notice = it.message ?: "断开失败" },
                         )
                     }
-                }) { Text("解除配对") }
+                }) { Text("断开") }
             },
-            dismissButton = { TextButton(onClick = { unpairing = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { signingOut = null }) { Text("取消") } },
         )
     }
 }
 
 @Composable
-private fun LivePairingDialog(repo: PiDashRepository, backend: Backend, onDismiss: () -> Unit) {
-    // Deliberately ephemeral: never saved to navigation state, logs or persistent storage.
-    var code by remember(backend.id) { mutableStateOf("") }
+private fun LiveTokenDialog(repo: PiDashRepository, backend: Backend, onDismiss: () -> Unit) {
+    // The token is long-lived, so it is deliberately not stored: only the HttpOnly cookie is.
+    var token by remember(backend.id) { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    fun close() { code = ""; onDismiss() }
+    fun close() { token = ""; onDismiss() }
     AlertDialog(
         onDismissRequest = { close() },
-        title = { Text("配对 ${backend.name}") },
+        title = { Text("登录 ${backend.name}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("在已登录的 WebUI 中打开「手机配对」，输入一次性 32 位十六进制码。不要输入主机控制 token 或 Cookie。")
-                OutlinedTextField(value = code, onValueChange = { code = it.trim() },
-                    label = { Text("一次性配对码") }, singleLine = true, enabled = !busy,
+                Text("粘贴这台机器的访问令牌（64 位十六进制）。它就在 Dashboard 的 ~/.pi/agent/run/pi-dashboard/live-control-token 文件里——与网页登录用的是同一个令牌。")
+                Text("令牌只用来换取一次会话 Cookie，不会被保存在手机上；会话 7 天不用才会失效。", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(value = token, onValueChange = { token = it.trim() },
+                    label = { Text("访问令牌") }, singleLine = true, enabled = !busy,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -204,15 +205,15 @@ private fun LivePairingDialog(repo: PiDashRepository, backend: Backend, onDismis
             }
         },
         confirmButton = {
-            TextButton(enabled = !busy && code.matches(Regex("[a-fA-F0-9]{32}")), onClick = {
+            TextButton(enabled = !busy && token.trim().matches(Regex("[a-fA-F0-9]{64}")), onClick = {
                 busy = true; error = null
                 scope.launch {
-                    val result = repo.live.pair(backend.id, code)
+                    val result = repo.live.connect(backend.id, token)
                     busy = false
                     result.fold(onSuccess = { close(); repo.live.refreshAll() },
-                        onFailure = { error = it.message ?: "配对失败，请重新获取短期配对码" })
+                        onFailure = { error = it.message ?: "登录失败，请核对令牌" })
                 }
-            }) { Text("配对") }
+            }) { Text("登录") }
         },
         dismissButton = { TextButton(onClick = { close() }) { Text("取消") } },
     )

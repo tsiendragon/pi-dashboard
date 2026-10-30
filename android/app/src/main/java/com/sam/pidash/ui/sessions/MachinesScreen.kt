@@ -79,11 +79,11 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
                                 ConnectionState.Connecting -> "连接中"
                                 else -> "未连接"
                             },
-                            state?.needsPairing?.takeIf { it }?.let { "需要配对" },
+                            state?.needsToken?.takeIf { it }?.let { "需要令牌" },
                         )
                     )
                     when {
-                        state?.needsPairing == true -> MetaText(
+                        state?.needsToken == true -> MetaText(
                             "进入此 Dashboard 后用网页的一次性配对码配对。",
                             maxLines = 2,
                         )

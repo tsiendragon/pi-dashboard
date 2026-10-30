@@ -133,9 +133,9 @@ class LivePiRepository(
             var backoff = 1000L
             while (isActive && foreground) {
                 val api = client(id)
-                if (!api.paired) {
+                if (!api.authorized) {
                     rows.update { it - id }
-                    _states.update { it + (id to LiveBackendState(needsPairing = true, message = "需要在网页生成一次性手机配对码")) }
+                    _states.update { it + (id to LiveBackendState(needsToken = true, message = "需要输入这台机器的访问令牌")) }
                     delay(1500)
                     continue
                 }
@@ -283,8 +283,8 @@ class LivePiRepository(
         catch (error: Exception) { backendFailure(id, error) }
     }
     private fun backendFailure(id: String, error: Exception) {
-        val paired = runCatching { client(id).paired }.getOrDefault(false)
-        _states.update { it + (id to LiveBackendState(needsPairing = !paired, message = error.message ?: "Live 连接失败")) }
+        val authorized = runCatching { client(id).authorized }.getOrDefault(false)
+        _states.update { it + (id to LiveBackendState(needsToken = !authorized, message = error.message ?: "Live 连接失败")) }
         if (error is LiveApiException && error.status == 401) {
             _organization.update { it - id }
             synchronized(lock) { organizationFetchedAt.remove(id) }
@@ -313,7 +313,7 @@ class LivePiRepository(
     }
     suspend fun refreshAll() = coroutineScope {
         synchronized(lock) { clients.keys.toList() }.map { id -> launch {
-            try { if (client(id).paired) refreshBackend(id) }
+            try { if (client(id).authorized) refreshBackend(id) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { backendFailure(id, error) }
         } }.joinAll()
@@ -358,13 +358,13 @@ class LivePiRepository(
         _organization.update { it + (key.backendId to (it[key.backendId] ?: org).copy(groups = groups, loaded = true, error = null)) }
     }
     suspend fun refresh(key: SessionKey): Result<Unit> = result(key) { acceptDetail(key.backendId, client(key.backendId).detail(key.slotKey)) }
-    suspend fun pair(id: String, code: String): Result<Unit> = result {
-        client(id).pair(code)
+    suspend fun connect(id: String, token: String): Result<Unit> = result {
+        client(id).authenticate(token)
         synchronized(lock) { jobs.remove(id)?.cancel(); if (foreground) startLoop(id) }
         reconcile(id)
     }
-    suspend fun unpair(id: String): Result<Unit> = result {
-        try { client(id).unpair() }
+    suspend fun disconnect(id: String): Result<Unit> = result {
+        try { client(id).signOut() }
         finally {
             synchronized(lock) { jobs.remove(id)?.cancel(); clearBackend(id); if (foreground) startLoop(id) }
         }
