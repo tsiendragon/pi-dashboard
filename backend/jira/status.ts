@@ -46,7 +46,8 @@ export const acliRunner: AcliRunner = async keys => {
       execFile(
         'acli',
         ['jira', 'workitem', 'search', '-j', `key in (${group.join(', ')})`, '--fields', 'key,status,assignee,priority', '--json', '--limit', String(group.length)],
-        { timeout: 60_000, maxBuffer: 8 * 1024 * 1024 },
+        // No session bus here: without this acli's keyring lookup autolaunches a dbus-daemon per call and leaks it.
+        { timeout: 60_000, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS || 'disabled:' } },
         (error, output) => {
           if (error) return reject(new Error(String((error as NodeJS.ErrnoException).code || error.message).slice(0, 200)))
           resolve(String(output))

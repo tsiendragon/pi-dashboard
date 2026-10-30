@@ -1,4 +1,4 @@
-import { watch } from 'node:fs'
+import { watch, watchFile } from 'node:fs'
 import { mkdir, open, readFile, unlink } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -100,15 +100,34 @@ async function main(): Promise<void> {
   const watchDir = path.dirname(cfg.accountsPath)
   await mkdir(watchDir, { recursive: true })
   let timer: NodeJS.Timeout | undefined
-  watch(watchDir, (_event, filename) => {
-    if (filename && filename !== path.basename(cfg.accountsPath)) return
+  const scheduleReload = (): void => {
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
       void apply('config changed').catch(error =>
         console.error('[gateway] reload failed:', error instanceof Error ? error.message : error),
       )
     }, 300)
-  })
+  }
+  // Hot-reload is a convenience; it must never take the gateway down. inotify can run out
+  // (EMFILE/ENOSPC) at start or later, so fall back to stat polling instead of crashing.
+  const pollInstead = (reason: unknown): void => {
+    console.error('[gateway] fs.watch unavailable, polling accounts file instead:', reason instanceof Error ? reason.message : reason)
+    watchFile(cfg.accountsPath, { interval: 5000 }, (curr, prev) => {
+      if (curr.mtimeMs !== prev.mtimeMs || curr.size !== prev.size) scheduleReload()
+    })
+  }
+  try {
+    const watcher = watch(watchDir, (_event, filename) => {
+      if (filename && filename !== path.basename(cfg.accountsPath)) return
+      scheduleReload()
+    })
+    watcher.on('error', error => {
+      watcher.close()
+      pollInstead(error)
+    })
+  } catch (error) {
+    pollInstead(error)
+  }
 
   const shutdown = async (): Promise<void> => {
     await gateway.stop().catch(() => {})
