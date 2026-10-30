@@ -192,12 +192,12 @@ fun LiveSessionScreen(
     val activities = remember(detail) { detail?.let { projectLiveActivities(it) }.orEmpty() }
     // Default is the activity view: a phone reads replies, not the whole transcript.
     var viewMode by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("activity") }
-    var openActivity by remember(sessionKey) { mutableStateOf<com.sam.pidash.domain.model.LiveActivity?>(null) }
+    var openActivityId by remember(sessionKey) { mutableStateOf<String?>(null) }
     val background = remember(detail) { backgroundSnapshot(detail) }
     val backgroundActive = background?.tasks?.count { it.isActive() } ?: 0
     val goalState = remember(goal) { goalSummary(goal) }
     val rows = remember(timeline) { groupTranscript(timeline) }
-    val visibleCount = rows.size
+    val visibleCount = if (viewMode == "activity" && activities.isNotEmpty()) activities.size else rows.size
 
     // Opening/subscribing is strictly read-only. Repository owns foreground handling
     // and releasing our lease when the focused screen is disposed.
@@ -310,7 +310,7 @@ fun LiveSessionScreen(
                 title = {
                     Column {
                         Text(
-                            summary?.title ?: "Live Pi",
+                            listOfNotNull(aggregate?.meta?.emoji?.takeIf { it.isNotBlank() }, summary?.title ?: "Live Pi").joinToString(" "),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             style = PiType.callout.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
@@ -333,7 +333,7 @@ fun LiveSessionScreen(
                                 menu = false; perform("已刷新") { live.refresh(sessionKey) }
                             })
                             listOf("title" to "修改标题", "model" to "选择模型", "thinking" to "思考等级",
-                                "meta" to "置顶 / 标签", "tree" to "会话树（只读）").forEach { (id, label) ->
+                                "meta" to "表情 / 置顶 / 标签", "tree" to "会话树（只读）").forEach { (id, label) ->
                                 DropdownMenuItem(text = { Text(label) }, enabled = !busy, onClick = { menu = false; notice = null; dialog = id })
                             }
                             if (summary?.capabilities?.contains("context_view") == true) {
@@ -356,7 +356,7 @@ fun LiveSessionScreen(
                             )
                             DropdownMenuItem(
                                 text = {
-                                    Text(if (viewMode == "activity") "视图：完整记录" else "视图：只看回复")
+                                    Text(if (viewMode == "activity") "视图：完整记录" else "视图：活动")
                                 },
                                 onClick = {
                                     menu = false
@@ -590,11 +590,11 @@ fun LiveSessionScreen(
             }
         },
     ) { padding ->
-        openActivity?.let { activity ->
+        activities.firstOrNull { it.id == openActivityId }?.let { activity ->
             ActivityDetailDialog(
                 activity = activity,
                 enabled = !busy && !heldElsewhere,
-                onDismiss = { openActivity = null },
+                onDismiss = { openActivityId = null },
                 onOpenPath = ::openPathPreview,
                 onOpenUrl = ::openExternalUrl,
                 onQuote = { item ->
@@ -607,7 +607,7 @@ fun LiveSessionScreen(
                     val quoted = normalizeQuote(item.text).orEmpty()
                     annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
                 },
-                onFork = { entryId -> openActivity = null; forkEntry = entryId; dialog = "fork" },
+                onFork = { entryId -> openActivityId = null; forkEntry = entryId; dialog = "fork" },
             )
         }
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -616,6 +616,18 @@ fun LiveSessionScreen(
                 Text(backend?.message ?: if (backend?.needsToken == true) "需要重新输入访问令牌" else "连接中断或正在连接；下方可能是缓存内容。",
                     Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
+            AnimatedVisibility(visible = !chromeHidden) {
+                Column {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        FilterChip(selected = viewMode == "activity", onClick = { viewMode = "activity" }, label = { Text("活动") })
+                        FilterChip(selected = viewMode == "full", onClick = { viewMode = "full" }, label = { Text("完整记录") })
+                        TextButton(enabled = !busy, onClick = { notice = null; dialog = "title" }) { Text("改名") }
+                        TextButton(enabled = !busy, onClick = { notice = null; dialog = "meta" }) { Text("表情") }
+                        TextButton(enabled = !busy && !heldElsewhere, onClick = { notice = null; dialog = "reload" }) { Text("重载") }
+                        TextButton(enabled = !busy && !heldElsewhere, onClick = { notice = null; dialog = "restart" }) { Text("重启") }
+                    }
+                }
+            }
             if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -623,7 +635,7 @@ fun LiveSessionScreen(
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
                 items(activities, key = { "activity:${it.id}" }) { activity ->
-                    NativeActivityCard(activity = activity, onOpen = { openActivity = activity })
+                    NativeActivityCard(activity = activity, onOpen = { openActivityId = activity.id })
                 }
             } else if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -831,8 +843,8 @@ fun LiveSessionScreen(
                 ensureLease().fold(onSuccess = { live.rename(sessionKey, value) }, onFailure = { Result.failure(it) })
             }
         }
-        "meta" -> LiveMetadataDialog(aggregate?.meta, busy, notice, dismiss) { tags, pinned ->
-            perform("标签 / 置顶已更新", close = true) { live.patchMeta(sessionKey, tags, pinned) }
+        "meta" -> LiveMetadataDialog(aggregate?.meta, busy, notice, dismiss) { tags, pinned, emoji ->
+            perform("会话装扮 / 标签已更新", close = true) { live.patchMeta(sessionKey, tags, pinned, emoji) }
         }
         "model", "thinking" -> LiveModelDialog(repo, sessionKey, summary, dialog == "thinking", busy, notice, dismiss,
             onModel = { option -> perform("模型已更新", close = true) {

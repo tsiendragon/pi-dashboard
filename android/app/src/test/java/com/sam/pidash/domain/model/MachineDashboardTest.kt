@@ -62,6 +62,18 @@ class MachineDashboardTest {
     @Test fun historicalMembersDoNotCreateFakeOnlineRowsOrEmptySections() {
         assertTrue(machineSessionSections("a", emptyList(), org()).isEmpty())
     }
+    @Test fun movingWithinGroupRetainsOfflineIdsAndOtherSections() {
+        val sections = machineSessionSections("a", listOf(row("one", started = 1), row("two", started = 2), row("other")), org())
+        val order = moveMachineSession(sections, listOf("offline"), "two", SessionMove.TOP)
+        assertEquals(listOf("two", "one", "other", "offline"), order)
+        val reordered = machineSessionSections("a", listOf(row("one"), row("two"), row("other")), org(LiveOrder(order)))
+        assertEquals(listOf("two", "one"), reordered.first().sessions.map { it.summary.sessionId })
+    }
+    @Test fun movingDownUsesStableSessionIdAndRejectsEdges() {
+        val sections = machineSessionSections("a", listOf(row("new-process", session = "one"), row("two", started = 2)), org())
+        assertEquals(listOf("two", "one"), moveMachineSession(sections, emptyList(), "one", SessionMove.DOWN))
+        assertThrows(IllegalArgumentException::class.java) { moveMachineSession(sections, emptyList(), "one", SessionMove.UP) }
+    }
     @Test fun ordinaryChatConnectivityIsNeverUsedAsLiveConnectivity() {
         assertTrue(liveConnectionLabel(null).contains("正在检查"))
         assertTrue(liveConnectionLabel(LiveBackendState(needsToken = true)).contains("未登录"))

@@ -15,6 +15,7 @@ interface Props {
 
 export default function SessionAppearanceDialog({ title, appearance, onSave, onRename, onClose }: Props) {
   const [name, setName] = useState(title)
+  const [savedName, setSavedName] = useState(title)
   const [color, setColor] = useState(appearance?.color ?? '')
   const [emoji, setEmoji] = useState(appearance?.emoji ?? '')
   const [emojiGroup, setEmojiGroup] = useState<keyof typeof SESSION_EMOJI_GROUPS>('常用')
@@ -69,13 +70,18 @@ export default function SessionAppearanceDialog({ title, appearance, onSave, onR
       setError('符号不能包含换行或控制字符。')
       return
     }
+    if (onRename && !name.trim()) {
+      setError('会话名称不能为空。')
+      return
+    }
     savingRef.current = true
     setSaving(true)
     setError('')
     try {
       const trimmedName = name.trim()
-      if (onRename && trimmedName && trimmedName !== title) {
+      if (onRename && trimmedName !== savedName) {
         await onRename(trimmedName)
+        setSavedName(trimmedName)
       }
       await onSave({ color, emoji: emoji.trim() })
       onClose()

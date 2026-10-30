@@ -161,6 +161,13 @@ class LiveSessionClient(
         val order = pidashJson.decodeFromJsonElement(LiveOrder.serializer(), get("/api/live-session-order"))
         return LiveOrganization(groups, order, loaded = true)
     }
+    suspend fun saveOrder(order: List<String>): LiveOrder = withContext(Dispatchers.IO) {
+        val response = execute(request("/api/live-session-order", "PUT", buildJsonObject {
+            put("order", JsonArray(order.map(::JsonPrimitive)))
+        })).jsonObject
+        if (response["order"] !is JsonArray) throw IOException("服务器未提供排序结果")
+        pidashJson.decodeFromJsonElement(LiveOrder.serializer(), response)
+    }
     suspend fun createGroup(name: String): List<LiveGroup> = decodeGroups(
         post("/api/live-session-groups", buildJsonObject { put("name", name) }))
     suspend fun moveGroup(process: String, groupId: String, removeSessionId: String? = null): List<LiveGroup> = withContext(Dispatchers.IO) {
@@ -192,10 +199,11 @@ class LiveSessionClient(
     suspend fun renew(id: String, lease: String): LiveLease = pidashJson.decodeFromJsonElement(LiveLease.serializer(),
         post(path(id) + "/renew", buildJsonObject { put("leaseId", lease) })["result"] ?: JsonNull)
     suspend fun release(id: String, lease: String) { post(path(id) + "/release", buildJsonObject { put("leaseId", lease) }) }
-    suspend fun patchMeta(id: String, tags: List<String>?, pinned: Boolean?) = withContext(Dispatchers.IO) {
+    suspend fun patchMeta(id: String, tags: List<String>?, pinned: Boolean?, emoji: String?) = withContext(Dispatchers.IO) {
         execute(request(path(id) + "/meta", "PATCH", buildJsonObject {
             tags?.let { put("tags", JsonArray(it.map(::JsonPrimitive))) }
             pinned?.let { put("pinned", it) }
+            emoji?.let { put("emoji", it) }
         }))
         Unit
     }

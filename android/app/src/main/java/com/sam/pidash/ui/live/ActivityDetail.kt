@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,7 +22,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -53,7 +51,6 @@ internal fun ActivityDetailDialog(
     onFork: (String) -> Unit,
 ) {
     val status = activityStatus(activity)
-    val prompt = activity.items.firstOrNull { it.role == "user" }?.text?.trim().orEmpty()
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -84,18 +81,6 @@ internal fun ActivityDetailDialog(
                     contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.lg),
                     verticalArrangement = Arrangement.spacedBy(Spacing.md),
                 ) {
-                    if (prompt.isNotBlank()) {
-                        item("prompt") {
-                            Text(
-                                prompt,
-                                style = PiType.footnote,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 6,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Spacer(Modifier.size(Spacing.xs))
-                        }
-                    }
                     items(groupTranscript(activity.items), key = { it.id }) { row ->
                         NativeTimelineRow(row, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate)
                     }

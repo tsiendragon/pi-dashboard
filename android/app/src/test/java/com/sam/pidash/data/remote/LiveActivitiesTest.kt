@@ -49,6 +49,25 @@ class LiveActivitiesTest {
         assertEquals(listOf("u", "u2"), activities.map { it.id })
         assertTrue(activities.last().items.single().forkable)
     }
+    @Test fun quoteAndCommentFollowUpsAttachToQuotedActivityInsteadOfSplittingTurns() {
+        val firstReply = """{"type":"message","id":"a1","message":{"role":"assistant","content":"第一轮结论：需要检查配置文件路径"}}"""
+        val secondUser = """{"type":"message","id":"u2","message":{"role":"user","content":"第二个独立请求"}}"""
+        val secondReply = """{"type":"message","id":"a2","message":{"role":"assistant","content":"第二轮结论：测试已通过"}}"""
+        val quoteFollowUp = """{"type":"message","id":"u3","message":{"role":"user","content":"引用（来自你的回复）：\n> 第一轮结论：需要检查配置文件路径\n\n请把路径打印出来"}}"""
+        val followUpReply = """{"type":"message","id":"a3","message":{"role":"assistant","content":"路径是 /allowed/config.json"}}"""
+        val activities = projectLiveActivities(detail(user, firstReply, secondUser, secondReply, quoteFollowUp, followUpReply))
+        assertEquals(listOf("u", "u2"), activities.map { it.id })
+        assertEquals(listOf("u", "a1", "u3", "a3"), activities.first().items.map { it.id })
+        assertEquals("已回复", activities.first().state)
+        assertEquals(listOf("a1", "u3", "a3"), activityOverview(activities.first()).map { it?.id })
+    }
+    @Test fun unsettledFollowUpReopensActivityUntilAnswered() {
+        val firstReply = """{"type":"message","id":"a1","message":{"role":"assistant","content":"第一轮结论：需要检查配置文件路径"}}"""
+        val commentFollowUp = """{"type":"message","id":"u2","message":{"role":"user","content":"Please review and address these comments about the quoted parts of our conversation:\n\n[1] 你的回复\nQuoted: \"第一轮结论：需要检查配置文件路径\"\nComment: 再核对一次权限"}}"""
+        val activity = projectLiveActivities(detail(user, firstReply, commentFollowUp, tool)).single()
+        assertEquals(listOf("u", "a1", "u2", "tool-call-t"), activity.items.map { it.id })
+        assertEquals("待确认", activity.state)
+    }
     @Test fun aTruncatedWindowDoesNotInventAUserRequest() {
         val activity = projectLiveActivities(detail(tool)).single()
         assertTrue(activity.title.contains("窗口内记录"))
@@ -101,6 +120,17 @@ class ActivityViewProjectionTest {
             )
         )
         assertEquals(listOf("正在处理"), replies.map { it.text })
+    }
+
+    @Test fun activityOverviewPreservesRecordOrderAndMakesTruncationExplicit() {
+        val records = activity(
+            item("u", "user", "问题"), item("c", "assistant", "先检查", intermediate = true),
+            item("t1", "tool", "输出", toolName = "read"), item("a", "assistant", "接着检查", intermediate = true),
+            item("t2", "tool", "输出", toolName = "bash"), item("t3", "tool", "输出", toolName = "grep"),
+            item("f", "assistant", "最终答复"),
+        )
+        assertEquals(listOf("c", "t1", "a", "t2", null, "f"), activityOverview(records).map { it?.id })
+        assertEquals(listOf("c", "t1", "a", "t2", "t3", "f"), activityOverview(records, 6).map { it?.id })
     }
 
     @Test fun toolsAreCountedForTheOneLineSummary() {

@@ -35,6 +35,7 @@ import com.sam.pidash.ui.common.liveConnectionLabel
 import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.LiveRepoCandidate
 import com.sam.pidash.domain.model.SessionKey
+import com.sam.pidash.domain.model.SessionMove
 import kotlinx.coroutines.launch
 
 @Composable
@@ -57,6 +58,8 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     var moving by remember { mutableStateOf<AggregatedLiveSession?>(null) }
     var groupName by remember { mutableStateOf("") }
     var groupBusy by remember { mutableStateOf(false) }
+    var sorting by remember(backendId) { mutableStateOf(false) }
+    var sortBusy by remember { mutableStateOf(false) }
     var groupError by remember { mutableStateOf<String?>(null) }
     val sections = remember(sessions, org, query, runningOnly, children, backendId) {
         machineSessionSections(backendId, sessions, org, query, runningOnly, children)
@@ -82,12 +85,15 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
         }
         item {
             Column(Modifier.padding(horizontal = 12.dp)) {
-                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("搜索标题 / 路径 / 模型 / 分组 / #标签") }, singleLine = true)
+                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("搜索标题 / 路径 / 模型 / 分组 / #标签") }, singleLine = true, enabled = !sorting)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(runningOnly, { runningOnly = !runningOnly }, label = { Text("工作中") })
-                    FilterChip(children, { children = !children }, label = { Text("子 Agent") })
-                    TextButton(enabled = org.loaded, onClick = { groupError = null; managing = true }) { Text("分组") }
+                    FilterChip(runningOnly, { runningOnly = !runningOnly }, enabled = !sorting, label = { Text("工作中") })
+                    FilterChip(children, { children = !children }, enabled = !sorting, label = { Text("子 Agent") })
+                    TextButton(enabled = org.loaded && !sorting, onClick = { groupError = null; managing = true }) { Text("分组") }
+                    TextButton(enabled = org.loaded && !sortBusy && (sorting || (query.isBlank() && !runningOnly)), onClick = { sorting = !sorting; notice = null }) { Text(if (sorting) "完成" else "排序") }
                 }
+                if (!sorting && (query.isNotBlank() || runningOnly)) Text("清除搜索和筛选后可调整顺序。", style = MaterialTheme.typography.bodySmall)
+                if (sorting) Text("仅调整同一分组内的顺序；与网页共享。", style = MaterialTheme.typography.bodySmall)
                 org.error?.let { Text("分组/排序未刷新：$it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         }
@@ -129,7 +135,24 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                     GroupedCard {
                         section.sessions.forEachIndexed { index, row ->
                             if (index > 0) InsetSeparator()
-                            SessionRow(row, org.loaded, onOpen) { groupError = null; moving = row }
+                            SessionRow(row, org.loaded && !sorting, onOpen, onGroup = { groupError = null; moving = row })
+                            if (sorting && section.id != "__subagents") {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    fun performMove(direction: SessionMove) {
+                                        sortBusy = true; notice = null
+                                        scope.launch {
+                                            repo.live.moveSession(row.key, direction).fold(
+                                                onSuccess = { notice = "排序已保存" },
+                                                onFailure = { notice = "排序失败：${it.message ?: "请刷新后重试"}" },
+                                            )
+                                            sortBusy = false
+                                        }
+                                    }
+                                    TextButton(enabled = !sortBusy && index > 0, onClick = { performMove(SessionMove.UP) }) { Text("↑ 上移") }
+                                    TextButton(enabled = !sortBusy && index < section.sessions.lastIndex, onClick = { performMove(SessionMove.DOWN) }) { Text("↓ 下移") }
+                                    TextButton(enabled = !sortBusy && index > 0, onClick = { performMove(SessionMove.TOP) }) { Text("置本组顶部") }
+                                }
+                            }
                         }
                     }
                 }
@@ -338,7 +361,7 @@ private fun SessionRow(
                     Spacer(Modifier.size(Spacing.sm))
                 }
                 Text(
-                    row.summary.title,
+                    listOf(row.meta.emoji, row.summary.title).filter { it.isNotBlank() }.joinToString(" "),
                     style = PiType.callout.copy(fontWeight = FontWeight.Medium),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

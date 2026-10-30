@@ -88,6 +88,19 @@ class LiveSessionClientTest {
         assertEquals("/api/live-session-groups/work/members/session-fixture", calls.last().path)
     }
 
+    @Test fun orderAndAppearanceWritesUseProtectedEndpoints() = runBlocking {
+        cookies.save(backend, cookie)
+        handler = { if (it.requestURI.path == "/api/live-session-order") reply(it, """{"ok":true,"order":["session-fixture"]}""") else reply(it, """{"ok":true}""") }
+        assertEquals(listOf("session-fixture"), client.saveOrder(listOf("session-fixture")).order)
+        client.patchMeta(process, null, null, "🐱")
+        assertEquals(listOf("PUT", "PATCH"), calls.map { it.method })
+        assertEquals("/api/live-session-order", calls[0].path)
+        assertEquals("""{"order":["session-fixture"]}""", calls[0].body)
+        assertTrue(calls[1].body.contains("🐱"))
+        assertTrue(calls.all { it.cookie == "pi_live_session=$cookie" })
+        assertTrue(calls.none { it.path.endsWith("/claim") })
+    }
+
     @Test fun malformedGroupPathsFailBeforeSendingCredentials() = runBlocking {
         cookies.save(backend, cookie)
         assertTrue(runCatching { client.moveGroup(process, "../../auth") }.isFailure)

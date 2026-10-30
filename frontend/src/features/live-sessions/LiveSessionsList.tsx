@@ -155,6 +155,7 @@ interface RowProps {
   appearance?: Pick<LiveSessionMeta, 'color' | 'emoji'>
   onAppearance: (appearance: SessionAppearance) => Promise<void>
   onRename: (name: string) => Promise<void>
+  onReload: () => Promise<void>
   /** Start a new independent Pi forked from this session (pi `--fork`). */
   onFork: () => void
   onJoinGroup: (groupId: string) => void
@@ -229,8 +230,7 @@ function SessionRow(p: RowProps) {
     event.stopPropagation()
     if (reloading || p.session.status === 'reconnecting') return
     setReloading(true)
-    void liveSessionApi.command(p.session.processInstanceId, { type: 'reload' })
-      .finally(() => setTimeout(() => setReloading(false), 800))
+    void p.onReload().catch(() => {}).finally(() => setReloading(false))
   }
 
   const requestExit = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -394,7 +394,7 @@ function SessionRow(p: RowProps) {
                 Pi sends nothing, so this is the honest "silent since" clock. The label
                 is spelled out because the bare number read as an unexplained “几秒”. */}
             <span className={`flex shrink-0 items-center gap-0.5 font-mono text-2xs leading-none text-muted ${rowBusy ? 'hidden' : 'md:group-hover:hidden md:group-focus-within:hidden'}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}\n本会话启动于：${new Date(p.session.startedAt).toLocaleString()}`}><span>{relTime(p.session.lastActivityAt)}</span></span>
-            <div className={`items-center gap-0.5 ${rowBusy ? 'flex' : 'max-md:flex hidden group-hover:flex group-focus-within:flex'}`}>
+            <div className={`items-center gap-0.5 ${p.reorderMode ? 'hidden' : rowBusy ? 'flex' : 'max-md:flex hidden group-hover:flex group-focus-within:flex'}`}>
             <button
               type="button"
               disabled={reloading || p.session.status === 'reconnecting'}
@@ -444,33 +444,6 @@ function SessionRow(p: RowProps) {
               onClick={event => { event.stopPropagation(); setAppearanceEditing(true) }}
               className="flex shrink-0 items-center rounded px-1 text-muted opacity-60 hover:bg-bg-hover hover:text-accent focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             ><MaterialIcon name="palette" className="h-3.5 w-3.5" /></button>
-            {p.reorderMode && (
-              <div className="flex shrink-0 items-center gap-0.5" onClick={event => event.stopPropagation()}>
-                <button
-                  type="button"
-                  disabled={p.moveIndex <= 0}
-                  aria-label={`上移 session ${p.title}`}
-                  title="上移一位"
-                  onClick={() => p.onMove('up')}
-                  className="grid h-5 w-5 place-items-center rounded border border-border bg-bg text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-30"
-                >↑</button>
-                <button
-                  type="button"
-                  disabled={p.moveIndex >= p.moveCount - 1}
-                  aria-label={`下移 session ${p.title}`}
-                  title="下移一位"
-                  onClick={() => p.onMove('down')}
-                  className="grid h-5 w-5 place-items-center rounded border border-border bg-bg text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-30"
-                >↓</button>
-                <button
-                  type="button"
-                  aria-label={`${p.pinned ? '取消置顶' : '置顶'} session ${p.title}`}
-                  title={p.pinned ? '取消置顶' : '置顶到第一位'}
-                  onClick={() => p.onPin(!p.pinned)}
-                  className={`grid h-5 w-5 place-items-center rounded border border-border bg-bg text-2xs ${p.pinned ? 'border-accent text-accent' : 'text-muted hover:text-accent'}`}
-                >📌</button>
-              </div>
-            )}
             <button
               type="button"
               aria-label="Session menu"
@@ -481,6 +454,14 @@ function SessionRow(p: RowProps) {
             </div>
           </div>
 
+          {p.reorderMode && !p.subagent && (
+            <div className="my-2 flex flex-wrap gap-2" onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
+              <button type="button" disabled={p.moveIndex <= 0 || p.busy} aria-label={`上移 session ${p.title}`} onClick={() => p.onMove('up')} className="min-h-11 rounded border border-border bg-bg px-3 text-xs text-text disabled:opacity-30">↑ 上移</button>
+              <button type="button" disabled={p.moveIndex >= p.moveCount - 1 || p.busy} aria-label={`下移 session ${p.title}`} onClick={() => p.onMove('down')} className="min-h-11 rounded border border-border bg-bg px-3 text-xs text-text disabled:opacity-30">↓ 下移</button>
+              <button type="button" disabled={p.moveIndex <= 0 || p.busy} aria-label={`移到本组顶部 session ${p.title}`} onClick={() => p.onMove('top')} className="min-h-11 rounded border border-border bg-bg px-3 text-xs text-text disabled:opacity-30">⤒ 本组顶部</button>
+              <button type="button" disabled={p.busy} aria-label={`${p.pinned ? '取消置顶' : '置顶'} session ${p.title}`} onClick={() => p.onPin(!p.pinned)} className="min-h-11 rounded border border-border bg-bg px-3 text-xs text-text disabled:opacity-30">{p.pinned ? '取消置顶' : '置顶'}</button>
+            </div>
+          )}
           {/* line 2 — status · tags · group · location */}
           <div className="flex h-[14px] items-center gap-1 overflow-hidden">
             <span className="flex min-w-0 shrink items-center gap-1 text-2xs leading-none text-muted-strong">
@@ -1071,9 +1052,18 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
     onRename: async (name: string) => {
       try {
         await liveSessionApi.rename(session.processInstanceId, name)
-        onRefresh?.()
+        if (onRefresh) void onRefresh().catch(() => {})
       } catch (reason) {
         setSessionActionNotice({ text: `重命名失败：${reason instanceof Error ? reason.message : String(reason)}`, danger: true })
+        throw reason
+      }
+    },
+    onReload: async () => {
+      try {
+        await liveSessionApi.command(session.processInstanceId, { type: 'reload' })
+        setSessionActionNotice({ text: `已发送重载指令：${sessionTitle(session, sessionTitles)}`, danger: false })
+      } catch (reason) {
+        setSessionActionNotice({ text: `重载失败：${reason instanceof Error ? reason.message : String(reason)}`, danger: true })
         throw reason
       }
     },

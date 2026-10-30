@@ -8,6 +8,30 @@ data class MachineSessionSection(
     val collapsedByDefault: Boolean = false,
 )
 
+enum class SessionMove { UP, DOWN, TOP }
+
+/** Reorder only within the displayed block, preserving unknown/offline ids and other blocks. */
+fun moveMachineSession(sections: List<MachineSessionSection>, saved: List<String>, sessionId: String, move: SessionMove): List<String> {
+    val section = sections.firstOrNull { block -> block.sessions.any { it.summary.sessionId == sessionId } }
+        ?: throw IllegalArgumentException("会话已离线，请刷新")
+    require(section.id != "__subagents") { "子 Agent 不支持排序" }
+    val ids = section.sessions.map { it.summary.sessionId }
+    val index = ids.indexOf(sessionId)
+    val destination = when (move) { SessionMove.UP -> index - 1; SessionMove.DOWN -> index + 1; SessionMove.TOP -> 0 }
+    require(destination in ids.indices && destination != index) { "会话已在目标位置" }
+    val base = (sections.flatMap { block -> block.sessions.map { it.summary.sessionId } } + saved).distinct().filterNot { it == sessionId }.toMutableList()
+    val anchors = ids.filterNot { it == sessionId }
+    val next = anchors.getOrNull(destination)
+    val previous = anchors.getOrNull(destination - 1)
+    val insertAt = when {
+        next != null && next in base -> base.indexOf(next)
+        previous != null && previous in base -> base.indexOf(previous) + 1
+        else -> base.size
+    }
+    base.add(insertAt, sessionId)
+    return base
+}
+
 fun machineSessionSections(
     backendId: String,
     sessions: List<AggregatedLiveSession>,

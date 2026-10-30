@@ -345,6 +345,21 @@ class LivePiRepository(
         if (!isCurrentClient(id, api)) throw IOException("机器配置已更改，请先核对原机器的操作结果")
         _organization.update { it + (id to (it[id] ?: LiveOrganization()).copy(groups = groups, loaded = true, error = null)) }
     }
+    suspend fun moveSession(key: SessionKey, direction: SessionMove): Result<Unit> = mutation(key) {
+        val api = client(key.backendId)
+        // Refresh immediately before writing the whole order, retaining unknown ids.
+        val org = api.organization()
+        val list = api.list()
+        val meta = api.meta()
+        if (!isCurrentClient(key.backendId, api)) throw IOException("机器配置已更改，请刷新")
+        val session = list.firstOrNull { it.processInstanceId == key.slotKey } ?: throw IOException("会话已离线，请刷新")
+        val aggregates = list.map { AggregatedLiveSession(SessionKey(key.backendId, it.processInstanceId), "", it, meta[it.sessionId] ?: LiveMeta()) }
+        val sections = machineSessionSections(key.backendId, aggregates, org)
+        val next = moveMachineSession(sections, org.order.order, session.sessionId, direction)
+        val saved = api.saveOrder(next)
+        if (!isCurrentClient(key.backendId, api)) throw IOException("机器配置已更改，请核对原机器的排序")
+        _organization.update { it + (key.backendId to org.copy(order = org.order.copy(order = saved.order))) }
+    }
     suspend fun moveGroup(key: SessionKey, groupId: String?): Result<Unit> = mutation(key) {
         val org = _organization.value[key.backendId] ?: throw IOException("请先加载本机分组")
         val summary = rows.value[key.backendId]?.find { it.processInstanceId == key.slotKey } ?: throw IOException("会话已离线，请刷新")
@@ -480,8 +495,8 @@ class LivePiRepository(
     suspend fun reload(key: SessionKey): Result<Unit> = shared(key) { buildJsonObject { put("type", "reload") } }.also {
         if (it.isSuccess) _leases.update { map -> map - key }
     }
-    suspend fun patchMeta(key: SessionKey, tags: List<String>? = null, pinned: Boolean? = null): Result<Unit> = mutation(key) {
-        client(key.backendId).patchMeta(key.slotKey, tags, pinned); reconcile(key.backendId)
+    suspend fun patchMeta(key: SessionKey, tags: List<String>? = null, pinned: Boolean? = null, emoji: String? = null): Result<Unit> = mutation(key) {
+        client(key.backendId).patchMeta(key.slotKey, tags, pinned, emoji); reconcile(key.backendId)
     }
     suspend fun context(key: SessionKey): Result<JsonElement> = result(key) {
         require(_details.value[key]?.summary?.capabilities?.contains("context_view") == true) { "此会话扩展不支持上下文检查" }

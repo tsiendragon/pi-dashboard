@@ -25,6 +25,43 @@ const val MAX_QUOTE_CHARS = 160
 const val CHAT_REVIEW_INTRO =
     "Please review and address these comments about the quoted parts of our conversation:"
 
+enum class FollowUpKind { QUOTE, COMMENT }
+
+private val FILE_REVIEW_HEAD = Regex("^Please review and address the comments? in .+:$")
+private val QUOTE_REPLY_HEAD = Regex("^引用（来自.+）：$|^引用：$")
+private val COMMENT_QUOTED = Regex("^Quoted: \"(.*)\"$")
+
+fun quoteOrCommentKind(text: String): FollowUpKind? {
+    val head = text.split('\n').take(12).map { it.trim() }.filter { it.isNotEmpty() }
+    if (head.any { it == CHAT_REVIEW_INTRO || FILE_REVIEW_HEAD.matches(it) }) return FollowUpKind.COMMENT
+    if (head.any { QUOTE_REPLY_HEAD.matches(it) } && text.lineSequence().any { it.startsWith("> ") }) return FollowUpKind.QUOTE
+    return null
+}
+
+fun quotedSnippets(text: String): List<String> = buildList {
+    text.lineSequence().forEach { raw ->
+        val line = raw.trim()
+        val comment = COMMENT_QUOTED.matchEntire(line)?.groupValues?.getOrNull(1)
+        if (!comment.isNullOrEmpty()) add(comment)
+        else if (line.startsWith("> ")) add(line.removePrefix("> "))
+    }
+}
+
+fun followUpSummary(text: String): String {
+    val comments = text.lineSequence().map { it.trim() }
+        .filter { it.startsWith("Comment:") }
+        .map { it.removePrefix("Comment:").trim() }
+        .filter { it.isNotEmpty() }
+        .toList()
+    if (comments.isNotEmpty()) return comments.joinToString("；")
+    val body = text.lineSequence().map { it.trim() }.filter { line ->
+        line.isNotEmpty() && !QUOTE_REPLY_HEAD.matches(line) && !line.startsWith("> ") &&
+            line != CHAT_REVIEW_INTRO && !FILE_REVIEW_HEAD.matches(line) &&
+            !line.matches(Regex("^\\[\\d+]( .+)?$")) && !COMMENT_QUOTED.matches(line)
+    }.joinToString(" ")
+    return body.ifBlank { quotedSnippets(text).joinToString(" ") }
+}
+
 data class AppQuote(
     val id: String,
     /** Whitespace-collapsed, length-capped quote. */

@@ -60,4 +60,17 @@ class ReviewMessagesTest {
         assertEquals("hello", composeOutgoing("  hello  "))
         assertEquals("", composeOutgoing("   "))
     }
+
+    @Test fun followUpClassificationAndSummaryMatchWebUiShapes() {
+        val quote = composeOutgoing("补充说明", quotes = listOf(AppQuote("q1", "先看目录结构并确认路径", "assistant")))
+        assertEquals(FollowUpKind.QUOTE, quoteOrCommentKind(quote))
+        assertEquals(listOf("先看目录结构并确认路径"), quotedSnippets(quote))
+        assertEquals("补充说明", followUpSummary(quote))
+
+        val review = composeOutgoing("", reviews = listOf(AppReviewItem("c1", "你的回复", "先看目录结构并确认路径", "改成只读检查")))
+        assertEquals(FollowUpKind.COMMENT, quoteOrCommentKind(review))
+        assertEquals(listOf("先看目录结构并确认路径"), quotedSnippets(review))
+        assertEquals("改成只读检查", followUpSummary(review))
+        assertEquals(null, quoteOrCommentKind("普通新问题"))
+    }
 }

@@ -76,6 +76,19 @@ describe('SessionAppearanceDialog', () => {
     expect(onSave).toHaveBeenCalledExactlyOnceWith({ color: '#54937d', emoji: '🐈‍⬛' })
   })
 
+  it('awaits rename and avoids repeating a successful rename when appearance save is retried', async () => {
+    const onRename = vi.fn(async () => {})
+    const onSave = vi.fn().mockRejectedValueOnce(new Error('装扮保存失败')).mockResolvedValueOnce(undefined)
+    const { dialog, onClose } = open({ onRename, onSave })
+    fireEvent.change(within(dialog).getByLabelText('会话名称'), { target: { value: '新名称' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('装扮保存失败')
+    expect(onRename).toHaveBeenCalledOnce()
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    expect(onRename).toHaveBeenCalledOnce()
+  })
+
   it('keeps keyboard focus inside and handles Escape', () => {
     const { dialog, onClose } = open()
     const close = within(dialog).getByRole('button', { name: '关闭装扮设置' })

@@ -18,7 +18,7 @@ import { TTS_LANGUAGES, TTS_MODELS, TTS_VOICES, type TtsConfigResponse } from '@
 import { SettingsSectionSlot } from '../plugins/slot-consumers'
 import { ACTIONS, formatKey, setShortcut, resetShortcut, resetAllShortcuts, hasCustomShortcuts, subscribeShortcuts, eventToKeyString, type ActionCategory } from '../shortcuts'
 import SubagentModelsTab from '../features/subagent-models/SubagentModelsTab'
-import { modelFullId, modelPatternMatches, splitModelFullId, splitThinkingSuffix } from '../utils/modelUtils'
+import { modelFullId, modelPatternMatches, splitModelFullId, splitThinkingSuffix, supportedThinkingLevels, type ModelLike } from '../utils/modelUtils'
 import { modelSelectionPatterns, selectedModelIds } from '../utils/modelSelection'
 
 /**
@@ -88,10 +88,10 @@ function Toggle({ label, hint, cfg, checked, onChange }: { label: string; hint?:
   )
 }
 
-/** 分段按钮：选项少（≤6）时替代下拉，行为与下拉一致（单选、onChange(value)）。 */
+/** 分段按钮：选项少（≤7）时替代下拉，行为与下拉一致（单选、onChange(value)）。 */
 function Segmented({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
   return (
-    <div role="radiogroup" aria-label={label} className="ml-4 inline-flex flex-wrap rounded-lg bg-bg-accent p-0.5">
+    <div role="radiogroup" aria-label={label} className="inline-flex flex-wrap gap-1 rounded-lg bg-bg-accent p-1">
       {options.map(o => {
         const on = o.value === value
         return (
@@ -100,7 +100,7 @@ function Segmented({ label, value, options, onChange }: { label: string; value: 
             type="button"
             role="radio"
             aria-checked={on}
-            className={`cursor-pointer rounded-md border-none px-2.5 py-1 text-meta transition-colors ${on ? 'bg-card font-medium text-accent shadow-sm' : 'bg-transparent text-muted hover:text-text'}`}
+            className={`min-h-8 cursor-pointer rounded-md border-none px-2.5 py-1 text-meta transition-colors ${on ? 'bg-card font-medium text-accent shadow-sm' : 'bg-transparent text-muted hover:text-text'}`}
             onClick={() => { if (!on) onChange(o.value) }}
           >
             {o.label}
@@ -112,16 +112,16 @@ function Segmented({ label, value, options, onChange }: { label: string; value: 
 }
 
 function SelectRow({ label, hint, cfg, value, options, onChange, seg }: { label: string; hint?: string; cfg?: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void; seg?: boolean }) {
-  const asSegments = seg && options.length <= 6
+  const asSegments = seg && options.length <= 7
   return (
-    <div className="flex items-center justify-between gap-4 py-3">
+    <div className="flex flex-col items-start gap-2.5 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <RowLabel label={label} hint={hint} cfg={cfg} />
       {asSegments ? (
         <Segmented label={label} value={value} options={options} onChange={onChange} />
       ) : (
         <select
           aria-label={label}
-          className="focus-ring ml-4 min-w-40 max-w-64 cursor-pointer rounded-lg border border-border bg-bg-elevated px-3 py-1.5 font-body text-body-s text-text outline-none transition-colors"
+          className="focus-ring w-full min-w-40 max-w-64 cursor-pointer rounded-lg border border-border bg-bg-elevated px-3 py-1.5 font-body text-body-s text-text outline-none transition-colors sm:ml-4 sm:w-auto"
           value={value}
           onChange={e => onChange(e.target.value)}
         >
@@ -276,7 +276,7 @@ function usePiSettings() {
 }
 
 /* ── MODEL TAB ── */
-type ModelOption = { id: string; name?: string; provider: string }
+type ModelOption = ModelLike & { name?: string; contextWindow?: number }
 
 function ModelTab() {
   const { tr } = useLocale()
@@ -513,8 +513,10 @@ function ModelListTab() {
                       return !query || provider.toLowerCase().includes(query) || `${model.name || ''} ${model.id}`.toLowerCase().includes(query)
                     }).map(model => {
                       const enabled = selectedIds.has(modelFullId(model))
+                      const levels = supportedThinkingLevels(model).filter(level => level !== 'off')
+                      const contextWindow = typeof model.contextWindow === 'number' && model.contextWindow > 0 ? model.contextWindow : undefined
                       return (
-                        <label key={modelFullId(model)} className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-bg-hover">
+                        <label key={modelFullId(model)} className="flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-bg-hover">
                           <input
                             type="checkbox"
                             checked={enabled}
@@ -526,6 +528,20 @@ function ModelListTab() {
                             <span className="block truncate text-body-s text-text">{model.name || model.id}</span>
                             <span className="block truncate font-mono text-meta text-muted">{model.id}</span>
                           </span>
+                          {(levels.length > 0 || contextWindow) && (
+                            <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                              {levels.length > 0 && (
+                                <span className="rounded border border-border bg-bg px-1.5 py-0.5 text-2xs text-muted" title={`支持思考强度：${levels.join(' / ')}`}>
+                                  思考 {levels.length} 档
+                                </span>
+                              )}
+                              {contextWindow && (
+                                <span className="rounded border border-border bg-bg px-1.5 py-0.5 font-mono text-2xs text-muted" title={`上下文窗口 ${contextWindow.toLocaleString()} tokens`}>
+                                  {contextWindow >= 1_000_000 ? `${Math.round(contextWindow / 100_000) / 10}M` : `${Math.round(contextWindow / 1000)}k`}
+                                </span>
+                              )}
+                            </span>
+                          )}
                         </label>
                       )
                     })}
@@ -1837,12 +1853,12 @@ export default function SettingsPage() {
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Mobile horizontal nav */}
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-3 md:hidden">
+        <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border px-3 py-2.5 md:hidden">
           <LanguageSwitch />
           {SETTINGS_GROUPS.flatMap(g => g.tabs).map(t => (
             <button
               key={t.id}
-              className={`flex cursor-pointer items-center gap-1 rounded-md border px-3 py-1.5 text-body-s font-medium transition ${tab === t.id ? 'border-border bg-card text-accent' : 'border-transparent bg-transparent text-muted hover:bg-bg-hover hover:text-text'}`}
+              className={`flex shrink-0 cursor-pointer items-center gap-1 rounded-md border px-3 py-1.5 text-body-s font-medium transition ${tab === t.id ? 'border-border bg-card text-accent' : 'border-transparent bg-transparent text-muted hover:bg-bg-hover hover:text-text'}`}
               onClick={() => selectTab(t.id)}
             >
               <LineIcon name={t.icon} className="h-4 w-4" />

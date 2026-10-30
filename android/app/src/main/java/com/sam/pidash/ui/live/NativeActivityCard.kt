@@ -25,11 +25,14 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.sam.pidash.data.remote.activityReplies
+import com.sam.pidash.data.remote.activityOverview
 import com.sam.pidash.data.remote.activityTools
+import com.sam.pidash.domain.model.FollowUpKind
 import com.sam.pidash.domain.model.LiveActivity
 import com.sam.pidash.domain.model.activityPreview
 import com.sam.pidash.domain.model.activityStatus
+import com.sam.pidash.domain.model.followUpSummary
+import com.sam.pidash.domain.model.quoteOrCommentKind
 import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.theme.PiType
@@ -49,7 +52,7 @@ internal fun NativeActivityCard(
 ) {
     val status = activityStatus(activity)
     val prompt = activity.items.firstOrNull { it.role == "user" }?.text?.trim().orEmpty()
-    val preview = activityReplies(activity).lastOrNull()?.text?.let { activityPreview(it, maxLines = 3) }.orEmpty()
+    val overview = activityOverview(activity)
     val steps = activityTools(activity).size
     val accent = when {
         status.failed -> MaterialTheme.colorScheme.error
@@ -67,7 +70,7 @@ internal fun NativeActivityCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (accent != null) {
-                PulsingDot(accent)
+                if (status.running) PulsingDot(accent) else StatusDot(accent, size = 6.dp)
                 Spacer(Modifier.size(Spacing.sm))
             }
             Text(
@@ -83,15 +86,39 @@ internal fun NativeActivityCard(
                 prompt.replace('\n', ' '),
                 style = PiType.footnote,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        } else if (activity.items.firstOrNull { it.role == "user" }?.images?.isNotEmpty() == true) {
+            MetaText("用户发送了图片")
+        } else if (activity.items.none { it.role == "user" }) {
+            MetaText("已有活动（窗口内记录）")
         }
-        if (preview.isNotBlank()) {
-            Text(preview, style = PiType.callout, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        } else if (!status.running) {
-            MetaText("这一轮没有正文回复")
+        overview.forEach { item ->
+            when {
+                item == null -> MetaText("… 省略部分记录，点开查看")
+                item.role == "tool" || item.role == "toolResult" || item.toolCallId != null -> {
+                    val state = when { item.isError -> "失败"; item.status == "running" -> "进行中"; item.status == "done" -> "完成"; else -> "待确认" }
+                    val detail = toolArgumentPreview(item)
+                    Text("· ${item.toolName ?: "工具"} · $state${if (detail.isNotBlank()) " · $detail" else ""}", style = PiType.footnote,
+                        color = if (item.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                item.role == "user" -> {
+                    val kind = if (quoteOrCommentKind(item.text) == FollowUpKind.COMMENT) "批注追问" else "引用追问"
+                    val text = activityPreview(followUpSummary(item.text), maxLines = 2)
+                    Text("$kind · $text", style = PiType.footnote, color = MaterialTheme.colorScheme.primary,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                else -> {
+                    val label = when { item.isError -> "出错"; item.status == "running" -> "输出中"; item.intermediate || item.channel == "commentary" -> "进度"; else -> "回复" }
+                    val text = activityPreview(item.text, maxLines = 3)
+                    Text("$label · $text", style = PiType.callout, color = if (item.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
+        if (overview.isEmpty() && !status.running) MetaText("本轮暂无可显示的正文或步骤")
     }
 }
 

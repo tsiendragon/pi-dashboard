@@ -50,22 +50,24 @@ internal fun LiveMetadataDialog(
     busy: Boolean,
     error: String?,
     onDismiss: () -> Unit,
-    onSubmit: (List<String>, Boolean) -> Unit,
+    onSubmit: (List<String>, Boolean, String) -> Unit,
 ) {
     var tags by remember { mutableStateOf(meta?.tags.orEmpty().joinToString(", ")) }
     var pinned by remember { mutableStateOf(meta?.pinned == true) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("置顶 / 标签") }, text = {
+    var emoji by remember { mutableStateOf(meta?.emoji.orEmpty()) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("会话装扮 / 标签") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row {
                 Checkbox(checked = pinned, enabled = !busy, onCheckedChange = { pinned = it })
                 Text("置顶", Modifier.padding(top = 12.dp))
             }
+            OutlinedTextField(value = emoji, onValueChange = { if (it.length <= 24 && it.none { ch -> ch.isISOControl() }) emoji = it }, enabled = !busy, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("会话表情（留空则清除）") })
             OutlinedTextField(value = tags, onValueChange = { tags = it }, enabled = !busy, label = { Text("标签，用逗号分隔") })
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         }
     }, confirmButton = { TextButton(enabled = !busy, onClick = {
-        onSubmit(tags.split(',', '，').map { it.trim() }.filter { it.isNotEmpty() }.distinct(), pinned)
+        onSubmit(tags.split(',', '，').map { it.trim() }.filter { it.isNotEmpty() }.distinct(), pinned, emoji.trim())
     }) { Text("保存") } }, dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("取消") } })
 }
 
@@ -109,19 +111,35 @@ internal fun LiveModelDialog(
                 if (thinking) {
                     if (!loading && levels.isEmpty()) Text("服务器未提供当前模型的思考等级选项；可手动填写，是否支持由服务器验证。")
                     levels.distinct().forEach { option ->
-                        FilterChip(selected = level == option, enabled = !busy, onClick = { level = option }, label = { Text(option) })
+                        Surface(
+                            onClick = { level = option }, enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
+                            color = if (level == option) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                RadioButton(selected = level == option, onClick = null, enabled = !busy)
+                                Text(option, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
                     }
                     OutlinedTextField(value = level, onValueChange = { level = it }, enabled = !busy,
-                        singleLine = true, label = { Text("思考等级") })
+                        modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("自定义思考等级") })
                 } else {
-                    OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("搜索模型") }, singleLine = true)
+                    OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), label = { Text("搜索模型或服务商") }, singleLine = true)
+                    val filtered = options.filter { "${it.provider}/${it.id} ${it.name}".contains(query, ignoreCase = true) }
                     if (!loading && error == null && options.isEmpty()) Text("服务器没有返回可用模型。")
-                    options.filter { "${it.provider}/${it.id} ${it.name}".contains(query, ignoreCase = true) }.forEach { option ->
-                        OutlinedButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = { onModel(option) }) {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text(option.name.ifBlank { option.id })
-                                Text("${option.provider}/${option.id}", style = MaterialTheme.typography.labelSmall)
-                                if (option.contextWindow > 0) Text("上下文 ${option.contextWindow}", style = MaterialTheme.typography.labelSmall)
+                    if (!loading && options.isNotEmpty() && filtered.isEmpty()) Text("没有匹配的模型，请尝试其他关键词。")
+                    filtered.groupBy { it.provider }.toSortedMap().forEach { (provider, models) ->
+                        Text(provider, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+                        models.forEach { option ->
+                            val selected = option.provider == summary?.model?.provider && option.id == summary.model.id
+                            OutlinedButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = { onModel(option) }) {
+                                Column(Modifier.fillMaxWidth()) {
+                                    Text(option.name.ifBlank { option.id } + if (selected) " · 当前" else "")
+                                    Text(option.id, style = MaterialTheme.typography.labelSmall)
+                                    if (option.contextWindow > 0) Text("上下文 ${option.contextWindow}", style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                     }
