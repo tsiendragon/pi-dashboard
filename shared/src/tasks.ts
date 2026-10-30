@@ -53,7 +53,7 @@ export interface TaskFact {
   path?: string
   /** Jira issue key when the source knows one (`PROJ-104`). Absent ⇒ no ticket, which is normal. */
   jiraKey?: string
-  /** Ready-to-open Jira URL built from `tasks.jiraBaseUrl`; absent whenever `jiraKey` is. */
+  /** Ready-to-open Jira URL; only built when a base is configured, so it is absent for unconfigured deployments. */
   jiraUrl?: string
   /** Ticket state from the local Jira cache (never fetched while rendering). */
   jiraStatus?: JiraStatus
@@ -115,7 +115,10 @@ export interface TasksConfig {
   journal: { autoDetect: boolean; roots: string[]; enabled: boolean }
   lanes: LaneDef[]
   defaultView: TaskViewMode
-  /** Where a Jira issue key opens, e.g. `https://example.atlassian.net/browse/`. Trailing slash optional. */
+  /**
+   * Where a Jira issue key opens, e.g. `https://example.atlassian.net/browse/`. Trailing slash optional.
+   * There is no built-in default: unset means no ticket links are rendered.
+   */
   jiraBaseUrl?: string
   /** Config-declared external sources (no code change needed to add one). */
   providers?: ExternalProviderConfig[]

@@ -105,7 +105,7 @@ describe('task-journal provider', () => {
 })
 
 describe('jira links', () => {
-  it('builds one browsable URL per ticket from the configured base and skips untracked tasks', async () => {
+  it('reports ticket keys but only builds links when a base is configured', async () => {
     const root = makeJournal()
     const dir = mkdtempSync(join(tmpdir(), 'jiralinks-'))
     try {
@@ -117,8 +117,9 @@ describe('jira links', () => {
       })
       const res = await service.snapshot()
       const byId = new Map(res.tasks.map(t => [t.id, t]))
-      expect(byId.get('PROJ-1')?.jiraUrl).toBe('https://example.atlassian.net/browse/PROJ-1')
-      expect(byId.get('PROJ-3')?.jiraUrl).toBe('https://example.atlassian.net/browse/PROJ-77')
+      // 没配 tasks.jiraBaseUrl 时：号照旧上报，但不能凭空编一个 Jira 站点出来
+      expect(byId.get('PROJ-1')?.jiraKey).toBe('PROJ-1')
+      expect(byId.get('PROJ-1')?.jiraUrl).toBeUndefined()
       expect(byId.get('local-epic')?.jiraUrl).toBeUndefined()
 
       const custom = new TaskService({

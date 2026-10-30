@@ -19,8 +19,11 @@ import { linkSessions, type LiveSessionInput } from './session-linker.js'
 import { JiraStatusStore } from '../jira/status.js'
 import type { JiraStatus } from '@shared/tasks.js'
 
-/** Fallback browse base when `tasks.jiraBaseUrl` is absent; only the prefix matters, the key is appended. */
-export const DEFAULT_JIRA_BASE = 'https://example.atlassian.net/browse/'
+/**
+ * Browse base for ticket links. Empty by default: an unconfigured deployment must not invent a
+ * Jira site, so no link is rendered until `tasks.jiraBaseUrl` is set.
+ */
+export const DEFAULT_JIRA_BASE = ''
 
 export interface TaskServiceOptions {
   getConfig: () => TasksConfig
@@ -115,8 +118,10 @@ export class TaskService {
   async snapshot(): Promise<TasksResponse> {
     const cfg = this.options.getConfig()
     // One place builds the ticket URL: providers only report the key, so a moved Jira is one config change.
-    const jiraBase = (cfg.jiraBaseUrl || DEFAULT_JIRA_BASE).replace(/\/+$/, '') + '/'
-    const withJiraUrl = (task: TaskFact): TaskFact => task.jiraKey ? { ...task, jiraUrl: jiraBase + encodeURIComponent(task.jiraKey) } : task
+    // No configured base ⇒ no link at all (better than pointing at somebody else's site).
+    const configuredBase = (cfg.jiraBaseUrl || DEFAULT_JIRA_BASE).trim()
+    const jiraBase = configuredBase ? configuredBase.replace(/\/+$/, '') + '/' : ''
+    const withJiraUrl = (task: TaskFact): TaskFact => task.jiraKey && jiraBase ? { ...task, jiraUrl: jiraBase + encodeURIComponent(task.jiraKey) } : task
     const providers = this.buildProviders(cfg)
     const results = await Promise.all(providers.map(p => this.runProvider(p)))
 

@@ -404,7 +404,7 @@ curl -s localhost:7777/api/tts/config | jq '{available, reason, endpoint}'
 | `journal.autoDetect` | 默认 `true`：从 `roots` 里挑第一个结构完整的仓库；关掉后只用 `roots[0]` |
 | `lanes` / `defaultView` | 泳道定义与默认视图，省略即用内置的三条泳道。`lanes` 结构见下；`defaultView` 取 `execute`（默认）或 `survey` |
 | `providers` | 配置声明的外部任务源（`command` 或 `file`，只读），见下面的「外部任务源」 |
-| `jiraBaseUrl` | **Jira 链接前缀**，默认 `https://example.atlassian.net/browse/`。任务页把「任务的身份」拼在它后面生成可点链接；换成别的 Jira 站点只改这一处，不需要改代码。必须是 `http(s)://` 开头的绝对地址，否则回落到默认值 |
+| `jiraBaseUrl` | **Jira 链接前缀，不配就不生成链接**（只显示 Jira 号，不凭空指到别人的站点）。写了就把「任务的身份」拼在它后面变成可点链接，例如 `https://example.atlassian.net/browse/`；换 Jira 站点只改这一处。必须是 `http(s)://` 开头的绝对地址，否则当作没配 |
 
 **泳道 `lanes`**：`match` 里三个条件任一命中就归入该泳道，按数组顺序取第一个命中的，都没命中归「未分类」。
 

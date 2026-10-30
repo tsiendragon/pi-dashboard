@@ -78,8 +78,11 @@ export interface ServiceRow extends ServiceEntry {
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 
 /**
- * Seeded on first run. Paths/ports below were verified on this machine; `managed: false`
- * rows are links + probes only, because the dashboard cannot restart them in place.
+ * Seed list written the first time `~/.pi/services.json` is missing.
+ *
+ * Deliberately minimal: every machine runs different services with different paths, so a baked-in
+ * list of somebody else's checkouts would only show up as broken rows. Add your own entries from the
+ * Services page (or by editing the JSON); the field reference is in `guide/services.md`.
  */
 const DEFAULT_SERVICES: ServiceEntry[] = [
   {
@@ -88,82 +91,8 @@ const DEFAULT_SERVICES: ServiceEntry[] = [
     group: '本机',
     managed: false,
     note: '重启会断开当前所有会话，请回终端执行 ./run.sh。',
-    cwd: '/home/you/repos/pi-dashboard',
     probe: { url: 'http://127.0.0.1:7777/api/status' },
     webui: 'http://127.0.0.1:7777/',
-  },
-  {
-    id: 'presentation-center',
-    label: 'Presentation Center',
-    group: '本机',
-    cwd: '/home/you/repos/presentation-center',
-    start: ['bash', 'scripts/start.sh'],
-    stop: ['bash', 'scripts/stop.sh'],
-    probe: { url: 'http://127.0.0.1:8765/health' },
-    webui: 'http://127.0.0.1:8765/',
-    log: '/tmp/pc.log',
-  },
-  {
-    id: 'llm-bot',
-    label: 'EagleEye LLM Bot 看板',
-    group: '本机',
-    note: '需要 .env 里的 BOT_DASHBOARD_TOKEN 才能启动。',
-    cwd: '/home/you/repos/llm-bot',
-    start: ['bash', 'run.sh', 'web', 'start'],
-    stop: ['bash', 'run.sh', 'web', 'stop'],
-    probe: { url: 'http://127.0.0.1:8777/' },
-    webui: 'http://127.0.0.1:8777/',
-  },
-  {
-    id: 'xdoc-monitor',
-    label: 'XDoc Monitor',
-    group: '本机',
-    note: '默认只监听本机，浏览器直连需要另开隧道；没有 stop 脚本，停止时按端口结束进程。',
-    cwd: '/home/you/repos/xdoc-monitor',
-    start: ['bash', 'scripts/serve.sh'],
-    env: { PORT: '8914', RELOAD: '0' },
-    probe: { url: 'http://127.0.0.1:8914/' },
-    webui: 'http://127.0.0.1:8914/',
-  },
-  {
-    id: 'sekret',
-    label: 'Sekret 凭证库',
-    group: '本机',
-    // Its own WebUI (`sekret local ui`). No login and it binds 0.0.0.0 in the upstream CLI,
-    // so the note tells the user to stop it when done rather than leaving it up.
-    note: '自带 WebUI，但没有登录验证且监听 0.0.0.0；解锁需要本机 SSH 私钥，用完请停止。',
-    start: ['/home/you/envs/conda/envs/train/bin/sekret', 'local', 'ui', '--user', 'tsien', '--port', '8015'],
-    // Cold imports of fastapi/pydantic from the shared NFS take ~20s on this machine.
-    startTimeoutMs: 60000,
-    probe: { url: 'http://127.0.0.1:8015/' },
-    webui: 'http://127.0.0.1:8015/',
-  },
-  {
-    id: 'datahub',
-    label: 'DataHub',
-    group: '远端（只读）',
-    managed: false,
-    note: '在服务主机上运行，本页只能看隧道是否通。',
-    probe: { url: 'http://127.0.0.1:18000/health', timeoutMs: 3000 },
-    webui: 'http://127.0.0.1:18000/',
-  },
-  {
-    id: 'model-center',
-    label: 'ModelCenter',
-    group: '远端（只读）',
-    managed: false,
-    note: '在服务主机上运行，本页只能看隧道是否通。',
-    probe: { url: 'http://127.0.0.1:18081/health', timeoutMs: 3000 },
-    webui: 'http://127.0.0.1:18081/',
-  },
-  {
-    id: 'cardlib',
-    label: 'CardLib',
-    group: '远端（只读）',
-    managed: false,
-    note: '在服务主机上运行，本页只能看隧道是否通。',
-    probe: { url: 'http://127.0.0.1:18777/api/official-tables', timeoutMs: 5000 },
-    webui: 'http://127.0.0.1:18777/',
   },
 ]
 

@@ -109,7 +109,7 @@ const DEFAULT_TASKS_CONFIG: TasksConfig = {
     { id: 'adhoc', label: '临时', match: { kind: ['todo', 'item'] } },
   ],
   defaultView: 'execute',
-  jiraBaseUrl: 'https://example.atlassian.net/browse/',
+  /** No default Jira site: unset means "do not build ticket links" until the user configures one. */
   providers: [],
 }
 
@@ -160,7 +160,7 @@ function normalizeTasksConfig(raw: unknown): TasksConfig {
     defaultView: r.defaultView === 'survey' ? 'survey' : 'execute',
     jiraBaseUrl: typeof r.jiraBaseUrl === 'string' && /^https?:\/\/\S+$/i.test(r.jiraBaseUrl.trim())
       ? r.jiraBaseUrl.trim()
-      : DEFAULT_TASKS_CONFIG.jiraBaseUrl,
+      : undefined,
     providers: sanitizeExternalProviders(r.providers),
   }
 }
