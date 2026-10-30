@@ -1,0 +1,3502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>Pi-Dashboard 移动端活动界面与设置交互原型 · Mobile Mockup</title>
+<style>
+  /* ── 核心设计变量：对齐 pi-dashboard 主题规范（深色与浅色） ── */
+  :root {
+    --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    
+    /* 深色主题（Dark - 默认） */
+    --bg: #12141a;
+    --bg-accent: #151821;
+    --bg-elevated: #1a1d26;
+    --bg-hover: #242834;
+    --card: #181b23;
+    --card-hover: #1f232e;
+    --card-fg: #f4f4f5;
+    --border: #262933;
+    --border-strong: #383d4c;
+    --border-subtle: #1e212b;
+    --text: #e4e4e7;
+    --text-strong: #fafafa;
+    --muted: #9496a1;
+    --muted-strong: #b4b6c3;
+    
+    --accent: #7aa2f7;
+    --accent-hover: #9bb8ff;
+    --accent-subtle: rgba(122, 162, 247, 0.14);
+    --accent-fg: #0f1115;
+    
+    --ok: #2dd4bf;
+    --ok-subtle: rgba(45, 212, 191, 0.14);
+    --warn: #e8c547;
+    --warn-subtle: rgba(232, 197, 71, 0.14);
+    --danger: #f07178;
+    --danger-subtle: rgba(240, 113, 120, 0.14);
+    --user-bubble: #232038;
+    --user-text: #cbbbf9;
+    --user-accent: #9d7cd8;
+    --user-subtle: rgba(157, 124, 216, 0.14);
+    
+    --safe-bottom: env(safe-area-inset-bottom, 16px);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.25);
+    --shadow-md: 0 4px 14px rgba(0,0,0,0.35);
+    --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+  }
+
+  /* 浅色主题（Light） */
+  [data-theme="light"] {
+    --bg: #f4f5f8;
+    --bg-accent: #ebeef3;
+    --bg-elevated: #ffffff;
+    --bg-hover: #e5e8ef;
+    --card: #ffffff;
+    --card-hover: #f8f9fc;
+    --card-fg: #18181b;
+    --border: #e0e3ea;
+    --border-strong: #c8cdd7;
+    --border-subtle: #eaedf3;
+    --text: #2d3139;
+    --text-strong: #0f1115;
+    --muted: #6b7280;
+    --muted-strong: #4b5563;
+    
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-subtle: rgba(37, 99, 235, 0.1);
+    --accent-fg: #ffffff;
+    
+    --ok: #0d9488;
+    --ok-subtle: rgba(13, 148, 136, 0.1);
+    --warn: #d97706;
+    --warn-subtle: rgba(217, 119, 6, 0.1);
+    --danger: #e11d48;
+    --danger-subtle: rgba(225, 29, 72, 0.1);
+    --user-bubble: #ede9fe;
+    --user-text: #5b21b6;
+    --user-accent: #7c3aed;
+    --user-subtle: rgba(124, 58, 237, 0.1);
+    
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --shadow-lg: 0 10px 25px rgba(0,0,0,0.12);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  
+  body {
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    background: #090a0d;
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    overflow-x: hidden;
+  }
+
+  code, pre, .mono {
+    font-family: var(--mono);
+    font-feature-settings: "liga" 0;
+  }
+
+  /* 顶部全局控制栏（用于在电脑或手机上调试切换不同状态） */
+  .preview-control-bar {
+    width: 100%;
+    background: #141720;
+    border-bottom: 1px solid #232734;
+    padding: 8px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: #9da1b0;
+    z-index: 100;
+  }
+  .preview-control-bar .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #fff;
+    font-weight: 600;
+  }
+  .preview-control-bar .brand .badge {
+    background: var(--accent);
+    color: #000;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+  }
+  .preview-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .ctrl-btn {
+    background: #202432;
+    border: 1px solid #31374a;
+    color: #cbd0e0;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.15s;
+  }
+  .ctrl-btn:hover {
+    background: #2a3044;
+    color: #fff;
+    border-color: #4a5472;
+  }
+  .ctrl-btn.active {
+    background: var(--accent);
+    color: #0f1115;
+    font-weight: 600;
+    border-color: var(--accent);
+  }
+
+  /* 模拟手机机身容器 */
+  .device-wrapper {
+    margin: 16px auto 32px;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* 机身外壳 */
+  .device-wrapper.framed {
+    width: 393px;
+    height: 844px;
+    background: #000;
+    border-radius: 50px;
+    padding: 12px;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.8), 0 0 0 2px #2d3139, 0 0 0 4px #1b1c20;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .device-wrapper.framed::before {
+    content: "";
+    position: absolute;
+    left: -3px;
+    top: 120px;
+    width: 3px;
+    height: 48px;
+    background: #2b2e38;
+    border-radius: 2px 0 0 2px;
+  }
+
+  .device-wrapper.fullscreen {
+    width: 100%;
+    max-width: 520px;
+    height: 100vh;
+    margin: 0 auto;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  /* 手机屏幕主画板 */
+  .phone-screen {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    border-radius: 40px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .device-wrapper.fullscreen .phone-screen {
+    border-radius: 0;
+    border: none;
+  }
+
+  /* 顶部灵动岛与状态栏 (StatusBar) */
+  .status-bar {
+    height: 44px;
+    padding: 0 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+    position: relative;
+    z-index: 40;
+    background: var(--bg);
+    flex-shrink: 0;
+  }
+  .status-island {
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100px;
+    height: 26px;
+    background: #000;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .status-island .camera {
+    width: 10px;
+    height: 10px;
+    background: #0c1020;
+    border-radius: 50%;
+  }
+
+  /* ── 视图容器：活动会话页 (View Session) vs 设置页 (View Settings) ── */
+  .app-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .app-view.hidden {
+    display: none !important;
+  }
+
+  /* ── 核心：手机端 Header 导航栏 ── */
+  .mobile-header {
+    height: 52px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    position: relative;
+    z-index: 30;
+    flex-shrink: 0;
+  }
+
+  .nav-left {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .icon-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .icon-btn:hover, .icon-btn:active {
+    background: var(--bg-hover);
+    border-color: var(--border);
+  }
+  .icon-btn.has-badge::after {
+    content: "";
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    border: 2px solid var(--card);
+  }
+
+  .session-title-cluster {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    min-width: 0;
+    flex: 1;
+    transition: background 0.15s;
+  }
+  .session-title-cluster:hover, .session-title-cluster:active {
+    background: var(--bg-hover);
+  }
+  .session-emoji-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .session-emoji-avatar .color-dot {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--card);
+    background: #5287be;
+  }
+  .session-title-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .session-name-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 600;
+    font-size: 13.5px;
+    color: var(--text-strong);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-name-row .down-arrow {
+    font-size: 10px;
+    color: var(--muted);
+    margin-left: 2px;
+  }
+  .session-sub-meta {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+    display: inline-block;
+  }
+  .pulse-dot.running {
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(122,162,247,0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(122,162,247,0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(122,162,247,0); }
+  }
+
+  .nav-right-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .action-pill-btn {
+    height: 32px;
+    padding: 0 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 11.5px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .action-pill-btn:active {
+    transform: scale(0.96);
+  }
+  .action-pill-btn.reload-btn:hover, .action-pill-btn.reload-btn:active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-subtle);
+  }
+  .action-pill-btn.restart-btn:hover, .action-pill-btn.restart-btn:active {
+    border-color: var(--warn);
+    color: var(--warn);
+    background: var(--warn-subtle);
+  }
+
+  .spin-anim {
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* 顶部辅助条 */
+  .mobile-sub-bar {
+    background: var(--bg-accent);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11.5px;
+    flex-shrink: 0;
+  }
+  .goal-capsule {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 3px 8px;
+    border-radius: 6px;
+    min-width: 0;
+    flex: 1;
+    cursor: pointer;
+  }
+  .goal-capsule .icon { font-size: 12px; }
+  .goal-capsule .title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-strong);
+    font-weight: 500;
+  }
+  .goal-capsule .progress {
+    font-family: var(--mono);
+    color: var(--ok);
+    font-size: 11px;
+    margin-left: auto;
+    font-weight: 600;
+  }
+
+  .view-mode-toggle {
+    display: flex;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .view-mode-toggle button {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .view-mode-toggle button.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+
+  /* ── 中间主内容区：WebUI 活动时间线 (Activity Timeline) ── */
+  .timeline-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 14px 12px 100px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .activity-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    transition: border-color 0.2s;
+  }
+  .activity-card.is-running {
+    border-color: rgba(122, 162, 247, 0.4);
+    box-shadow: 0 0 0 1px rgba(122, 162, 247, 0.2);
+  }
+
+  .activity-header {
+    background: var(--user-bubble);
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(157, 124, 216, 0.15);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .activity-meta-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+  }
+  .user-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--user-text);
+    font-weight: 600;
+    font-size: 11px;
+    background: var(--user-subtle);
+    padding: 1px 7px;
+    border-radius: 99px;
+  }
+  .activity-time-stat {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .activity-prompt-text {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text-strong);
+    line-height: 1.45;
+  }
+
+  .activity-body {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .activity-plan-box {
+    background: var(--bg-elevated);
+    border: 1px dashed var(--border-strong);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .plan-header {
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--muted-strong);
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .plan-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .plan-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    color: var(--text);
+  }
+  .plan-list li .plan-num {
+    font-family: var(--mono);
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .activity-steps-container {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .steps-header-toggle {
+    width: 100%;
+    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .steps-header-toggle:hover {
+    background: var(--bg-hover);
+  }
+  .steps-summary-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .steps-count-badge {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    background: var(--border);
+    padding: 1px 6px;
+    border-radius: 99px;
+    color: var(--muted-strong);
+  }
+  .steps-expand-arrow {
+    font-size: 10px;
+    color: var(--muted);
+    transition: transform 0.2s;
+  }
+  .steps-expand-arrow.open {
+    transform: rotate(180deg);
+  }
+
+  .steps-list {
+    border-top: 1px solid var(--border-subtle);
+    padding: 6px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .step-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    padding: 3px 0;
+  }
+  .step-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+  }
+  .step-icon {
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+  .step-icon.done { color: var(--ok); }
+  .step-icon.running { color: var(--accent); animation: spin 1.2s linear infinite; }
+  .step-label {
+    color: var(--muted-strong);
+    font-size: 11px;
+  }
+  .step-chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 170px;
+    cursor: pointer;
+  }
+  .step-chip:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .thinking-box {
+    border-left: 2px solid var(--accent);
+    background: rgba(122, 162, 247, 0.05);
+    border-radius: 0 6px 6px 0;
+    overflow: hidden;
+  }
+  .thinking-summary {
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11.5px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .thinking-summary:hover {
+    background: rgba(122, 162, 247, 0.08);
+  }
+  .thinking-content {
+    padding: 0 10px 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--muted);
+    border-top: 1px dashed rgba(122, 162, 247, 0.15);
+  }
+
+  .activity-reply-markdown {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .activity-reply-markdown p {
+    margin-bottom: 8px;
+  }
+  .activity-reply-markdown p:last-child {
+    margin-bottom: 0;
+  }
+  .activity-reply-markdown pre {
+    background: #0d0f14;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    margin: 8px 0;
+    overflow-x: auto;
+    font-size: 12px;
+    position: relative;
+  }
+  .activity-reply-markdown code {
+    font-size: 12px;
+    color: #e2b340;
+  }
+  .code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #1f232e;
+  }
+  .copy-code-btn {
+    background: transparent;
+    border: 1px solid #2e3342;
+    color: var(--muted);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .copy-code-btn:hover {
+    color: #fff;
+    border-color: #555e78;
+  }
+
+  .activity-card-footer {
+    padding: 8px 12px;
+    background: var(--bg-accent);
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11.5px;
+  }
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .status-badge.done {
+    background: var(--ok-subtle);
+    color: var(--ok);
+  }
+  .status-badge.running {
+    background: var(--accent-subtle);
+    color: var(--accent);
+  }
+
+  .typing-pulse-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: typingPulse 1s infinite alternate;
+  }
+  @keyframes typingPulse {
+    0% { opacity: 0.3; transform: scale(0.8); }
+    100% { opacity: 1; transform: scale(1.1); }
+  }
+
+  /* 底部快捷提示词横滑条 */
+  .quick-prompts-scroller {
+    position: absolute;
+    bottom: 62px;
+    left: 0;
+    right: 0;
+    padding: 4px 10px;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    z-index: 25;
+    background: linear-gradient(to top, var(--bg) 85%, transparent);
+    pointer-events: auto;
+  }
+  .quick-prompts-scroller::-webkit-scrollbar { display: none; }
+  .prompt-chip {
+    flex-shrink: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text-strong);
+    padding: 4px 10px;
+    border-radius: 99px;
+    font-size: 11.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .prompt-chip:hover, .prompt-chip:active {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+  }
+
+  /* 底部输入控制区 (Mobile Composer) */
+  .mobile-composer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    padding: 8px 10px calc(8px + var(--safe-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 30;
+  }
+
+  .composer-tool-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .model-picker-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--mono);
+    color: var(--text-strong);
+    max-width: 60%;
+  }
+  .model-picker-trigger .name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .model-picker-trigger:hover {
+    border-color: var(--border-strong);
+  }
+  .thinking-level-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+  }
+  .thinking-level-badge:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  .composer-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  .slash-cmd-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--muted-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .slash-cmd-btn:active {
+    background: var(--bg-hover);
+  }
+
+  .composer-textarea {
+    flex: 1;
+    min-height: 36px;
+    max-height: 110px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-family: var(--sans);
+    font-size: 13.5px;
+    line-height: 1.4;
+    color: var(--text-strong);
+    resize: none;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .composer-textarea:focus {
+    border-color: var(--accent);
+  }
+  .composer-textarea::placeholder {
+    color: var(--muted);
+  }
+
+  .send-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: var(--accent-fg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .send-btn:active {
+    transform: scale(0.94);
+  }
+
+  /* 遮罩层 */
+  .modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(2px);
+    z-index: 50;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── 侧滑抽屉：会话列表 (Session Drawer) ── */
+  .session-drawer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 86%;
+    max-width: 345px;
+    background: var(--bg-accent);
+    border-right: 1px solid var(--border);
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: var(--shadow-lg);
+  }
+  .session-drawer.open {
+    transform: translateX(0);
+  }
+
+  .drawer-header {
+    height: 52px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+  }
+  .drawer-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text-strong);
+  }
+
+  /* 会话排序控制条（全新升级：排序模式开关） */
+  .drawer-reorder-toolbar {
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11.5px;
+  }
+  .reorder-mode-toggle-btn {
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    padding: 3px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s;
+  }
+  .reorder-mode-toggle-btn.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+
+  .drawer-search-bar {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    gap: 6px;
+  }
+  .search-input {
+    flex: 1;
+    height: 32px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 12px;
+    color: var(--text);
+    outline: none;
+  }
+  .search-input:focus {
+    border-color: var(--accent);
+  }
+  .new-session-btn {
+    height: 32px;
+    padding: 0 10px;
+    background: var(--accent-subtle);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+
+  /* 会话列表项容器 */
+  .drawer-session-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 会话卡片：支持顺序调整与平滑位移动画 */
+  .session-item-row {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s, border-color 0.15s;
+  }
+  .session-item-row:active {
+    background: var(--bg-hover);
+  }
+  .session-item-row.is-active {
+    border-color: var(--accent);
+    background: var(--bg-elevated);
+    box-shadow: 0 0 0 1px var(--accent-subtle);
+  }
+  .session-item-row.is-active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3.5px;
+    background: var(--accent);
+    border-radius: 0 3px 3px 0;
+  }
+
+  .session-row-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .session-row-order-index {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    width: 18px;
+    text-align: center;
+    display: none;
+  }
+  .reorder-mode-active .session-row-order-index {
+    display: inline-block;
+  }
+
+  .session-row-emoji {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: var(--bg-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+    border: 1px solid var(--border-subtle);
+  }
+  .session-row-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .session-row-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-row-desc {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 排序操作手柄（在排序模式下高亮突出显示） */
+  .session-reorder-handle-group {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+  }
+  .reorder-mode-active .session-reorder-handle-group {
+    display: flex;
+  }
+  .reorder-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+  .reorder-btn:active {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+
+  .session-row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 4px;
+    border-top: 1px dashed var(--border-subtle);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .reorder-mode-active .session-row-actions {
+    display: none;
+  }
+
+  .session-action-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .row-action-btn {
+    padding: 3px 6px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--muted-strong);
+    font-size: 11px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    transition: all 0.15s;
+  }
+  .row-action-btn:hover, .row-action-btn:active {
+    color: #fff;
+    border-color: var(--border-strong);
+  }
+  .row-action-btn.reload-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .row-action-btn.restart-btn:hover { color: var(--warn); border-color: var(--warn); }
+  .row-action-btn.rename-btn:hover { color: var(--ok); border-color: var(--ok); }
+
+  /* ── 底部抽屉 (Bottom Sheet) ── */
+  .bottom-sheet {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--card);
+    border-top: 1px solid var(--border-strong);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding: 12px 16px calc(16px + var(--safe-bottom));
+    z-index: 70;
+    transform: translateY(100%);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+  .bottom-sheet.open {
+    transform: translateY(0);
+  }
+
+  .sheet-handle-bar {
+    width: 36px;
+    height: 4px;
+    background: var(--border-strong);
+    border-radius: 2px;
+    margin: 0 auto -4px;
+  }
+
+  .sheet-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sheet-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .sheet-close-btn {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 18px;
+    cursor: pointer;
+  }
+
+  /* 改名与 Emoji 选择器 */
+  .emoji-preview-cluster {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-accent);
+    padding: 10px;
+    border-radius: 12px;
+  }
+  .big-emoji-display {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: var(--bg-elevated);
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    flex-shrink: 0;
+  }
+  .rename-input-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .rename-input-wrap label {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .rename-input {
+    height: 36px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 13.5px;
+    color: var(--text-strong);
+    outline: none;
+  }
+  .rename-input:focus {
+    border-color: var(--accent);
+  }
+
+  .emoji-category-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    overflow-x: auto;
+  }
+  .emoji-tab-btn {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11.5px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .emoji-tab-btn.active {
+    background: var(--bg-elevated);
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+
+  .emoji-grid-picker {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    max-height: 140px;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .emoji-choice-btn {
+    height: 38px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.1s;
+  }
+  .emoji-choice-btn:active {
+    transform: scale(1.15);
+  }
+  .emoji-choice-btn.selected {
+    border-color: var(--accent);
+    background: var(--accent-subtle);
+  }
+
+  .color-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .color-dot-choice {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.15s;
+  }
+  .color-dot-choice:hover {
+    transform: scale(1.1);
+  }
+  .color-dot-choice.selected {
+    box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--accent);
+  }
+
+  .sheet-save-btn {
+    height: 42px;
+    background: var(--accent);
+    color: var(--accent-fg);
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .sheet-save-btn:active {
+    opacity: 0.9;
+  }
+
+  /* 重启确认弹窗 */
+  .restart-confirm-box {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 8px 0;
+  }
+  .restart-icon-circle {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--warn-subtle);
+    color: var(--warn);
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+  }
+  .restart-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .restart-desc {
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .restart-actions-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .restart-cancel-btn {
+    flex: 1;
+    height: 40px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .restart-do-btn {
+    flex: 1;
+    height: 40px;
+    background: var(--warn);
+    color: #000;
+    border: none;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* 终端命令输出弹窗 */
+  .command-modal {
+    position: absolute;
+    inset: 20px 14px;
+    background: #0b0d13;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    z-index: 75;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-lg);
+    transform: scale(0.95);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .command-modal.open {
+    transform: scale(1);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .cmd-modal-header {
+    padding: 10px 14px;
+    background: #131620;
+    border-bottom: 1px solid #232735;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .cmd-modal-body {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: #98c379;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  /* Toast 轻量提示 */
+  .toast-container {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: rgba(24, 27, 35, 0.95);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-strong);
+    color: var(--text-strong);
+    padding: 8px 16px;
+    border-radius: 99px;
+    font-size: 12px;
+    font-weight: 500;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 90;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .toast-container.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+
+  /* 更多菜单底栏 */
+  .more-menu-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 6px 0;
+  }
+  .more-menu-item {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    color: var(--text);
+    font-size: 11.5px;
+  }
+  .more-menu-item:active {
+    background: var(--bg-hover);
+  }
+  .more-menu-item .icon {
+    font-size: 20px;
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     全新重构：移动端 APP 设置页 (Mobile Settings Page)
+     专门解决：模型列表效果差、思考等级 UI 粗暴、移动端溢出问题
+     ══════════════════════════════════════════════════════════════ */
+  .settings-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  /* 设置页顶栏 */
+  .settings-mobile-header {
+    height: 52px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .settings-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-strong);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* 设置分类横向可滑动 Tab 条（取代原本 15 个 Tab 暴力折行） */
+  .settings-tab-scroller {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--bg-accent);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-shrink: 0;
+  }
+  .settings-tab-scroller::-webkit-scrollbar { display: none; }
+  .settings-tab-btn {
+    flex-shrink: 0;
+    padding: 5px 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.15s;
+  }
+  .settings-tab-btn.active {
+    background: var(--card);
+    color: var(--accent);
+    border-color: var(--border);
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* 设置内容滚动容器 */
+  .settings-scroll-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 12px 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 优雅的设置卡片组 */
+  .settings-group-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+  .group-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .group-title-text {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-strong);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .group-title-hint {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ── 核心革新 1：思考等级（Thinking Level）阶梯式能量卡片 ── */
+  .thinking-level-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .thinking-ladder-card {
+    background: var(--bg-elevated);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .thinking-ladder-card:active {
+    transform: scale(0.98);
+  }
+  .thinking-ladder-card.selected {
+    border-color: var(--accent);
+    background: var(--accent-subtle);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .thinking-card-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .thinking-energy-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2.5px;
+    width: 20px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+  .energy-bar-seg {
+    width: 3.5px;
+    border-radius: 1px;
+    background: var(--border-strong);
+  }
+  .thinking-ladder-card.selected .energy-bar-seg.fill-1 { background: #38bdf8; }
+  .thinking-ladder-card.selected .energy-bar-seg.fill-2 { background: #60a5fa; }
+  .thinking-ladder-card.selected .energy-bar-seg.fill-3 { background: #818cf8; }
+  .thinking-ladder-card.selected .energy-bar-seg.fill-4 { background: #a78bfa; }
+  .thinking-ladder-card.selected .energy-bar-seg.fill-5 { background: #f43f5e; }
+
+  .thinking-meta-texts {
+    display: flex;
+    flex-direction: column;
+  }
+  .thinking-name-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .thinking-token-pill {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .thinking-ladder-card.selected .thinking-token-pill {
+    background: rgba(122, 162, 247, 0.2);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .thinking-desc-line {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .thinking-check-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: transparent;
+    flex-shrink: 0;
+  }
+  .thinking-ladder-card.selected .thinking-check-dot {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+    font-weight: bold;
+  }
+
+  /* 思考预算开关行 */
+  .switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 4px;
+    border-top: 1px dashed var(--border-subtle);
+  }
+  .switch-text-label {
+    display: flex;
+    flex-direction: column;
+  }
+  .switch-text-label .main {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-strong);
+  }
+  .switch-text-label .sub {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  /* 现代 iOS/Android 大号滑动开关 */
+  .modern-toggle {
+    width: 44px;
+    height: 24px;
+    background: var(--border-strong);
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .modern-toggle::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .modern-toggle.on {
+    background: var(--accent);
+  }
+  .modern-toggle.on::after {
+    transform: translateX(20px);
+  }
+
+  /* ── 核心革新 2：手机 APP 专用的模型列表 UI (Model Catalog) ── */
+  .model-search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0 10px;
+    height: 38px;
+  }
+  .model-search-box input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 12.5px;
+    color: var(--text-strong);
+  }
+  .model-filter-tags {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 2px 0;
+    scrollbar-width: none;
+  }
+  .model-filter-tags::-webkit-scrollbar { display: none; }
+  .filter-tag-chip {
+    padding: 3px 9px;
+    border-radius: 99px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .filter-tag-chip.active {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  /* Provider 分组大卡片 */
+  .provider-group-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .provider-group-header {
+    background: var(--bg-accent);
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .provider-badge-cluster {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .provider-logo-tag {
+    font-size: 13px;
+  }
+  .provider-enabled-count {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    background: var(--card);
+    padding: 1px 6px;
+    border-radius: 99px;
+    border: 1px solid var(--border-subtle);
+  }
+
+  /* 模型单条列表项：大号触控热区、清晰标签 */
+  .model-item-card {
+    padding: 11px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-subtle);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .model-item-card:last-child {
+    border-bottom: none;
+  }
+  .model-item-card:active {
+    background: var(--bg-hover);
+  }
+  .model-main-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .model-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .model-display-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .model-rec-badge {
+    font-size: 9.5px;
+    background: rgba(232, 197, 71, 0.15);
+    color: var(--warn);
+    border: 1px solid rgba(232, 197, 71, 0.3);
+    padding: 0 4px;
+    border-radius: 3px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .model-id-text {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .model-capsules-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 1px;
+    flex-wrap: wrap;
+  }
+  .model-feature-capsule {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--muted-strong);
+    font-family: var(--mono);
+  }
+  .model-feature-capsule.thinking {
+    background: var(--user-subtle);
+    border-color: rgba(157, 124, 216, 0.3);
+    color: var(--user-text);
+  }
+  .model-feature-capsule.context {
+    color: var(--ok);
+  }
+
+  @media (max-width: 440px) {
+    .device-wrapper.framed {
+      width: 100%;
+      height: 100vh;
+      border-radius: 0;
+      padding: 0;
+      box-shadow: none;
+    }
+    .device-wrapper.framed .phone-screen {
+      border-radius: 0;
+      border: none;
+    }
+    .status-island {
+      display: none;
+    }
+  }
+</style>
+</head>
+<body>
+
+  <!-- 顶部控制条：一键切换页面与机身模式 -->
+  <header class="preview-control-bar">
+    <div class="brand">
+      <span>📱 Pi-Dashboard 移动端原型</span>
+      <span class="badge">WebUI 活动架构</span>
+    </div>
+    <div class="preview-actions">
+      <!-- 页面视图切换 -->
+      <button class="ctrl-btn active" id="btnAppViewSession" onclick="switchAppView('session')">
+        <span>💬 会话活动页</span>
+      </button>
+      <button class="ctrl-btn" id="btnAppViewSettings" onclick="switchAppView('settings')">
+        <span>⚙️ 手机设置页 (模型与思考)</span>
+      </button>
+      <button class="ctrl-btn" id="btnToggleFrame" onclick="toggleDeviceFrame()">
+        <span>🖥️ 机身框模式</span>
+      </button>
+      <button class="ctrl-btn" id="btnToggleTheme" onclick="toggleTheme()">
+        <span>🌙 暗色主题</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 模拟机身容器 -->
+  <div class="device-wrapper framed" id="deviceWrapper">
+    <div class="phone-screen" id="phoneScreen">
+
+      <!-- 手机状态栏（含灵动岛） -->
+      <div class="status-bar">
+        <span class="mono" style="font-size:12px;">09:41</span>
+        <div class="status-island">
+          <div class="camera"></div>
+        </div>
+        <div style="display:flex;gap:5px;align-items:center;font-size:11px;">
+          <span>5G</span>
+          <span>100%</span>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════════
+           视图 1：Live Pi 单会话活动界面 (Session Activity Timeline)
+           ══════════════════════════════════════════════════════════════ -->
+      <div class="app-view" id="viewSession">
+        <!-- 移动端 Header 导航栏 -->
+        <header class="mobile-header">
+          <div class="nav-left">
+            <button class="icon-btn has-badge" onclick="openSessionDrawer()" aria-label="打开会话列表" title="会话列表">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            </button>
+
+            <!-- 会话标题卡（点击弹出装扮与重命名） -->
+            <div class="session-title-cluster" onclick="openRenameModal()" title="点击修改会话名称与表情">
+              <div class="session-emoji-avatar" id="headerEmojiAvatar">
+                <span id="currentEmojiDisplay">🚀</span>
+                <span class="color-dot" id="currentColorDot" style="background:#5287be;"></span>
+              </div>
+              <div class="session-title-meta">
+                <div class="session-name-row">
+                  <span id="currentSessionTitle">手机端UI与活动流改造</span>
+                  <span class="down-arrow">▾</span>
+                </div>
+                <div class="session-sub-meta">
+                  <span class="pulse-dot running" id="headerStatusDot"></span>
+                  <span>pi-dashboard</span>
+                  <span>·</span>
+                  <span id="headerModelTag">claude-3-7</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 顶部核心操作按钮组：一键 Reload 与 重启 Session -->
+          <div class="nav-right-actions">
+            <button class="action-pill-btn reload-btn" id="btnHeaderReload" onclick="triggerReload()" title="重载扩展、技能与提示词（无需重启进程）">
+              <svg id="reloadIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/></svg>
+              <span>重载</span>
+            </button>
+            <button class="action-pill-btn restart-btn" onclick="openRestartModal()" title="重启当前 Pi 会话进程（历史保留）">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              <span>重启</span>
+            </button>
+            <button class="icon-btn" onclick="openMoreModal()" aria-label="更多操作" style="width:32px;height:32px;">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- 顶部辅助条：任务目标与视图模式 -->
+        <div class="mobile-sub-bar">
+          <div class="goal-capsule" onclick="showToast('🎯 目标详情：完成移动端操作升级与活动视图重组')">
+            <span class="icon">🎯</span>
+            <span class="title">目标：移动端体验与活动界面重组</span>
+            <span class="progress">3/4 项</span>
+          </div>
+          <div class="view-mode-toggle">
+            <button class="active" id="btnModeActivity" onclick="switchViewMode('activity')">活动</button>
+            <button id="btnModeRaw" onclick="switchViewMode('raw')">完整</button>
+          </div>
+        </div>
+
+        <!-- 中间：WebUI 活动时间线 (Activity Timeline) -->
+        <main class="timeline-container" id="timelineContainer">
+          <!-- 活动 1：历史已完成的任务卡片 -->
+          <article class="activity-card" id="activity1">
+            <div class="activity-header">
+              <div class="activity-meta-line">
+                <span class="user-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  用户请求
+                </span>
+                <span class="activity-time-stat">
+                  <span>14:32:05</span>
+                  <span>·</span>
+                  <span>耗时 24s</span>
+                </span>
+              </div>
+              <div class="activity-prompt-text">
+                并且可以移动session的顺序。另外设置的手机APP上页面的UI效果很差，尤其是模型列表里显示的模型效果很差，思考等级的ui。
+              </div>
+            </div>
+
+            <div class="activity-body">
+              <div class="activity-plan-box">
+                <div class="plan-header">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+                  <span>实施要点</span>
+                </div>
+                <ul class="plan-list">
+                  <li><span class="plan-num">1.</span> 会话抽屉增加【排序模式】以及单卡片上移 ↑、下移 ↓、置顶 📌 交互</li>
+                  <li><span class="plan-num">2.</span> 彻底重构设置页模型列表：卡片化、特性徽标、上下文容量与现代触控开关</li>
+                  <li><span class="plan-num">3.</span> 彻底重构思考等级 UI：阶梯式能量卡片取代生硬英文下拉框</li>
+                </ul>
+              </div>
+
+              <!-- 执行步骤（可折叠） -->
+              <div class="activity-steps-container">
+                <button class="steps-header-toggle" onclick="toggleSteps('stepsList1', 'stepArrow1')">
+                  <div class="steps-summary-left">
+                    <span>⚡ 执行步骤</span>
+                    <span class="steps-count-badge">3 步全部完成</span>
+                  </div>
+                  <span class="steps-expand-arrow open" id="stepArrow1">▾</span>
+                </button>
+                <div class="steps-list" id="stepsList1">
+                  <div class="step-item">
+                    <div class="step-info">
+                      <span class="step-icon done">✓</span>
+                      <span class="step-label">实现排序</span>
+                      <span class="step-chip" onclick="showCmdModal('reorder session', 'Moving session #1 -> position 0 (Pin to top)\nState committed to order store.')">useLiveSessionOrder.ts</span>
+                    </div>
+                    <span class="mono" style="font-size:10px;color:var(--muted)">0.3s</span>
+                  </div>
+                  <div class="step-item">
+                    <div class="step-info">
+                      <span class="step-icon done">✓</span>
+                      <span class="step-label">重塑模型UI</span>
+                      <span class="step-chip" onclick="showCmdModal('catalog model cards', 'Rendering Provider groups: Anthropic, DeepSeek, OpenAI, DashScope\nContext and Thinking badges attached.')">ModelsCatalog.tsx</span>
+                    </div>
+                    <span class="mono" style="font-size:10px;color:var(--muted)">0.2s</span>
+                  </div>
+                  <div class="step-item">
+                    <div class="step-info">
+                      <span class="step-icon done">✓</span>
+                      <span class="step-label">阶梯思考</span>
+                      <span class="step-chip" onclick="showCmdModal('thinking ladder', 'Levels: off, minimal, low, medium, high, xhigh, max\nRendered visual energy ladder.')">ThinkingLevelSelector.tsx</span>
+                    </div>
+                    <span class="mono" style="font-size:10px;color:var(--muted)">0.2s</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 思考过程折叠块 -->
+              <div class="thinking-box">
+                <div class="thinking-summary" onclick="toggleThinking('thinkingContent1')">
+                  <span>💭 思考过程 (2.1s)</span>
+                  <span style="font-size:10px;">展开/折叠</span>
+                </div>
+                <div class="thinking-content" id="thinkingContent1" style="display:none;">
+                  原生的 Settings 页面在手机端暴力平铺 15 个 Tab，且 Model 选项只用桌面端原生 select 下拉框与小 checkbox，极难触控；在移动端应提供沉浸式的阶梯卡片与大号触控模型条目。
+                </div>
+              </div>
+
+              <div class="activity-reply-markdown">
+                <p>已为你将<strong>会话排序移动</strong>和<strong>手机设置页（模型列表 & 思考等级）</strong>全部升级重塑：</p>
+                <pre><div class="code-header"><span>NEW FEATURES</span><button class="copy-code-btn" onclick="copyCode(this)">复制</button></div><code>1. 会话列表支持【上移 ↑】【下移 ↓】【置顶 📌】与排序管理模式
+2. 设置页模型列表卡片化：品牌卡片、上下文容量、推理思考标签与现代开关
+3. 思考等级彻底升级为阶梯式能量卡片（直观场景说明 + Token 预算）</code></pre>
+                <p>点击上方预览条的 <strong>「⚙️ 手机设置页」</strong> 可以随时切换体验全新设置界面！</p>
+              </div>
+            </div>
+
+            <div class="activity-card-footer">
+              <span class="status-badge done">✓ 已完成</span>
+              <span style="color:var(--muted);font-size:11px;">14:32:29 完成</span>
+            </div>
+          </article>
+
+          <!-- 活动 2：正在进行中的活动卡片 -->
+          <article class="activity-card is-running" id="activity2">
+            <div class="activity-header">
+              <div class="activity-meta-line">
+                <span class="user-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  用户请求
+                </span>
+                <span class="activity-time-stat">
+                  <span id="runningTimer" style="color:var(--accent);">00:28</span>
+                  <span>·</span>
+                  <span style="color:var(--accent);">进行中</span>
+                </span>
+              </div>
+              <div class="activity-prompt-text">
+                在手机端上体验会话拖动排序，并在设置中调节思考等级。
+              </div>
+            </div>
+
+            <div class="activity-body">
+              <div class="activity-steps-container">
+                <div style="padding:8px 10px;font-size:12px;color:var(--accent);display:flex;align-items:center;gap:6px;">
+                  <span class="typing-pulse-dot"></span>
+                  <span>正在同步移动端排序持久化状态与模型配置...</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="activity-card-footer">
+              <span class="status-badge running">
+                <span class="typing-pulse-dot" style="width:6px;height:6px;margin-right:2px;"></span>
+                实时就绪
+              </span>
+              <button class="action-pill-btn" onclick="showToast('已转入后台运行')" style="height:26px;font-size:11px;padding:0 8px;">转后台</button>
+            </div>
+          </article>
+        </main>
+
+        <!-- 底部快捷提示词横滑条 -->
+        <div class="quick-prompts-scroller">
+          <div class="prompt-chip" onclick="fillPrompt('帮我把目前的进展更新到交接文档中，写一份 session-handoff 摘要')">
+            <span>📦</span><span>交接存档</span>
+          </div>
+          <div class="prompt-chip" onclick="fillPrompt('把这次会话的所有改动自 review 一遍，确认按 git 规范 commit')">
+            <span>✅</span><span>收尾自查+提交</span>
+          </div>
+          <div class="prompt-chip" onclick="fillPrompt('继续执行上个会话的待办目标，读任务文档确认状态后继续')">
+            <span>🔄</span><span>新 session 接续</span>
+          </div>
+          <div class="prompt-chip" onclick="fillPrompt('对照验收标准逐条检查，该跑的测试都跑一遍')">
+            <span>🎯</span><span>验收前检查</span>
+          </div>
+        </div>
+
+        <!-- 底部输入控制条 -->
+        <footer class="mobile-composer">
+          <div class="composer-tool-row">
+            <div class="model-picker-trigger" onclick="openModelPickerBottomSheet()">
+              <span>🤖</span>
+              <span class="name" id="activeModelLabel">claude-3-7-sonnet</span>
+              <span style="font-size:10px;color:var(--muted)">▾</span>
+            </div>
+            <div class="thinking-level-badge" onclick="openThinkingBottomSheet()">
+              <span>💭 思考:</span>
+              <span id="thinkingLevelLabel" style="font-family:var(--mono);color:var(--accent);font-weight:600;">medium</span>
+              <span style="font-size:10px;color:var(--muted)">▾</span>
+            </div>
+          </div>
+
+          <div class="composer-input-row">
+            <button class="slash-cmd-btn" onclick="openSlashCommands()" title="快捷指令">
+              /
+            </button>
+            <textarea class="composer-textarea" id="mainComposerInput" placeholder="发消息给 Pi，或点上方快捷指令..." rows="1" oninput="autoResizeTextarea(this)"></textarea>
+            <button class="send-btn" id="btnComposerSend" onclick="handleSendMessage()" title="发送消息">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+          </div>
+        </footer>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════════
+           视图 2：全新重塑的手机 APP 设置页 (Mobile Settings Page)
+           ══════════════════════════════════════════════════════════════ -->
+      <div class="app-view hidden" id="viewSettings">
+        <!-- 设置页顶栏 -->
+        <header class="settings-mobile-header">
+          <button class="icon-btn" onclick="switchAppView('session')" title="返回会话">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <div class="settings-title">
+            <span>⚙️ 系统设置</span>
+          </div>
+          <button class="action-pill-btn reload-btn" onclick="showToast('✅ 设置已自动保存')" style="border-color:var(--accent);color:var(--accent);">
+            <span>保存</span>
+          </button>
+        </header>
+
+        <!-- 滑动式分类 Tab 条 -->
+        <div class="settings-tab-scroller">
+          <button class="settings-tab-btn active" id="tabBtnModels" onclick="switchSettingsTab('models', this)">
+            <span>🤖</span><span>模型与思考</span>
+          </button>
+          <button class="settings-tab-btn" id="tabBtnGeneral" onclick="switchSettingsTab('general', this)">
+            <span>⚡</span><span>基础偏好</span>
+          </button>
+          <button class="settings-tab-btn" id="tabBtnVoice" onclick="switchSettingsTab('voice', this)">
+            <span>🔊</span><span>语音 TTS/ASR</span>
+          </button>
+          <button class="settings-tab-btn" id="tabBtnDisplay" onclick="switchSettingsTab('display', this)">
+            <span>🎨</span><span>外观与主题</span>
+          </button>
+        </div>
+
+        <!-- 设置主体滚动区 -->
+        <div class="settings-scroll-content">
+          <!-- ── 1. 思考等级（Thinking Level）UI 重塑 ── -->
+          <div class="settings-group-card">
+            <div class="group-title-row">
+              <span class="group-title-text">
+                <span>💭</span><span>默认思考强度 (Thinking Level)</span>
+              </span>
+              <span class="group-title-hint">新会话默认推理深度</span>
+            </div>
+
+            <!-- 阶梯式能量卡片列表 -->
+            <div class="thinking-level-grid" id="settingsThinkingGrid">
+              <!-- Off -->
+              <div class="thinking-ladder-card" onclick="selectThinkingLevelInSettings('off', this)">
+                <div class="thinking-card-left">
+                  <div class="thinking-energy-bars">
+                    <div class="energy-bar-seg" style="height:4px;"></div>
+                  </div>
+                  <div class="thinking-meta-texts">
+                    <div class="thinking-name-line">
+                      <span>关 · Off</span>
+                      <span class="thinking-token-pill">0 tokens</span>
+                    </div>
+                    <div class="thinking-desc-line">不生成思考过程，极速直接回答</div>
+                  </div>
+                </div>
+                <div class="thinking-check-dot">✓</div>
+              </div>
+
+              <!-- Minimal -->
+              <div class="thinking-ladder-card" onclick="selectThinkingLevelInSettings('minimal', this)">
+                <div class="thinking-card-left">
+                  <div class="thinking-energy-bars">
+                    <div class="energy-bar-seg fill-1" style="height:5px;"></div>
+                    <div class="energy-bar-seg" style="height:3px;"></div>
+                  </div>
+                  <div class="thinking-meta-texts">
+                    <div class="thinking-name-line">
+                      <span>极低 · Minimal</span>
+                      <span class="thinking-token-pill">~1K tokens</span>
+                    </div>
+                    <div class="thinking-desc-line">快速验证与格式修正，开销极小</div>
+                  </div>
+                </div>
+                <div class="thinking-check-dot">✓</div>
+              </div>
+
+              <!-- Low -->
+              <div class="thinking-ladder-card" onclick="selectThinkingLevelInSettings('low', this)">
+                <div class="thinking-card-left">
+                  <div class="thinking-energy-bars">
+                    <div class="energy-bar-seg fill-1" style="height:7px;"></div>
+                    <div class="energy-bar-seg fill-2" style="height:9px;"></div>
+                  </div>
+                  <div class="thinking-meta-texts">
+                    <div class="thinking-name-line">
+                      <span>低 · Low</span>
+                      <span class="thinking-token-pill">~2K tokens</span>
+                    </div>
+                    <div class="thinking-desc-line">轻量逻辑检查、小型单文件编码</div>
+                  </div>
+                </div>
+                <div class="thinking-check-dot">✓</div>
+              </div>
+
+              <!-- Medium (默认) -->
+              <div class="thinking-ladder-card selected" onclick="selectThinkingLevelInSettings('medium', this)">
+                <div class="thinking-card-left">
+                  <div class="thinking-energy-bars">
+                    <div class="energy-bar-seg fill-1" style="height:7px;"></div>
+                    <div class="energy-bar-seg fill-2" style="height:11px;"></div>
+                    <div class="energy-bar-seg fill-3" style="height:14px;"></div>
+                  </div>
+                  <div class="thinking-meta-texts">
+                    <div class="thinking-name-line">
+                      <span>中 · Medium</span>
+                      <span class="thinking-token-pill" style="font-weight:600;">~4K · 推荐</span>
+                    </div>
+                    <div class="thinking-desc-line">平衡深度推演与响应耗时，适合多数任务</div>
+                  </div>
+                </div>
+                <div class="thinking-check-dot">✓</div>
+              </div>
+
+              <!-- High -->
+              <div class="thinking-ladder-card" onclick="selectThinkingLevelInSettings('high', this)">
+                <div class="thinking-card-left">
+                  <div class="thinking-energy-bars">
+                    <div class="energy-bar-seg fill-1" style="height:7px;"></div>
+                    <div class="energy-bar-seg fill-2" style="height:11px;"></div>
+                    <div class="energy-bar-seg fill-3" style="height:15px;"></div>
+                    <div class="energy-bar-seg fill-4" style="height:18px;"></div>
+                  </div>
+                  <div class="thinking-meta-texts">
+                    <div class="thinking-name-line">
+                      <span>高 · High</span>
+                      <span class="thinking-token-pill">~8K tokens</span>
+                    </div>
+                    <div class="thinking-desc-line">多轮逻辑推导、疑难排查与算法推演</div>
+                  </div>
+                </div>
+                <div class="thinking-check-dot">✓</div>
+              </div>
+
+              <!-- Extra High / Max -->
+              <div class="thinking-ladder-card" onclick="selectThinkingLevelInSettings('xhigh', this)">
+                <div class="thinking-card-left">
+                  <div class="thinking-energy-bars">
+                    <div class="energy-bar-seg fill-1" style="height:7px;"></div>
+                    <div class="energy-bar-seg fill-2" style="height:11px;"></div>
+                    <div class="energy-bar-seg fill-3" style="height:14px;"></div>
+                    <div class="energy-bar-seg fill-4" style="height:16px;"></div>
+                    <div class="energy-bar-seg fill-5" style="height:18px;"></div>
+                  </div>
+                  <div class="thinking-meta-texts">
+                    <div class="thinking-name-line">
+                      <span>特高 · Extra High</span>
+                      <span class="thinking-token-pill">~16K tokens</span>
+                    </div>
+                    <div class="thinking-desc-line">极限思维链推演，适合系统级重构</div>
+                  </div>
+                </div>
+                <div class="thinking-check-dot">✓</div>
+              </div>
+            </div>
+
+            <!-- 折叠思考块开关 -->
+            <div class="switch-row">
+              <div class="switch-text-label">
+                <span class="main">自动收起思考块</span>
+                <span class="sub">回答完成后折叠思维链内容，界面更清爽</span>
+              </div>
+              <div class="modern-toggle on" onclick="this.classList.toggle('on'); showToast('已切换思考块折叠偏好');"></div>
+            </div>
+          </div>
+
+          <!-- ── 2. 模型列表（Providers & Models）UI 重塑 ── -->
+          <div class="settings-group-card">
+            <div class="group-title-row">
+              <span class="group-title-text">
+                <span>🤖</span><span>服务商与模型清单</span>
+              </span>
+              <span class="group-title-hint" id="enabledModelCountText">已启用 7 / 10 个模型</span>
+            </div>
+
+            <!-- 搜索与快捷标签过滤 -->
+            <div class="model-search-box">
+              <span style="font-size:14px;color:var(--muted)">🔍</span>
+              <input type="search" placeholder="搜索模型名称、ID 或服务商..." oninput="filterSettingsModels(this.value)" />
+            </div>
+
+            <div class="model-filter-tags">
+              <div class="filter-tag-chip active" onclick="filterByTag('all', this)">全部模型</div>
+              <div class="filter-tag-chip" onclick="filterByTag('thinking', this)">🧠 支持深度思考</div>
+              <div class="filter-tag-chip" onclick="filterByTag('large', this)">📦 200K+ 上下文</div>
+              <div class="filter-tag-chip" onclick="filterByTag('fast', this)">⚡ 极速轻量</div>
+            </div>
+
+            <!-- Provider 1: Anthropic -->
+            <div class="provider-group-card" data-provider="anthropic">
+              <div class="provider-group-header">
+                <div class="provider-badge-cluster">
+                  <span class="provider-logo-tag">🟣</span>
+                  <span>Anthropic</span>
+                  <span class="provider-enabled-count">3/3 启用</span>
+                </div>
+                <button class="action-pill-btn" onclick="toggleProviderAll('anthropic', this)" style="height:24px;font-size:10.5px;padding:0 6px;">全选</button>
+              </div>
+
+              <!-- Model 1 -->
+              <div class="model-item-card" onclick="toggleModelItem(this)">
+                <div class="model-main-col">
+                  <div class="model-name-row">
+                    <span class="model-display-name">Claude 3.7 Sonnet</span>
+                    <span class="model-rec-badge">默认主力</span>
+                  </div>
+                  <div class="model-id-text">anthropic/claude-3-7-sonnet</div>
+                  <div class="model-capsules-row">
+                    <span class="model-feature-capsule thinking">🧠 思考 4 档</span>
+                    <span class="model-feature-capsule context">200K 上下文</span>
+                    <span class="model-feature-capsule">混合推理</span>
+                  </div>
+                </div>
+                <div class="modern-toggle on"></div>
+              </div>
+
+              <!-- Model 2 -->
+              <div class="model-item-card" onclick="toggleModelItem(this)">
+                <div class="model-main-col">
+                  <div class="model-name-row">
+                    <span class="model-display-name">Claude 3.5 Sonnet</span>
+                  </div>
+                  <div class="model-id-text">anthropic/claude-3-5-sonnet-20241022</div>
+                  <div class="model-capsules-row">
+                    <span class="model-feature-capsule context">200K 上下文</span>
+                    <span class="model-feature-capsule">代码卓越</span>
+                  </div>
+                </div>
+                <div class="modern-toggle on"></div>
+              </div>
+
+              <!-- Model 3 -->
+              <div class="model-item-card" onclick="toggleModelItem(this)">
+                <div class="model-main-col">
+                  <div class="model-name-row">
+                    <span class="model-display-name">Claude 3.5 Haiku</span>
+                  </div>
+                  <div class="model-id-text">anthropic/claude-3-5-haiku</div>
+                  <div class="model-capsules-row">
+                    <span class="model-feature-capsule">⚡ 极速响应</span>
+                    <span class="model-feature-capsule context">200K 上下文</span>
+                  </div>
+                </div>
+                <div class="modern-toggle on"></div>
+              </div>
+            </div>
+
+            <!-- Provider 2: DeepSeek -->
+            <div class="provider-group-card" data-provider="deepseek">
+              <div class="provider-group-header">
+                <div class="provider-badge-cluster">
+                  <span class="provider-logo-tag">🐋</span>
+                  <span>DeepSeek</span>
+                  <span class="provider-enabled-count">2/2 启用</span>
+                </div>
+                <button class="action-pill-btn" onclick="toggleProviderAll('deepseek', this)" style="height:24px;font-size:10.5px;padding:0 6px;">全选</button>
+              </div>
+
+              <div class="model-item-card" onclick="toggleModelItem(this)">
+                <div class="model-main-col">
+                  <div class="model-name-row">
+                    <span class="model-display-name">DeepSeek R1</span>
+                    <span class="model-rec-badge" style="color:var(--accent);border-color:var(--accent);">推理热门</span>
+                  </div>
+                  <div class="model-id-text">deepseek/deepseek-reasoner</div>
+                  <div class="model-capsules-row">
+                    <span class="model-feature-capsule thinking">🧠 原生思维链</span>
+                    <span class="model-feature-capsule context">64K 上下文</span>
+                  </div>
+                </div>
+                <div class="modern-toggle on"></div>
+              </div>
+
+              <div class="model-item-card" onclick="toggleModelItem(this)">
+                <div class="model-main-col">
+                  <div class="model-name-row">
+                    <span class="model-display-name">DeepSeek V3</span>
+                  </div>
+                  <div class="model-id-text">deepseek/deepseek-chat</div>
+                  <div class="model-capsules-row">
+                    <span class="model-feature-capsule">通用高性价比</span>
+                    <span class="model-feature-capsule context">64K 上下文</span>
+                  </div>
+                </div>
+                <div class="modern-toggle on"></div>
+              </div>
+            </div>
+
+            <!-- Provider 3: OpenAI -->
+            <div class="provider-group-card" data-provider="openai">
+              <div class="provider-group-header">
+                <div class="provider-badge-cluster">
+                  <span class="provider-logo-tag">🟢</span>
+                  <span>OpenAI</span>
+                  <span class="provider-enabled-count">2/2 启用</span>
+                </div>
+                <button class="action-pill-btn" onclick="toggleProviderAll('openai', this)" style="height:24px;font-size:10.5px;padding:0 6px;">全选</button>
+              </div>
+
+              <div class="model-item-card" onclick="toggleModelItem(this)">
+                <div class="model-main-col">
+                  <div class="model-name-row">
+                    <span class="model-display-name">o3-mini</span>
+                  </div>
+                  <div class="model-id-text">openai/o3-mini</div>
+                  <div class="model-capsules-row">
+                    <span class="model-feature-capsule thinking">🧠 思考 3 档</span>
+                    <span class="model-feature-capsule context">128K 上下文</span>
+                  </div>
+                </div>
+                <div class="modern-toggle on"></div>
+              </div>
+
+              <div class="model-item-card" onclick="toggleModelItem(this)">
+                <div class="model-main-col">
+                  <div class="model-name-row">
+                    <span class="model-display-name">GPT-4o</span>
+                  </div>
+                  <div class="model-id-text">openai/gpt-4o</div>
+                  <div class="model-capsules-row">
+                    <span class="model-feature-capsule">多模态视觉</span>
+                    <span class="model-feature-capsule context">128K 上下文</span>
+                  </div>
+                </div>
+                <div class="modern-toggle on"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════════
+           通用弹窗与抽屉 (Drawers & Modals)
+           ══════════════════════════════════════════════════════════════ -->
+      <div class="modal-overlay" id="modalOverlay" onclick="closeAllModals()"></div>
+
+      <!-- 侧滑抽屉：会话列表 (含移动顺序与排序模式) -->
+      <aside class="session-drawer" id="sessionDrawer">
+        <div class="drawer-header">
+          <div class="drawer-title-row">
+            <span>会话列表</span>
+            <span class="session-count-tag" id="drawerSessionCount">4 个会话</span>
+          </div>
+          <div style="display:flex;gap:4px;">
+            <button class="icon-btn" onclick="triggerReloadAll()" title="重载全部扩展">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/></svg>
+            </button>
+            <button class="icon-btn" onclick="closeAllModals()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- 全新：移动顺序专用工具条 -->
+        <div class="drawer-reorder-toolbar">
+          <span style="color:var(--muted)">按住或点击按钮调整显示次序</span>
+          <button class="reorder-mode-toggle-btn" id="btnToggleReorderMode" onclick="toggleReorderMode()">
+            <span>↕️ 排序模式</span>
+          </button>
+        </div>
+
+        <div class="drawer-search-bar">
+          <input type="search" class="search-input" placeholder="搜索会话名称或路径..." oninput="filterSessions(this.value)" />
+          <button class="new-session-btn" onclick="createNewSessionDemo()">
+            <span>+</span><span>新会话</span>
+          </button>
+        </div>
+
+        <!-- 会话卡片列表（支持直接移动次序） -->
+        <div class="drawer-session-list" id="drawerSessionList">
+          <!-- 会话 1 -->
+          <div class="session-item-row is-active" id="sessionRow_1" data-id="1">
+            <div class="session-row-main">
+              <span class="session-row-order-index">01</span>
+              <div class="session-row-emoji" style="border-left: 3px solid #5287be;">🚀</div>
+              <div class="session-row-info">
+                <div class="session-row-name">手机端UI与活动流改造</div>
+                <div class="session-row-desc">~/apps/pi-dashboard · claude-3-7</div>
+              </div>
+              <!-- 排序模式下的移动手柄 -->
+              <div class="session-reorder-handle-group" onclick="event.stopPropagation()">
+                <button class="reorder-btn" onclick="moveSessionUp('1')" title="上移">↑</button>
+                <button class="reorder-btn" onclick="moveSessionDown('1')" title="下移">↓</button>
+                <button class="reorder-btn" onclick="pinSessionToTop('1')" title="置顶">📌</button>
+              </div>
+            </div>
+            <!-- 普通模式下的操作栏 -->
+            <div class="session-row-actions">
+              <span class="session-row-time">刚刚活动</span>
+              <div class="session-action-group" onclick="event.stopPropagation()">
+                <button class="row-action-btn" onclick="moveSessionUp('1')" title="上移一位"><span>↑</span></button>
+                <button class="row-action-btn" onclick="moveSessionDown('1')" title="下移一位"><span>↓</span></button>
+                <button class="row-action-btn reload-btn" onclick="triggerReload('手机端UI与活动流改造')"><span>🔄</span><span>Reload</span></button>
+                <button class="row-action-btn restart-btn" onclick="openRestartModal('手机端UI与活动流改造')"><span>⚡</span><span>重启</span></button>
+                <button class="row-action-btn rename-btn" onclick="openRenameModal('手机端UI与活动流改造', '🚀', '#5287be')"><span>✏️</span><span>改名</span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 会话 2 -->
+          <div class="session-item-row" id="sessionRow_2" data-id="2">
+            <div class="session-row-main">
+              <span class="session-row-order-index">02</span>
+              <div class="session-row-emoji" style="border-left: 3px solid #54937d;">🧪</div>
+              <div class="session-row-info">
+                <div class="session-row-name">Android发布脚本校验</div>
+                <div class="session-row-desc">~/apps/pi-dashboard · python3</div>
+              </div>
+              <div class="session-reorder-handle-group" onclick="event.stopPropagation()">
+                <button class="reorder-btn" onclick="moveSessionUp('2')">↑</button>
+                <button class="reorder-btn" onclick="moveSessionDown('2')">↓</button>
+                <button class="reorder-btn" onclick="pinSessionToTop('2')">📌</button>
+              </div>
+            </div>
+            <div class="session-row-actions">
+              <span class="session-row-time">12分钟前</span>
+              <div class="session-action-group" onclick="event.stopPropagation()">
+                <button class="row-action-btn" onclick="moveSessionUp('2')"><span>↑</span></button>
+                <button class="row-action-btn" onclick="moveSessionDown('2')"><span>↓</span></button>
+                <button class="row-action-btn reload-btn" onclick="triggerReload('Android发布脚本校验')"><span>🔄</span><span>Reload</span></button>
+                <button class="row-action-btn restart-btn" onclick="openRestartModal('Android发布脚本校验')"><span>⚡</span><span>重启</span></button>
+                <button class="row-action-btn rename-btn" onclick="openRenameModal('Android发布脚本校验', '🧪', '#54937d')"><span>✏️</span><span>改名</span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 会话 3 -->
+          <div class="session-item-row" id="sessionRow_3" data-id="3">
+            <div class="session-row-main">
+              <span class="session-row-order-index">03</span>
+              <div class="session-row-emoji" style="border-left: 3px solid #9571c4;">📦</div>
+              <div class="session-row-info">
+                <div class="session-row-name">Extension 技能库同步</div>
+                <div class="session-row-desc">~/.pi/agent/extensions · 4 个子任务</div>
+              </div>
+              <div class="session-reorder-handle-group" onclick="event.stopPropagation()">
+                <button class="reorder-btn" onclick="moveSessionUp('3')">↑</button>
+                <button class="reorder-btn" onclick="moveSessionDown('3')">↓</button>
+                <button class="reorder-btn" onclick="pinSessionToTop('3')">📌</button>
+              </div>
+            </div>
+            <div class="session-row-actions">
+              <span class="session-row-time">1小时前</span>
+              <div class="session-action-group" onclick="event.stopPropagation()">
+                <button class="row-action-btn" onclick="moveSessionUp('3')"><span>↑</span></button>
+                <button class="row-action-btn" onclick="moveSessionDown('3')"><span>↓</span></button>
+                <button class="row-action-btn reload-btn" onclick="triggerReload('Extension 技能库同步')"><span>🔄</span><span>Reload</span></button>
+                <button class="row-action-btn restart-btn" onclick="openRestartModal('Extension 技能库同步')"><span>⚡</span><span>重启</span></button>
+                <button class="row-action-btn rename-btn" onclick="openRenameModal('Extension 技能库同步', '📦', '#9571c4')"><span>✏️</span><span>改名</span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 会话 4 -->
+          <div class="session-item-row" id="sessionRow_4" data-id="4">
+            <div class="session-row-main">
+              <span class="session-row-order-index">04</span>
+              <div class="session-row-emoji" style="border-left: 3px solid #c97864;">💻</div>
+              <div class="session-row-info">
+                <div class="session-row-name">后端 Server 内存监控</div>
+                <div class="session-row-desc">backend/server.ts · 常驻</div>
+              </div>
+              <div class="session-reorder-handle-group" onclick="event.stopPropagation()">
+                <button class="reorder-btn" onclick="moveSessionUp('4')">↑</button>
+                <button class="reorder-btn" onclick="moveSessionDown('4')">↓</button>
+                <button class="reorder-btn" onclick="pinSessionToTop('4')">📌</button>
+              </div>
+            </div>
+            <div class="session-row-actions">
+              <span class="session-row-time">昨天 19:40</span>
+              <div class="session-action-group" onclick="event.stopPropagation()">
+                <button class="row-action-btn" onclick="moveSessionUp('4')"><span>↑</span></button>
+                <button class="row-action-btn" onclick="moveSessionDown('4')"><span>↓</span></button>
+                <button class="row-action-btn reload-btn" onclick="triggerReload('后端 Server 内存监控')"><span>🔄</span><span>Reload</span></button>
+                <button class="row-action-btn restart-btn" onclick="openRestartModal('后端 Server 内存监控')"><span>⚡</span><span>重启</span></button>
+                <button class="row-action-btn rename-btn" onclick="openRenameModal('后端 Server 内存监控', '💻', '#c97864')"><span>✏️</span><span>改名</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 底部抽屉：会话装扮与重命名 -->
+      <div class="bottom-sheet" id="renameBottomSheet">
+        <div class="sheet-handle-bar"></div>
+        <div class="sheet-header-row">
+          <span class="sheet-title">设置会话装扮与名称</span>
+          <button class="sheet-close-btn" onclick="closeAllModals()">✕</button>
+        </div>
+
+        <div class="emoji-preview-cluster">
+          <div class="big-emoji-display" id="modalEmojiPreview">🚀</div>
+          <div class="rename-input-wrap">
+            <label>会话标题</label>
+            <input type="text" class="rename-input" id="modalRenameInput" value="手机端UI与活动流改造" placeholder="输入新的会话名称..." />
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:11.5px;color:var(--muted);margin-bottom:6px;">标记颜色</div>
+          <div class="color-picker-row" id="colorPickerRow">
+            <div class="color-dot-choice selected" style="background:#5287be;" onclick="selectColor(this, '#5287be')"></div>
+            <div class="color-dot-choice" style="background:#54937d;" onclick="selectColor(this, '#54937d')"></div>
+            <div class="color-dot-choice" style="background:#9571c4;" onclick="selectColor(this, '#9571c4')"></div>
+            <div class="color-dot-choice" style="background:#c67598;" onclick="selectColor(this, '#c67598')"></div>
+            <div class="color-dot-choice" style="background:#c97864;" onclick="selectColor(this, '#c97864')"></div>
+            <div class="color-dot-choice" style="background:#b58a35;" onclick="selectColor(this, '#b58a35')"></div>
+            <div class="color-dot-choice" style="background:#c65b5b;" onclick="selectColor(this, '#c65b5b')"></div>
+            <div class="color-dot-choice" style="background:#358e91;" onclick="selectColor(this, '#358e91')"></div>
+            <div class="color-dot-choice" style="background:#898b95;" onclick="selectColor(this, '#898b95')"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="emoji-category-tabs">
+            <button class="emoji-tab-btn active" onclick="switchEmojiCategory('常用', this)">常用</button>
+            <button class="emoji-tab-btn" onclick="switchEmojiCategory('科技与工具', this)">科技</button>
+            <button class="emoji-tab-btn" onclick="switchEmojiCategory('情绪与动作', this)">情绪</button>
+            <button class="emoji-tab-btn" onclick="switchEmojiCategory('动物与自然', this)">动物</button>
+            <button class="emoji-tab-btn" onclick="switchEmojiCategory('符号与标志', this)">符号</button>
+          </div>
+          <div class="emoji-grid-picker" id="emojiGridPicker"></div>
+        </div>
+
+        <button class="sheet-save-btn" onclick="saveSessionAppearance()">
+          <span>✓</span><span>保存装扮与名称</span>
+        </button>
+      </div>
+
+      <!-- 底部抽屉：会话重启二次确认 -->
+      <div class="bottom-sheet" id="restartBottomSheet">
+        <div class="sheet-handle-bar"></div>
+        <div class="restart-confirm-box">
+          <div class="restart-icon-circle">⚡</div>
+          <div class="restart-title">重启 Pi 会话进程？</div>
+          <div class="restart-desc">
+            将安全终止当前后台进程并用相同的 session 文件拉起全新 Pi 进程。<br />
+            <strong>对话历史与文件状态完整保留</strong>，在途执行将被中止并重新连接。
+          </div>
+          <div class="restart-actions-row">
+            <button class="restart-cancel-btn" onclick="closeAllModals()">取消</button>
+            <button class="restart-do-btn" onclick="confirmRestart()">确认重启进程</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部抽屉：思考强度调节 (Thinking Level Bottom Sheet) -->
+      <div class="bottom-sheet" id="thinkingBottomSheet">
+        <div class="sheet-handle-bar"></div>
+        <div class="sheet-header-row">
+          <span class="sheet-title">调节当前思考强度</span>
+          <button class="sheet-close-btn" onclick="closeAllModals()">✕</button>
+        </div>
+        <div class="thinking-level-grid">
+          <div class="thinking-ladder-card" onclick="selectThinkingLevelInComposer('off')">
+            <div class="thinking-card-left">
+              <div class="thinking-energy-bars"><div class="energy-bar-seg" style="height:4px;"></div></div>
+              <div class="thinking-meta-texts"><div class="thinking-name-line"><span>关 · Off</span><span class="thinking-token-pill">0 tokens</span></div><div class="thinking-desc-line">直接回答，响应最快</div></div>
+            </div>
+            <div class="thinking-check-dot">✓</div>
+          </div>
+          <div class="thinking-ladder-card" onclick="selectThinkingLevelInComposer('low')">
+            <div class="thinking-card-left">
+              <div class="thinking-energy-bars"><div class="energy-bar-seg fill-1" style="height:7px;"></div><div class="energy-bar-seg fill-2" style="height:9px;"></div></div>
+              <div class="thinking-meta-texts"><div class="thinking-name-line"><span>低 · Low</span><span class="thinking-token-pill">~2K tokens</span></div><div class="thinking-desc-line">轻度语法与代码推演</div></div>
+            </div>
+            <div class="thinking-check-dot">✓</div>
+          </div>
+          <div class="thinking-ladder-card selected" onclick="selectThinkingLevelInComposer('medium')">
+            <div class="thinking-card-left">
+              <div class="thinking-energy-bars"><div class="energy-bar-seg fill-1" style="height:7px;"></div><div class="energy-bar-seg fill-2" style="height:11px;"></div><div class="energy-bar-seg fill-3" style="height:14px;"></div></div>
+              <div class="thinking-meta-texts"><div class="thinking-name-line"><span>中 · Medium</span><span class="thinking-token-pill" style="font-weight:600;">~4K · 推荐</span></div><div class="thinking-desc-line">综合编码与系统设计</div></div>
+            </div>
+            <div class="thinking-check-dot">✓</div>
+          </div>
+          <div class="thinking-ladder-card" onclick="selectThinkingLevelInComposer('high')">
+            <div class="thinking-card-left">
+              <div class="thinking-energy-bars"><div class="energy-bar-seg fill-1" style="height:7px;"></div><div class="energy-bar-seg fill-2" style="height:11px;"></div><div class="energy-bar-seg fill-3" style="height:15px;"></div><div class="energy-bar-seg fill-4" style="height:18px;"></div></div>
+              <div class="thinking-meta-texts"><div class="thinking-name-line"><span>高 · High</span><span class="thinking-token-pill">~8K tokens</span></div><div class="thinking-desc-line">深度算法、复杂 Bug 诊断</div></div>
+            </div>
+            <div class="thinking-check-dot">✓</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部抽屉：当前模型快速切换 (Model Picker Bottom Sheet) -->
+      <div class="bottom-sheet" id="modelPickerBottomSheet">
+        <div class="sheet-handle-bar"></div>
+        <div class="sheet-header-row">
+          <span class="sheet-title">切换当前会话模型</span>
+          <button class="sheet-close-btn" onclick="closeAllModals()">✕</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div class="model-item-card" onclick="chooseModelInComposer('claude-3-7-sonnet', 'Anthropic')">
+            <div class="model-main-col">
+              <div class="model-name-row"><span class="model-display-name">Claude 3.7 Sonnet</span><span class="model-rec-badge">当前</span></div>
+              <div class="model-id-text">anthropic/claude-3-7-sonnet</div>
+              <div class="model-capsules-row"><span class="model-feature-capsule thinking">🧠 思考 4档</span><span class="model-feature-capsule context">200K 上下文</span></div>
+            </div>
+            <span style="color:var(--accent);font-weight:bold;">✓</span>
+          </div>
+          <div class="model-item-card" onclick="chooseModelInComposer('deepseek-r1', 'DeepSeek')">
+            <div class="model-main-col">
+              <div class="model-name-row"><span class="model-display-name">DeepSeek R1</span></div>
+              <div class="model-id-text">deepseek/deepseek-reasoner</div>
+              <div class="model-capsules-row"><span class="model-feature-capsule thinking">🧠 深度思考</span><span class="model-feature-capsule context">64K 上下文</span></div>
+            </div>
+          </div>
+          <div class="model-item-card" onclick="chooseModelInComposer('gpt-4o', 'OpenAI')">
+            <div class="model-main-col">
+              <div class="model-name-row"><span class="model-display-name">GPT-4o</span></div>
+              <div class="model-id-text">openai/gpt-4o</div>
+              <div class="model-capsules-row"><span class="model-feature-capsule">多模态全能</span><span class="model-feature-capsule context">128K 上下文</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部抽屉：更多操作菜单 -->
+      <div class="bottom-sheet" id="moreBottomSheet">
+        <div class="sheet-handle-bar"></div>
+        <div class="sheet-header-row">
+          <span class="sheet-title">会话更多功能</span>
+          <button class="sheet-close-btn" onclick="closeAllModals()">✕</button>
+        </div>
+        <div class="more-menu-grid">
+          <div class="more-menu-item" onclick="switchAppView('settings'); closeAllModals();">
+            <span class="icon">⚙️</span>
+            <span>系统设置</span>
+          </div>
+          <div class="more-menu-item" onclick="showToast('◲ 正在打开上下文探查器...'); closeAllModals();">
+            <span class="icon">◲</span>
+            <span>上下文探查</span>
+          </div>
+          <div class="more-menu-item" onclick="showToast('◈ 正在打开会话家族图谱...'); closeAllModals();">
+            <span class="icon">◈</span>
+            <span>家族图谱</span>
+          </div>
+          <div class="more-menu-item" onclick="triggerClearSession(); closeAllModals();">
+            <span class="icon" style="color:var(--warn)">🗑️</span>
+            <span>清空会话 (/clear)</span>
+          </div>
+          <div class="more-menu-item" onclick="triggerCompactSession(); closeAllModals();">
+            <span class="icon" style="color:var(--accent)">🗜️</span>
+            <span>压缩上下文</span>
+          </div>
+          <div class="more-menu-item" onclick="openRenameModal(); closeAllModals();">
+            <span class="icon">🎨</span>
+            <span>装扮与表情</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 终端/命令输出弹窗 -->
+      <div class="command-modal" id="commandModal">
+        <div class="cmd-modal-header">
+          <span class="mono" id="cmdModalTitle">bash: output</span>
+          <div style="display:flex;gap:6px;">
+            <button class="copy-code-btn" onclick="copyCmdOutput()">复制输出</button>
+            <button class="copy-code-btn" onclick="closeCmdModal()">关闭</button>
+          </div>
+        </div>
+        <div class="cmd-modal-body" id="cmdModalBody"></div>
+      </div>
+
+      <!-- Toast 提示浮层 -->
+      <div class="toast-container" id="toastContainer">
+        <span class="toast-icon" id="toastIcon">ℹ️</span>
+        <span id="toastMessage">提示信息</span>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // ── 全局状态 ──
+    const state = {
+      theme: 'dark',
+      frameMode: true,
+      currentView: 'session', // 'session' | 'settings'
+      reorderMode: false,
+      currentEmoji: '🚀',
+      currentColor: '#5287be',
+      currentTitle: '手机端UI与活动流改造',
+      activeModel: 'claude-3-7-sonnet',
+      thinkingLevel: 'medium',
+      voiceEnabled: true,
+      viewMode: 'activity',
+      sessionsOrder: ['1', '2', '3', '4']
+    };
+
+    const EMOJI_GROUPS = {
+      常用: ['🚀', '🤖', '🧪', '📱', '💻', '📝', '🎯', '🔥', '⭐', '💡', '✅', '🛠️', '📦', '🌍', '🔧', '🐱', '👍', '🎉', '🧠'],
+      科技与工具: ['💻', '📱', '⚙️', '🛠️', '🔧', '📦', '📡', '🔍', '💾', '🛰️', '🕹️', '🔬', '🔭', '🔑', '🧰', '📚'],
+      情绪与动作: ['😀', '😎', '🥳', '🤔', '🫡', '🥹', '😴', '🤯', '👍', '👏', '🤝', '💪', '✌️', '👌', '👀'],
+      动物与自然: ['🐶', '🐱', '🐼', '🐨', '🦊', '🦁', '🐵', '🦉', '🐙', '🌱', '🌸', '🌵', '☀️', '⚡', '🌊'],
+      符号与标志: ['❤️', '🔥', '⭐', '💯', '✅', '❌', '⚠️', '❗', '❓', '🔒', '🚀', '🎯', '💡', '🏷️', '📌']
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderEmojiPicker('常用');
+      startTimer();
+    });
+
+    // ── 页面视图切换：会话活动页 vs 手机设置页 ──
+    function switchAppView(viewName) {
+      state.currentView = viewName;
+      document.getElementById('viewSession').classList.toggle('hidden', viewName !== 'session');
+      document.getElementById('viewSettings').classList.toggle('hidden', viewName !== 'settings');
+      
+      document.getElementById('btnAppViewSession').classList.toggle('active', viewName === 'session');
+      document.getElementById('btnAppViewSettings').classList.toggle('active', viewName === 'settings');
+      
+      if (viewName === 'settings') {
+        showToast('⚙️ 已切换至专为手机 APP 深度重构的设置界面');
+      } else {
+        showToast('💬 已返回 Live Pi 会话活动流');
+      }
+    }
+
+    // ── 核心功能：会话排序移动 (Move Session Order) ──
+    function toggleReorderMode() {
+      state.reorderMode = !state.reorderMode;
+      const drawer = document.getElementById('sessionDrawer');
+      const btn = document.getElementById('btnToggleReorderMode');
+      drawer.classList.toggle('reorder-mode-active', state.reorderMode);
+      btn.classList.toggle('active', state.reorderMode);
+      btn.innerText = state.reorderMode ? '✓ 完成排序' : '↕️ 排序模式';
+      showToast(state.reorderMode ? '↕️ 排序模式已开启：可使用 ↑ ↓ 按钮或置顶调整' : '✅ 排序已保存');
+    }
+
+    function moveSessionUp(id) {
+      const idx = state.sessionsOrder.indexOf(id);
+      if (idx <= 0) {
+        showToast('该会话已在最顶部');
+        return;
+      }
+      // 交换位置
+      const temp = state.sessionsOrder[idx];
+      state.sessionsOrder[idx] = state.sessionsOrder[idx - 1];
+      state.sessionsOrder[idx - 1] = temp;
+      reorderSessionDom();
+      showToast('⬆️ 会话已上移一位');
+    }
+
+    function moveSessionDown(id) {
+      const idx = state.sessionsOrder.indexOf(id);
+      if (idx >= state.sessionsOrder.length - 1) {
+        showToast('该会话已在最底部');
+        return;
+      }
+      const temp = state.sessionsOrder[idx];
+      state.sessionsOrder[idx] = state.sessionsOrder[idx + 1];
+      state.sessionsOrder[idx + 1] = temp;
+      reorderSessionDom();
+      showToast('⬇️ 会话已下移一位');
+    }
+
+    function pinSessionToTop(id) {
+      const idx = state.sessionsOrder.indexOf(id);
+      if (idx === 0) {
+        showToast('该会话已在最顶部');
+        return;
+      }
+      state.sessionsOrder.splice(idx, 1);
+      state.sessionsOrder.unshift(id);
+      reorderSessionDom();
+      showToast('📌 会话已置顶到第一位');
+    }
+
+    function reorderSessionDom() {
+      const list = document.getElementById('drawerSessionList');
+      state.sessionsOrder.forEach((id, index) => {
+        const row = document.getElementById(`sessionRow_${id}`);
+        if (row) {
+          list.appendChild(row);
+          const indexSpan = row.querySelector('.session-row-order-index');
+          if (indexSpan) indexSpan.innerText = String(index + 1).padStart(2, '0');
+        }
+      });
+    }
+
+    // ── 核心功能：设置页模型列表与思考等级交互 ──
+    function switchSettingsTab(tabId, btn) {
+      document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      showToast(`切换至「${btn.innerText.trim()}」面板`);
+    }
+
+    function selectThinkingLevelInSettings(level, cardElem) {
+      state.thinkingLevel = level;
+      document.querySelectorAll('#settingsThinkingGrid .thinking-ladder-card').forEach(c => c.classList.remove('selected'));
+      cardElem.classList.add('selected');
+      document.getElementById('thinkingLevelLabel').innerText = level;
+      showToast(`💭 思考强度已更新为【${level}】`);
+    }
+
+    function toggleModelItem(cardElem) {
+      const toggle = cardElem.querySelector('.modern-toggle');
+      toggle.classList.toggle('on');
+      const isOn = toggle.classList.contains('on');
+      const name = cardElem.querySelector('.model-display-name').innerText;
+      showToast(`${isOn ? '✅ 已启用' : '❌ 已停用'} 模型 ${name}`);
+      updateEnabledCount();
+    }
+
+    function toggleProviderAll(providerKey, btn) {
+      const card = document.querySelector(`.provider-group-card[data-provider="${providerKey}"]`);
+      if (!card) return;
+      const toggles = card.querySelectorAll('.modern-toggle');
+      const allOn = Array.from(toggles).every(t => t.classList.contains('on'));
+      toggles.forEach(t => t.classList.toggle('on', !allOn));
+      btn.innerText = allOn ? '全选' : '取消全选';
+      showToast(`${allOn ? '已取消全选' : '已全选'} ${providerKey} 的模型`);
+      updateEnabledCount();
+    }
+
+    function updateEnabledCount() {
+      const total = document.querySelectorAll('.model-item-card').length;
+      const enabled = document.querySelectorAll('.model-item-card .modern-toggle.on').length;
+      document.getElementById('enabledModelCountText').innerText = `已启用 ${enabled} / ${total} 个模型`;
+    }
+
+    function filterSettingsModels(keyword) {
+      const term = keyword.toLowerCase().trim();
+      document.querySelectorAll('.model-item-card').forEach(card => {
+        const text = card.innerText.toLowerCase();
+        card.style.display = text.includes(term) ? 'flex' : 'none';
+      });
+    }
+
+    function filterByTag(tag, chip) {
+      document.querySelectorAll('.filter-tag-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      document.querySelectorAll('.model-item-card').forEach(card => {
+        if (tag === 'all') card.style.display = 'flex';
+        else if (tag === 'thinking') card.style.display = card.innerText.includes('思考') ? 'flex' : 'none';
+        else if (tag === 'large') card.style.display = (card.innerText.includes('200K') || card.innerText.includes('128K')) ? 'flex' : 'none';
+        else if (tag === 'fast') card.style.display = (card.innerText.includes('极速') || card.innerText.includes('Haiku')) ? 'flex' : 'none';
+      });
+    }
+
+    // ── 底部输入条弹窗：切换模型与思考 ──
+    function openModelPickerBottomSheet() {
+      openModal('modelPickerBottomSheet');
+    }
+
+    function chooseModelInComposer(modelId, provider) {
+      state.activeModel = modelId;
+      document.getElementById('activeModelLabel').innerText = modelId;
+      document.getElementById('headerModelTag').innerText = modelId.split('-')[0] + '-' + modelId.split('-')[1];
+      closeAllModals();
+      showToast(`🤖 当前会话已切至模型 ${modelId}`);
+    }
+
+    function openThinkingBottomSheet() {
+      openModal('thinkingBottomSheet');
+    }
+
+    function selectThinkingLevelInComposer(level) {
+      state.thinkingLevel = level;
+      document.getElementById('thinkingLevelLabel').innerText = level;
+      closeAllModals();
+      showToast(`💭 思考深度已设为 ${level}`);
+    }
+
+    // ── 基础机身与主题切换 ──
+    function toggleDeviceFrame() {
+      state.frameMode = !state.frameMode;
+      const wrapper = document.getElementById('deviceWrapper');
+      const btn = document.getElementById('btnToggleFrame');
+      if (state.frameMode) {
+        wrapper.className = 'device-wrapper framed';
+        btn.innerHTML = '<span>🖥️ 机身框模式</span>';
+        btn.classList.add('active');
+      } else {
+        wrapper.className = 'device-wrapper fullscreen';
+        btn.innerHTML = '<span>📱 满屏响应式</span>';
+        btn.classList.remove('active');
+      }
+    }
+
+    function toggleTheme() {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      document.body.setAttribute('data-theme', state.theme);
+      const btn = document.getElementById('btnToggleTheme');
+      btn.innerHTML = state.theme === 'dark' ? '<span>🌙 暗色主题</span>' : '<span>☀️ 浅色主题</span>';
+    }
+
+    // ── 会话操作：Reload / 重启 / 改名 ──
+    function triggerReload(sessionName) {
+      const target = sessionName || state.currentTitle;
+      const reloadIcon = document.getElementById('reloadIcon');
+      if (reloadIcon) reloadIcon.classList.add('spin-anim');
+      showToast(`🔄 正在重载会话「${target}」的扩展、技能与提示词...`);
+      setTimeout(() => {
+        if (reloadIcon) reloadIcon.classList.remove('spin-anim');
+        showToast(`✅「${target}」扩展与技能重载完成（未中断会话）`);
+      }, 1100);
+    }
+
+    function triggerReloadAll() {
+      showToast('🔄 正在向所有活跃会话下发 /reload 信号...');
+      setTimeout(() => { showToast('✅ 全部 4 个会话已同步重载最新扩展'); }, 1400);
+    }
+
+    function openRestartModal(sessionName) {
+      if (sessionName) document.querySelector('.restart-title').innerText = `重启「${sessionName}」会话？`;
+      else document.querySelector('.restart-title').innerText = `重启当前 Pi 会话进程？`;
+      openModal('restartBottomSheet');
+    }
+
+    function confirmRestart() {
+      closeAllModals();
+      showToast('⚡ 正在终止当前 tmux 进程并重新拉起...');
+      const statusDot = document.getElementById('headerStatusDot');
+      statusDot.className = 'pulse-dot';
+      statusDot.style.background = 'var(--warn)';
+      setTimeout(() => { showToast('🔄 正在恢复会话上下文与工具绑定...'); }, 1400);
+      setTimeout(() => {
+        statusDot.className = 'pulse-dot running';
+        statusDot.style.background = 'var(--accent)';
+        showToast('✅ Pi 会话进程已成功重启，已自动重新连接');
+      }, 2600);
+    }
+
+    function openRenameModal(title, emoji, color) {
+      const currentT = title || state.currentTitle;
+      const currentE = emoji || state.currentEmoji;
+      const currentC = color || state.currentColor;
+      document.getElementById('modalRenameInput').value = currentT;
+      document.getElementById('modalEmojiPreview').innerText = currentE;
+      document.querySelectorAll('.color-dot-choice').forEach(dot => {
+        if (dot.style.background === currentC) dot.classList.add('selected');
+        else dot.classList.remove('selected');
+      });
+      openModal('renameBottomSheet');
+    }
+
+    function renderEmojiPicker(category) {
+      const container = document.getElementById('emojiGridPicker');
+      container.innerHTML = '';
+      const list = EMOJI_GROUPS[category] || EMOJI_GROUPS['常用'];
+      list.forEach(emoji => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `emoji-choice-btn ${state.currentEmoji === emoji ? 'selected' : ''}`;
+        btn.innerText = emoji;
+        btn.onclick = () => {
+          state.currentEmoji = emoji;
+          document.getElementById('modalEmojiPreview').innerText = emoji;
+          document.querySelectorAll('.emoji-choice-btn').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    function switchEmojiCategory(cat, targetBtn) {
+      document.querySelectorAll('.emoji-tab-btn').forEach(b => b.classList.remove('active'));
+      targetBtn.classList.add('active');
+      renderEmojiPicker(cat);
+    }
+
+    function selectColor(elem, colorValue) {
+      document.querySelectorAll('.color-dot-choice').forEach(d => d.classList.remove('selected'));
+      elem.classList.add('selected');
+      state.currentColor = colorValue;
+    }
+
+    function saveSessionAppearance() {
+      const newTitle = document.getElementById('modalRenameInput').value.trim() || state.currentTitle;
+      state.currentTitle = newTitle;
+      document.getElementById('currentEmojiDisplay').innerText = state.currentEmoji;
+      document.getElementById('currentColorDot').style.background = state.currentColor;
+      document.getElementById('currentSessionTitle').innerText = state.currentTitle;
+      
+      const activeRow = document.querySelector('.session-item-row.is-active');
+      if (activeRow) {
+        activeRow.querySelector('.session-row-emoji').innerText = state.currentEmoji;
+        activeRow.querySelector('.session-row-emoji').style.borderLeftColor = state.currentColor;
+        activeRow.querySelector('.session-row-name').innerText = state.currentTitle;
+      }
+      closeAllModals();
+      showToast(`✅ 已更新会话为「${state.currentEmoji} ${state.currentTitle}」`);
+    }
+
+    // ── 活动时间线辅助交互 ──
+    function switchViewMode(mode) {
+      state.viewMode = mode;
+      document.getElementById('btnModeActivity').classList.toggle('active', mode === 'activity');
+      document.getElementById('btnModeRaw').classList.toggle('active', mode === 'raw');
+      showToast(mode === 'raw' ? '👁️ 切换至完整底层日志模式' : '📋 切换至任务活动时间线视图');
+    }
+
+    function toggleSteps(listId, arrowId) {
+      const list = document.getElementById(listId);
+      const arrow = document.getElementById(arrowId);
+      if (list.style.display === 'none') {
+        list.style.display = 'flex';
+        arrow.classList.add('open');
+      } else {
+        list.style.display = 'none';
+        arrow.classList.remove('open');
+      }
+    }
+
+    function toggleThinking(id) {
+      const el = document.getElementById(id);
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function copyCode(btn) {
+      navigator.clipboard?.writeText(btn.parentElement.nextElementSibling.innerText);
+      btn.innerText = '已复制!';
+      setTimeout(() => { btn.innerText = '复制'; }, 1500);
+      showToast('📋 代码已复制到剪贴板');
+    }
+
+    function fillPrompt(text) {
+      const input = document.getElementById('mainComposerInput');
+      input.value = text;
+      autoResizeTextarea(input);
+      input.focus();
+      showToast('✍️ 已填入快捷提示词');
+    }
+
+    function autoResizeTextarea(textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(textarea.scrollHeight, 110) + 'px';
+    }
+
+    function handleSendMessage() {
+      const input = document.getElementById('mainComposerInput');
+      const text = input.value.trim();
+      if (!text) {
+        showToast('请输入内容后再发送');
+        return;
+      }
+      const container = document.getElementById('timelineContainer');
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      
+      const newCard = document.createElement('article');
+      newCard.className = 'activity-card is-running';
+      newCard.innerHTML = `
+        <div class="activity-header">
+          <div class="activity-meta-line">
+            <span class="user-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              用户请求
+            </span>
+            <span class="activity-time-stat"><span>${timeStr}</span> · <span style="color:var(--accent);">处理中</span></span>
+          </div>
+          <div class="activity-prompt-text">${escapeHtml(text)}</div>
+        </div>
+        <div class="activity-body">
+          <div class="activity-steps-container">
+            <div style="padding:8px 10px;font-size:12px;color:var(--accent);display:flex;align-items:center;gap:6px;">
+              <span class="typing-pulse-dot"></span>
+              <span>正在拆解任务并调用模型...</span>
+            </div>
+          </div>
+        </div>
+      `;
+      container.appendChild(newCard);
+      input.value = '';
+      autoResizeTextarea(input);
+      container.scrollTop = container.scrollHeight;
+      showToast('🚀 消息已发出，已生成新活动卡片');
+    }
+
+    // ── 弹窗控制 ──
+    function openSessionDrawer() { openModal('sessionDrawer'); }
+    function openMoreModal() { openModal('moreBottomSheet'); }
+
+    function openModal(modalId) {
+      document.getElementById('modalOverlay').classList.add('active');
+      const el = document.getElementById(modalId);
+      if (el) {
+        if (el.classList.contains('session-drawer')) el.classList.add('open');
+        else if (el.classList.contains('bottom-sheet')) el.classList.add('open');
+      }
+    }
+
+    function closeAllModals() {
+      document.getElementById('modalOverlay').classList.remove('active');
+      document.querySelectorAll('.session-drawer').forEach(d => d.classList.remove('open'));
+      document.querySelectorAll('.bottom-sheet').forEach(b => b.classList.remove('open'));
+      closeCmdModal();
+    }
+
+    function showCmdModal(cmd, output) {
+      document.getElementById('cmdModalTitle').innerText = `$ ${cmd}`;
+      document.getElementById('cmdModalBody').innerText = output;
+      document.getElementById('commandModal').classList.add('open');
+      document.getElementById('modalOverlay').classList.add('active');
+    }
+    function closeCmdModal() { document.getElementById('commandModal').classList.remove('open'); }
+    function copyCmdOutput() {
+      navigator.clipboard?.writeText(document.getElementById('cmdModalBody').innerText);
+      showToast('📋 命令输出已复制');
+    }
+
+    function openSlashCommands() { fillPrompt('/'); }
+    function triggerClearSession() { showToast('🗑️ 已下发 /clear，正在拉起新会话...'); }
+    function triggerCompactSession() { showToast('🗜️ 正在压缩上下文...'); }
+    function createNewSessionDemo() { closeAllModals(); showToast('✨ 正在拉起新会话...'); }
+    function filterSessions(val) {
+      const term = val.toLowerCase();
+      document.querySelectorAll('.session-item-row').forEach(row => {
+        row.style.display = row.innerText.toLowerCase().includes(term) ? 'flex' : 'none';
+      });
+    }
+
+    let toastTimer = null;
+    function showToast(msg) {
+      const container = document.getElementById('toastContainer');
+      document.getElementById('toastMessage').innerText = msg;
+      container.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { container.classList.remove('show'); }, 2600);
+    }
+
+    function startTimer() {
+      let sec = 28;
+      const el = document.getElementById('runningTimer');
+      setInterval(() => {
+        sec++;
+        const m = String(Math.floor(sec / 60)).padStart(2, '0');
+        const s = String(sec % 60).padStart(2, '0');
+        if (el) el.innerText = `${m}:${s}`;
+      }, 1000);
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>

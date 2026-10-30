@@ -178,6 +178,7 @@ interface RowProps {
   /** Position inside its block (0-based) and the block size, for the move menu. */
   moveIndex: number
   moveCount: number
+  reorderMode?: boolean
 }
 
 function SessionRow(p: RowProps) {
@@ -190,6 +191,7 @@ function SessionRow(p: RowProps) {
   const [exitPending, setExitPending] = useState(false)
   const [restartArmed, setRestartArmed] = useState(false)
   const [restartPending, setRestartPending] = useState(false)
+  const [reloading, setReloading] = useState(false)
 
   useEffect(() => {
     if (!exitArmed) return
@@ -220,6 +222,15 @@ function SessionRow(p: RowProps) {
     setRestartArmed(false)
     setRestartPending(true)
     void p.onRestartSession().finally(() => setRestartPending(false))
+  }
+
+  const requestReload = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (reloading || p.session.status === 'reconnecting') return
+    setReloading(true)
+    void liveSessionApi.command(p.session.processInstanceId, { type: 'reload' })
+      .finally(() => setTimeout(() => setReloading(false), 800))
   }
 
   const requestExit = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -339,7 +350,25 @@ function SessionRow(p: RowProps) {
           {/* line 1 — title */}
           <div className="flex h-[18px] items-center gap-1.5">
             {p.depth > 0 && <span className="shrink-0 text-2xs leading-none text-accent">↳</span>}
-            {!renaming && p.appearance?.emoji && <span data-session-emoji className="max-w-16 shrink-0 truncate text-2xs leading-none" title={p.appearance.emoji}>{p.appearance.emoji}</span>}
+            {!renaming && (
+              <button
+                type="button"
+                aria-label={`设置 ${p.title} 的装扮和名称`}
+                title="点击设置会话表情和名称"
+                onClick={event => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setAppearanceEditing(true)
+                }}
+                className="flex shrink-0 items-center rounded hover:opacity-80"
+              >
+                {p.appearance?.emoji ? (
+                  <span data-session-emoji className="max-w-16 truncate text-2xs leading-none" title={p.appearance.emoji}>{p.appearance.emoji}</span>
+                ) : (
+                  <span className="text-2xs opacity-40 hover:opacity-100" title="设置表情和颜色">🏷️</span>
+                )}
+              </button>
+            )}
             {renaming ? (
               <input
                 autoFocus
@@ -365,6 +394,18 @@ function SessionRow(p: RowProps) {
                 is spelled out because the bare number read as an unexplained “几秒”. */}
             <span className={`flex shrink-0 items-center gap-0.5 font-mono text-2xs leading-none text-muted ${rowBusy ? 'hidden' : 'md:group-hover:hidden md:group-focus-within:hidden'}`} title={`最近活动：${new Date(p.session.lastActivityAt).toLocaleString()}\n本会话启动于：${new Date(p.session.startedAt).toLocaleString()}`}><span>{relTime(p.session.lastActivityAt)}</span></span>
             <div className={`items-center gap-0.5 ${rowBusy ? 'flex' : 'max-md:flex hidden group-hover:flex group-focus-within:flex'}`}>
+            <button
+              type="button"
+              disabled={reloading || p.session.status === 'reconnecting'}
+              aria-label={reloading ? `正在重载 session ${p.title}` : `重载 session ${p.title}`}
+              title="重载此会话的扩展 / 技能 / 提示词（热刷新，无需重启进程）"
+              onPointerDown={event => event.stopPropagation()}
+              onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
+              onClick={requestReload}
+              className="grid h-5 w-5 shrink-0 place-items-center rounded text-2xs text-muted opacity-60 transition-opacity hover:bg-bg-hover hover:text-accent hover:opacity-100 disabled:opacity-40"
+            >
+              <MaterialIcon name="sync" spin={reloading} className="h-3.5 w-3.5" />
+            </button>
             {/* Disabled is a real state, so it must LOOK disabled while the row is
                 hovered: `group-hover:opacity-100` (specificity 0,3,0) otherwise beats
                 `disabled:opacity-40` (0,2,0) and the button reads as clickable.
@@ -402,6 +443,33 @@ function SessionRow(p: RowProps) {
               onClick={event => { event.stopPropagation(); setAppearanceEditing(true) }}
               className="flex shrink-0 items-center rounded px-1 text-muted opacity-60 hover:bg-bg-hover hover:text-accent focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             ><MaterialIcon name="palette" className="h-3.5 w-3.5" /></button>
+            {p.reorderMode && (
+              <div className="flex shrink-0 items-center gap-0.5" onClick={event => event.stopPropagation()}>
+                <button
+                  type="button"
+                  disabled={p.moveIndex <= 0}
+                  aria-label={`上移 session ${p.title}`}
+                  title="上移一位"
+                  onClick={() => p.onMove('up')}
+                  className="grid h-5 w-5 place-items-center rounded border border-border bg-bg text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-30"
+                >↑</button>
+                <button
+                  type="button"
+                  disabled={p.moveIndex >= p.moveCount - 1}
+                  aria-label={`下移 session ${p.title}`}
+                  title="下移一位"
+                  onClick={() => p.onMove('down')}
+                  className="grid h-5 w-5 place-items-center rounded border border-border bg-bg text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-30"
+                >↓</button>
+                <button
+                  type="button"
+                  aria-label={`${p.pinned ? '取消置顶' : '置顶'} session ${p.title}`}
+                  title={p.pinned ? '取消置顶' : '置顶到第一位'}
+                  onClick={() => p.onPin(!p.pinned)}
+                  className={`grid h-5 w-5 place-items-center rounded border border-border bg-bg text-2xs ${p.pinned ? 'border-accent text-accent' : 'text-muted hover:text-accent'}`}
+                >📌</button>
+              </div>
+            )}
             <button
               type="button"
               aria-label="Session menu"
@@ -467,7 +535,7 @@ function SessionRow(p: RowProps) {
       {p.dropAfter && <div aria-hidden className="pointer-events-none -mt-px h-[2px] rounded-full bg-accent" />}
 
       {tagEditing && <TagEditor tags={p.tags} allTags={p.allTags} onTags={p.onTags} onClose={() => setTagEditing(false)} />}
-      {appearanceEditing && <SessionAppearanceDialog title={p.title} appearance={p.appearance} onSave={p.onAppearance} onClose={() => setAppearanceEditing(false)} />}
+      {appearanceEditing && <SessionAppearanceDialog title={p.title} appearance={p.appearance} onSave={p.onAppearance} onRename={p.onRename} onClose={() => setAppearanceEditing(false)} />}
       {menuOpen && <RowMenu items={items} up={p.up} ariaLabel={`Session actions for ${p.title}`} onClose={() => setMenuOpen(false)} />}
     </div>
   )
@@ -556,6 +624,7 @@ function GroupAdminRow({ group, groups, busy, onRename, onMerge, onDelete }: {
 }
 
 export default function LiveSessionsList({ sessions, sessionTitles = {}, subagentStatuses = {}, activeId, onSelect, onRefresh, pendingUiCounts = {} }: LiveSessionsListProps) {
+  const [reorderMode, setReorderMode] = useState(false)
   const [groups, setGroups] = useState<LiveSessionGroup[]>([])
   const [creating, setCreating] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
@@ -1097,6 +1166,7 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
           groups={groups}
           up={index >= items.length - 2}
           busy={busy}
+          reorderMode={reorderMode}
           onSelect={() => selectRow(session)}
           tmuxSession={meta[session.sessionId]?.tmux}
           onToggleTagFilter={tag => setTagFilter(current => current === tag ? null : tag)}
@@ -1138,6 +1208,18 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
             className={`flex h-7 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-2xs transition disabled:opacity-50 ${reloadAllConfirm.armed ? 'bg-danger-subtle font-semibold text-danger' : 'text-muted hover:bg-bg-hover hover:text-accent'}`}
             title={reloadAllConfirm.armed ? '再点一次确认重载全部' : '重载所有会话：让每个 Pi 进程重新加载扩展 / 技能 / 提示词 / 主题（子 Agent 进程跳过）'}
           ><LineIcon name="refresh" className={`h-4 w-4 ${reloadingAll ? 'animate-spin' : ''}`} />{reloadAllConfirm.armed && '确认'}</button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setReorderMode(value => !value)}
+            aria-label={reorderMode ? '完成排序' : '调整排序'}
+            aria-pressed={reorderMode}
+            className={`flex h-7 shrink-0 items-center justify-center gap-0.5 rounded-md px-1.5 text-2xs transition ${reorderMode ? 'bg-accent font-medium text-accent-fg' : 'text-muted hover:bg-bg-hover hover:text-text'}`}
+            title={reorderMode ? '完成排序模式' : '调整会话上下显示次序（手机端与桌面端均可一键上下移动）'}
+          >
+            <MaterialIcon name="swap_vert" className="h-4 w-4" />
+            {reorderMode && <span className="text-2xs">完成</span>}
+          </button>
           <button type="button" aria-label="任务" disabled={busy || starting} onClick={() => setCreating(value => !value)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-bg-hover hover:text-text disabled:opacity-50" title="新建 / 管理任务分组"><LineIcon name="folder" className="h-4 w-4" /></button>
           <button type="button" aria-label="启动" disabled={busy || starting} onClick={() => { setStartError(undefined); setStartOpen(value => !value) }} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-accent transition hover:opacity-80 disabled:opacity-50" title="启动一个新的 Live Pi"><LineIcon name="plus" className="h-4 w-4" /></button>
         </div>

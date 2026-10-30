@@ -9,10 +9,12 @@ interface Props {
   title: string
   appearance?: Pick<LiveSessionMeta, 'color' | 'emoji'>
   onSave: (appearance: SessionAppearance) => Promise<void>
+  onRename?: (name: string) => Promise<void>
   onClose: () => void
 }
 
-export default function SessionAppearanceDialog({ title, appearance, onSave, onClose }: Props) {
+export default function SessionAppearanceDialog({ title, appearance, onSave, onRename, onClose }: Props) {
+  const [name, setName] = useState(title)
   const [color, setColor] = useState(appearance?.color ?? '')
   const [emoji, setEmoji] = useState(appearance?.emoji ?? '')
   const [emojiGroup, setEmojiGroup] = useState<keyof typeof SESSION_EMOJI_GROUPS>('常用')
@@ -71,6 +73,10 @@ export default function SessionAppearanceDialog({ title, appearance, onSave, onC
     setSaving(true)
     setError('')
     try {
+      const trimmedName = name.trim()
+      if (onRename && trimmedName && trimmedName !== title) {
+        await onRename(trimmedName)
+      }
       await onSave({ color, emoji: emoji.trim() })
       onClose()
     } catch (cause) {
@@ -95,7 +101,20 @@ export default function SessionAppearanceDialog({ title, appearance, onSave, onC
         </div>
         <form onSubmit={event => { event.preventDefault(); void save() }}>
           <fieldset disabled={saving} className="min-w-0 space-y-4 px-5 py-4 disabled:opacity-60">
-            <p className="break-words text-xs text-muted" title={title}>{title}</p>
+            {onRename ? (
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium">会话名称</span>
+                <input
+                  value={name}
+                  onChange={event => setName(event.target.value)}
+                  maxLength={120}
+                  placeholder="输入会话名称…"
+                  className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-xs text-text outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                />
+              </label>
+            ) : (
+              <p className="break-words text-xs text-muted" title={title}>{title}</p>
+            )}
             <fieldset className="min-w-0">
               <legend className="mb-2 text-xs font-medium">标记颜色</legend>
               <div className="flex flex-wrap gap-2.5">
@@ -127,7 +146,7 @@ export default function SessionAppearanceDialog({ title, appearance, onSave, onC
               {color && <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r" style={{ backgroundColor: color }} />}
               <span aria-label="运行状态不变" className="shrink-0 text-muted">○</span>
               {emoji.trim() && <span data-session-emoji className="max-w-16 shrink-0 truncate text-meta leading-none">{emoji.trim()}</span>}
-              <span className="min-w-0 truncate text-sm">{title}</span>
+              <span className="min-w-0 truncate text-sm">{onRename ? (name.trim() || title) : title}</span>
             </div>
             <p id={descriptionId} className="text-2xs text-muted">仅改变外观，不影响运行状态、分组或标签。此设置保存在当前 Dashboard，其他连接它的浏览器也会看到。</p>
           </fieldset>
