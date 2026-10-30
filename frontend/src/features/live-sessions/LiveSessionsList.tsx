@@ -154,7 +154,7 @@ interface RowProps {
   onTags: (tags: string[]) => void
   appearance?: Pick<LiveSessionMeta, 'color' | 'emoji'>
   onAppearance: (appearance: SessionAppearance) => Promise<void>
-  onRename: (name: string) => void
+  onRename: (name: string) => Promise<void>
   /** Start a new independent Pi forked from this session (pi `--fork`). */
   onFork: () => void
   onJoinGroup: (groupId: string) => void
@@ -307,7 +307,8 @@ function SessionRow(p: RowProps) {
   const submitRename = (commit: boolean) => {
     const value = renameValue.trim()
     setRenaming(false)
-    if (commit && value && value !== p.title) p.onRename(value)
+    // 失败提示由 onRename 自己弹出，这里只避免产生未处理的 Promise 拒绝。
+    if (commit && value && value !== p.title) void p.onRename(value).catch(() => {})
   }
 
   return (
@@ -1067,7 +1068,15 @@ export default function LiveSessionsList({ sessions, sessionTitles = {}, subagen
         throw new Error('装扮保存失败，请检查连接后重试。')
       }
     },
-    onRename: (name: string) => { void liveSessionApi.rename(session.processInstanceId, name).then(() => onRefresh?.()) },
+    onRename: async (name: string) => {
+      try {
+        await liveSessionApi.rename(session.processInstanceId, name)
+        onRefresh?.()
+      } catch (reason) {
+        setSessionActionNotice({ text: `重命名失败：${reason instanceof Error ? reason.message : String(reason)}`, danger: true })
+        throw reason
+      }
+    },
     onFork: () => { void forkSession(session) },
     onJoinGroup: (groupId: string) => void mutateGroups(() => liveSessionApi.addGroupMember(groupId, session.processInstanceId)),
     onLeaveGroup: (groupId: string) => void mutateGroups(() => liveSessionApi.removeGroupMember(groupId, session.sessionId)),
