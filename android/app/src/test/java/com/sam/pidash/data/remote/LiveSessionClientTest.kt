@@ -1,9 +1,14 @@
 package com.sam.pidash.data.remote
 
 import com.sam.pidash.data.local.LiveCookieStore
+import com.sam.pidash.data.local.LiveCachedDetail
+import com.sam.pidash.data.local.LiveDetailCache
+import com.sam.pidash.data.local.LiveDetailCacheKey
+import com.sam.pidash.data.local.NoLiveDetailCache
 import com.sam.pidash.data.local.liveCookieBinding
 import com.sam.pidash.data.repo.LivePiRepository
 import com.sam.pidash.domain.model.Backend
+import com.sam.pidash.domain.model.LiveDetail
 import com.sam.pidash.domain.model.SessionKey
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -214,7 +219,7 @@ class LiveSessionClientTest {
         assertFalse(liveCookieBinding(backend).contains(backend.token))
     }
 
-    private suspend fun repository(): LivePiRepository {
+    private suspend fun repository(cache: LiveDetailCache = NoLiveDetailCache): LivePiRepository {
         cookies.save(backend, cookie)
         handler = { when (it.requestURI.path) {
             "/api/live-sessions/repo-candidates" -> reply(it, """{"repos":[]}""")
@@ -222,10 +227,26 @@ class LiveSessionClientTest {
             "/api/live-session-meta" -> reply(it, """{"meta":{}}""")
             else -> reply(it, "{}", 404)
         } }
-        val repo = LivePiRepository(MutableStateFlow(listOf(backend)), scope, cookies).also { repositories.add(it) }
+        val repo = LivePiRepository(MutableStateFlow(listOf(backend)), scope, cookies, cache).also { repositories.add(it) }
         withTimeout(5000) { while (repo.candidates(backend.id).isFailure) delay(20) }
         calls.clear()
         return repo
+    }
+
+    @Test fun modelChoicesAreReusedBrieflyButForceRefreshAndAuthChangesBypassCache() = runBlocking {
+        val repo = repository()
+        val key = SessionKey(backend.id, process)
+        handler = { reply(it, """{"result":{"models":[{"provider":"fixture","id":"model"}]}}""") }
+        calls.clear()
+        assertEquals("model", repo.models(key).getOrThrow().single().id)
+        assertEquals("model", repo.models(key).getOrThrow().single().id)
+        assertEquals(1, calls.size)
+        assertTrue(repo.models(key, force = true).isSuccess)
+        assertEquals(2, calls.size)
+        cookies.save(backend, null)
+        // Even if a server fixture accepts the request, an old authenticated cache is not reused.
+        repo.models(key)
+        assertEquals(3, calls.size)
     }
 
     @Test fun machineOrganizationFailureDoesNotTurnConnectedLiveRowsIntoAnEmptyList() = runBlocking {
@@ -389,6 +410,123 @@ class LiveSessionClientTest {
         assertTrue(calls.isEmpty())
     }
 
+    @Test fun cacheLoadMarksProvenanceAndServerSnapshotAlwaysWins() = runBlocking {
+        val cache = MemoryDetailCache().apply {
+            cached = LiveCachedDetail(cachedDetail(revision = 1, entry = "disk-old"), 1_000, 99_999, truncated = true)
+        }
+        val repo = repository(cache)
+        val key = SessionKey(backend.id, process)
+
+        repo.focus(key)
+        withTimeout(5000) { while (!repo.cachedSnapshots.value.containsKey(key) || repo.details.value[key] == null) delay(10) }
+        assertEquals("disk-old", repo.details.value[key]!!.entries.single().text())
+        assertTrue(repo.cachedSnapshots.value.getValue(key).truncated)
+
+        handler = { if (it.requestURI.path == "/api/live-sessions/$process") reply(it, serverDetail(revision = 2, entry = "server-new"))
+            else reply(it, "{}", 404) }
+        assertTrue(repo.refresh(key).isSuccess)
+        assertEquals("server-new", repo.details.value[key]!!.entries.single().text())
+        assertFalse(repo.cachedSnapshots.value.containsKey(key))
+    }
+
+    @Test fun aLateDiskLoadNeverOverwritesAServerSnapshot() = runBlocking {
+        val gate = CountDownLatch(1)
+        val cache = MemoryDetailCache().apply {
+            loadGate = gate
+            cached = LiveCachedDetail(cachedDetail(revision = 1, entry = "disk-old"), 1_000, 99_999, truncated = false)
+        }
+        val repo = repository(cache)
+        val key = SessionKey(backend.id, process)
+
+        repo.focus(key)
+        assertTrue(cache.loadStarted.await(5, TimeUnit.SECONDS))
+        handler = { if (it.requestURI.path == "/api/live-sessions/$process") reply(it, serverDetail(revision = 3, entry = "server-new"))
+            else reply(it, "{}", 404) }
+        assertTrue(repo.refresh(key).isSuccess)
+        assertEquals("server-new", repo.details.value[key]!!.entries.single().text())
+
+        gate.countDown()
+        withTimeout(5000) { while (!cache.loadFinished) delay(10) }
+        delay(100)
+        assertEquals("server-new", repo.details.value[key]!!.entries.single().text())
+        assertFalse(repo.cachedSnapshots.value.containsKey(key))
+    }
+
+    @Test fun changedCookieWhileCacheLoadsNeverDisplaysOldContent() = runBlocking {
+        val gate = CountDownLatch(1)
+        val cache = MemoryDetailCache().apply {
+            loadGate = gate
+            cached = LiveCachedDetail(cachedDetail(revision = 1, entry = "old-account"), 1_000, 99_999, truncated = false)
+        }
+        val repo = repository(cache)
+        val key = SessionKey(backend.id, process)
+        repo.focus(key)
+        assertTrue(cache.loadStarted.await(5, TimeUnit.SECONDS))
+        cookies.save(backend, null)
+        gate.countDown()
+        withTimeout(5000) { while (!cache.loadFinished) delay(10) }
+        delay(100)
+        assertNull(repo.details.value[key])
+        assertFalse(repo.cachedSnapshots.value.containsKey(key))
+    }
+
+    @Test fun aWriteRacingLogoutIsRemovedAfterItFinishes() = runBlocking {
+        val gate = CountDownLatch(1)
+        val cache = MemoryDetailCache().apply { saveGate = gate }
+        val repo = repository(cache)
+        val key = SessionKey(backend.id, process)
+        repo.focus(key)
+        assertTrue(repo.refresh(key).isSuccess)
+        repo.unfocus(key)
+        assertTrue(cache.saveStarted.await(5, TimeUnit.SECONDS))
+        cookies.save(backend, null)
+        gate.countDown()
+        withTimeout(5000) { while (cache.removed.none { it.processInstanceId == process }) delay(10) }
+        assertTrue(cache.removed.any { it.processInstanceId == process })
+    }
+
+    @Test fun anAuthoritativeSnapshotCanReplaceACacheWithHigherOldSequence() = runBlocking {
+        val old = cachedDetail(revision = 30, entry = "old-cache")
+        val cache = MemoryDetailCache().apply {
+            cached = LiveCachedDetail(old.copy(summary = old.summary.copy(eventSequence = 100)), 1_000, 99_999, truncated = false)
+        }
+        val repo = repository(cache)
+        val key = SessionKey(backend.id, process)
+        repo.focus(key)
+        withTimeout(5000) { while (repo.details.value[key] == null) delay(10) }
+        handler = { if (it.requestURI.path == "/api/live-sessions/$process") reply(it, serverDetail(revision = 1, entry = "authoritative")) else reply(it, "{}", 404) }
+        assertTrue(repo.refresh(key).isSuccess)
+        assertEquals("authoritative", repo.details.value[key]!!.entries.single().text())
+        assertFalse(repo.cachedSnapshots.value.containsKey(key))
+    }
+
+    @Test fun unauthorizedAndRemovedSessionsClearTheirCachedBodies() = runBlocking {
+        val cache = MemoryDetailCache()
+        val repo = repository(cache)
+        val key = SessionKey(backend.id, process)
+
+        handler = { when (it.requestURI.path) {
+            "/api/live-sessions" -> reply(it, """{"sessions":[{"processInstanceId":"$process","sessionId":"session-fixture","cwd":"/allowed"}]}""")
+            "/api/live-session-meta" -> reply(it, """{"meta":{}}""")
+            else -> reply(it, "{}", 404)
+        } }
+        assertTrue(repo.refreshMachine(backend.id).isSuccess)
+        withTimeout(5000) { while (repo.sessions.value.isEmpty()) delay(10) }
+
+        handler = { when (it.requestURI.path) {
+            "/api/live-sessions" -> reply(it, """{"sessions":[]}""")
+            "/api/live-session-meta" -> reply(it, """{"meta":{}}""")
+            else -> reply(it, "{}", 404)
+        } }
+        assertTrue(repo.refreshMachine(backend.id).isSuccess)
+        withTimeout(5000) { while (cache.removed.none { it.processInstanceId == process }) delay(10) }
+
+        handler = { reply(it, """{"error":"authentication_required"}""", 401) }
+        assertTrue(repo.refreshMachine(backend.id).isFailure)
+        withTimeout(5000) { while (backend.id !in cache.clearedBackends) delay(10) }
+        assertTrue(cache.removed.any { it.processInstanceId == process })
+    }
+
     private data class Call(val method: String, val path: String, val origin: String?, val authorization: String?, val cookie: String?, val body: String)
     private class MemoryCookies : LiveCookieStore {
         private val values = ConcurrentHashMap<String, String>()
@@ -397,6 +535,44 @@ class LiveSessionClientTest {
             if (cookie == null) values.remove(liveCookieBinding(backend)) else values[liveCookieBinding(backend)] = cookie
         }
     }
+    private fun kotlinx.serialization.json.JsonElement.text(): String =
+        (this as kotlinx.serialization.json.JsonObject)["text"]!!.toString().trim('"')
+
+    private fun cachedDetail(revision: Long, entry: String): LiveDetail =
+        pidashJson.decodeFromJsonElement(LiveDetail.serializer(), pidashJson.parseToJsonElement(serverDetail(revision, entry)))
+
+    private fun serverDetail(revision: Long, entry: String): String =
+        """{"summary":{"processInstanceId":"$process","sessionId":"session-fixture","cwd":"/allowed/project","revision":$revision},"entries":[{"text":"$entry"}]}"""
+
+    private class MemoryDetailCache : LiveDetailCache {
+        @Volatile var cached: LiveCachedDetail? = null
+        @Volatile var loadGate: CountDownLatch? = null
+        @Volatile var saveGate: CountDownLatch? = null
+        @Volatile var loadFinished = false
+        val loadStarted = CountDownLatch(1)
+        val saveStarted = CountDownLatch(1)
+        val removed = CopyOnWriteArrayList<LiveDetailCacheKey>()
+        val clearedBackends = CopyOnWriteArrayList<String>()
+
+        override suspend fun load(key: LiveDetailCacheKey, now: Long): LiveCachedDetail? {
+            loadStarted.countDown()
+            return try {
+                loadGate?.await(5, TimeUnit.SECONDS)
+                cached
+            } finally {
+                loadFinished = true
+            }
+        }
+
+        override suspend fun save(key: LiveDetailCacheKey, detail: LiveDetail, now: Long): Boolean {
+            saveStarted.countDown()
+            saveGate?.await(5, TimeUnit.SECONDS)
+            return true
+        }
+        override suspend fun remove(key: LiveDetailCacheKey) { removed += key }
+        override suspend fun clearBackend(backendId: String) { clearedBackends += backendId }
+    }
+
     private fun reply(exchange: FixtureExchange, body: String, status: Int = 200) {
         val bytes = body.toByteArray()
         exchange.responseHeaders.set("Content-Type", "application/json")

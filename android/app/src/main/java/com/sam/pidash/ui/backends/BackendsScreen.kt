@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Switch
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.DashboardClient
 import com.sam.pidash.data.repo.PiDashRepository
+import com.sam.pidash.domain.model.AppFontScale
 import com.sam.pidash.domain.model.ConnectionState
 import com.sam.pidash.ui.common.AppVersionLabel
 import com.sam.pidash.ui.common.GroupedCard
@@ -73,6 +75,8 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     var showAdd by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val notifier = remember { (context.applicationContext as PiDashApp).notifier }
+    val displayPrefs = remember { (context.applicationContext as PiDashApp).displayPrefs }
+    val fontScale by displayPrefs.fontScale.collectAsState()
     var alertsEnabled by remember { mutableStateOf(notifier.prefs.enabled) }
     var alertsNeedsPermission by remember { mutableStateOf(false) }
     // Android 13+: enabling alerts asks for the runtime permission instead of failing silently.
@@ -92,7 +96,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
                         Text(
-                            "服务器",
+                            "设置",
                             style = PiType.headline,
                             maxLines = 1,
                             modifier = Modifier.weight(1f, fill = false),
@@ -118,6 +122,48 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
             contentPadding = PaddingValues(top = Spacing.sm, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
+            item { SectionLabel("显示") }
+            item {
+                GroupedCard {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        Text("字体大小", style = PiType.callout, maxLines = 1)
+                        Text(
+                            "默认跟随系统字号，可再整体缩小或放大；仅影响本 App，重启后保留。",
+                            style = PiType.caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            AppFontScale.entries.forEach { option ->
+                                FilterChip(
+                                    selected = fontScale == option,
+                                    onClick = { displayPrefs.setFontScale(option) },
+                                    label = { Text(option.label) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            item { SectionLabel("本地缓存") }
+            item {
+                GroupedCard {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.xxs),
+                    ) {
+                        Text("最近的 Live 会话正文", style = PiType.callout)
+                        Text(
+                            "最近访问的对话记录及部分工具输出会加密保存在本机，最多 7 天；图片和待处理请求不缓存。断开或重新登录时会尝试清除。缓存仅用于快速显示，仍需与服务器同步。",
+                            style = PiType.caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            item { SectionLabel("服务器") }
             if (backends.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(vertical = Spacing.xl)) {

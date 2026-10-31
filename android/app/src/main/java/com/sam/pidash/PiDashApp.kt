@@ -2,7 +2,9 @@ package com.sam.pidash
 
 import android.app.Application
 import com.sam.pidash.data.local.BackendStore
+import com.sam.pidash.data.local.DisplayPrefs
 import com.sam.pidash.data.local.EncryptedLiveCookieStore
+import com.sam.pidash.data.local.EncryptedLiveDetailCache
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.notify.LiveAlertWatcher
 import com.sam.pidash.notify.LiveNotifier
@@ -16,6 +18,9 @@ class PiDashApp : Application() {
     lateinit var repository: PiDashRepository
         private set
 
+    lateinit var displayPrefs: DisplayPrefs
+        private set
+
     lateinit var notifier: LiveNotifier
         private set
     private lateinit var alerts: LiveAlertWatcher
@@ -24,7 +29,10 @@ class PiDashApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        repository = PiDashRepository(BackendStore(this), appScope, EncryptedLiveCookieStore(this))
+        repository = PiDashRepository(
+            BackendStore(this), appScope, EncryptedLiveCookieStore(this), EncryptedLiveDetailCache(this),
+        )
+        displayPrefs = DisplayPrefs(this)
         notifier = LiveNotifier(this)
         alerts = LiveAlertWatcher(repository.live, notifier, appScope).also { it.start() }
     }

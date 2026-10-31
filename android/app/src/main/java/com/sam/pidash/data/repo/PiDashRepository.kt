@@ -2,6 +2,8 @@ package com.sam.pidash.data.repo
 
 import com.sam.pidash.data.local.BackendStore
 import com.sam.pidash.data.local.LiveCookieStore
+import com.sam.pidash.data.local.LiveDetailCache
+import com.sam.pidash.data.local.NoLiveDetailCache
 import com.sam.pidash.core.nowMillis
 import com.sam.pidash.data.remote.DashboardClient
 import com.sam.pidash.data.remote.WsFrame
@@ -34,13 +36,14 @@ class PiDashRepository(
     private val store: BackendStore,
     private val scope: CoroutineScope,
     liveCookies: LiveCookieStore,
+    liveDetailCache: LiveDetailCache = NoLiveDetailCache,
 ) {
     private val clients = mutableMapOf<String, DashboardClient>()
     private val clientJobs = mutableMapOf<String, Job>()
 
     private val _backends = MutableStateFlow<List<Backend>>(emptyList())
     val backends: StateFlow<List<Backend>> = _backends
-    val live = LivePiRepository(backends, scope, liveCookies)
+    val live = LivePiRepository(backends, scope, liveCookies, liveDetailCache)
 
     private val _slotsByBackend = MutableStateFlow<Map<String, List<ChatSlot>>>(emptyMap())
     private val _connection = MutableStateFlow<Map<String, ConnectionState>>(emptyMap())

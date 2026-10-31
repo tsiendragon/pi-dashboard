@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -25,9 +26,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.sam.pidash.ui.common.StatusDot
@@ -88,6 +92,8 @@ fun LiveSessionScreen(
     val live = repo.live
     val sessions by live.sessions.collectAsState()
     val details by live.details.collectAsState()
+    val cachedSnapshots by live.cachedSnapshots.collectAsState()
+    val cachedSnapshot = cachedSnapshots[sessionKey]
     val leases by live.leases.collectAsState()
     val errors by live.errors.collectAsState()
     val backendStates by live.backendStates.collectAsState()
@@ -100,6 +106,7 @@ fun LiveSessionScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
+    var composerFocused by remember(sessionKey) { mutableStateOf(false) }
     var attachments by remember(sessionKey) { mutableStateOf(emptyList<LiveImage>()) }
     // Quotes and annotations reuse the WebUI's message shapes, so the agent sees
     // the same blockquote/comment round from either client.
@@ -216,6 +223,7 @@ fun LiveSessionScreen(
     }
 
     suspend fun ensureLease(): Result<Unit> {
+        if (live.cachedSnapshots.value.containsKey(sessionKey)) return Result.failure(IllegalStateException("当前显示的是本机缓存，请先刷新同步会话"))
         if (live.leases.value.containsKey(sessionKey)) return Result.success(Unit)
         val current = live.details.value[sessionKey]?.summary
             ?: live.sessions.value.firstOrNull { it.key == sessionKey }?.summary
@@ -225,8 +233,12 @@ fun LiveSessionScreen(
         return live.claim(sessionKey)
     }
 
-    fun perform(label: String, close: Boolean = false, operation: suspend () -> Result<Unit>) {
+    fun perform(label: String, close: Boolean = false, allowCached: Boolean = false, operation: suspend () -> Result<Unit>) {
         if (busy) return
+        if (!allowCached && live.cachedSnapshots.value.containsKey(sessionKey)) {
+            notice = "当前显示的是本机缓存，请先刷新同步会话"
+            return
+        }
         busy = true; notice = null
         scope.launch {
             val result = operation()
@@ -294,10 +306,12 @@ fun LiveSessionScreen(
                 val accentColor = parseHexColor(aggregate?.meta?.color) ?: MaterialTheme.colorScheme.primary
                 val emojiText = aggregate?.meta?.emoji?.takeIf { it.isNotBlank() } ?: "💬"
                 val projectName = summary?.cwd?.trimEnd('/')?.substringAfterLast('/')?.ifBlank { summary.cwd } ?: "pi"
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val showHeaderActions = maxWidth >= 600.dp && LocalDensity.current.fontScale <= 1.3f
                 Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
@@ -332,7 +346,7 @@ fun LiveSessionScreen(
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                 StatusDot(
-                                    if (summary?.status == "running") MaterialTheme.colorScheme.primary
+                                    if (cachedSnapshot == null && summary?.status == "running") MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.outline,
                                     size = 6.dp,
                                 )
@@ -346,7 +360,8 @@ fun LiveSessionScreen(
                             }
                         }
                     }
-                    // Prominent Reload & Restart pill buttons right in the header
+                    // On narrow screens these remain available in the overflow menu.
+                    if (showHeaderActions) {
                     Surface(
                         onClick = {
                             notice = null
@@ -376,13 +391,37 @@ fun LiveSessionScreen(
                             style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                         )
                     }
+                    }
+                    Row(Modifier.selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+                        listOf("activity" to "活动", "full" to "完整").forEach { (mode, label) ->
+                            val active = viewMode == mode
+                            Box(
+                                Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .selectable(selected = active, role = Role.Tab) { viewMode = mode },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    label,
+                                    modifier = Modifier.background(
+                                        if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                        else androidx.compose.ui.graphics.Color.Transparent,
+                                        RoundedCornerShape(6.dp),
+                                    ).padding(horizontal = 8.dp, vertical = 4.dp),
+                                    style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
                     Box {
                         IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Filled.MoreVert, "会话操作")
                         }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text("刷新") }, enabled = !busy, onClick = {
-                                menu = false; perform("已刷新") { live.refresh(sessionKey) }
+                                menu = false; perform("已刷新", allowCached = true) { live.refresh(sessionKey) }
                             })
                             listOf("meta" to "改名 / 表情 / 颜色 / 标签", "model" to "选择模型", "thinking" to "思考强度",
                                 "tree" to "会话树（只读）").forEach { (id, label) ->
@@ -403,7 +442,7 @@ fun LiveSessionScreen(
                                 onClick = { menu = false; notice = null; showBackground = true },
                             )
                             DropdownMenuItem(
-                                text = { Text(if (goal == null) "目标（未设置）…" else "目标…") },
+                                text = { Text(if (goal == null) "目标（未设置）…" else "目标（${goalState?.statusLabel ?: "已设置"}）…") },
                                 onClick = { menu = false; notice = null; showGoal = true },
                             )
                             DropdownMenuItem(
@@ -437,71 +476,15 @@ fun LiveSessionScreen(
                                 },
                             )
                             listOf("compact" to "压缩上下文…", "reload" to "重载扩展…", "restart" to "重启 Pi 进程…")
-                                .forEach { (id, label) -> DropdownMenuItem(text = { Text(label) }, enabled = !busy && !heldElsewhere,
-                                    onClick = { menu = false; notice = null; dialog = id }) }
+                                .forEach { (id, label) -> DropdownMenuItem(
+                                    text = { Text(label) },
+                                    enabled = !busy && if (id == "reload") summary?.status != "reconnecting" else !heldElsewhere,
+                                    onClick = { menu = false; notice = null; dialog = id },
+                                ) }
                             DropdownMenuItem(text = { Text("尚未支持的 WebUI 功能") }, onClick = { menu = false; notice = null; dialog = "remaining" })
                         }
                     }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
-                // One 48 dp touch row; visual highlights stay smaller than the touch targets.
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Row(
-                        Modifier.weight(1f).heightIn(min = 48.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(role = Role.Button) { notice = null; showGoal = true }
-                            .padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            goal?.objective?.ifBlank { "目标" } ?: "目标未设置",
-                            style = PiType.micro,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        goalState?.let {
-                            Text(
-                                it.statusLabel,
-                                style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Text("›", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Row(Modifier.selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
-                        listOf("activity" to "活动", "full" to "完整").forEach { (mode, label) ->
-                            val active = viewMode == mode
-                            Box(
-                                Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .selectable(selected = active, role = Role.Tab) { viewMode = mode },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    label,
-                                    modifier = Modifier
-                                        .background(
-                                            if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-                                            else androidx.compose.ui.graphics.Color.Transparent,
-                                            RoundedCornerShape(6.dp),
-                                        )
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-                                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                    }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
             }
@@ -721,16 +704,31 @@ fun LiveSessionScreen(
                                 }
                         }
                     }
-                    // Compact borderless field, consistent with the shared control radius.
-                    TextField(
+                    // Keep an empty, unfocused composer compact; grow for editing and retained drafts.
+                    val composerExpanded = composerFocused || draft.isNotBlank()
+                    BasicTextField(
                         value = draft,
                         onValueChange = { draft = it },
-                        modifier = Modifier.weight(1f).padding(horizontal = Spacing.xs),
-                        placeholder = { Text("输入消息…", style = PiType.subhead) },
-                        textStyle = PiType.subhead,
-                        trailingIcon = if (deliverAs != null || draft.isNotBlank()) {
-                            {
-                                Column(Modifier.padding(end = 8.dp), horizontalAlignment = Alignment.End) {
+                        modifier = Modifier.weight(1f).padding(horizontal = Spacing.xs)
+                            .onFocusChanged { composerFocused = it.isFocused },
+                        textStyle = PiType.subhead.copy(color = if (busy) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        maxLines = 4,
+                        enabled = !busy,
+                        decorationBox = { innerTextField ->
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 12.dp, vertical = if (composerExpanded) 10.dp else 6.dp)
+                                    .heightIn(min = if (composerExpanded) 40.dp else 36.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Box(Modifier.weight(1f)) {
+                                    if (draft.isEmpty()) Text("输入消息…", style = PiType.subhead, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    innerTextField()
+                                }
+                                if (deliverAs != null || draft.isNotBlank()) Column(horizontalAlignment = Alignment.End) {
                                     if (deliverAs != null) MetaText(
                                         "投递：" + when (deliverAs) {
                                             "steer" -> "引导"
@@ -741,19 +739,9 @@ fun LiveSessionScreen(
                                     if (draft.isNotBlank()) MetaText("${draft.length} 字")
                                 }
                             }
-                        } else null,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                            disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        ),
-                        maxLines = 4,
-                        enabled = !busy,
+                        },
                     )
-                    FilledIconButton(enabled = !busy && summary != null &&
+                    FilledIconButton(enabled = !busy && cachedSnapshot == null && summary != null &&
                         (draft.isNotBlank() || attachments.isNotEmpty() || files.isNotEmpty() ||
                             quotes.isNotEmpty() || reviews.isNotEmpty()) &&
                         ImageAttachments.validate(attachments) == null,
@@ -782,7 +770,7 @@ fun LiveSessionScreen(
         activities.firstOrNull { it.id == openActivityId }?.let { activity ->
             ActivityDetailDialog(
                 activity = activity,
-                enabled = !busy && !heldElsewhere,
+                enabled = !busy && !heldElsewhere && cachedSnapshot == null,
                 onDismiss = { openActivityId = null },
                 onOpenPath = ::openPathPreview,
                 onOpenUrl = ::openExternalUrl,
@@ -800,6 +788,14 @@ fun LiveSessionScreen(
             )
         }
         Column(Modifier.fillMaxSize().padding(padding)) {
+            if (cachedSnapshot != null) {
+                Text(
+                    if (cachedSnapshot.truncated) "本机缓存（部分内容未缓存）· 等待服务器同步" else "本机缓存 · 等待服务器同步",
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    style = PiType.footnote,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             val backend = backendStates[sessionKey.backendId]
             if (backend?.connected != true || backend.message != null) {
                 Text(backend?.message ?: if (backend?.needsToken == true) "需要重新输入访问令牌" else "连接中断或正在连接；下方可能是缓存内容。",
@@ -838,7 +834,7 @@ fun LiveSessionScreen(
                         row = row,
                         onOpenPath = ::openPathPreview,
                         onOpenUrl = ::openExternalUrl,
-                        enabled = !busy && !heldElsewhere,
+                        enabled = !busy && !heldElsewhere && cachedSnapshot == null,
                         onFork = { entryId -> notice = null; forkEntry = entryId; dialog = "fork" },
                         onQuote = { item ->
                             normalizeQuote(item.text)?.let { quoted ->
@@ -1060,7 +1056,7 @@ fun LiveSessionScreen(
                         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
                 },
-                confirmButton = { TextButton(enabled = !busy && !heldElsewhere && (action != "fork" || realFork != null), onClick = {
+                confirmButton = { TextButton(enabled = !busy && !heldElsewhere && cachedSnapshot == null && (action != "fork" || realFork != null), onClick = {
                     when (action) {
                         "fork" -> transition(false, realFork)
                         "restart" -> transition(true)

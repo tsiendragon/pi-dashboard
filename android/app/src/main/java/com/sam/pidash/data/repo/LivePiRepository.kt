@@ -1,6 +1,12 @@
 package com.sam.pidash.data.repo
 
 import com.sam.pidash.data.local.LiveCookieStore
+import com.sam.pidash.data.local.LiveCachedDetail
+import com.sam.pidash.data.local.LiveDetailCache
+import com.sam.pidash.data.local.LiveDetailCacheKey
+import com.sam.pidash.data.local.LiveDetailCacheSource
+import com.sam.pidash.data.local.NoLiveDetailCache
+import com.sam.pidash.data.local.liveDetailCacheKey
 import com.sam.pidash.data.remote.*
 import com.sam.pidash.domain.model.*
 import kotlinx.coroutines.*
@@ -15,16 +21,31 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.io.IOException
 
+private const val CACHE_WRITE_DEBOUNCE_MILLIS = 2500L
+private const val MODEL_OPTIONS_TTL_NANOS = 60_000_000_000L
+
+private data class CachedModelOptions(
+    val identity: LiveDetailCacheKey,
+    val fetchedAtNanos: Long,
+    val options: List<LiveModelOption>,
+)
+
 /** Live Pi only. Opening/listing never claims; mutations are explicit and never retried. */
 class LivePiRepository(
     private val backends: StateFlow<List<Backend>>,
     private val scope: CoroutineScope,
     private val cookies: LiveCookieStore,
+    private val detailCache: LiveDetailCache = NoLiveDetailCache,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val lock = Any()
+    private val detailStateLock = Any()
     private val clients = mutableMapOf<String, LiveSessionClient>()
+    private val modelOptions = mutableMapOf<SessionKey, CachedModelOptions>()
     private val jobs = mutableMapOf<String, Job>()
+    private val cacheWrites = mutableMapOf<SessionKey, Job>()
     private val mutationLocks = mutableMapOf<SessionKey, Mutex>()
+    private val cacheWriteLocks = mutableMapOf<SessionKey, Mutex>()
     private val starting = mutableSetOf<String>()
     private val organizationFetchedAt = mutableMapOf<String, Long>()
     private val _organization = MutableStateFlow<Map<String, LiveOrganization>>(emptyMap())
@@ -35,10 +56,17 @@ class LivePiRepository(
     private val metadata = MutableStateFlow<Map<String, Map<String, LiveMeta>>>(emptyMap())
     private val _states = MutableStateFlow<Map<String, LiveBackendState>>(emptyMap())
     private val _details = MutableStateFlow<Map<SessionKey, LiveDetail>>(emptyMap())
+    private val _cacheSources = MutableStateFlow<Map<SessionKey, LiveDetailCacheSource>>(emptyMap())
     private val _leases = MutableStateFlow<Map<SessionKey, LiveLease>>(emptyMap())
     private val _errors = MutableStateFlow<Map<SessionKey, String>>(emptyMap())
     val backendStates: StateFlow<Map<String, LiveBackendState>> = _states
     val details: StateFlow<Map<SessionKey, LiveDetail>> = _details
+    /**
+     * Keys present here show an offline snapshot loaded from disk, not the server's
+     * latest detail. Such a snapshot is display-only: it grants no lease and every
+     * mutation still revalidates with the server.
+     */
+    val cachedSnapshots: StateFlow<Map<SessionKey, LiveDetailCacheSource>> = _cacheSources
     val leases: StateFlow<Map<SessionKey, LiveLease>> = _leases
     val errors: StateFlow<Map<SessionKey, String>> = _errors
     val sessions: StateFlow<List<AggregatedLiveSession>> = combine(backends, rows, metadata) { servers, lists, meta ->
@@ -100,17 +128,138 @@ class LivePiRepository(
     private fun clearBackend(id: String) {
         rows.update { it - id }; metadata.update { it - id }
         _organization.update { it - id }; organizationFetchedAt.remove(id)
-        _details.update { it.filterKeys { key -> key.backendId != id } }
+        synchronized(detailStateLock) {
+            _details.update { it.filterKeys { key -> key.backendId != id } }
+            _cacheSources.update { it.filterKeys { key -> key.backendId != id } }
+        }
         _leases.update { it.filterKeys { key -> key.backendId != id } }
         _errors.update { it.filterKeys { key -> key.backendId != id } }
         _states.update { it - id }
         mutationLocks.keys.removeAll { it.backendId == id }
+        clearBackendCache(id)
+    }
+
+    private fun clearBackendCache(id: String) {
+        synchronized(lock) {
+            modelOptions.keys.removeAll { it.backendId == id }
+            cacheWrites.keys.filter { it.backendId == id }.toList().forEach { cacheWrites.remove(it)?.cancel() }
+        }
+        synchronized(detailStateLock) {
+            val cachedKeys = _cacheSources.value.keys.filter { it.backendId == id }.toSet()
+            _details.update { it - cachedKeys }
+            _cacheSources.update { it.filterKeys { key -> key.backendId != id } }
+        }
+        scope.launch { runCatching { detailCache.clearBackend(id) } }
+    }
+
+    private fun cacheKeyFor(key: SessionKey): LiveDetailCacheKey? {
+        val backend = backends.value.firstOrNull { it.id == key.backendId } ?: return null
+        val cookie = runCatching { cookies.load(backend) }.getOrNull() ?: return null
+        return runCatching { liveDetailCacheKey(backend, cookie, key.slotKey) }.getOrNull()
+    }
+
+    /**
+     * Disk is read asynchronously, but only if the server has not already supplied
+     * a detail for this focus. `cachedSnapshots` stays populated until a server
+     * snapshot replaces it, so callers can never mistake it for the latest detail.
+     */
+    private fun loadCachedDetail(key: SessionKey) {
+        scope.launch {
+            val cacheKey = cacheKeyFor(key) ?: return@launch
+            val cached = runCatching { detailCache.load(cacheKey, clock()) }.getOrNull() ?: return@launch
+            if (focused != key) return@launch
+            if (!cachedSnapshotStillMatches(key, cached)) {
+                runCatching { detailCache.remove(cacheKey) }
+                return@launch
+            }
+            synchronized(lock) {
+                // The cookie or server configuration may have changed while disk I/O was pending.
+                if (cacheKeyFor(key) != cacheKey) return@synchronized
+                synchronized(detailStateLock) {
+                    if (focused == key && !_details.value.containsKey(key)) {
+                        // Publish the stale marker before the detail so observers never see it as live.
+                        _cacheSources.value = _cacheSources.value + (key to LiveDetailCacheSource(
+                            savedAt = cached.savedAt,
+                            expiresAt = cached.expiresAt,
+                            truncated = cached.truncated,
+                        ))
+                        _details.value = _details.value + (key to cached.detail)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun cachedSnapshotStillMatches(key: SessionKey, cached: LiveCachedDetail): Boolean {
+        val detail = cached.detail
+        if (detail.summary.processInstanceId != key.slotKey) return false
+        if (detail.pendingUi.isNotEmpty()) return false
+        if (detail.summary.claim.state != "unclaimed" || detail.summary.claim.leaseId != null) return false
+        val listed = rows.value[key.backendId]
+        // A list that has loaded and no longer contains this process means it was closed/deleted.
+        if (listed != null) {
+            val current = listed.firstOrNull { it.processInstanceId == key.slotKey } ?: return false
+            if (current.sessionId != detail.summary.sessionId) return false
+        }
+        return true
+    }
+
+    /** Debounced so a burst of live deltas produces at most one encrypted file write. */
+    private fun scheduleCacheWrite(key: SessionKey, detail: LiveDetail, delayMillis: Long = CACHE_WRITE_DEBOUNCE_MILLIS) {
+        if (detailCache === NoLiveDetailCache) return
+        synchronized(lock) {
+            cacheWrites.remove(key)?.cancel()
+            val writeLock = cacheWriteLocks.getOrPut(key) { Mutex() }
+            cacheWrites[key] = scope.launch {
+                if (delayMillis > 0) delay(delayMillis)
+                writeLock.withLock {
+                    ensureActive()
+                    saveDetailToCache(key, detail)
+                }
+            }
+        }
+    }
+
+    private suspend fun saveDetailToCache(key: SessionKey, detail: LiveDetail) {
+        val listed = rows.value[key.backendId]
+        if (listed != null && listed.none { it.processInstanceId == key.slotKey }) return
+        if (_cacheSources.value.containsKey(key)) return // do not extend a disk snapshot's TTL without the server
+        val cacheKey = cacheKeyFor(key) ?: return
+        try {
+            detailCache.save(cacheKey, detail, clock())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Caching is optional; never interrupt a live session on disk failure.
+        } finally {
+            // Logout or account changes may have raced an in-flight encrypted write.
+            withContext(NonCancellable) {
+                if (cacheKeyFor(key) != cacheKey) runCatching { detailCache.remove(cacheKey) }
+            }
+        }
+    }
+
+    private fun flushCachedDetail(key: SessionKey) {
+        val detail = synchronized(detailStateLock) {
+            if (_cacheSources.value.containsKey(key)) null else _details.value[key]
+        } ?: return
+        scheduleCacheWrite(key, detail, delayMillis = 0)
+    }
+
+    private fun removeCachedSession(key: SessionKey) {
+        synchronized(lock) { cacheWrites.remove(key)?.cancel() }
+        synchronized(detailStateLock) {
+            _details.value = _details.value - key
+            _cacheSources.value = _cacheSources.value - key
+        }
+        scope.launch { cacheKeyFor(key)?.let { runCatching { detailCache.remove(it) } } }
     }
 
     fun close() {
         foreground = false
         synchronized(lock) {
             jobs.values.forEach { it.cancel() }; jobs.clear()
+            cacheWrites.values.forEach { it.cancel() }; cacheWrites.clear()
             clients.values.forEach { it.close() }; clients.clear()
             _leases.value = emptyMap()
         }
@@ -203,8 +352,12 @@ class LivePiRepository(
                 val key = SessionKey(id, process)
                 val old = _details.value[key]
                 if (old != null && focused == key) {
-                    val next = reduceLiveEvent(old, data)
-                    if (next == null) refresh(key) else acceptDetail(id, next)
+                    // A cached revision is display-only and cannot be a base for live deltas.
+                    if (_cacheSources.value.containsKey(key)) refresh(key)
+                    else {
+                        val next = reduceLiveEvent(old, data)
+                        if (next == null) refresh(key) else acceptDetail(id, next)
+                    }
                 }
             }
             "live_session_claim_changed", "live_session_reconnecting" -> {
@@ -214,7 +367,9 @@ class LivePiRepository(
             "live_session_goal_changed" -> {
                 val process = data["processInstanceId"]?.jsonPrimitive?.contentOrNull ?: return
                 val key = SessionKey(id, process)
-                _details.update { map -> map[key]?.let { map + (key to it.copy(goal = data["anchor"])) } ?: map }
+                if (!_cacheSources.value.containsKey(key)) {
+                    _details.update { map -> map[key]?.let { map + (key to it.copy(goal = data["anchor"])) } ?: map }
+                }
             }
             "live_session_detached" -> {
                 val process = (data["summary"] as? JsonObject)?.get("processInstanceId")?.jsonPrimitive?.contentOrNull ?: return
@@ -222,6 +377,7 @@ class LivePiRepository(
                 val key = SessionKey(id, process)
                 _leases.update { it - key }
                 _errors.update { it + (key to "会话已离线或关闭") }
+                removeCachedSession(key)
             }
         }
     }
@@ -237,16 +393,34 @@ class LivePiRepository(
     private fun acceptDetail(id: String, detail: LiveDetail, reset: Boolean = false) {
         val key = SessionKey(id, detail.summary.processInstanceId)
         val old = _details.value[key]
-        if (!reset && old?.summary?.sessionId == detail.summary.sessionId &&
+        if (!reset && !_cacheSources.value.containsKey(key) && old?.summary?.sessionId == detail.summary.sessionId &&
             detail.summary.revision <= old.summary.revision && detail.summary.eventSequence < old.summary.eventSequence) return
         updateSummary(id, detail.summary)
-        if (focused == key) _details.update { it + (key to detail) }
+        synchronized(detailStateLock) {
+            if (focused == key) {
+                _details.value = _details.value + (key to detail)
+                // From now on this is an authoritative server snapshot, not a disk display.
+                _cacheSources.value = _cacheSources.value - key
+            }
+        }
+        if (focused == key) scheduleCacheWrite(key, detail)
     }
     private suspend fun refreshBackend(id: String, forceOrganization: Boolean = false) {
         val api = client(id)
         val list = api.list()
         if (!isCurrentClient(id, api)) return
+        val previous = rows.value[id].orEmpty()
         rows.update { it + (id to list) }
+        previous.filter { old -> list.none { it.processInstanceId == old.processInstanceId } }
+            .forEach { removed -> removeCachedSession(SessionKey(id, removed.processInstanceId)) }
+        // Also invalidate cached snapshots that were shown while the list was unavailable
+        // and now no longer match the server's process/session identity.
+        val cachedKeys = synchronized(detailStateLock) { _cacheSources.value.keys.toList() }
+        cachedKeys.filter { key -> key.backendId == id }.filter { key ->
+            val current = list.firstOrNull { it.processInstanceId == key.slotKey }
+            val cachedSession = _details.value[key]?.summary?.sessionId
+            current == null || (cachedSession != null && current.sessionId != cachedSession)
+        }.forEach(::removeCachedSession)
         _states.update { it + (id to LiveBackendState(connected = true)) }
         _leases.value.filterKeys { it.backendId == id }.forEach { (key, lease) ->
             val live = list.find { it.processInstanceId == key.slotKey }
@@ -289,19 +463,28 @@ class LivePiRepository(
             _organization.update { it - id }
             synchronized(lock) { organizationFetchedAt.remove(id) }
             rows.update { it - id }
-            _details.update { it.filterKeys { key -> key.backendId != id } }
+            synchronized(detailStateLock) {
+                _details.update { it.filterKeys { key -> key.backendId != id } }
+                _cacheSources.update { it.filterKeys { key -> key.backendId != id } }
+            }
             _leases.update { it.filterKeys { key -> key.backendId != id } }
+            clearBackendCache(id)
         }
     }
 
     fun focus(key: SessionKey) {
         focused = key
         // Keep only the selected transcript; other sessions' text need not stay in RAM.
-        _details.update { it.filterKeys { selected -> selected == key } }
+        synchronized(detailStateLock) {
+            _details.value = _details.value.filterKeys { selected -> selected == key }
+            _cacheSources.value = _cacheSources.value.filterKeys { selected -> selected == key }
+        }
+        loadCachedDetail(key)
         if (foreground) scope.launch { refresh(key) }
     }
     fun unfocus(key: SessionKey) {
         if (focused == key) focused = null
+        flushCachedDetail(key)
         scope.launch { release(key) }
     }
     private fun releaseOwned() {
@@ -375,6 +558,8 @@ class LivePiRepository(
     suspend fun refresh(key: SessionKey): Result<Unit> = result(key) { acceptDetail(key.backendId, client(key.backendId).detail(key.slotKey)) }
     suspend fun connect(id: String, token: String): Result<Unit> = result {
         client(id).authenticate(token)
+        // A new cookie identity must never make a prior session's snapshots readable.
+        clearBackendCache(id)
         synchronized(lock) { jobs.remove(id)?.cancel(); if (foreground) startLoop(id) }
         reconcile(id)
     }
@@ -462,9 +647,23 @@ class LivePiRepository(
     }
     suspend fun abort(key: SessionKey): Result<Unit> = controlled(key) { buildJsonObject { put("type", "abort"); put("leaseId", it.leaseId) } }
     suspend fun rename(key: SessionKey, name: String): Result<Unit> = shared(key) { buildJsonObject { put("type", "set_session_name"); put("name", name) } }
-    suspend fun models(key: SessionKey): Result<List<LiveModelOption>> = result(key) {
-        val response = client(key.backendId).command(key.slotKey, buildJsonObject { put("type", "get_models") })
-        pidashJson.decodeFromJsonElement(ListSerializer(LiveModelOption.serializer()), response.jsonObject["models"] ?: JsonArray(emptyList()))
+    suspend fun models(key: SessionKey, force: Boolean = false): Result<List<LiveModelOption>> = result(key) {
+        val api = client(key.backendId)
+        val identity = cacheKeyFor(key)
+        val now = System.nanoTime()
+        val cached = synchronized(lock) {
+            modelOptions[key]?.takeIf {
+                !force && identity != null && it.identity == identity && clients[key.backendId] === api &&
+                    now - it.fetchedAtNanos in 0 until MODEL_OPTIONS_TTL_NANOS
+            }
+        }
+        if (cached != null) return@result cached.options
+        val response = api.command(key.slotKey, buildJsonObject { put("type", "get_models") })
+        val options = pidashJson.decodeFromJsonElement(ListSerializer(LiveModelOption.serializer()), response.jsonObject["models"] ?: JsonArray(emptyList()))
+        if (identity != null && isCurrentClient(key.backendId, api) && cacheKeyFor(key) == identity) {
+            synchronized(lock) { modelOptions[key] = CachedModelOptions(identity, System.nanoTime(), options) }
+        }
+        options
     }
     suspend fun setModel(key: SessionKey, provider: String, id: String): Result<Unit> = shared(key) {
         buildJsonObject { put("type", "set_model"); put("provider", provider); put("modelId", id) }

@@ -261,7 +261,7 @@ internal fun LiveModelDialog(
     var revision by remember { mutableIntStateOf(0) }
     LaunchedEffect(key, revision) {
         loading = true; error = null
-        repo.live.models(key).fold(onSuccess = { options = it }, onFailure = { error = it.message ?: "模型列表加载失败" })
+        repo.live.models(key, force = revision > 0).fold(onSuccess = { options = it }, onFailure = { error = it.message ?: "模型列表加载失败" })
         loading = false
     }
     val current = options.firstOrNull { it.provider == summary?.model?.provider && it.id == summary?.model?.id }
@@ -325,6 +325,7 @@ internal fun LiveModelDialog(
                         }
                     }
                 } else {
+                    TextButton(enabled = !busy && !loading, onClick = { revision++ }) { Text("刷新模型列表", style = PiType.footnote) }
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
