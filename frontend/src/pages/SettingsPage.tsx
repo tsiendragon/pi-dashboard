@@ -350,23 +350,67 @@ function ModelTab() {
       <Card>
         <CardTitle>{tr('思考', 'Thinking')} <InfoTip text={tr('控制模型回答前推理的深度', 'Controls how deeply the model reasons before responding')} /></CardTitle>
         <div className="divide-y divide-border">
-          <SelectRow
-            seg
-            label={tr('默认思考强度', 'Default thinking level')}
-            hint={tr('新会话的推理深度', 'Depth of reasoning for new sessions')}
-            cfg="defaultThinkingLevel"
-            value={settings.defaultThinkingLevel || 'medium'}
-            options={[
-              { value: 'off', label: tr('关', 'Off') },
-              { value: 'minimal', label: tr('极低', 'Minimal') },
-              { value: 'low', label: tr('低', 'Low') },
-              { value: 'medium', label: tr('中', 'Medium') },
-              { value: 'high', label: tr('高', 'High') },
-              { value: 'xhigh', label: tr('特高', 'Extra High') },
-              { value: 'max', label: tr('最高', 'Max') },
-            ]}
-            onChange={v => set('defaultThinkingLevel', v)}
-          />
+          <div className="py-3">
+            <RowLabel
+              label={tr('默认思考强度', 'Default thinking level')}
+              hint={tr('新会话的推理深度', 'Depth of reasoning for new sessions')}
+              cfg="defaultThinkingLevel"
+            />
+            <div
+              role="radiogroup"
+              aria-label={tr('默认思考强度', 'Default thinking level')}
+              className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2"
+            >
+              {[
+                { value: 'off', label: tr('关', 'Off'), en: 'Off', bars: 0, desc: tr('不生成思考过程，直接回答', 'No reasoning trace, fastest response'), budget: undefined },
+                { value: 'minimal', label: tr('极低', 'Minimal'), en: 'Minimal', bars: 1, desc: tr('快速验证与格式修正，开销极小', 'Quick checks and minor edits'), budget: settings.thinkingBudgets?.minimal },
+                { value: 'low', label: tr('低', 'Low'), en: 'Low', bars: 2, desc: tr('轻量逻辑检查、小型单文件编码', 'Light logic checks and single-file edits'), budget: settings.thinkingBudgets?.low },
+                { value: 'medium', label: tr('中', 'Medium'), en: 'Medium', bars: 3, desc: tr('平衡深度推演与响应速度，适合多数任务', 'Balanced reasoning depth and speed'), budget: settings.thinkingBudgets?.medium, badge: tr('推荐', 'Recommended') },
+                { value: 'high', label: tr('高', 'High'), en: 'High', bars: 4, desc: tr('多轮逻辑推导、疑难排查与算法推演', 'Deep multi-step reasoning and debugging'), budget: settings.thinkingBudgets?.high },
+                { value: 'xhigh', label: tr('特高', 'Extra High'), en: 'Extra High', bars: 5, desc: tr('深度思维链推演，适合复杂重构', 'Extended chain-of-thought for complex refactors'), budget: settings.thinkingBudgets?.xhigh },
+                { value: 'max', label: tr('最高', 'Max'), en: 'Max', bars: 5, desc: tr('最大推理强度，适合高难度架构诊断', 'Maximum reasoning effort'), budget: undefined },
+              ].map(item => {
+                const selected = (settings.defaultThinkingLevel || 'medium') === item.value
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    role="radio"
+                    aria-label={item.label}
+                    aria-checked={selected}
+                    onClick={() => { if (!selected) set('defaultThinkingLevel', item.value) }}
+                    className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition ${selected ? 'border-accent bg-accent-subtle shadow-sm' : 'border-border bg-bg-elevated hover:bg-bg-hover'}`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <span aria-hidden="true" className="flex h-4 w-5 shrink-0 items-end gap-0.5">
+                        {[1, 2, 3, 4, 5].map(bar => (
+                          <span
+                            key={bar}
+                            style={{ height: `${3 + bar * 2.5}px` }}
+                            className={`w-[3px] rounded-sm ${bar <= item.bars ? 'bg-accent' : 'bg-border'}`}
+                          />
+                        ))}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="flex flex-wrap items-center gap-1.5 text-body-s font-semibold text-text-strong">
+                          <span>{item.label}</span>
+                          <span className="font-mono text-2xs font-normal text-muted">· {item.en}</span>
+                          {item.badge && <span className="rounded bg-card px-1.5 py-0.5 text-2xs font-medium text-accent">{item.badge}</span>}
+                          {typeof item.budget === 'number' && item.budget > 0 && (
+                            <span className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-2xs font-normal text-muted">
+                              {item.budget.toLocaleString()} tok
+                            </span>
+                          )}
+                        </span>
+                        <span className="mt-0.5 block truncate text-2xs text-muted">{item.desc}</span>
+                      </span>
+                    </span>
+                    <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-2xs font-bold ${selected ? 'border-accent bg-accent text-accent-fg' : 'border-border text-transparent'}`}>✓</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
           <Toggle label={tr('隐藏思考块', 'Hide thinking blocks')} hint={tr('在 TUI 中折叠思考内容', 'Collapse thinking output in the TUI')} cfg="hideThinkingBlock" checked={settings.hideThinkingBlock ?? false} onChange={v => set('hideThinkingBlock', v)} />
         </div>
       </Card>
@@ -392,6 +436,7 @@ function ModelListTab() {
   const [defaultModels, setDefaultModels] = useState<ModelOption[]>([])
   const [modelsLoading, setModelsLoading] = useState(true)
   const [modelQuery, setModelQuery] = useState('')
+  const [capabilityFilter, setCapabilityFilter] = useState<'all' | 'thinking' | 'large'>('all')
   const [selectionError, setSelectionError] = useState('')
 
   useEffect(() => {
@@ -412,13 +457,18 @@ function ModelListTab() {
 
   const enabledPatterns = settings.enabledModels || []
   const selectedIds = selectedModelIds(availableModels, enabledPatterns, defaultModels)
+  const matchesModelFilter = (model: ModelOption, provider: string) => {
+    const query = modelQuery.trim().toLowerCase()
+    const matchesQuery = !query || provider.toLowerCase().includes(query) || `${model.name || ''} ${model.id}`.toLowerCase().includes(query)
+    if (!matchesQuery) return false
+    if (capabilityFilter === 'thinking') return supportedThinkingLevels(model).some(level => level !== 'off')
+    if (capabilityFilter === 'large') return typeof model.contextWindow === 'number' && model.contextWindow >= 200_000
+    return true
+  }
   const modelGroups = Array.from(new Set(availableModels.map(model => model.provider))).sort().map(provider => ({
     provider,
     models: availableModels.filter(model => model.provider === provider),
-  })).filter(group => {
-    const query = modelQuery.trim().toLowerCase()
-    return !query || group.provider.toLowerCase().includes(query) || group.models.some(model => `${model.name || ''} ${model.id}`.toLowerCase().includes(query))
-  })
+  })).filter(group => group.models.some(model => matchesModelFilter(model, group.provider)))
   const unmatchedPatterns = enabledPatterns.filter(pattern => !availableModels.some(model => modelPatternMatches(pattern, model)))
 
   const saveModelSelection = (nextIds: Set<string>) => {
@@ -469,7 +519,7 @@ function ModelListTab() {
             <button type="button" onClick={() => void restoreDefaults()} disabled={modelsLoading} className="rounded-md border border-border px-2.5 py-1.5 text-meta text-muted hover:bg-bg-hover disabled:opacity-40">恢复默认</button>
           </div>
         </div>
-        <div className="mb-3 flex items-center gap-3">
+        <div className="mb-2.5 flex items-center gap-3">
           <input
             value={modelQuery}
             onChange={event => setModelQuery(event.target.value)}
@@ -478,6 +528,22 @@ function ModelListTab() {
             className="min-w-0 flex-1 rounded-md border border-border bg-bg-elevated px-3 py-2 text-body-s text-text outline-none focus-ring"
           />
           <span className="shrink-0 text-meta text-muted">已选 {selectedIds.size} / {availableModels.length}</span>
+        </div>
+        <div className="mb-3 flex items-center gap-1.5 overflow-x-auto pb-1">
+          {[
+            { id: 'all' as const, label: '全部模型' },
+            { id: 'thinking' as const, label: '🧠 支持深度思考' },
+            { id: 'large' as const, label: '📦 200K+ 上下文' },
+          ].map(chip => (
+            <button
+              key={chip.id}
+              type="button"
+              onClick={() => setCapabilityFilter(chip.id)}
+              className={`shrink-0 cursor-pointer rounded-full border px-2.5 py-1 text-2xs font-medium transition ${capabilityFilter === chip.id ? 'border-accent bg-accent-subtle text-accent' : 'border-border bg-bg-elevated text-muted hover:text-text'}`}
+            >
+              {chip.label}
+            </button>
+          ))}
         </div>
         {selectionError && <div role="alert" className="mb-2 text-meta text-danger">{selectionError}</div>}
         {unmatchedPatterns.length > 0 && <div className="mb-2 text-meta text-muted">有 {unmatchedPatterns.length} 条规则暂时没有匹配到当前 Pi 模型目录，保存选择时会保留。</div>}
@@ -508,10 +574,7 @@ function ModelListTab() {
                     <span className="text-meta text-muted">{enabledCount}/{models.length}</span>
                   </label>
                   <div className="divide-y divide-border">
-                    {models.filter(model => {
-                      const query = modelQuery.trim().toLowerCase()
-                      return !query || provider.toLowerCase().includes(query) || `${model.name || ''} ${model.id}`.toLowerCase().includes(query)
-                    }).map(model => {
+                    {models.filter(model => matchesModelFilter(model, provider)).map(model => {
                       const enabled = selectedIds.has(modelFullId(model))
                       const levels = supportedThinkingLevels(model).filter(level => level !== 'off')
                       const contextWindow = typeof model.contextWindow === 'number' && model.contextWindow > 0 ? model.contextWindow : undefined

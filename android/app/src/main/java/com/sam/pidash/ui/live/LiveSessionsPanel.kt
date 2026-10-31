@@ -13,11 +13,16 @@ import androidx.compose.foundation.layout.size
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Spacing
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -60,6 +65,10 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     var groupBusy by remember { mutableStateOf(false) }
     var sorting by remember(backendId) { mutableStateOf(false) }
     var sortBusy by remember { mutableStateOf(false) }
+    var actionBusyKey by remember { mutableStateOf<SessionKey?>(null) }
+    var editingRow by remember { mutableStateOf<AggregatedLiveSession?>(null) }
+    var restartingRow by remember { mutableStateOf<AggregatedLiveSession?>(null) }
+    var rowActionError by remember { mutableStateOf<String?>(null) }
     var groupError by remember { mutableStateOf<String?>(null) }
     val sections = remember(sessions, org, query, runningOnly, children, backendId) {
         machineSessionSections(backendId, sessions, org, query, runningOnly, children)
@@ -89,8 +98,13 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(runningOnly, { runningOnly = !runningOnly }, enabled = !sorting, label = { Text("工作中") })
                     FilterChip(children, { children = !children }, enabled = !sorting, label = { Text("子 Agent") })
-                    TextButton(enabled = org.loaded && !sorting, onClick = { groupError = null; managing = true }) { Text("分组") }
-                    TextButton(enabled = org.loaded && !sortBusy && (sorting || (query.isBlank() && !runningOnly)), onClick = { sorting = !sorting; notice = null }) { Text(if (sorting) "完成" else "排序") }
+                    TextButton(enabled = org.loaded && !sorting, onClick = { groupError = null; managing = true }) { Text("📁 分组") }
+                    FilterChip(
+                        selected = sorting,
+                        enabled = org.loaded && !sortBusy && (sorting || (query.isBlank() && !runningOnly)),
+                        onClick = { sorting = !sorting; notice = null },
+                        label = { Text(if (sorting) "✓ 完成排序" else "↕️ 排序模式") },
+                    )
                 }
                 if (!sorting && (query.isNotBlank() || runningOnly)) Text("清除搜索和筛选后可调整顺序。", style = MaterialTheme.typography.bodySmall)
                 if (sorting) Text("仅调整同一分组内的顺序；与网页共享。", style = MaterialTheme.typography.bodySmall)
@@ -135,24 +149,60 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                     GroupedCard {
                         section.sessions.forEachIndexed { index, row ->
                             if (index > 0) InsetSeparator()
-                            SessionRow(row, org.loaded && !sorting, onOpen, onGroup = { groupError = null; moving = row })
-                            if (sorting && section.id != "__subagents") {
-                                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    fun performMove(direction: SessionMove) {
-                                        sortBusy = true; notice = null
-                                        scope.launch {
-                                            repo.live.moveSession(row.key, direction).fold(
-                                                onSuccess = { notice = "排序已保存" },
-                                                onFailure = { notice = "排序失败：${it.message ?: "请刷新后重试"}" },
-                                            )
-                                            sortBusy = false
-                                        }
-                                    }
-                                    TextButton(enabled = !sortBusy && index > 0, onClick = { performMove(SessionMove.UP) }) { Text("↑ 上移") }
-                                    TextButton(enabled = !sortBusy && index < section.sessions.lastIndex, onClick = { performMove(SessionMove.DOWN) }) { Text("↓ 下移") }
-                                    TextButton(enabled = !sortBusy && index > 0, onClick = { performMove(SessionMove.TOP) }) { Text("置本组顶部") }
+                            val canReorder = org.loaded && !sortBusy && query.isBlank() && !runningOnly && section.id != "__subagents"
+                            fun performMove(direction: SessionMove) {
+                                sortBusy = true; notice = null
+                                scope.launch {
+                                    repo.live.moveSession(row.key, direction).fold(
+                                        onSuccess = { notice = "已更新「${row.summary.title}」顺序" },
+                                        onFailure = { notice = "排序失败：${it.message ?: "请刷新后重试"}" },
+                                    )
+                                    sortBusy = false
                                 }
                             }
+                            SessionRow(
+                                row = row,
+                                orderNumber = index + 1,
+                                groupEnabled = org.loaded && !sorting,
+                                canMoveUp = canReorder && index > 0,
+                                canMoveDown = canReorder && index < section.sessions.lastIndex,
+                                sortingMode = sorting && section.id != "__subagents",
+                                busy = actionBusyKey == row.key || sortBusy,
+                                onOpen = onOpen,
+                                onMoveUp = { performMove(SessionMove.UP) },
+                                onMoveDown = { performMove(SessionMove.DOWN) },
+                                onMoveTop = { performMove(SessionMove.TOP) },
+                                onTogglePin = {
+                                    actionBusyKey = row.key; notice = null
+                                    scope.launch {
+                                        val nextPin = !row.meta.pinned
+                                        repo.live.patchMeta(row.key, pinned = nextPin).fold(
+                                            onSuccess = { notice = if (nextPin) "已置顶「${row.summary.title}」" else "已取消置顶「${row.summary.title}」" },
+                                            onFailure = { notice = "操作失败：${it.message}" },
+                                        )
+                                        actionBusyKey = null
+                                    }
+                                },
+                                onReload = {
+                                    actionBusyKey = row.key; notice = null
+                                    scope.launch {
+                                        repo.live.reload(row.key).fold(
+                                            onSuccess = { notice = "已发送重载指令：${row.summary.title}" },
+                                            onFailure = { notice = "重载失败：${it.message}" },
+                                        )
+                                        actionBusyKey = null
+                                    }
+                                },
+                                onRestart = {
+                                    rowActionError = null
+                                    restartingRow = row
+                                },
+                                onEditAppearance = {
+                                    rowActionError = null
+                                    editingRow = row
+                                },
+                                onGroup = { groupError = null; moving = row },
+                            )
                         }
                     }
                 }
@@ -180,6 +230,76 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
             groupError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = {}, dismissButton = { TextButton(enabled = !groupBusy, onClick = { moving = null }) { Text("取消") } }) }
+    editingRow?.let { target ->
+        LiveMetadataDialog(
+            meta = target.meta,
+            busy = actionBusyKey == target.key,
+            error = rowActionError,
+            onDismiss = { if (actionBusyKey == null) editingRow = null },
+            initialTitle = target.summary.title,
+        ) { tags, pinned, emoji, color, nextTitle ->
+            actionBusyKey = target.key; rowActionError = null
+            scope.launch {
+                if (nextTitle != null) {
+                    val renamed = repo.live.rename(target.key, nextTitle)
+                    if (renamed.isFailure) {
+                        rowActionError = renamed.exceptionOrNull()?.message ?: "重命名失败"
+                        actionBusyKey = null
+                        return@launch
+                    }
+                }
+                repo.live.patchMeta(target.key, tags, pinned, emoji, color).fold(
+                    onSuccess = {
+                        editingRow = null
+                        notice = "已更新「${nextTitle ?: target.summary.title}」装扮与名称"
+                    },
+                    onFailure = { rowActionError = if (nextTitle != null) "名称已更新，但装扮保存失败：${it.message ?: "请重试"}" else it.message ?: "保存失败" },
+                )
+                actionBusyKey = null
+            }
+        }
+    }
+    restartingRow?.let { target ->
+        val busy = actionBusyKey == target.key
+        AlertDialog(
+            onDismissRequest = { if (!busy) restartingRow = null },
+            title = { Text("⚡ 重启 Pi 会话进程？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("将重启「${target.summary.title}」的 Pi 进程，尝试从原会话恢复。")
+                    Text("在途任务可能中断；重启失败时请刷新列表确认状态，避免重复操作。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    rowActionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !busy, onClick = {
+                    actionBusyKey = target.key; rowActionError = null
+                    scope.launch {
+                        val claimed = if (repo.live.leases.value.containsKey(target.key)) Result.success(Unit) else repo.live.claim(target.key)
+                        if (claimed.isFailure) {
+                            rowActionError = claimed.exceptionOrNull()?.message ?: "取得控制权失败"
+                            actionBusyKey = null
+                            return@launch
+                        }
+                        repo.live.restart(target.key).fold(
+                            onSuccess = { newKey ->
+                                restartingRow = null
+                                notice = "已重启「${target.summary.title}」，正在恢复原 session"
+                                repo.live.refreshAll()
+                                if (newKey != null) onOpen(newKey)
+                            },
+                            onFailure = { rowActionError = it.message ?: "重启失败" },
+                        )
+                        actionBusyKey = null
+                    }
+                }) { Text("确认重启进程") }
+            },
+            dismissButton = {
+                TextButton(enabled = !busy, onClick = { restartingRow = null }) { Text("取消") }
+            },
+        )
+    }
     signingIn?.let { backend ->
         LiveTokenDialog(repo, backend, onDismiss = { signingIn = null })
     }
@@ -310,6 +430,17 @@ fun NewLiveSessionDialog(
                     modifier = Modifier.fillMaxWidth(), enabled = !busy && !waiting)
                 OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("模型（可选，provider/id）") },
                     modifier = Modifier.fillMaxWidth(), enabled = !busy && !waiting)
+                Text("思考强度（可选）", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    (listOf("" to "默认") + THINKING_LADDER_LEVELS.map { it.id to it.title.substringBefore(" · ") }).forEach { (id, label) ->
+                        FilterChip(
+                            selected = thinking == id,
+                            enabled = !busy && !waiting,
+                            onClick = { thinking = id },
+                            label = { Text(label) },
+                        )
+                    }
+                }
                 OutlinedTextField(value = thinking, onValueChange = { thinking = it }, label = { Text("思考等级（可选）") },
                     modifier = Modifier.fillMaxWidth(), enabled = !busy && !waiting)
                 Text("启动失败不会创建普通 Chat，也不会自动重试。", style = MaterialTheme.typography.bodySmall)
@@ -340,52 +471,141 @@ fun NewLiveSessionDialog(
     )
 }
 
-/** One row inside a grouped card: status dot, title, mono cwd, muted facts. */
+/** One row inside a grouped card: emoji + color avatar, title, mono cwd, and direct mobile action bar. */
 @Composable
 private fun SessionRow(
     row: AggregatedLiveSession,
+    orderNumber: Int,
     groupEnabled: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    sortingMode: Boolean,
+    busy: Boolean,
     onOpen: (SessionKey) -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onMoveTop: () -> Unit,
+    onTogglePin: () -> Unit,
+    onReload: () -> Unit,
+    onRestart: () -> Unit,
+    onEditAppearance: () -> Unit,
     onGroup: () -> Unit,
 ) {
     val running = row.summary.status == "running"
-    Row(
-        Modifier.fillMaxWidth().clickable { onOpen(row.key) }
-            .padding(start = Spacing.lg, end = Spacing.sm, top = Spacing.md, bottom = Spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
+    val subagent = row.summary.role == "subagent" || row.summary.parentSessionId != null
+    val accentColor = parseHexColor(row.meta.color) ?: MaterialTheme.colorScheme.primary
+    val emojiText = row.meta.emoji.takeIf { it.isNotBlank() } ?: if (subagent) "🤖" else "💬"
+
+    Column(
+        Modifier.fillMaxWidth()
+            .clickable { onOpen(row.key) }
+            .padding(horizontal = Spacing.md, vertical = Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (running) {
-                    StatusDot(MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.size(Spacing.sm))
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                orderNumber.toString().padStart(2, '0'),
+                style = PiType.monoMicro,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+            // Clickable emoji & color avatar box
+            Box(
+                Modifier.size(36.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(9.dp))
+                    .border(
+                        width = if (row.meta.color.isNotBlank()) 2.dp else 1.dp,
+                        color = if (row.meta.color.isNotBlank()) accentColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(9.dp),
+                    )
+                    .clickable(enabled = !busy) { onEditAppearance() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(emojiText, style = MaterialTheme.typography.bodyLarge)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (running) {
+                        StatusDot(MaterialTheme.colorScheme.primary)
+                    }
+                    Text(
+                        row.summary.title,
+                        style = PiType.callout.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (row.meta.pinned) {
+                        Text("📌", style = PiType.caption)
+                    }
                 }
                 Text(
-                    listOf(row.meta.emoji, row.summary.title).filter { it.isNotBlank() }.joinToString(" "),
-                    style = PiType.callout.copy(fontWeight = FontWeight.Medium),
-                    maxLines = 2,
+                    row.summary.cwd,
+                    style = PiType.monoMicro,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (row.meta.pinned) Text(
-                    "  ★",
-                    style = PiType.caption,
-                    color = MaterialTheme.colorScheme.primary,
+                MetaLine(
+                    listOfNotNull(
+                        row.summary.claim.state.takeIf { it == "claimed" }?.let { "已接管" },
+                        row.summary.model?.let { "${it.provider}/${it.id}" },
+                    ) + row.meta.tags.take(2).map { "#$it" }
                 )
             }
-            Text(
-                row.summary.cwd,
-                style = PiType.monoMicro,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            MetaLine(
-                listOfNotNull(
-                    row.summary.claim.state.takeIf { it == "claimed" }?.let { "已接管" },
-                    row.summary.model?.let { "${it.provider}/${it.id}" },
-                ) + row.meta.tags.take(2).map { "#$it" }
-            )
         }
-        MetaAction("分组", onGroup, enabled = groupEnabled)
+
+        // Direct mobile action bar (matches mockup's session-row-actions)
+        if (!subagent) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                RowPillButton(text = "↑", enabled = canMoveUp && !busy, onClick = onMoveUp)
+                RowPillButton(text = "↓", enabled = canMoveDown && !busy, onClick = onMoveDown)
+                if (sortingMode) {
+                    RowPillButton(text = "⤒ 置顶本组", enabled = canMoveUp && !busy, onClick = onMoveTop)
+                    RowPillButton(text = if (row.meta.pinned) "📌 取消置顶" else "📌 置顶", enabled = !busy, onClick = onTogglePin)
+                }
+                RowPillButton(
+                    text = "🔄 重载",
+                    enabled = !busy && row.summary.status != "reconnecting",
+                    onClick = onReload,
+                )
+                RowPillButton(
+                    text = "⚡ 重启",
+                    enabled = !busy && row.summary.status != "reconnecting",
+                    onClick = onRestart,
+                )
+                RowPillButton(text = "✏️ 改名/装扮", enabled = !busy, onClick = onEditAppearance)
+                RowPillButton(text = "📁 分组", enabled = groupEnabled && !busy, onClick = onGroup)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowPillButton(
+    text: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(7.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.7f else 0.3f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (enabled) 0.35f else 0.15f)),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            style = PiType.micro.copy(fontWeight = FontWeight.Medium),
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+        )
     }
 }

@@ -54,7 +54,7 @@ data class LiveDetail(
     val goal: JsonElement? = null,
 )
 @Serializable
-data class LiveMeta(val tags: List<String> = emptyList(), val pinned: Boolean = false, val tmux: String? = null, val emoji: String = "")
+data class LiveMeta(val tags: List<String> = emptyList(), val pinned: Boolean = false, val tmux: String? = null, val emoji: String = "", val color: String = "")
 @Serializable
 data class LiveRepoCandidate(val name: String, val path: String, val git: Boolean = false)
 @Serializable

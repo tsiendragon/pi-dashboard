@@ -92,11 +92,12 @@ class LiveSessionClientTest {
         cookies.save(backend, cookie)
         handler = { if (it.requestURI.path == "/api/live-session-order") reply(it, """{"ok":true,"order":["session-fixture"]}""") else reply(it, """{"ok":true}""") }
         assertEquals(listOf("session-fixture"), client.saveOrder(listOf("session-fixture")).order)
-        client.patchMeta(process, null, null, "🐱")
+        client.patchMeta(process, null, null, "🐱", "#5287be")
         assertEquals(listOf("PUT", "PATCH"), calls.map { it.method })
         assertEquals("/api/live-session-order", calls[0].path)
         assertEquals("""{"order":["session-fixture"]}""", calls[0].body)
         assertTrue(calls[1].body.contains("🐱"))
+        assertTrue(calls[1].body.contains("\"color\":\"#5287be\""))
         assertTrue(calls.all { it.cookie == "pi_live_session=$cookie" })
         assertTrue(calls.none { it.path.endsWith("/claim") })
     }

@@ -495,8 +495,8 @@ class LivePiRepository(
     suspend fun reload(key: SessionKey): Result<Unit> = shared(key) { buildJsonObject { put("type", "reload") } }.also {
         if (it.isSuccess) _leases.update { map -> map - key }
     }
-    suspend fun patchMeta(key: SessionKey, tags: List<String>? = null, pinned: Boolean? = null, emoji: String? = null): Result<Unit> = mutation(key) {
-        client(key.backendId).patchMeta(key.slotKey, tags, pinned, emoji); reconcile(key.backendId)
+    suspend fun patchMeta(key: SessionKey, tags: List<String>? = null, pinned: Boolean? = null, emoji: String? = null, color: String? = null): Result<Unit> = mutation(key) {
+        client(key.backendId).patchMeta(key.slotKey, tags, pinned, emoji, color); reconcile(key.backendId)
     }
     suspend fun context(key: SessionKey): Result<JsonElement> = result(key) {
         require(_details.value[key]?.summary?.capabilities?.contains("context_view") == true) { "此会话扩展不支持上下文检查" }

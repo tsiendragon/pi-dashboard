@@ -5,7 +5,10 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +27,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -299,41 +303,102 @@ fun LiveSessionScreen(
 
     Scaffold(
         topBar = {
-            AnimatedVisibility(
-                visible = !chromeHidden,
-                enter = expandVertically() + slideInVertically { -it },
-                exit = shrinkVertically() + slideOutVertically { -it },
-            ) {
-                TopAppBar(
-                expandedHeight = 52.dp,
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = {
-                    Column {
+            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
+                val accentColor = parseHexColor(aggregate?.meta?.color) ?: MaterialTheme.colorScheme.primary
+                val emojiText = aggregate?.meta?.emoji?.takeIf { it.isNotBlank() } ?: "💬"
+                val projectName = summary?.cwd?.trimEnd('/')?.substringAfterLast('/')?.ifBlank { summary.cwd } ?: "pi"
+                Row(
+                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                    }
+                    // Clickable session title & emoji cluster (opens unified appearance + rename dialog)
+                    Row(
+                        Modifier.weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(enabled = !busy) { notice = null; dialog = "meta" }
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Box(
+                            Modifier.size(30.dp)
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                .border(1.5.dp, accentColor, RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(emojiText, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    summary?.title ?: "Live Pi",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = PiType.callout.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                Text("▾", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                StatusDot(
+                                    if (summary?.status == "running") MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outline,
+                                    size = 6.dp,
+                                )
+                                Text(
+                                    listOfNotNull(projectName, summary?.model?.id).joinToString(" · "),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = PiType.monoMicro,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    // Prominent Reload & Restart pill buttons right in the header
+                    Surface(
+                        onClick = {
+                            notice = null
+                            perform("已发送重载扩展指令") { live.reload(sessionKey) }
+                        },
+                        enabled = !busy && summary?.status != "reconnecting",
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                    ) {
                         Text(
-                            listOfNotNull(aggregate?.meta?.emoji?.takeIf { it.isNotBlank() }, summary?.title ?: "Live Pi").joinToString(" "),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = PiType.callout.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-                        )
-                        MetaText(
-                            listOfNotNull(
-                                summary?.status,
-                                summary?.model?.id,
-                                goalState?.let { "目标${it.statusLabel}" },
-                            ).joinToString("  ·  "),
+                            "🔄 重载",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                         )
                     }
-                },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
-                actions = {
+                    Surface(
+                        onClick = { notice = null; dialog = "restart" },
+                        enabled = !busy && !heldElsewhere,
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                    ) {
+                        Text(
+                            "⚡ 重启",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                        )
+                    }
                     Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "会话操作") }
+                        IconButton(onClick = { menu = true }, modifier = Modifier.size(34.dp)) {
+                            Icon(Icons.Filled.MoreVert, "会话操作")
+                        }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text("刷新") }, enabled = !busy, onClick = {
                                 menu = false; perform("已刷新") { live.refresh(sessionKey) }
                             })
-                            listOf("title" to "修改标题", "model" to "选择模型", "thinking" to "思考等级",
-                                "meta" to "表情 / 置顶 / 标签", "tree" to "会话树（只读）").forEach { (id, label) ->
+                            listOf("meta" to "✏️ 改名 / 表情 / 颜色 / 标签", "model" to "🤖 选择模型", "thinking" to "💭 思考等级",
+                                "tree" to "会话树（只读）").forEach { (id, label) ->
                                 DropdownMenuItem(text = { Text(label) }, enabled = !busy, onClick = { menu = false; notice = null; dialog = id })
                             }
                             if (summary?.capabilities?.contains("context_view") == true) {
@@ -390,8 +455,70 @@ fun LiveSessionScreen(
                             DropdownMenuItem(text = { Text("尚未支持的 WebUI 功能") }, onClick = { menu = false; notice = null; dialog = "remaining" })
                         }
                     }
-                },
-                )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                // Sub-bar: Goal capsule on the left + Segmented [活动 | 完整] toggle on the right
+                Row(
+                    Modifier.fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Surface(
+                        onClick = { notice = null; showGoal = true },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text("🎯", style = PiType.micro)
+                            Text(
+                                goal?.objective?.ifBlank { "目标" } ?: "目标：未设置（点此查看）",
+                                style = PiType.micro,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            goalState?.let {
+                                Text(
+                                    it.statusLabel,
+                                    style = PiType.monoMicro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(7.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                    ) {
+                        Row(Modifier.padding(2.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            listOf("activity" to "活动", "full" to "完整").forEach { (mode, label) ->
+                                val active = viewMode == mode
+                                Surface(
+                                    onClick = { viewMode = mode },
+                                    shape = RoundedCornerShape(5.dp),
+                                    color = if (active) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent,
+                                ) {
+                                    Text(
+                                        label,
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                        style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                        color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
             }
         },
         bottomBar = {
@@ -500,6 +627,83 @@ fun LiveSessionScreen(
                         enabled = !busy || owned,
                         tint = MaterialTheme.colorScheme.error,
                     )
+                }
+                // Quick Prompts Scroller + Model & Thinking Level Picker Bar
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 4.dp).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    listOf(
+                        "📦 交接存档" to "帮我把目前的进展更新到交接文档中，写一份 session-handoff 摘要",
+                        "✅ 收尾自查+提交" to "把这次会话的所有改动自 review 一遍，确认按 git 规范 commit",
+                        "🔄 新 session 接续" to "继续执行上个会话的待办目标，读任务文档确认状态后继续",
+                        "🎯 验收前检查" to "对照验收标准逐条检查，该跑的测试都跑一遍",
+                    ).forEach { (label, promptText) ->
+                        Surface(
+                            onClick = { draft = promptText },
+                            enabled = !busy && draft.isBlank(),
+                            shape = RoundedCornerShape(99.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                        ) {
+                            Text(
+                                label,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = PiType.micro,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Surface(
+                        onClick = { notice = null; dialog = "model" },
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f, fill = false),
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text("🤖", style = PiType.micro)
+                            Text(
+                                summary?.model?.id ?: "选择模型",
+                                style = PiType.monoMicro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text("▾", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Surface(
+                        onClick = { notice = null; dialog = "thinking" },
+                        enabled = !busy,
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text("💭 思考:", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                summary?.thinkingLevel?.takeIf { it.isNotBlank() } ?: "未知",
+                                style = PiType.monoMicro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text("▾", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
                     Box {
@@ -616,26 +820,19 @@ fun LiveSessionScreen(
                 Text(backend?.message ?: if (backend?.needsToken == true) "需要重新输入访问令牌" else "连接中断或正在连接；下方可能是缓存内容。",
                     Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
-            AnimatedVisibility(visible = !chromeHidden) {
-                Column {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        FilterChip(selected = viewMode == "activity", onClick = { viewMode = "activity" }, label = { Text("活动") })
-                        FilterChip(selected = viewMode == "full", onClick = { viewMode = "full" }, label = { Text("完整记录") })
-                        TextButton(enabled = !busy, onClick = { notice = null; dialog = "title" }) { Text("改名") }
-                        TextButton(enabled = !busy, onClick = { notice = null; dialog = "meta" }) { Text("表情") }
-                        TextButton(enabled = !busy && !heldElsewhere, onClick = { notice = null; dialog = "reload" }) { Text("重载") }
-                        TextButton(enabled = !busy && !heldElsewhere, onClick = { notice = null; dialog = "restart" }) { Text("重启") }
-                    }
-                }
-            }
             if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.md),
-                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(Spacing.md),
             ) {
                 items(activities, key = { "activity:${it.id}" }) { activity ->
-                    NativeActivityCard(activity = activity, onOpen = { openActivityId = activity.id })
+                    NativeActivityCard(
+                        activity = activity,
+                        onOpen = { openActivityId = activity.id },
+                        onOpenPath = ::openPathPreview,
+                        onOpenUrl = ::openExternalUrl,
+                    )
                 }
             } else if (timeline.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -838,13 +1035,23 @@ fun LiveSessionScreen(
     }
     val dismiss = { if (!busy) { dialog = null; forkEntry = null } }
     when (dialog) {
-        "title" -> LiveTextDialog("修改标题", summary?.sessionName.orEmpty(), "标题", busy, notice, dismiss) { value ->
-            perform("标题已更新", close = true) {
-                ensureLease().fold(onSuccess = { live.rename(sessionKey, value) }, onFailure = { Result.failure(it) })
+        "title", "meta" -> LiveMetadataDialog(
+            meta = aggregate?.meta,
+            busy = busy,
+            error = notice,
+            onDismiss = dismiss,
+            initialTitle = summary?.title ?: summary?.sessionName.orEmpty(),
+        ) { tags, pinned, emoji, color, nextTitle ->
+            perform("会话装扮与名称已更新", close = true) {
+                if (nextTitle != null) {
+                    val renamed = live.rename(sessionKey, nextTitle)
+                    if (renamed.isFailure) return@perform renamed
+                }
+                val saved = live.patchMeta(sessionKey, tags, pinned, emoji, color)
+                if (saved.isFailure && nextTitle != null) {
+                    Result.failure(IllegalStateException("名称已更新，但装扮保存失败：${saved.exceptionOrNull()?.message ?: "请重试"}"))
+                } else saved
             }
-        }
-        "meta" -> LiveMetadataDialog(aggregate?.meta, busy, notice, dismiss) { tags, pinned, emoji ->
-            perform("会话装扮 / 标签已更新", close = true) { live.patchMeta(sessionKey, tags, pinned, emoji) }
         }
         "model", "thinking" -> LiveModelDialog(repo, sessionKey, summary, dialog == "thinking", busy, notice, dismiss,
             onModel = { option -> perform("模型已更新", close = true) {

@@ -199,11 +199,12 @@ class LiveSessionClient(
     suspend fun renew(id: String, lease: String): LiveLease = pidashJson.decodeFromJsonElement(LiveLease.serializer(),
         post(path(id) + "/renew", buildJsonObject { put("leaseId", lease) })["result"] ?: JsonNull)
     suspend fun release(id: String, lease: String) { post(path(id) + "/release", buildJsonObject { put("leaseId", lease) }) }
-    suspend fun patchMeta(id: String, tags: List<String>?, pinned: Boolean?, emoji: String?) = withContext(Dispatchers.IO) {
+    suspend fun patchMeta(id: String, tags: List<String>?, pinned: Boolean?, emoji: String?, color: String? = null) = withContext(Dispatchers.IO) {
         execute(request(path(id) + "/meta", "PATCH", buildJsonObject {
             tags?.let { put("tags", JsonArray(it.map(::JsonPrimitive))) }
             pinned?.let { put("pinned", it) }
             emoji?.let { put("emoji", it) }
+            color?.let { put("color", it) }
         }))
         Unit
     }
