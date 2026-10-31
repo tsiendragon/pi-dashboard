@@ -634,7 +634,7 @@ fun LiveSessionScreen(
                         ) {
                             Text(
                                 summary?.model?.id ?: "选择模型",
-                                modifier = Modifier.weight(1f, fill = false),
+                                modifier = Modifier.weight(1f),
                                 style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -728,6 +728,20 @@ fun LiveSessionScreen(
                         modifier = Modifier.weight(1f).padding(horizontal = Spacing.xs),
                         placeholder = { Text("输入消息…", style = PiType.subhead) },
                         textStyle = PiType.subhead,
+                        trailingIcon = if (deliverAs != null || draft.isNotBlank()) {
+                            {
+                                Column(Modifier.padding(end = 8.dp), horizontalAlignment = Alignment.End) {
+                                    if (deliverAs != null) MetaText(
+                                        "投递：" + when (deliverAs) {
+                                            "steer" -> "引导"
+                                            "followUp" -> "排队"
+                                            else -> "默认"
+                                        },
+                                    )
+                                    if (draft.isNotBlank()) MetaText("${draft.length} 字")
+                                }
+                            }
+                        } else null,
                         shape = RoundedCornerShape(12.dp),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -761,22 +775,6 @@ fun LiveSessionScreen(
                             }
                         }
                     }) { Icon(Icons.AutoMirrored.Filled.Send, "发送") }
-                }
-                // The footer only exists when it says something: a non-default delivery mode
-                // or a character count. A default send costs zero extra vertical space.
-                if (deliverAs != null || draft.isNotBlank()) Row(
-                    Modifier.fillMaxWidth().padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (deliverAs != null) MetaText(
-                        "投递：" + when (deliverAs) {
-                            "steer" -> "引导"
-                            "followUp" -> "排队"
-                            else -> "默认"
-                        },
-                    )
-                    Spacer(Modifier.weight(1f))
-                    if (draft.isNotBlank()) MetaText("${draft.length} 字")
                 }
             }
         },
