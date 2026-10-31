@@ -216,7 +216,13 @@ android/app/src/main/java/com/sam/pidash/ui/live/NativeTranscriptCards.kt  # App
 - 投影规则抽成纯函数 `activityReplies` / `activityTools`（`data/remote/LiveActivities.kt`），有单测：
   只取非中间态、非错误的助手正文；被打断的一轮回退到最后一段文本。
 
-### 视觉系统（4.2 起：极简 + iOS 语言）
+### 视觉系统（5.0 起：统一控件、优先正文空间）
+
+Android 各主要页面沿用同一套明暗主题、字号和圆角。正文使用 15 sp / 22 sp，常用操作和次要信息使用 13 sp；均跟随系统字体缩放，不锁定字号。深色分组背景与卡片区分层级，菜单和对话框也使用同一套中性色。
+
+Live Pi 输入区把快捷提示放到模型、思考强度同一行的「快捷」菜单，避免额外占用一行；已有草稿时不会覆盖草稿。活动详情、普通 Chat 和列表页同步收紧间距，保留可点击区域。发布版仍需在真机上验收不同屏幕、系统字体缩放和明暗模式。
+
+### 视觉系统（4.2 历史：极简 + iOS 语言）
 
 极简决定「不加装饰」，iOS 语言决定「留下什么」。四条支点都写在 `ui/theme/Tokens.kt`：
 
@@ -237,7 +243,7 @@ android/app/src/main/java/com/sam/pidash/ui/live/NativeTranscriptCards.kt  # App
 - **代码块**：等宽 13/20，块底用分组色、圆角 10；语言标签在块上方一行。
 - **输入框**：填充式、无边框、18 dp 圆角（`TextFieldDefaults` 关掉 indicator），＋/发送是 30 dp 圆形。
 
-交流稿：`docs/design-preview.html`（同色值/字号/间距，可切明暗；不是 App 截图）。
+历史交流稿：`docs/design-preview.html`（不是当前 App 截图）。
 
 ### 视觉系统（4.1 起：极简，已被 4.2 取代）
 

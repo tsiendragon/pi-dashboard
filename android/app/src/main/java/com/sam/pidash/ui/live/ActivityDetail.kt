@@ -59,7 +59,7 @@ internal fun ActivityDetailDialog(
                     Modifier.fillMaxWidth().padding(start = 4.dp, end = Spacing.lg, top = 4.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", Modifier.size(20.dp))
                     }
                     Column(Modifier.weight(1f)) {
@@ -78,8 +78,8 @@ internal fun ActivityDetailDialog(
                 HorizontalDivider(thickness = Hairline, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.lg),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                    contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
                     items(groupTranscript(activity.items), key = { it.id }) { row ->
                         NativeTimelineRow(row, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate)

@@ -1,10 +1,5 @@
 package com.sam.pidash.ui.live
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,7 +34,6 @@ import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
-import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
 import com.sam.pidash.data.remote.FileAttachments
 import com.sam.pidash.data.remote.ImageAttachments
@@ -47,7 +41,6 @@ import com.sam.pidash.domain.model.LiveImage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -293,14 +286,6 @@ fun LiveSessionScreen(
     }
 
     // Reading surface first: the bar shrinks once you scroll and returns at the top.
-    var chromeHidden by remember(viewMode) { mutableStateOf(false) }
-    LaunchedEffect(listState, viewMode) {
-        snapshotFlow {
-            val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
-            ((first?.index ?: 0) > 0) || ((first?.offset ?: 0) < -24)
-        }.distinctUntilChanged().collect { chromeHidden = it }
-    }
-
     Scaffold(
         topBar = {
             Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
@@ -627,42 +612,16 @@ fun LiveSessionScreen(
                         tint = MaterialTheme.colorScheme.error,
                     )
                 }
-                // Quick Prompts Scroller + Model & Thinking Level Picker Bar
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 4.dp).horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    listOf(
-                        "交接存档" to "帮我把目前的进展更新到交接文档中，写一份 session-handoff 摘要",
-                        "收尾自查与提交" to "把这次会话的所有改动自 review 一遍，确认按 git 规范 commit",
-                        "新会话接续" to "继续执行上个会话的待办目标，读任务文档确认状态后继续",
-                        "验收前检查" to "对照验收标准逐条检查，该跑的测试都跑一遍",
-                    ).forEach { (label, promptText) ->
-                        Surface(
-                            onClick = { draft = promptText },
-                            enabled = !busy && draft.isBlank(),
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
-                        ) {
-                            Text(
-                                label,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                style = PiType.micro,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                }
+                // Keep model, thinking and quick prompts on one row so the transcript has more room.
                 Row(
                     Modifier.fillMaxWidth().padding(bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Surface(
                         onClick = { notice = null; dialog = "model" },
                         enabled = !busy,
-                        modifier = Modifier.weight(1f, fill = false),
+                        modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
@@ -674,6 +633,7 @@ fun LiveSessionScreen(
                         ) {
                             Text(
                                 summary?.model?.id ?: "选择模型",
+                                modifier = Modifier.weight(1f, fill = false),
                                 style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -700,6 +660,34 @@ fun LiveSessionScreen(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             Text("▾", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Box {
+                        var promptsOpen by remember { mutableStateOf(false) }
+                        Surface(
+                            onClick = { promptsOpen = true },
+                            enabled = !busy,
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                        ) {
+                            Text("快捷 ▾", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = PiType.micro)
+                        }
+                        DropdownMenu(expanded = promptsOpen, onDismissRequest = { promptsOpen = false }) {
+                            if (draft.isNotBlank()) DropdownMenuItem(
+                                text = { Text("请先清空草稿", style = PiType.footnote) },
+                                enabled = false, onClick = {},
+                            )
+                            listOf(
+                                "交接存档" to "帮我把目前的进展更新到交接文档中，写一份 session-handoff 摘要",
+                                "收尾自查与提交" to "把这次会话的所有改动自 review 一遍，确认按 git 规范 commit",
+                                "新会话接续" to "继续执行上个会话的待办目标，读任务文档确认状态后继续",
+                                "验收前检查" to "对照验收标准逐条检查，该跑的测试都跑一遍",
+                            ).forEach { (label, prompt) ->
+                                DropdownMenuItem(text = { Text(label, style = PiType.footnote) }, enabled = !busy && draft.isBlank(), onClick = {
+                                    draft = prompt; promptsOpen = false
+                                })
+                            }
                         }
                     }
                 }
@@ -732,7 +720,7 @@ fun LiveSessionScreen(
                                 }
                         }
                     }
-                    // iOS-style field: filled, borderless, 18 dp radius.
+                    // Compact borderless field, consistent with the shared control radius.
                     TextField(
                         value = draft,
                         onValueChange = { draft = it },
@@ -821,8 +809,8 @@ fun LiveSessionScreen(
             if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.md),
-                verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
                 items(activities, key = { "activity:${it.id}" }) { activity ->
                     NativeActivityCard(

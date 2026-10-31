@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -64,7 +67,7 @@ fun MetaLine(parts: List<String>, tint: Color? = null, maxLines: Int = 1) {
     )
 }
 
-/** A quiet action: 11 sp, no container, 4 dp of pull-in for the touch target. */
+/** A quiet action with a minimum 48 dp touch target. */
 @Composable
 fun MetaAction(
     text: String,
@@ -80,7 +83,10 @@ fun MetaAction(
         modifier = Modifier
             .clip(Radii.chip)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = Spacing.xs, vertical = 4.dp),
+            .widthIn(min = 48.dp)
+            .heightIn(min = 48.dp)
+            .wrapContentHeight(Alignment.CenterVertically)
+            .padding(horizontal = Spacing.sm),
     )
 }
 

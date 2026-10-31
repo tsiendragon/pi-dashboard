@@ -14,8 +14,8 @@ import androidx.compose.ui.unit.sp
  * What makes it read as "iOS" rather than "generic Material":
  * 1. System colours: `#007AFF` accent, grouped background `#F2F2F7` / `#1C1C1E`,
  *    labels at 100 / 60 / 30% instead of dozens of greys.
- * 2. Type scale close to SF: 17 body, 17 semibold headline, 20 title, 28 large title,
- *    13 footnote, 11 caption. Content is bigger than Android defaults; chrome smaller.
+ * 2. A compact, consistent type scale: 15 sp reading text, 13 sp controls and
+ *    secondary information; sizes still follow the system font scale.
  * 3. Hairlines: a 0.5 dp separator, inset 16 dp — Apple never draws a heavy rule.
  * 4. Continuity: one radius family (10 grouped cards, 18 bubbles, 14 sheets) and one
  *    accent used only where the user acts.
@@ -36,7 +36,7 @@ object PiPalette {
     // Dark — iOS system colours
     val DarkBackground = Color(0xFF000000)
     val DarkGrouped = Color(0xFF1C1C1E)
-    val DarkSurface = Color(0xFF1C1C1E)
+    val DarkSurface = Color(0xFF2C2C2E)
     val DarkSeparator = Color(0xFF38383A)
     val DarkLabel = Color(0xFFFFFFFF)
     val DarkSecondaryLabel = Color(0x99EBEBF5)
@@ -72,17 +72,14 @@ object Radii {
 
 val ProseMaxWidth = 680.dp
 
-/**
- * SF-like scale. `body` is 17 sp (iOS body), which is larger than Material's 14 —
- * this is the single biggest reason the app will feel like a phone app from Apple.
- */
+/** Shared type scale for readable content and compact application chrome. */
 object PiType {
     val largeTitle = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
     val title = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
-    val headline = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
-    val body = TextStyle(fontSize = 17.sp, lineHeight = 25.sp, letterSpacing = (-0.1).sp)
-    val callout = TextStyle(fontSize = 16.sp, lineHeight = 23.sp, letterSpacing = (-0.1).sp)
-    val subhead = TextStyle(fontSize = 15.sp, lineHeight = 21.sp)
+    val headline = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.1).sp)
+    val body = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
+    val callout = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
+    val subhead = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
     val footnote = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
     val caption = TextStyle(fontSize = 12.sp, lineHeight = 16.sp)
     val action = TextStyle(fontSize = 12.sp, lineHeight = 16.sp)
