@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -15,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -28,6 +31,7 @@ import com.sam.pidash.domain.model.LiveModelOption
 import com.sam.pidash.domain.model.LiveSummary
 import com.sam.pidash.domain.model.LiveUiRequest
 import com.sam.pidash.domain.model.SessionKey
+import com.sam.pidash.ui.theme.PiType
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -267,7 +271,8 @@ internal fun LiveModelDialog(
         if (allowed.isEmpty()) THINKING_LADDER_LEVELS
         else THINKING_LADDER_LEVELS.filter { it.id in allowed }.ifEmpty { THINKING_LADDER_LEVELS }
     }
-    AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(if (thinking) "💭 调节思考强度" else "🤖 切换会话模型") },
+    AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text(if (thinking) "思考强度" else "选择模型", style = PiType.headline) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Surface(
@@ -296,83 +301,29 @@ internal fun LiveModelDialog(
                 operationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 if (thinking) {
                     if (levels.isEmpty()) Text("当前模型未返回支持的档位，请以实际模型支持情况为准。", style = MaterialTheme.typography.bodySmall)
-                    visibleLevels.forEach { item ->
-                        val selected = level.equals(item.id, ignoreCase = true)
-                        Surface(
-                            onClick = { onThinking(item.id) },
-                            enabled = !busy,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                            border = BorderStroke(
-                                if (selected) 1.5.dp else 1.dp,
-                                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                            ),
-                        ) {
+                    Column(Modifier.selectableGroup()) {
+                        visibleLevels.forEach { item ->
+                            val selected = level.equals(item.id, ignoreCase = true)
                             Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.09f) else Color.Transparent)
+                                    .selectable(selected = selected, enabled = !busy, role = Role.RadioButton) { level = item.id }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                // Energy ladder bars
-                                Row(
-                                    Modifier.width(24.dp).height(20.dp),
-                                    verticalAlignment = Alignment.Bottom,
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    for (bar in 1..5) {
-                                        val activeBar = bar <= item.bars
-                                        Box(
-                                            Modifier.width(3.5.dp)
-                                                .height((4 + bar * 3).dp)
-                                                .background(
-                                                    if (activeBar) MaterialTheme.colorScheme.primary
-                                                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                                                    RoundedCornerShape(1.5.dp),
-                                                ),
-                                        )
-                                    }
+                                Row(Modifier.width(24.dp).height(18.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    for (bar in 1..5) Box(
+                                        Modifier.width(3.dp).height((3 + bar * 3).dp)
+                                            .background(if (bar <= item.bars) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(2.dp)),
+                                    )
                                 }
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                        item.badge?.let { badge ->
-                                            Surface(
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                                shape = RoundedCornerShape(4.dp),
-                                            ) {
-                                                Text(
-                                                    badge,
-                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                )
-                                            }
-                                        }
-                                    }
-                                    Text(item.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Box(
-                                    Modifier.size(22.dp)
-                                        .clip(CircleShape)
-                                        .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
-                                        .border(1.5.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (selected) Text("✓", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                }
+                                Text(item.title, modifier = Modifier.weight(1f), style = PiType.subhead.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal), color = MaterialTheme.colorScheme.onSurface)
+                                RadioButton(selected = selected, onClick = null, enabled = !busy, modifier = Modifier.size(24.dp))
                             }
                         }
                     }
-                    OutlinedTextField(
-                        value = level,
-                        onValueChange = { level = it },
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("自定义思考等级") },
-                    )
                 } else {
                     OutlinedTextField(
                         value = query,
@@ -518,9 +469,9 @@ internal fun LiveModelDialog(
             }
         },
         confirmButton = {
-            if (thinking) TextButton(enabled = !busy && level.isNotBlank(), onClick = { onThinking(level.trim()) }) { Text("应用强度") }
+            if (thinking) TextButton(enabled = !busy && level.isNotBlank() && !level.equals(summary?.thinkingLevel, ignoreCase = true), onClick = { onThinking(level.trim()) }) { Text("应用", style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold)) }
         },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("关闭") } },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(if (thinking) "取消" else "关闭", style = PiType.footnote) } },
     )
 }
 

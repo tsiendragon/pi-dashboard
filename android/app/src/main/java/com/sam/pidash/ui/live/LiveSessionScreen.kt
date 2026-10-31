@@ -312,7 +312,7 @@ fun LiveSessionScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
                     }
                     // Clickable session title & emoji cluster (opens unified appearance + rename dialog)
@@ -353,7 +353,7 @@ fun LiveSessionScreen(
                                     listOfNotNull(projectName, summary?.model?.id).joinToString(" · "),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    style = PiType.monoMicro,
+                                    style = PiType.caption,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -371,7 +371,7 @@ fun LiveSessionScreen(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                     ) {
                         Text(
-                            "🔄 重载",
+                            "重载",
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                             style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                         )
@@ -384,20 +384,20 @@ fun LiveSessionScreen(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                     ) {
                         Text(
-                            "⚡ 重启",
+                            "重启",
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                             style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                         )
                     }
                     Box {
-                        IconButton(onClick = { menu = true }, modifier = Modifier.size(34.dp)) {
+                        IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Filled.MoreVert, "会话操作")
                         }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text("刷新") }, enabled = !busy, onClick = {
                                 menu = false; perform("已刷新") { live.refresh(sessionKey) }
                             })
-                            listOf("meta" to "✏️ 改名 / 表情 / 颜色 / 标签", "model" to "🤖 选择模型", "thinking" to "💭 思考等级",
+                            listOf("meta" to "改名 / 表情 / 颜色 / 标签", "model" to "选择模型", "thinking" to "思考强度",
                                 "tree" to "会话树（只读）").forEach { (id, label) ->
                                 DropdownMenuItem(text = { Text(label) }, enabled = !busy, onClick = { menu = false; notice = null; dialog = id })
                             }
@@ -477,9 +477,8 @@ fun LiveSessionScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Text("🎯", style = PiType.micro)
                             Text(
-                                goal?.objective?.ifBlank { "目标" } ?: "目标：未设置（点此查看）",
+                                goal?.objective?.ifBlank { "目标" } ?: "目标未设置",
                                 style = PiType.micro,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -505,13 +504,13 @@ fun LiveSessionScreen(
                                 Surface(
                                     onClick = { viewMode = mode },
                                     shape = RoundedCornerShape(5.dp),
-                                    color = if (active) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent,
+                                    color = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else androidx.compose.ui.graphics.Color.Transparent,
                                 ) {
                                     Text(
                                         label,
                                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
                                         style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-                                        color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
@@ -522,7 +521,7 @@ fun LiveSessionScreen(
             }
         },
         bottomBar = {
-            Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).imePadding().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 4.dp)) {
                 SelectionContainer {
                     Column(Modifier.heightIn(max = 100.dp).verticalScroll(rememberScrollState())) {
                         notice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -634,15 +633,15 @@ fun LiveSessionScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     listOf(
-                        "📦 交接存档" to "帮我把目前的进展更新到交接文档中，写一份 session-handoff 摘要",
-                        "✅ 收尾自查+提交" to "把这次会话的所有改动自 review 一遍，确认按 git 规范 commit",
-                        "🔄 新 session 接续" to "继续执行上个会话的待办目标，读任务文档确认状态后继续",
-                        "🎯 验收前检查" to "对照验收标准逐条检查，该跑的测试都跑一遍",
+                        "交接存档" to "帮我把目前的进展更新到交接文档中，写一份 session-handoff 摘要",
+                        "收尾自查与提交" to "把这次会话的所有改动自 review 一遍，确认按 git 规范 commit",
+                        "新会话接续" to "继续执行上个会话的待办目标，读任务文档确认状态后继续",
+                        "验收前检查" to "对照验收标准逐条检查，该跑的测试都跑一遍",
                     ).forEach { (label, promptText) ->
                         Surface(
                             onClick = { draft = promptText },
                             enabled = !busy && draft.isBlank(),
-                            shape = RoundedCornerShape(99.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.surface,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
                         ) {
@@ -664,8 +663,8 @@ fun LiveSessionScreen(
                         onClick = { notice = null; dialog = "model" },
                         enabled = !busy,
                         modifier = Modifier.weight(1f, fill = false),
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                     ) {
                         Row(
@@ -673,10 +672,9 @@ fun LiveSessionScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            Text("🤖", style = PiType.micro)
                             Text(
                                 summary?.model?.id ?: "选择模型",
-                                style = PiType.monoMicro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -686,8 +684,8 @@ fun LiveSessionScreen(
                     Surface(
                         onClick = { notice = null; dialog = "thinking" },
                         enabled = !busy,
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                     ) {
                         Row(
@@ -695,10 +693,10 @@ fun LiveSessionScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            Text("💭 思考:", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("思考", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(
                                 summary?.thinkingLevel?.takeIf { it.isNotBlank() } ?: "未知",
-                                style = PiType.monoMicro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                                style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             Text("▾", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -739,9 +737,9 @@ fun LiveSessionScreen(
                         value = draft,
                         onValueChange = { draft = it },
                         modifier = Modifier.weight(1f).padding(horizontal = Spacing.xs),
-                        placeholder = { Text("输入消息…", style = PiType.bodyCompact) },
-                        textStyle = PiType.bodyCompact,
-                        shape = Radii.bubble,
+                        placeholder = { Text("输入消息…", style = PiType.subhead) },
+                        textStyle = PiType.subhead,
+                        shape = RoundedCornerShape(12.dp),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,

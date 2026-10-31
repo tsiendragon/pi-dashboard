@@ -128,7 +128,7 @@ internal fun NativeActivityCard(
                         shape = RoundedCornerShape(99.dp),
                     ) {
                         Text(
-                            if (firstUser != null) "👤 用户请求" else "📌 窗口内活动",
+                            if (firstUser != null) "用户请求" else "窗口内活动",
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                             style = PiType.micro.copy(fontWeight = FontWeight.SemiBold),
                             color = scheme.primary,
@@ -175,7 +175,7 @@ internal fun NativeActivityCard(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            "📋 进度说明 (${progressNotes.size})",
+                            "进度说明 · ${progressNotes.size}",
                             style = PiType.micro.copy(fontWeight = FontWeight.SemiBold),
                             color = scheme.onSurfaceVariant,
                         )
@@ -214,7 +214,7 @@ internal fun NativeActivityCard(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(
-                                    "⚡ 执行步骤",
+                                    "执行步骤",
                                     style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold),
                                     color = scheme.onSurface,
                                 )
@@ -265,7 +265,7 @@ internal fun NativeActivityCard(
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
-                                "💭 思考过程",
+                                "思考过程",
                                 style = PiType.footnote.copy(fontWeight = FontWeight.Medium),
                                 color = scheme.primary,
                             )
@@ -291,7 +291,7 @@ internal fun NativeActivityCard(
 
                 // Follow-ups (`引用追问` / `批注追问`)
                 followUps.forEach { followUp ->
-                    val kind = if (quoteOrCommentKind(followUp.text) == FollowUpKind.COMMENT) "📝 批注追问" else "💬 引用追问"
+                    val kind = if (quoteOrCommentKind(followUp.text) == FollowUpKind.COMMENT) "批注追问" else "引用追问"
                     val summaryText = followUpSummary(followUp.text)
                     Column(
                         Modifier.fillMaxWidth()
@@ -318,7 +318,7 @@ internal fun NativeActivityCard(
                         visibleText,
                         onOpenPath = onOpenPath,
                         onOpenUrl = onOpenUrl,
-                        style = PiType.body.copy(color = if (latestReply.isError) scheme.error else scheme.onSurface),
+                        style = PiType.subhead.copy(color = if (latestReply.isError) scheme.error else scheme.onSurface),
                     )
                     if (isLong) {
                         MetaAction(
@@ -377,7 +377,7 @@ internal fun NativeActivityCard(
                     }
                 }
                 Text(
-                    "查看详情 / 引用 / 分叉 ▸",
+                    "查看详情  ›",
                     style = PiType.micro.copy(fontWeight = FontWeight.Medium),
                     color = scheme.primary,
                 )

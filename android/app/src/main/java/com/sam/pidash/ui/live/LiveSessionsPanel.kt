@@ -98,12 +98,12 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(runningOnly, { runningOnly = !runningOnly }, enabled = !sorting, label = { Text("工作中") })
                     FilterChip(children, { children = !children }, enabled = !sorting, label = { Text("子 Agent") })
-                    TextButton(enabled = org.loaded && !sorting, onClick = { groupError = null; managing = true }) { Text("📁 分组") }
+                    TextButton(enabled = org.loaded && !sorting, onClick = { groupError = null; managing = true }) { Text("分组") }
                     FilterChip(
                         selected = sorting,
                         enabled = org.loaded && !sortBusy && (sorting || (query.isBlank() && !runningOnly)),
                         onClick = { sorting = !sorting; notice = null },
-                        label = { Text(if (sorting) "✓ 完成排序" else "↕️ 排序模式") },
+                        label = { Text(if (sorting) "完成排序" else "排序模式") },
                     )
                 }
                 if (!sorting && (query.isNotBlank() || runningOnly)) Text("清除搜索和筛选后可调整顺序。", style = MaterialTheme.typography.bodySmall)
@@ -568,21 +568,21 @@ private fun SessionRow(
                 RowPillButton(text = "↑", enabled = canMoveUp && !busy, onClick = onMoveUp)
                 RowPillButton(text = "↓", enabled = canMoveDown && !busy, onClick = onMoveDown)
                 if (sortingMode) {
-                    RowPillButton(text = "⤒ 置顶本组", enabled = canMoveUp && !busy, onClick = onMoveTop)
-                    RowPillButton(text = if (row.meta.pinned) "📌 取消置顶" else "📌 置顶", enabled = !busy, onClick = onTogglePin)
+                    RowPillButton(text = "置顶本组", enabled = canMoveUp && !busy, onClick = onMoveTop)
+                    RowPillButton(text = if (row.meta.pinned) "取消置顶" else "置顶", enabled = !busy, onClick = onTogglePin)
                 }
                 RowPillButton(
-                    text = "🔄 重载",
+                    text = "重载",
                     enabled = !busy && row.summary.status != "reconnecting",
                     onClick = onReload,
                 )
                 RowPillButton(
-                    text = "⚡ 重启",
+                    text = "重启",
                     enabled = !busy && row.summary.status != "reconnecting",
                     onClick = onRestart,
                 )
-                RowPillButton(text = "✏️ 改名/装扮", enabled = !busy, onClick = onEditAppearance)
-                RowPillButton(text = "📁 分组", enabled = groupEnabled && !busy, onClick = onGroup)
+                RowPillButton(text = "改名 / 装扮", enabled = !busy, onClick = onEditAppearance)
+                RowPillButton(text = "分组", enabled = groupEnabled && !busy, onClick = onGroup)
             }
         }
     }
@@ -597,7 +597,7 @@ private fun RowPillButton(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        shape = RoundedCornerShape(7.dp),
+        shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.7f else 0.3f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (enabled) 0.35f else 0.15f)),
     ) {
