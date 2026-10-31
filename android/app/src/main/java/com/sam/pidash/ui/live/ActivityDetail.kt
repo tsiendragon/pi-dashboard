@@ -82,7 +82,7 @@ internal fun ActivityDetailDialog(
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
                     items(groupTranscript(activity.items), key = { it.id }) { row ->
-                        NativeTimelineRow(row, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate)
+                        NativeTimelineRow(row, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate, compactUser = true)
                     }
                 }
             }

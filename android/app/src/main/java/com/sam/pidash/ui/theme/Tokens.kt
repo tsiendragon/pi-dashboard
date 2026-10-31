@@ -78,6 +78,7 @@ object PiType {
     val title = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
     val headline = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.1).sp)
     val body = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
+    val userMessage = TextStyle(fontSize = 14.sp, lineHeight = 20.sp)
     val callout = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
     val subhead = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
     val footnote = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)

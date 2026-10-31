@@ -81,6 +81,13 @@ import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.SessionKey
 import kotlinx.coroutines.launch
 
+private val liveQuickPrompts = listOf(
+    "交接存档" to "帮我把目前的进展更新到交接文档中，写一份 session-handoff 摘要",
+    "收尾自查与提交" to "把这次会话的所有改动自 review 一遍，确认按 git 规范 commit",
+    "新会话接续" to "继续执行上个会话的待办目标，读任务文档确认状态后继续",
+    "验收前检查" to "对照验收标准逐条检查，该跑的测试都跑一遍",
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiveSessionScreen(
@@ -107,6 +114,8 @@ fun LiveSessionScreen(
     val listState = rememberLazyListState()
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
     var composerFocused by remember(sessionKey) { mutableStateOf(false) }
+    var promptsOpen by remember(sessionKey) { mutableStateOf(false) }
+    val composerExpanded = composerFocused || draft.isNotBlank()
     var attachments by remember(sessionKey) { mutableStateOf(emptyList<LiveImage>()) }
     // Quotes and annotations reuse the WebUI's message shapes, so the agent sees
     // the same blockquote/comment round from either client.
@@ -596,8 +605,8 @@ fun LiveSessionScreen(
                         tint = MaterialTheme.colorScheme.error,
                     )
                 }
-                // Keep model, thinking and quick prompts on one row so the transcript has more room.
-                Row(
+                // Collapse this auxiliary row while not editing; its actions remain in the + menu.
+                if (composerFocused || promptsOpen) Row(
                     Modifier.fillMaxWidth().padding(bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -647,7 +656,6 @@ fun LiveSessionScreen(
                         }
                     }
                     Box {
-                        var promptsOpen by remember { mutableStateOf(false) }
                         Surface(
                             onClick = { promptsOpen = true },
                             enabled = !busy,
@@ -662,12 +670,7 @@ fun LiveSessionScreen(
                                 text = { Text("请先清空草稿", style = PiType.footnote) },
                                 enabled = false, onClick = {},
                             )
-                            listOf(
-                                "交接存档" to "帮我把目前的进展更新到交接文档中，写一份 session-handoff 摘要",
-                                "收尾自查与提交" to "把这次会话的所有改动自 review 一遍，确认按 git 规范 commit",
-                                "新会话接续" to "继续执行上个会话的待办目标，读任务文档确认状态后继续",
-                                "验收前检查" to "对照验收标准逐条检查，该跑的测试都跑一遍",
-                            ).forEach { (label, prompt) ->
+                            liveQuickPrompts.forEach { (label, prompt) ->
                                 DropdownMenuItem(text = { Text(label, style = PiType.footnote) }, enabled = !busy && draft.isBlank(), onClick = {
                                     draft = prompt; promptsOpen = false
                                 })
@@ -678,10 +681,34 @@ fun LiveSessionScreen(
                 Row(verticalAlignment = Alignment.Bottom) {
                     Box {
                         var addMenu by remember { mutableStateOf(false) }
-                        IconButton(enabled = !busy, onClick = { addMenu = true }) {
+                        var addMenuShowTools by remember { mutableStateOf(false) }
+                        IconButton(enabled = !busy, onClick = {
+                            addMenuShowTools = !composerFocused
+                            addMenu = true
+                        }) {
                             Icon(Icons.Filled.Add, "附加内容")
                         }
                         DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
+                            if (addMenuShowTools) {
+                                DropdownMenuItem(
+                                    text = { Text("模型：${summary?.model?.id ?: "选择模型"}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    onClick = { addMenu = false; notice = null; dialog = "model" },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("思考：${summary?.thinkingLevel?.takeIf { it.isNotBlank() } ?: "未知"}") },
+                                    onClick = { addMenu = false; notice = null; dialog = "thinking" },
+                                )
+                                if (draft.isNotBlank()) DropdownMenuItem(
+                                    text = { Text("快捷：请先清空草稿") }, enabled = false, onClick = {},
+                                )
+                                liveQuickPrompts.forEach { (label, prompt) ->
+                                    DropdownMenuItem(
+                                        text = { Text("快捷：$label") }, enabled = draft.isBlank(),
+                                        onClick = { addMenu = false; draft = prompt },
+                                    )
+                                }
+                                HorizontalDivider()
+                            }
                             DropdownMenuItem(
                                 text = { Text("图片（最多 ${ImageAttachments.MAX_IMAGES} 张）") },
                                 enabled = attachments.size < ImageAttachments.MAX_IMAGES,
@@ -705,13 +732,12 @@ fun LiveSessionScreen(
                         }
                     }
                     // Keep an empty, unfocused composer compact; grow for editing and retained drafts.
-                    val composerExpanded = composerFocused || draft.isNotBlank()
                     BasicTextField(
                         value = draft,
                         onValueChange = { draft = it },
                         modifier = Modifier.weight(1f).padding(horizontal = Spacing.xs)
                             .onFocusChanged { composerFocused = it.isFocused },
-                        textStyle = PiType.subhead.copy(color = if (busy) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface),
+                        textStyle = PiType.userMessage.copy(color = if (busy) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         maxLines = 4,
                         enabled = !busy,
@@ -725,7 +751,7 @@ fun LiveSessionScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 Box(Modifier.weight(1f)) {
-                                    if (draft.isEmpty()) Text("输入消息…", style = PiType.subhead, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (draft.isEmpty()) Text("输入消息…", style = PiType.userMessage, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     innerTextField()
                                 }
                                 if (deliverAs != null || draft.isNotBlank()) Column(horizontalAlignment = Alignment.End) {

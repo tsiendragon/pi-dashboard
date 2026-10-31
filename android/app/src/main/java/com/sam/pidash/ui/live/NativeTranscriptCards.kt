@@ -22,7 +22,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -164,6 +170,7 @@ internal fun NativeMessageCard(
     enabled: Boolean = true,
     onQuote: ((LiveTimelineItem) -> Unit)? = null,
     onAnnotate: ((LiveTimelineItem) -> Unit)? = null,
+    compactUser: Boolean = false,
 ) {
     var expanded by remember(item.id) { mutableStateOf(false) }
     var showThinking by remember(item.id) { mutableStateOf(false) }
@@ -173,6 +180,55 @@ internal fun NativeMessageCard(
     val visible = if (long && !expanded) lines.take(PREVIEW_LINES).joinToString("\n").take(PREVIEW_CHARS) else item.text
     val user = item.role == "user"
 
+    if (user && compactUser) {
+        val canFork = item.forkable && !item.entryId.isNullOrBlank() && onFork != null
+        val hasActions = long || (item.text.isNotBlank() && (onQuote != null || onAnnotate != null)) || canFork
+        var menuOpen by remember(item.id) { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(
+                Modifier.widthIn(max = 560.dp)
+                    .background(scheme.primary, RoundedCornerShape(18.dp))
+                    .padding(start = Spacing.md, end = if (hasActions) 0.dp else Spacing.md, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    Modifier.weight(1f, fill = false).padding(vertical = 7.dp),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                ) {
+                    item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+                    if (item.text.isNotBlank()) Text(
+                        visible + if (long && !expanded) "…" else "",
+                        style = PiType.userMessage,
+                        color = scheme.onPrimary,
+                    )
+                }
+                if (hasActions) Box {
+                    IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = if (long && !expanded) "用户消息操作，可展开全文" else "用户消息操作", tint = scheme.onPrimary, modifier = Modifier.size(20.dp))
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (long) DropdownMenuItem(
+                            text = { Text(if (expanded) "收起" else "展开全部（${lines.size} 行）") },
+                            onClick = { menuOpen = false; expanded = !expanded },
+                        )
+                        if (onQuote != null && item.text.isNotBlank()) DropdownMenuItem(
+                            text = { Text("引用") }, enabled = enabled,
+                            onClick = { menuOpen = false; onQuote(item) },
+                        )
+                        if (onAnnotate != null && item.text.isNotBlank()) DropdownMenuItem(
+                            text = { Text("批注") }, enabled = enabled,
+                            onClick = { menuOpen = false; onAnnotate(item) },
+                        )
+                        if (canFork) DropdownMenuItem(
+                            text = { Text("分叉") }, enabled = enabled,
+                            onClick = { menuOpen = false; onFork?.invoke(item.entryId.orEmpty()) },
+                        )
+                    }
+                }
+            }
+        }
+        return
+    }
     if (user) {
         // iOS Messages shape: your own words are the only filled surface in the screen.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -187,7 +243,7 @@ internal fun NativeMessageCard(
                 verticalArrangement = Arrangement.spacedBy(Spacing.xs),
             ) {
                 item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
-                if (item.text.isNotBlank()) Text(visible, style = PiType.body, color = scheme.onPrimary)
+                if (item.text.isNotBlank()) Text(visible, style = PiType.userMessage, color = scheme.onPrimary)
                 if (long) MetaAction(
                     if (expanded) "收起" else "展开全部（${lines.size} 行）",
                     { expanded = !expanded },
@@ -326,12 +382,13 @@ internal fun NativeTimelineRow(
     enabled: Boolean,
     onQuote: (LiveTimelineItem) -> Unit,
     onAnnotate: (LiveTimelineItem) -> Unit,
+    compactUser: Boolean = false,
 ) {
     when (row) {
         is TranscriptRow.Single -> {
             val item = row.item
             if (isToolItem(item)) NativeStepCard(item, onOpenPath, onOpenUrl)
-            else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate)
+            else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate, compactUser)
         }
         is TranscriptRow.Steps -> NativeStepGroup(row, onOpenPath, onOpenUrl)
     }

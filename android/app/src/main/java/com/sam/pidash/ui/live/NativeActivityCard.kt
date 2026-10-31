@@ -146,7 +146,7 @@ internal fun NativeActivityCard(
                 if (prompt.isNotBlank()) {
                     Text(
                         prompt,
-                        style = PiType.callout.copy(fontWeight = FontWeight.Medium),
+                        style = PiType.userMessage.copy(fontWeight = FontWeight.Medium),
                         color = scheme.onSurface,
                         maxLines = if (promptExpanded) 24 else 4,
                         overflow = TextOverflow.Ellipsis,
