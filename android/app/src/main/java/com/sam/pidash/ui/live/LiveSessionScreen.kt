@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -43,6 +45,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -285,7 +288,6 @@ fun LiveSessionScreen(
         }
     }
 
-    // Reading surface first: the bar shrinks once you scroll and returns at the top.
     Scaffold(
         topBar = {
             Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
@@ -442,62 +444,61 @@ fun LiveSessionScreen(
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
-                // Sub-bar: Goal capsule on the left + Segmented [活动 | 完整] toggle on the right
+                // One 48 dp touch row; visual highlights stay smaller than the touch targets.
                 Row(
-                    Modifier.fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Surface(
-                        onClick = { notice = null; showGoal = true },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                    Row(
+                        Modifier.weight(1f).heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(role = Role.Button) { notice = null; showGoal = true }
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Row(
-                            Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
+                        Text(
+                            goal?.objective?.ifBlank { "目标" } ?: "目标未设置",
+                            style = PiType.micro,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        goalState?.let {
                             Text(
-                                goal?.objective?.ifBlank { "目标" } ?: "目标未设置",
-                                style = PiType.micro,
+                                it.statusLabel,
+                                style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.primary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
                             )
-                            goalState?.let {
-                                Text(
-                                    it.statusLabel,
-                                    style = PiType.monoMicro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
                         }
+                        Text("›", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Surface(
-                        shape = RoundedCornerShape(7.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
-                    ) {
-                        Row(Modifier.padding(2.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            listOf("activity" to "活动", "full" to "完整").forEach { (mode, label) ->
-                                val active = viewMode == mode
-                                Surface(
-                                    onClick = { viewMode = mode },
-                                    shape = RoundedCornerShape(5.dp),
-                                    color = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else androidx.compose.ui.graphics.Color.Transparent,
-                                ) {
-                                    Text(
-                                        label,
-                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                                        style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-                                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                    Row(Modifier.selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+                        listOf("activity" to "活动", "full" to "完整").forEach { (mode, label) ->
+                            val active = viewMode == mode
+                            Box(
+                                Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .selectable(selected = active, role = Role.Tab) { viewMode = mode },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    label,
+                                    modifier = Modifier
+                                        .background(
+                                            if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                            else androidx.compose.ui.graphics.Color.Transparent,
+                                            RoundedCornerShape(6.dp),
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
                             }
                         }
                     }
