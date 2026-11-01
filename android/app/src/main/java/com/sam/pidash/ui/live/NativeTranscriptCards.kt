@@ -103,29 +103,38 @@ internal fun NativeStepCard(
     item: LiveTimelineItem,
     onOpenPath: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
+    showArguments: Boolean = false,
 ) {
     var open by remember(item.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
     val name = if (isRunCode(item)) "Run Code" else item.toolName ?: "工具"
     val detail = toolArgumentPreview(item)
     val output = toolOutput(item)
-    val active = item.isError || item.status == "running"
+    val arguments = item.toolArgs?.takeIf { showArguments && it.isNotBlank() }?.let {
+        if (it.length > 65_536) it.take(65_536) + "\n（长内容已截断；完整内容请使用 WebUI）" else it
+    }
+    val toolThinking = item.thinking?.takeIf { showArguments && it.isNotBlank() }
+    val expandable = output.isNotEmpty() || arguments != null || toolThinking != null || (showArguments && item.images.isNotEmpty())
+    val active = item.isError || item.status == "error" || item.status == "running"
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth()
-                .then(if (output.isNotEmpty()) Modifier.clickable { open = !open } else Modifier)
+                .then(if (expandable) Modifier.clickable { open = !open } else Modifier)
+                .then(if (showArguments && expandable) Modifier.heightIn(min = 48.dp) else Modifier)
                 .padding(vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (active) {
-                StatusDot(if (item.isError) scheme.error else scheme.primary)
+                StatusDot(if (item.isError || item.status == "error") scheme.error else scheme.primary)
                 Spacer(Modifier.size(6.dp))
             }
             Text(
                 name,
                 style = PiType.monoMicro,
-                color = if (item.isError) scheme.error else scheme.onSurface.copy(alpha = 0.9f),
+                color = if (item.isError || item.status == "error") scheme.error else scheme.onSurface.copy(alpha = 0.9f),
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = if (showArguments) Modifier.widthIn(max = 96.dp) else Modifier,
             )
             if (detail.isNotEmpty()) {
                 Spacer(Modifier.size(Spacing.sm))
@@ -138,24 +147,52 @@ internal fun NativeStepCard(
                     modifier = Modifier.weight(1f),
                 )
             } else Spacer(Modifier.weight(1f))
-            if (output.isNotEmpty()) Text(
+            val statusLabel = when {
+                item.isError || item.status == "error" -> "失败"
+                item.status == "running" -> "进行中"
+                item.status != "done" -> "未确认"
+                else -> null
+            }
+            if (showArguments && statusLabel != null) {
+                Text(
+                    statusLabel,
+                    style = PiType.caption,
+                    color = if (item.isError || item.status == "error") scheme.error else scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = Spacing.xs),
+                )
+            }
+            if (expandable) Text(
                 if (open) "⌃" else "⌄",
                 style = PiType.action,
                 color = scheme.onSurfaceVariant.copy(alpha = 0.7f),
                 modifier = Modifier.padding(start = Spacing.xs),
             )
         }
-        if (open && output.isNotEmpty()) {
+        if (open && expandable) {
             SelectionContainer {
-                Box(
+                Column(
                     Modifier.fillMaxWidth()
                         .padding(top = Spacing.xs, bottom = Spacing.sm)
                         .background(scheme.surfaceVariant.copy(alpha = 0.5f), Radii.chip)
                         .heightIn(max = 320.dp)
                         .verticalScroll(rememberScrollState())
                         .padding(Spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                 ) {
-                    MarkdownBody(output, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl, style = PiType.mono)
+                    if (arguments != null) {
+                        Text("参数", style = PiType.caption, color = scheme.onSurfaceVariant)
+                        Text(arguments, style = PiType.mono, color = scheme.onSurface)
+                    }
+                    if (toolThinking != null) {
+                        Text("思考", style = PiType.caption, color = scheme.onSurfaceVariant)
+                        Text(toolThinking, style = PiType.mono, color = scheme.onSurface)
+                    }
+                    if (output.isNotEmpty()) {
+                        if (arguments != null || toolThinking != null) Text("输出", style = PiType.caption, color = scheme.onSurfaceVariant)
+                        MarkdownBody(output, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl, style = PiType.mono)
+                    }
+                    if (showArguments) item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
                 }
             }
         }
