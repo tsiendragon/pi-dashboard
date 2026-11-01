@@ -23,6 +23,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.draw.clip
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -50,6 +52,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -115,7 +119,9 @@ fun LiveSessionScreen(
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
     var composerFocused by remember(sessionKey) { mutableStateOf(false) }
     var promptsOpen by remember(sessionKey) { mutableStateOf(false) }
-    val composerExpanded = composerFocused || draft.isNotBlank()
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val showComposerTools = (composerFocused && imeVisible) || promptsOpen
+    val composerMaxHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.35f).coerceIn(96.dp, 220.dp)
     var attachments by remember(sessionKey) { mutableStateOf(emptyList<LiveImage>()) }
     // Quotes and annotations reuse the WebUI's message shapes, so the agent sees
     // the same blockquote/comment round from either client.
@@ -318,7 +324,7 @@ fun LiveSessionScreen(
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val showHeaderActions = maxWidth >= 600.dp && LocalDensity.current.fontScale <= 1.3f
                 Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
+                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
@@ -499,7 +505,7 @@ fun LiveSessionScreen(
             }
         },
         bottomBar = {
-            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).imePadding().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 4.dp)) {
+            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).imePadding().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 2.dp)) {
                 SelectionContainer {
                     Column(Modifier.heightIn(max = 100.dp).verticalScroll(rememberScrollState())) {
                         notice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -606,7 +612,7 @@ fun LiveSessionScreen(
                     )
                 }
                 // Collapse this auxiliary row while not editing; its actions remain in the + menu.
-                if (composerFocused || promptsOpen) Row(
+                if (showComposerTools) Row(
                     Modifier.fillMaxWidth().padding(bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -683,10 +689,10 @@ fun LiveSessionScreen(
                         var addMenu by remember { mutableStateOf(false) }
                         var addMenuShowTools by remember { mutableStateOf(false) }
                         IconButton(enabled = !busy, onClick = {
-                            addMenuShowTools = !composerFocused
+                            addMenuShowTools = !showComposerTools
                             addMenu = true
-                        }) {
-                            Icon(Icons.Filled.Add, "附加内容")
+                        }, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Filled.Add, "附加内容", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
                             if (addMenuShowTools) {
@@ -731,22 +737,23 @@ fun LiveSessionScreen(
                                 }
                         }
                     }
-                    // Keep an empty, unfocused composer compact; grow for editing and retained drafts.
+                    // A single line stays compact; long drafts grow and then scroll within a bounded area.
                     BasicTextField(
                         value = draft,
                         onValueChange = { draft = it },
-                        modifier = Modifier.weight(1f).padding(horizontal = Spacing.xs)
+                        modifier = Modifier.weight(1f).padding(horizontal = Spacing.xxs)
+                            .heightIn(max = composerMaxHeight)
                             .onFocusChanged { composerFocused = it.isFocused },
                         textStyle = PiType.userMessage.copy(color = if (busy) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        maxLines = 4,
+                        maxLines = if (composerFocused) 8 else 4,
                         enabled = !busy,
                         decorationBox = { innerTextField ->
                             Row(
                                 Modifier.fillMaxWidth()
                                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 12.dp, vertical = if (composerExpanded) 10.dp else 6.dp)
-                                    .heightIn(min = if (composerExpanded) 40.dp else 36.dp),
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    .heightIn(min = 36.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
@@ -754,24 +761,31 @@ fun LiveSessionScreen(
                                     if (draft.isEmpty()) Text("输入消息…", style = PiType.userMessage, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     innerTextField()
                                 }
-                                if (deliverAs != null || draft.isNotBlank()) Column(horizontalAlignment = Alignment.End) {
-                                    if (deliverAs != null) MetaText(
-                                        "投递：" + when (deliverAs) {
-                                            "steer" -> "引导"
-                                            "followUp" -> "排队"
-                                            else -> "默认"
-                                        },
+                                val deliveryLabel = when (deliverAs) {
+                                    "steer" -> "引导"
+                                    "followUp" -> "排队"
+                                    else -> null
+                                }
+                                if (deliveryLabel != null || draft.isNotBlank()) {
+                                    val compactStatus = listOfNotNull(deliveryLabel, draft.length.toString().takeIf { draft.isNotBlank() }).joinToString(" · ")
+                                    val spokenStatus = listOfNotNull(deliveryLabel?.let { "投递方式：$it" }, "${draft.length} 字".takeIf { draft.isNotBlank() }).joinToString("，")
+                                    Text(
+                                        compactStatus,
+                                        modifier = Modifier.widthIn(max = 80.dp).semantics { contentDescription = spokenStatus },
+                                        style = PiType.caption,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
-                                    if (draft.isNotBlank()) MetaText("${draft.length} 字")
                                 }
                             }
                         },
                     )
-                    FilledIconButton(enabled = !busy && cachedSnapshot == null && summary != null &&
+                    val canSend = !busy && cachedSnapshot == null && summary != null &&
                         (draft.isNotBlank() || attachments.isNotEmpty() || files.isNotEmpty() ||
                             quotes.isNotEmpty() || reviews.isNotEmpty()) &&
-                        ImageAttachments.validate(attachments) == null,
-                        onClick = {
+                        ImageAttachments.validate(attachments) == null
+                    IconButton(enabled = canSend, modifier = Modifier.size(48.dp), onClick = {
                         val typed = draft
                         val images = attachments
                         val sentQuotes = quotes
@@ -788,7 +802,20 @@ fun LiveSessionScreen(
                                 if (reviews == sentReviews) reviews = emptyList()
                             }
                         }
-                    }) { Icon(Icons.AutoMirrored.Filled.Send, "发送") }
+                    }) {
+                        Box(
+                            modifier = Modifier.size(32.dp).background(
+                                if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+                                CircleShape,
+                            ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send, "发送", modifier = Modifier.size(18.dp),
+                                tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -830,7 +857,7 @@ fun LiveSessionScreen(
             if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.sm),
+                contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.xs),
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
                 items(activities, key = { "activity:${it.id}" }) { activity ->
@@ -852,7 +879,7 @@ fun LiveSessionScreen(
             } else LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.sm),
+                contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.xs),
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
                 items(rows, key = { it.id }) { row ->
