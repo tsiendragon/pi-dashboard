@@ -8,9 +8,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -64,10 +68,17 @@ internal fun ActivityDetailDialog(
     val status = activityStatus(activity)
     val rows = remember(activity.items) { groupActivityDetail(activity.items) }
     val expandedTraces = remember(activity.id) { mutableStateMapOf<String, Boolean>() }
+    // Some fullscreen Dialog windows report consumed insets while extending below the screen.
+    // This is scrollable end padding, not permanently reserved reading space.
+    val endClearance = maxOf(64.dp, WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp)
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.fillMaxSize()) {
+            // The list must be measured inside the visible area, not behind system bars.
+            Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                 Row(
                     Modifier.fillMaxWidth().padding(start = 4.dp, end = Spacing.lg, top = 4.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -90,8 +101,8 @@ internal fun ActivityDetailDialog(
                 }
                 HorizontalDivider(thickness = Hairline, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.sm),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(start = Spacing.md, end = Spacing.md, top = Spacing.sm, bottom = endClearance),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
                     rows.forEach { row ->
@@ -99,7 +110,7 @@ internal fun ActivityDetailDialog(
                             is ActivityDetailRow.Message -> item(key = row.id) {
                                 NativeTimelineRow(
                                     TranscriptRow.Single(row.item), onOpenPath, onOpenUrl, onFork, enabled,
-                                    onQuote, onAnnotate, compactUser = true, compactAssistant = true,
+                                    onQuote, onAnnotate, compactUser = true, compactAssistant = true, expandedByDefault = true,
                                 )
                             }
                             is ActivityDetailRow.Trace -> {

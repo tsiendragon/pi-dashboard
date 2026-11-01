@@ -69,8 +69,6 @@ import kotlinx.serialization.json.jsonObject
  * WebUI — one line per tool call, output collapsed, 12-line reply clipping.
  */
 
-private const val PREVIEW_LINES = 12
-private const val PREVIEW_CHARS = 1200
 private const val DETAIL_CHARS = 120
 
 private val isToolItem = { item: LiveTimelineItem ->
@@ -210,13 +208,14 @@ internal fun NativeMessageCard(
     onAnnotate: ((LiveTimelineItem) -> Unit)? = null,
     compactUser: Boolean = false,
     compactAssistant: Boolean = false,
+    expandedByDefault: Boolean = false,
 ) {
-    var expanded by remember(item.id) { mutableStateOf(false) }
+    var expanded by remember(item.id) { mutableStateOf(expandedByDefault) }
     var showThinking by remember(item.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
-    val lines = item.text.split('\n')
-    val long = lines.size > PREVIEW_LINES || item.text.length > PREVIEW_CHARS
-    val visible = if (long && !expanded) lines.take(PREVIEW_LINES).joinToString("\n").take(PREVIEW_CHARS) else item.text
+    val preview = remember(item.text, expanded) { transcriptPreview(item.text, expanded) }
+    val long = preview.long
+    val visible = preview.visible
     val user = item.role == "user"
 
     if (user && compactUser) {
@@ -247,7 +246,7 @@ internal fun NativeMessageCard(
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         if (long) DropdownMenuItem(
-                            text = { Text(if (expanded) "收起" else "展开全部（${lines.size} 行）") },
+                            text = { Text(if (expanded) "收起" else "展开全部（${preview.lineCount} 行）") },
                             onClick = { menuOpen = false; expanded = !expanded },
                         )
                         if (onQuote != null && item.text.isNotBlank()) DropdownMenuItem(
@@ -284,7 +283,7 @@ internal fun NativeMessageCard(
                 item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
                 if (item.text.isNotBlank()) Text(visible, style = PiType.userMessage, color = scheme.onPrimary)
                 if (long) MetaAction(
-                    if (expanded) "收起" else "展开全部（${lines.size} 行）",
+                    if (expanded) "收起" else "展开全部（${preview.lineCount} 行）",
                     { expanded = !expanded },
                     tint = scheme.onPrimary.copy(alpha = 0.8f),
                 )
@@ -324,7 +323,7 @@ internal fun NativeMessageCard(
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             if (long) DropdownMenuItem(
-                                text = { Text(if (expanded) "收起" else "展开全部（${lines.size} 行）") },
+                                text = { Text(if (expanded) "收起" else "展开全部（${preview.lineCount} 行）") },
                                 onClick = { menuOpen = false; expanded = !expanded },
                             )
                             if (hasThinking) DropdownMenuItem(
@@ -370,7 +369,7 @@ internal fun NativeMessageCard(
                 onOpenUrl = onOpenUrl,
                 style = PiType.body.copy(color = if (item.isError) scheme.error else scheme.onSurface),
             )
-            if (long) MetaAction(if (expanded) "收起" else "展开全部（${lines.size} 行）", { expanded = !expanded })
+            if (long) MetaAction(if (expanded) "收起" else "展开全部（${preview.lineCount} 行）", { expanded = !expanded })
         }
         if (item.isError && item.text.isBlank()) Text("出错了", style = PiType.meta, color = scheme.error)
         Row(
@@ -487,12 +486,13 @@ internal fun NativeTimelineRow(
     onAnnotate: (LiveTimelineItem) -> Unit,
     compactUser: Boolean = false,
     compactAssistant: Boolean = false,
+    expandedByDefault: Boolean = false,
 ) {
     when (row) {
         is TranscriptRow.Single -> {
             val item = row.item
             if (isToolItem(item)) NativeStepCard(item, onOpenPath, onOpenUrl)
-            else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate, compactUser, compactAssistant)
+            else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate, compactUser, compactAssistant, expandedByDefault)
         }
         is TranscriptRow.Steps -> NativeStepGroup(row, onOpenPath, onOpenUrl)
     }
