@@ -6,8 +6,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.horizontalScroll
@@ -84,6 +85,16 @@ import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.SessionKey
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+
+private data class LiveScrollObservation(
+    val scrolling: Boolean,
+    val automatic: Boolean,
+    val count: Int,
+    val lastIndex: Int?,
+    val lastEnd: Int,
+    val viewportEnd: Int,
+)
 
 private val liveQuickPrompts = listOf(
     "交接存档" to "帮我把目前的进展更新到交接文档中，写一份 session-handoff 摘要",
@@ -115,7 +126,6 @@ fun LiveSessionScreen(
     val heldElsewhere = summary?.claim?.state == "claimed" && !owned
     val timeline = remember(detail) { detail?.let { projectLiveTimeline(it) }.orEmpty() }
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
     var composerFocused by remember(sessionKey) { mutableStateOf(false) }
     var promptsOpen by remember(sessionKey) { mutableStateOf(false) }
@@ -214,12 +224,19 @@ fun LiveSessionScreen(
     val activities = remember(detail) { detail?.let { projectLiveActivities(it) }.orEmpty() }
     // Default is the activity view: a phone reads replies, not the whole transcript.
     var viewMode by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("activity") }
+    // Each session and view starts at its own latest item, not a restored list offset.
+    val listState = remember(sessionKey, viewMode) { LazyListState() }
+    val scrollPolicy = remember(sessionKey, viewMode) { LiveScrollPolicy() }
+    var automaticScroll by remember(sessionKey, viewMode) { mutableStateOf(false) }
+    val nearLatestThreshold = with(LocalDensity.current) { 96.dp.roundToPx() }
     var openActivityId by remember(sessionKey) { mutableStateOf<String?>(null) }
     val background = remember(detail) { backgroundSnapshot(detail) }
     val backgroundActive = background?.tasks?.count { it.isActive() } ?: 0
     val goalState = remember(goal) { goalSummary(goal) }
     val rows = remember(timeline) { groupTranscript(timeline) }
-    val visibleCount = if (viewMode == "activity" && activities.isNotEmpty()) activities.size else rows.size
+    val showingActivities = viewMode == "activity" && activities.isNotEmpty()
+    val visibleCount = if (showingActivities) activities.size else rows.size
+    val visibleTail = if (showingActivities) activities.lastOrNull() else rows.lastOrNull()
 
     // Opening/subscribing is strictly read-only. Repository owns foreground handling
     // and releasing our lease when the focused screen is disposed.
@@ -228,12 +245,49 @@ fun LiveSessionScreen(
         onDispose { live.unfocus(sessionKey) }
     }
 
-    // Follow streaming only while the reader is already near the bottom; do not
-    // pull them away from reading old messages.
-    LaunchedEffect(visibleCount, timeline.lastOrNull()) {
-        val visible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-        if (visibleCount > 0 && (visible >= visibleCount - 3 || visible < 0)) {
-            listState.scrollToItem(visibleCount - 1)
+    // Only user-initiated scrolling changes follow mode; content reflow and our own
+    // scrolls must not turn a late cache/network snapshot into a new reading position.
+    LaunchedEffect(listState, scrollPolicy, nearLatestThreshold) {
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val last = layout.visibleItemsInfo.lastOrNull()
+            LiveScrollObservation(
+                listState.isScrollInProgress, automaticScroll, layout.totalItemsCount,
+                last?.index, (last?.offset ?: 0) + (last?.size ?: 0), layout.viewportEndOffset,
+            )
+        }.collect { observation ->
+            if (observation.scrolling && !observation.automatic && observation.count > 0) {
+                scrollPolicy.onUserScroll(isNearLatest(
+                    observation.count, observation.lastIndex, observation.lastEnd,
+                    observation.viewportEnd, nearLatestThreshold,
+                ))
+            }
+        }
+    }
+
+    // First content (including a cache hit) opens at the end; later updates follow
+    // only until the reader scrolls away. A tall final item must also reach its bottom.
+    LaunchedEffect(listState, visibleCount, visibleTail) {
+        if (!scrollPolicy.shouldScroll(visibleCount, listState.isScrollInProgress)) return@LaunchedEffect
+        snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it == visibleCount }
+        // The item count can stay the same while a cached or streaming card changes height.
+        // Wait for the next layout before measuring the last item's bottom.
+        withFrameNanos { }
+        if (listState.layoutInfo.totalItemsCount != visibleCount ||
+            !scrollPolicy.shouldScroll(visibleCount, listState.isScrollInProgress)) return@LaunchedEffect
+        automaticScroll = true
+        try {
+            val index = visibleCount - 1
+            if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) listState.scrollToItem(index)
+            val layout = listState.layoutInfo
+            val last = layout.visibleItemsInfo.lastOrNull { it.index == index }
+            if (last != null) {
+                val remaining = (last.offset + last.size - layout.viewportEndOffset + layout.afterContentPadding).coerceAtLeast(0)
+                if (remaining > 0) listState.scrollBy(remaining.toFloat())
+            }
+            scrollPolicy.onAutoScroll()
+        } finally {
+            automaticScroll = false
         }
     }
 
