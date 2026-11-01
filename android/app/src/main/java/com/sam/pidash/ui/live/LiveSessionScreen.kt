@@ -852,14 +852,16 @@ fun LiveSessionScreen(
             } else LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.lg),
-                verticalArrangement = Arrangement.spacedBy(Spacing.lg),
+                contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
                 items(rows, key = { it.id }) { row ->
                     NativeTimelineRow(
                         row = row,
                         onOpenPath = ::openPathPreview,
                         onOpenUrl = ::openExternalUrl,
+                        compactUser = true,
+                        compactAssistant = true,
                         enabled = !busy && !heldElsewhere && cachedSnapshot == null,
                         onFork = { entryId -> notice = null; forkEntry = entryId; dialog = "fork" },
                         onQuote = { item ->

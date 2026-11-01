@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -171,6 +172,7 @@ internal fun NativeMessageCard(
     onQuote: ((LiveTimelineItem) -> Unit)? = null,
     onAnnotate: ((LiveTimelineItem) -> Unit)? = null,
     compactUser: Boolean = false,
+    compactAssistant: Boolean = false,
 ) {
     var expanded by remember(item.id) { mutableStateOf(false) }
     var showThinking by remember(item.id) { mutableStateOf(false) }
@@ -184,10 +186,10 @@ internal fun NativeMessageCard(
         val canFork = item.forkable && !item.entryId.isNullOrBlank() && onFork != null
         val hasActions = long || (item.text.isNotBlank() && (onQuote != null || onAnnotate != null)) || canFork
         var menuOpen by remember(item.id) { mutableStateOf(false) }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
             Row(
-                Modifier.widthIn(max = 560.dp)
-                    .background(scheme.primary, RoundedCornerShape(18.dp))
+                Modifier.widthIn(max = minOf(560.dp, maxWidth * 0.9f))
+                    .background(scheme.primaryContainer, RoundedCornerShape(16.dp))
                     .padding(start = Spacing.md, end = if (hasActions) 0.dp else Spacing.md, top = 2.dp, bottom = 2.dp),
                 verticalAlignment = Alignment.Top,
             ) {
@@ -199,12 +201,12 @@ internal fun NativeMessageCard(
                     if (item.text.isNotBlank()) Text(
                         visible + if (long && !expanded) "…" else "",
                         style = PiType.userMessage,
-                        color = scheme.onPrimary,
+                        color = scheme.onPrimaryContainer,
                     )
                 }
                 if (hasActions) Box {
                     IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = if (long && !expanded) "用户消息操作，可展开全文" else "用户消息操作", tint = scheme.onPrimary, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Filled.MoreVert, contentDescription = if (long && !expanded) "用户消息操作，可展开全文" else "用户消息操作", tint = scheme.onPrimaryContainer, modifier = Modifier.size(20.dp))
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         if (long) DropdownMenuItem(
@@ -256,6 +258,66 @@ internal fun NativeMessageCard(
                     if (item.forkable && !item.entryId.isNullOrBlank() && onFork != null) {
                         MetaAction("分叉", { onFork(item.entryId) }, enabled, tint)
                     }
+                }
+            }
+        }
+        return
+    }
+
+    if (compactAssistant) {
+        val hasThinking = !item.thinking.isNullOrBlank()
+        val hasContent = item.text.isNotBlank() || item.images.isNotEmpty() || item.isError
+        var menuOpen by remember(item.id) { mutableStateOf(false) }
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            if (hasContent) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+                        if (item.text.isNotBlank()) MarkdownBody(
+                            visible + if (long && !expanded) "…" else "",
+                            onOpenPath = onOpenPath,
+                            onOpenUrl = onOpenUrl,
+                            style = PiType.body.copy(color = if (item.isError) scheme.error else scheme.onSurface),
+                        )
+                        if (item.isError && item.text.isBlank()) Text("出错了", style = PiType.meta, color = scheme.error)
+                    }
+                    if (long || hasThinking || (item.text.isNotBlank() && (onQuote != null || onAnnotate != null))) Box {
+                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = if (long && !expanded) "回复操作，可展开全文" else "回复操作", tint = scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            if (long) DropdownMenuItem(
+                                text = { Text(if (expanded) "收起" else "展开全部（${lines.size} 行）") },
+                                onClick = { menuOpen = false; expanded = !expanded },
+                            )
+                            if (hasThinking) DropdownMenuItem(
+                                text = { Text(if (showThinking) "收起思考" else "查看思考") },
+                                onClick = { menuOpen = false; showThinking = !showThinking },
+                            )
+                            if (onQuote != null && item.text.isNotBlank()) DropdownMenuItem(
+                                text = { Text("引用") }, enabled = enabled,
+                                onClick = { menuOpen = false; onQuote(item) },
+                            )
+                            if (onAnnotate != null && item.text.isNotBlank()) DropdownMenuItem(
+                                text = { Text("批注") }, enabled = enabled,
+                                onClick = { menuOpen = false; onAnnotate(item) },
+                            )
+                        }
+                    }
+                }
+            } else if (hasThinking) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(Radii.chip)
+                        .clickable { showThinking = !showThinking }.padding(horizontal = Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (showThinking) "⌃  收起思考" else "⌄  思考", style = PiType.footnote, color = scheme.onSurfaceVariant)
+                }
+            }
+            if (showThinking) item.thinking?.let {
+                SelectionContainer {
+                    Text(it, style = PiType.monoMicro, color = scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = Spacing.sm))
                 }
             }
         }
@@ -335,7 +397,10 @@ internal fun NativeStepGroup(
     }
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = Spacing.xs),
+            Modifier.fillMaxWidth().clip(Radii.chip)
+                .background(scheme.surfaceVariant.copy(alpha = 0.6f))
+                .clickable { open = !open }.heightIn(min = 48.dp)
+                .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(if (open) "⌃" else "⌄", style = PiType.action, color = scheme.onSurfaceVariant)
@@ -355,6 +420,7 @@ internal fun NativeStepGroup(
                     color = scheme.onSurfaceVariant.copy(alpha = 0.8f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -383,12 +449,13 @@ internal fun NativeTimelineRow(
     onQuote: (LiveTimelineItem) -> Unit,
     onAnnotate: (LiveTimelineItem) -> Unit,
     compactUser: Boolean = false,
+    compactAssistant: Boolean = false,
 ) {
     when (row) {
         is TranscriptRow.Single -> {
             val item = row.item
             if (isToolItem(item)) NativeStepCard(item, onOpenPath, onOpenUrl)
-            else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate, compactUser)
+            else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate, compactUser, compactAssistant)
         }
         is TranscriptRow.Steps -> NativeStepGroup(row, onOpenPath, onOpenUrl)
     }
