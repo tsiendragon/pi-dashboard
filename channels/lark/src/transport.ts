@@ -22,7 +22,18 @@ export interface CardAction {
   /** Platform callback id, used to drop a redelivered click. */
   eventId?: string
   /** The command bound to the button (`/list`, `/bind …`). */
-  command: string
+  command?: string
+  /** The button answers a pending extension dialog (select / confirm). */
+  answer?: DialogAnswer
+}
+
+/** An answer to a pending extension UI request (same wire shape the web UI sends). */
+export interface DialogAnswer {
+  /** The extension request id (`extension_ui.id`). */
+  id: string
+  /** Chosen option / typed text. Absent when cancelled. */
+  value?: string
+  cancelled?: boolean
 }
 
 export interface ImTransport {
