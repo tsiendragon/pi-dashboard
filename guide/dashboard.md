@@ -360,6 +360,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 安装可使用下述用户已授权的 GitHub Release，或私有本地传输。公开发布的只是通用 App 产物，不包含设备配置/登录身份，也不开放私有 Dashboard 服务。服务器原有配置可保留，首次 Live 使用需粘贴访问令牌。
 若提示签名不一致，先核对签名来源，不要通过卸载旧 App 绕过，以免丢失本地配置与登录状态。
 
+Android 5.11（build 42）在机器列表顶部提供「新建会话」，Live Pi 详情的「会话操作」菜单也可在同机新建。列表和详情均提供带确认的「关闭会话」，通过现有专用 `shutdown` 指令退出进程，不删除记录、不抢占控制权、不自动重试。要求扩展具备 `session_shutdown` 能力，且会话处于非重连的 TUI 模式；旧扩展需用户自行更新并 `/reload`。已有服务器具备这些接口时仅安装新版 App，无需重启 Dashboard。请求超时后应刷新确认实际状态。
+
 ### Android GitHub 发布（每个新可安装版本）
 
 下载入口：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)。仓库为公开仓库，APK、校验值和更新说明均可公开下载；访问服务器仍需既有入口授权与 Live 登录令牌。

@@ -28,6 +28,7 @@ data class LiveSummary(
     val contextUsage: LiveContextUsage? = null,
 ) {
     val title: String get() = sessionName?.takeIf { it.isNotBlank() } ?: "Pi $pid"
+    val canShutdown: Boolean get() = mode == "tui" && status != "reconnecting" && "session_shutdown" in capabilities
 }
 
 @Serializable

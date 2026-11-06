@@ -694,6 +694,13 @@ class LivePiRepository(
     suspend fun reload(key: SessionKey): Result<Unit> = shared(key) { buildJsonObject { put("type", "reload") } }.also {
         if (it.isSuccess) _leases.update { map -> map - key }
     }
+    /** Dedicated shared shutdown command, matching WebUI; never emulate with /exit input. */
+    suspend fun shutdown(key: SessionKey): Result<Unit> = shared(key) {
+        val summary = _details.value[key]?.summary ?: sessions.value.firstOrNull { it.key == key }?.summary
+        require(summary?.canShutdown == true) { "此会话暂不支持安全关闭，请检查连接状态和 Pi 扩展版本" }
+        buildJsonObject { put("type", "shutdown") }
+    }.also { if (it.isSuccess) _leases.update { map -> map - key } }
+
     suspend fun patchMeta(key: SessionKey, tags: List<String>? = null, pinned: Boolean? = null, emoji: String? = null, color: String? = null): Result<Unit> = mutation(key) {
         client(key.backendId).patchMeta(key.slotKey, tags, pinned, emoji, color); reconcile(key.backendId)
     }

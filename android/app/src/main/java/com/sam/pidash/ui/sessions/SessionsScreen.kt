@@ -119,6 +119,9 @@ fun SessionsScreen(
                     }) {
                         Icon(Icons.Filled.Refresh, contentDescription = "刷新")
                     }
+                    TextButton(enabled = backends.isNotEmpty(), onClick = { showNew = true }) {
+                        Text("新建会话", style = PiType.footnote)
+                    }
                     IconButton(onClick = onOpenBackends) {
                         Icon(Icons.Filled.Settings, contentDescription = "服务器")
                     }

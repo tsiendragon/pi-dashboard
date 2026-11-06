@@ -68,6 +68,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     var actionBusyKey by remember { mutableStateOf<SessionKey?>(null) }
     var editingRow by remember { mutableStateOf<AggregatedLiveSession?>(null) }
     var restartingRow by remember { mutableStateOf<AggregatedLiveSession?>(null) }
+    var closingRow by remember { mutableStateOf<AggregatedLiveSession?>(null) }
     var rowActionError by remember { mutableStateOf<String?>(null) }
     var groupError by remember { mutableStateOf<String?>(null) }
     val sections = remember(sessions, org, query, runningOnly, children, backendId) {
@@ -193,6 +194,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                                         actionBusyKey = null
                                     }
                                 },
+                                onShutdown = { closingRow = row },
                                 onRestart = {
                                     rowActionError = null
                                     restartingRow = row
@@ -258,6 +260,16 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                 actionBusyKey = null
             }
         }
+    }
+    closingRow?.let { target ->
+        LiveShutdownDialog(repo, target.key, target.summary.title,
+            onDismiss = { closingRow = null },
+            onAccepted = {
+                closingRow = null
+                notice = "已发送关闭请求：${target.summary.title}，进程退出后将从列表移除"
+                scope.launch { repo.live.refreshMachine(backendId) }
+            },
+        )
     }
     restartingRow?.let { target ->
         val busy = actionBusyKey == target.key
@@ -488,6 +500,7 @@ private fun SessionRow(
     onTogglePin: () -> Unit,
     onReload: () -> Unit,
     onRestart: () -> Unit,
+    onShutdown: () -> Unit,
     onEditAppearance: () -> Unit,
     onGroup: () -> Unit,
 ) {
@@ -580,6 +593,11 @@ private fun SessionRow(
                     text = "重启",
                     enabled = !busy && row.summary.status != "reconnecting",
                     onClick = onRestart,
+                )
+                RowPillButton(
+                    text = "关闭会话",
+                    enabled = !busy && row.summary.canShutdown,
+                    onClick = onShutdown,
                 )
                 RowPillButton(text = "改名 / 装扮", enabled = !busy, onClick = onEditAppearance)
                 RowPillButton(text = "分组", enabled = groupEnabled && !busy, onClick = onGroup)

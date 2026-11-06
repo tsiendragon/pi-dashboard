@@ -112,6 +112,7 @@ fun LiveSessionScreen(
     onOpenLive: (SessionKey) -> Unit,
 ) {
     val live = repo.live
+    val configuredBackends by repo.backends.collectAsState()
     val sessions by live.sessions.collectAsState()
     val details by live.details.collectAsState()
     val cachedSnapshots by live.cachedSnapshots.collectAsState()
@@ -489,6 +490,12 @@ fun LiveSessionScreen(
                             Icon(Icons.Filled.MoreVert, "会话操作")
                         }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(text = { Text("新建 Live Pi 会话…") }, enabled = !busy, onClick = {
+                                menu = false; dialog = "new-session"
+                            })
+                            DropdownMenuItem(text = { Text("关闭会话…", color = MaterialTheme.colorScheme.error) },
+                                enabled = !busy && cachedSnapshot == null && summary?.canShutdown == true,
+                                onClick = { menu = false; dialog = "shutdown" })
                             DropdownMenuItem(text = { Text("刷新") }, enabled = !busy, onClick = {
                                 menu = false; perform("已刷新", allowCached = true) { live.refresh(sessionKey) }
                             })
@@ -1150,6 +1157,16 @@ fun LiveSessionScreen(
             onThinking = { level -> perform("已请求切换思考等级", close = true) {
                 ensureLease().fold(onSuccess = { live.setThinking(sessionKey, level) }, onFailure = { Result.failure(it) })
             } },
+        )
+        "new-session" -> NewLiveSessionDialog(
+            repo = repo,
+            backends = configuredBackends.filter { it.id == sessionKey.backendId },
+            onDismiss = dismiss,
+            onOpen = { key -> dialog = null; onOpenLive(key) },
+        )
+        "shutdown" -> LiveShutdownDialog(repo, sessionKey, summary?.title ?: "Pi",
+            onDismiss = dismiss,
+            onAccepted = { dialog = null; onBack() },
         )
         "context", "tree" -> LiveInspectionDialog(repo, sessionKey, dialog == "context", dismiss)
         "compact", "reload", "restart", "fork" -> {
