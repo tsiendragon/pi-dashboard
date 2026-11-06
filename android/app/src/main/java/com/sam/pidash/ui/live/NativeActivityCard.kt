@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.activityReplies
 import com.sam.pidash.data.remote.activityTools
+import com.sam.pidash.domain.model.ActivityStatus
 import com.sam.pidash.domain.model.FollowUpKind
 import com.sam.pidash.domain.model.LiveActivity
 import com.sam.pidash.domain.model.activityStatus
@@ -347,35 +348,7 @@ internal fun NativeActivityCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Surface(
-                    color = when {
-                        status.failed -> scheme.errorContainer
-                        status.running -> scheme.primary.copy(alpha = 0.14f)
-                        else -> scheme.secondaryContainer
-                    },
-                    shape = RoundedCornerShape(99.dp),
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    ) {
-                        if (accent != null) {
-                            if (status.running) PulsingDot(accent) else StatusDot(accent, size = 6.dp)
-                        } else {
-                            Text("✓", style = PiType.micro.copy(fontWeight = FontWeight.Bold), color = scheme.primary)
-                        }
-                        Text(
-                            status.label,
-                            style = PiType.micro.copy(fontWeight = FontWeight.SemiBold),
-                            color = when {
-                                status.failed -> scheme.onErrorContainer
-                                status.running -> scheme.primary
-                                else -> scheme.onSecondaryContainer
-                            },
-                        )
-                    }
-                }
+                ActivityStatusPill(status)
                 Text(
                     "查看详情  ›",
                     style = PiType.micro.copy(fontWeight = FontWeight.Medium),
@@ -386,9 +359,48 @@ internal fun NativeActivityCard(
     }
 }
 
+/**
+ * Turn status pill, shared by activity cards and the full-record page so the same state
+ * never looks like two different things.
+ */
+@Composable
+internal fun ActivityStatusPill(status: ActivityStatus, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = modifier,
+        color = when {
+            status.failed -> scheme.errorContainer
+            status.running -> scheme.primary.copy(alpha = 0.14f)
+            else -> scheme.secondaryContainer
+        },
+        shape = RoundedCornerShape(99.dp),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            when {
+                status.failed -> StatusDot(scheme.error, size = 6.dp)
+                status.running -> PulsingDot(scheme.primary)
+                else -> Text("✓", style = PiType.micro.copy(fontWeight = FontWeight.Bold), color = scheme.primary)
+            }
+            Text(
+                status.label,
+                style = PiType.micro.copy(fontWeight = FontWeight.SemiBold),
+                color = when {
+                    status.failed -> scheme.onErrorContainer
+                    status.running -> scheme.primary
+                    else -> scheme.onSecondaryContainer
+                },
+            )
+        }
+    }
+}
+
 /** A dot that breathes while work is happening — the only motion in the app. */
 @Composable
-private fun PulsingDot(color: androidx.compose.ui.graphics.Color) {
+internal fun PulsingDot(color: androidx.compose.ui.graphics.Color) {
     val transition = rememberInfiniteTransition(label = "activity")
     val alpha by transition.animateFloat(
         initialValue = 1f,

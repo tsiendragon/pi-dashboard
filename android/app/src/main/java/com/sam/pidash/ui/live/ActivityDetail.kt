@@ -1,9 +1,10 @@
 package com.sam.pidash.ui.live
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.HorizontalDivider
@@ -31,8 +31,9 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -43,11 +44,9 @@ import com.sam.pidash.domain.model.activityStatus
 import com.sam.pidash.domain.model.groupActivityDetail
 import com.sam.pidash.domain.model.isDetailTool
 import com.sam.pidash.domain.model.TranscriptRow
-import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.theme.Hairline
 import com.sam.pidash.ui.theme.PiType
-import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
 
 /**
@@ -67,6 +66,9 @@ internal fun ActivityDetailDialog(
 ) {
     val status = activityStatus(activity)
     val rows = remember(activity.items) { groupActivityDetail(activity.items) }
+    val toolCount = remember(activity.items) {
+        activity.items.count { it.toolName != null || it.role == "tool" || it.toolCallId != null }
+    }
     val expandedTraces = remember(activity.id) { mutableStateMapOf<String, Boolean>() }
     // Some fullscreen Dialog windows report consumed insets while extending below the screen.
     // This is scrollable end padding, not permanently reserved reading space.
@@ -79,8 +81,10 @@ internal fun ActivityDetailDialog(
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             // The list must be measured inside the visible area, not behind system bars.
             Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                // Same rhythm as the session header: back button, two-line title block, status pill.
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 4.dp, end = Spacing.lg, top = 4.dp, bottom = 6.dp),
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                        .padding(start = 4.dp, end = Spacing.md, top = 4.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
@@ -91,20 +95,38 @@ internal fun ActivityDetailDialog(
                             "本轮记录",
                             style = PiType.callout.copy(fontWeight = FontWeight.SemiBold),
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                        MetaText(
-                            listOfNotNull(status.label, "${activity.items.size} 条记录").joinToString("  ·  "),
-                            tint = if (status.failed) MaterialTheme.colorScheme.error else null,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            StatusDot(
+                                if (status.running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                size = 6.dp,
+                            )
+                            Text(
+                                listOfNotNull(
+                                    "${activity.items.size} 条记录".takeIf { activity.items.isNotEmpty() },
+                                    "$toolCount 步操作".takeIf { toolCount > 0 },
+                                ).joinToString(" · ").ifBlank { "暂无记录" },
+                                style = PiType.caption,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
-                    if (status.running) StatusDot(MaterialTheme.colorScheme.primary, size = 6.dp)
+                    ActivityStatusPill(status, Modifier.padding(start = Spacing.sm))
                 }
                 HorizontalDivider(thickness = Hairline, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
                 LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(start = Spacing.md, end = Spacing.md, top = Spacing.sm, bottom = endClearance),
+                    contentPadding = PaddingValues(start = Spacing.md, end = Spacing.md, top = Spacing.xs, bottom = endClearance),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
+                    fun expandedFor(row: ActivityDetailRow.Trace) = expandedTraces[row.id] ?: (row.items.size <= 6)
+                    fun toggle(row: ActivityDetailRow.Trace) { expandedTraces[row.id] = !expandedFor(row) }
                     rows.forEach { row ->
                         when (row) {
                             is ActivityDetailRow.Message -> item(key = row.id) {
@@ -113,17 +135,14 @@ internal fun ActivityDetailDialog(
                                     onQuote, onAnnotate, compactUser = true, compactAssistant = true, expandedByDefault = true,
                                 )
                             }
-                            is ActivityDetailRow.Trace -> {
-                                val expanded = expandedTraces[row.id] == true
-                                item(key = row.id) {
-                                    DetailTraceHeader(row, expanded) { expandedTraces[row.id] = !expanded }
-                                }
-                                if (expanded) items(row.items, key = { "${row.id}:item:${it.id}" }) { entry ->
-                                    Box(Modifier.fillMaxWidth().padding(start = Spacing.sm)) {
-                                        if (isDetailTool(entry)) NativeStepCard(entry, onOpenPath, onOpenUrl, showArguments = true)
-                                        else NativeMessageCard(entry, onOpenPath, onOpenUrl, compactAssistant = true)
-                                    }
-                                }
+                            is ActivityDetailRow.Trace -> item(key = row.id) {
+                                DetailTraceBlock(
+                                    row = row,
+                                    expanded = expandedFor(row),
+                                    onToggle = { toggle(row) },
+                                    onOpenPath = onOpenPath,
+                                    onOpenUrl = onOpenUrl,
+                                )
                             }
                         }
                     }
@@ -133,11 +152,21 @@ internal fun ActivityDetailDialog(
     }
 }
 
+/**
+ * A group of consecutive steps, drawn exactly like the card's 「执行步骤」 block so the
+ * detail page and the feed read as one product: tinted box, hairline border, header pill.
+ */
 @Composable
-private fun DetailTraceHeader(row: ActivityDetailRow.Trace, expanded: Boolean, onToggle: () -> Unit) {
+private fun DetailTraceBlock(
+    row: ActivityDetailRow.Trace,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onOpenPath: (String) -> Unit,
+    onOpenUrl: (String) -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     val counts = listOfNotNull(
-        "${row.toolCount} 项工具".takeIf { row.toolCount > 0 },
+        "${row.toolCount} 步".takeIf { row.toolCount > 0 },
         "${row.thinkingCount} 段思考".takeIf { row.thinkingCount > 0 },
     ).joinToString(" · ")
     val states = listOfNotNull(
@@ -145,22 +174,64 @@ private fun DetailTraceHeader(row: ActivityDetailRow.Trace, expanded: Boolean, o
         "${row.runningCount} 进行中".takeIf { row.runningCount > 0 },
         "${row.unknownCount} 状态未确认".takeIf { row.unknownCount > 0 },
     ).joinToString(" · ")
-    Row(
-        Modifier.fillMaxWidth().clip(Radii.chip)
-            .background(scheme.surfaceVariant.copy(alpha = 0.6f))
-            .clickable(onClick = onToggle).heightIn(min = 48.dp)
-            .padding(horizontal = Spacing.md, vertical = Spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+    val failed = row.failedCount > 0
+
+    Column(
+        Modifier.fillMaxWidth()
+            .background(scheme.surfaceVariant.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+            .border(1.dp, scheme.outline.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
     ) {
-        Text(if (expanded) "⌃" else "⌄", style = PiType.footnote, color = scheme.onSurfaceVariant)
-        Column(Modifier.weight(1f)) {
-            Text(counts, style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold), color = scheme.onSurface)
+        Row(
+            Modifier.fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                "执行记录",
+                style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold),
+                color = scheme.onSurface,
+            )
+            Surface(
+                color = if (failed) scheme.errorContainer else scheme.surface,
+                shape = RoundedCornerShape(99.dp),
+            ) {
+                Text(
+                    counts,
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp),
+                    style = PiType.monoMicro,
+                    color = if (failed) scheme.onErrorContainer else scheme.onSurfaceVariant,
+                )
+            }
             if (states.isNotEmpty()) Text(
-                states, style = PiType.caption,
-                color = if (row.failedCount > 0) scheme.error else scheme.onSurfaceVariant,
+                states,
+                style = PiType.caption,
+                color = if (failed) scheme.error else scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            ) else Spacer(Modifier.weight(1f))
+            Text(
+                if (expanded) "收起 ▴" else "展开 ▾",
+                style = PiType.micro,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
             )
         }
-        Text(if (expanded) "收起" else "展开", style = PiType.caption, color = scheme.onSurfaceVariant)
+        if (expanded) {
+            HorizontalDivider(color = scheme.outline.copy(alpha = 0.2f))
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            ) {
+                row.items.forEach { entry ->
+                    if (isDetailTool(entry)) NativeStepCard(entry, onOpenPath, onOpenUrl, showArguments = true)
+                    else NativeMessageCard(entry, onOpenPath, onOpenUrl, compactAssistant = true)
+                }
+            }
+        }
     }
 }
+
