@@ -31,6 +31,7 @@ pi-tsien-extension/
 
 - Pi 直接加载各包的 TS 入口（根 `package.json` 的 `pi.extensions`，多数是 `src/index.ts`），**无需预编译**。
 - 包之间用普通 semver 互相依赖，经 npm workspaces 链接进根 `node_modules`，跨包引用写包名。
+- `pi-tsien-live-session` 源码新增 `sudo_exec` / `sudo_approval` 时，需要 Dashboard 与 Android 5.10+ 同步更新；旧 npm 包不会自动具备该能力。密码只走专用授权通道，部署要求与安全边界见 [dashboard.md 的 sudo 单次授权](dashboard.md#sudo-单次授权android-510-起)。无需改宿主、sudoers 或以 root 运行服务。
 
 ---
 

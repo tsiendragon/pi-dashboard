@@ -149,7 +149,7 @@ export function parseGoodbye(value: unknown): LiveSessionGoodbye {
 export function validateLiveSessionCommand(value: unknown, browserOnly = false): LiveSessionCommand {
   if (!record(value) || !nonEmptyString(value.type, 64)) throw new LiveSessionProtocolError('invalid_command', 'command type is required')
   if (jsonBytes(value) > LIVE_SESSION_MAX_COMMAND_BYTES) throw new LiveSessionProtocolError('command_too_large', 'command exceeds 8 MiB')
-  if (browserOnly && value.type !== 'resync' && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'get_context' && value.type !== 'set_model' && value.type !== 'compact' && value.type !== 'reload' && value.type !== 'shutdown' && value.type !== 'feature_command' && value.type !== 'answer_ui') {
+  if (browserOnly && value.type !== 'resync' && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'get_context' && value.type !== 'set_model' && value.type !== 'compact' && value.type !== 'reload' && value.type !== 'shutdown' && value.type !== 'feature_command' && value.type !== 'answer_ui' && value.type !== 'answer_sudo') {
     throw new LiveSessionProtocolError('unsupported_command', 'browser command is not supported')
   }
   switch (value.type) {
@@ -203,6 +203,12 @@ export function validateLiveSessionCommand(value: unknown, browserOnly = false):
         if (!onlyKeys(value.command, ['type', 'toolCallId'])) break
         if (value.command.type !== 'background' || !nonEmptyString(value.command.toolCallId, 512)) break
       } else break
+      return value as unknown as LiveSessionCommand
+    }
+    case 'answer_sudo': {
+      if (!onlyKeys(value, ['type', 'id', 'password', 'cancelled']) || !nonEmptyString(value.id, 256)) break
+      if (value.cancelled !== undefined && typeof value.cancelled !== 'boolean') break
+      if (value.cancelled === true ? value.password !== undefined : typeof value.password !== 'string' || value.password.length > 4096 || /[\r\n\0]/.test(value.password)) break
       return value as unknown as LiveSessionCommand
     }
     case 'answer_ui': {

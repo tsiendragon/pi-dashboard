@@ -66,7 +66,9 @@ function UiDialog({ processInstanceId, request, sessionLabel }: { processInstanc
     // emits extension_ui_closed which is idempotent here.
     dispatch(uiAnswered({ processInstanceId, id: request.id }))
     try {
-      await liveSessionApi.command(processInstanceId, { type: 'answer_ui', id: request.id, ...body })
+      await liveSessionApi.command(processInstanceId, request.method === 'sudo'
+        ? { type: 'answer_sudo', id: request.id, cancelled: true }
+        : { type: 'answer_ui', id: request.id, ...body })
     } catch {
       /* already answered / timed out upstream — ignore */
     }
@@ -94,6 +96,13 @@ function UiDialog({ processInstanceId, request, sessionLabel }: { processInstanc
         {request.message && (
           <div className="mb-3 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap text-body-s text-muted">{request.message}</div>
         )}
+
+        {request.method === 'sudo' && <div className="min-h-0 overflow-y-auto text-body-s text-text">
+          <p>此命令需要管理员授权，请在新版 Android App 中核对并处理。不要将密码发送到聊天中。</p>
+          <p className="mt-2 break-words">机器：{request.host} · 目录：{request.cwd}</p>
+          <pre className="my-3 whitespace-pre-wrap break-all font-mono text-2xs">{request.command}</pre>
+          <button className="rounded-lg border border-border px-4 py-2 disabled:opacity-40" onClick={cancel} disabled={submitting}>取消本次授权</button>
+        </div>}
 
         {request.method === 'confirm' && (
           <div className="flex shrink-0 justify-end gap-2">

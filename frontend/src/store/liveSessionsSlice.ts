@@ -364,6 +364,10 @@ const liveSessionsSlice = createSlice({
               ...(Array.isArray(data.options) ? { options: data.options.filter((o): o is string => typeof o === 'string') } : {}),
               ...(typeof data.placeholder === 'string' ? { placeholder: data.placeholder } : {}),
               ...(typeof data.prefill === 'string' ? { prefill: data.prefill } : {}),
+              ...(typeof data.command === 'string' ? { command: data.command } : {}),
+              ...(typeof data.cwd === 'string' ? { cwd: data.cwd } : {}),
+              ...(typeof data.host === 'string' ? { host: data.host } : {}),
+              ...(typeof data.expiresAt === 'number' ? { expiresAt: data.expiresAt } : {}),
             }
           } else {
             delete bucket[uiId]

@@ -507,6 +507,7 @@ internal fun LiveInspectionDialog(repo: PiDashRepository, key: SessionKey, conte
 
 @Composable
 internal fun LiveExtensionDialog(request: LiveUiRequest, onAnswer: suspend (String?, Boolean) -> Result<Unit>) {
+    if (request.method == "sudo") { SudoApprovalDialog(request, onAnswer); return }
     var value by remember(request.id) { mutableStateOf(request.prefill.orEmpty()) }
     var busy by remember(request.id) { mutableStateOf(false) }
     var error by remember(request.id) { mutableStateOf<String?>(null) }

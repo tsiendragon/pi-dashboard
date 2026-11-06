@@ -706,7 +706,17 @@ class LivePiRepository(
         client(key.backendId).get("/api/session-tree?file=" + java.net.URLEncoder.encode(file, "UTF-8"))["result"] ?: JsonNull
     }
     suspend fun answer(key: SessionKey, request: LiveUiRequest, value: String? = null, cancelled: Boolean = false): Result<Unit> = mutation(key) {
-        require(request.method in setOf("confirm", "select", "input", "editor")) { "尚不支持此确认类型" }
+        require(request.method in setOf("confirm", "select", "input", "editor", "sudo")) { "尚不支持此确认类型" }
+        if (request.method == "sudo") {
+            require(cancelled || (request.expiresAt ?: 0) > System.currentTimeMillis()) { "授权请求已过期" }
+            require(cancelled || (value != null && value.length <= 4096 && value.none { it == '\r' || it == '\n' || it == '\u0000' })) { "密码格式不支持" }
+            val response = client(key.backendId).command(key.slotKey, buildJsonObject {
+                put("type", "answer_sudo"); put("id", request.id)
+                if (cancelled) put("cancelled", true) else put("password", value!!)
+            })
+            require(response.jsonObject["accepted"]?.jsonPrimitive?.booleanOrNull == true) { "请求已失效或已在其他端处理" }
+            return@mutation Unit
+        }
         require(cancelled || request.method != "select" || value in request.options) { "请选择服务器提供的选项" }
         require(cancelled || request.method != "confirm" || value == "true" || value == "false") { "无效确认值" }
         require(value == null || value.toByteArray().size <= 128 * 1024) { "回答超出大小限制" }

@@ -11,6 +11,8 @@ import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.LiveDetail
 import com.sam.pidash.domain.model.SessionKey
 import kotlinx.coroutines.*
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -54,6 +56,19 @@ class LiveSessionClientTest {
         client = LiveSessionClient(backend, cookies)
     }
     @After fun teardown() { scope.cancel(); repositories.forEach { it.close() }; client.close(); server.stop(0) }
+
+    @Test fun sudoSecretNeverLeavesAnHttpConnectionButCancellationCan() = runBlocking {
+        val result = runCatching { client.command(process, buildJsonObject {
+            put("type", "answer_sudo"); put("id", "sudo-fixture"); put("password", "synthetic-secret")
+        }) }
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message?.contains("HTTPS") == true)
+        assertTrue(calls.isEmpty())
+        client.command(process, buildJsonObject { put("type", "answer_sudo"); put("id", "sudo-fixture"); put("cancelled", true) })
+        assertEquals(1, calls.size)
+        assertFalse(calls.single().body.contains("synthetic-secret"))
+        assertFalse(calls.single().body.contains("password"))
+    }
 
     @Test fun tokenSignInUsesOriginAndIndependentCookieWithEdgeAuthorization() = runBlocking {
         handler = {

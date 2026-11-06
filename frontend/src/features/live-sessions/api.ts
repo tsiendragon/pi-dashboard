@@ -129,7 +129,7 @@ export const liveSessionApi = {
   contextView: (processInstanceId: string) => post<{ ok: true; result: LiveSessionContextView }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'get_context' } },
   ).then(result => result.result),
-  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'resync' | 'input' | 'abort' | 'set_session_name' | 'get_models' | 'get_context' | 'set_model' | 'compact' | 'reload' | 'shutdown' | 'feature_command' | 'answer_ui' }>) => post<{ ok: true; result: unknown }>(
+  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'resync' | 'input' | 'abort' | 'set_session_name' | 'get_models' | 'get_context' | 'set_model' | 'compact' | 'reload' | 'shutdown' | 'feature_command' | 'answer_ui' | 'answer_sudo' }>) => post<{ ok: true; result: unknown }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command },
   ),
   /** Close a tmux-first live session: kills the tmux session hosting its Pi. */

@@ -127,6 +127,10 @@ function uiRequestFromEvent(id: string, data: Record<string, unknown> | undefine
     method: (typeof data?.method === 'string' ? data.method : 'confirm') as LiveSessionUiRequest['method'],
     title: typeof data?.title === 'string' ? data.title : '',
     ...(typeof data?.message === 'string' ? { message: data.message } : {}),
+    ...(typeof data?.command === 'string' ? { command: data.command } : {}),
+    ...(typeof data?.cwd === 'string' ? { cwd: data.cwd } : {}),
+    ...(typeof data?.host === 'string' ? { host: data.host } : {}),
+    ...(typeof data?.expiresAt === 'number' ? { expiresAt: data.expiresAt } : {}),
     ...(options ? { options } : {}),
     ...(typeof data?.placeholder === 'string' ? { placeholder: data.placeholder } : {}),
     ...(typeof data?.prefill === 'string' ? { prefill: data.prefill } : {}),
@@ -190,6 +194,7 @@ export class LiveSessionRegistry extends EventEmitter {
       if (existing.reconnectTimer) clearTimeout(existing.reconnectTimer)
       if (existing.transport !== transport) existing.transport.close?.()
       this.rejectPending(existing, 'live_session_reconnected', 'live session connection was replaced')
+      for (const [id, request] of existing.pendingUi) if (request.method === 'sudo') existing.pendingUi.delete(id)
       existing.transport = transport
       existing.hello = hello
       existing.lineage = inferProcessLineage(hello.pid)
@@ -549,8 +554,25 @@ export class LiveSessionRegistry extends EventEmitter {
 
   async sendBrowserCommand(processInstanceId: string, browserClientId: string, command: unknown): Promise<unknown> {
     const validated = validateLiveSessionCommand(command, true)
-    if (validated.type !== 'resync' && validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'get_context' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'shutdown' && validated.type !== 'feature_command' && validated.type !== 'answer_ui') {
+    if (validated.type !== 'resync' && validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'get_context' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'shutdown' && validated.type !== 'feature_command' && validated.type !== 'answer_ui' && validated.type !== 'answer_sudo') {
       throw new LiveSessionRegistryError('unsupported_command', 'browser command is not allowed')
+    }
+    if (validated.type === 'answer_ui' && this.entries.get(processInstanceId)?.pendingUi.get(validated.id)?.method === 'sudo') {
+      throw new LiveSessionRegistryError('invalid_sudo_request', 'Sudo requires its dedicated authorization channel')
+    }
+    if (validated.type === 'answer_sudo') {
+      const entry = this.entries.get(processInstanceId)
+      const request = entry?.pendingUi.get(validated.id)
+      if (request?.method !== 'sudo' || !request.expiresAt || request.expiresAt <= this.now()) {
+        throw new LiveSessionRegistryError('invalid_sudo_request', 'Sudo request expired or unavailable')
+      }
+      // Never expose a bridge exception/result through the credential response.
+      try {
+        const result = await this.dispatch(processInstanceId, validated) as { accepted?: boolean }
+        return { accepted: result?.accepted === true }
+      } catch {
+        throw new LiveSessionRegistryError('sudo_answer_failed', 'Sudo authorization could not be delivered; check request status before retrying')
+      }
     }
     // answer_ui settles a pending extension UI request (first answer wins), so it
     // is deliberately dispatchable without holding the lease.

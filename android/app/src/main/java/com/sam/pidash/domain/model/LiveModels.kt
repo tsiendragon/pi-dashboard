@@ -45,6 +45,10 @@ data class LiveUiRequest(
     val options: List<String> = emptyList(),
     val placeholder: String? = null,
     val prefill: String? = null,
+    val command: String? = null,
+    val cwd: String? = null,
+    val host: String? = null,
+    val expiresAt: Long? = null,
 )
 @Serializable
 data class LiveDetail(

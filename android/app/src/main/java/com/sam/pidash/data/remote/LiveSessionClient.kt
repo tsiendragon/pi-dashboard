@@ -192,8 +192,20 @@ class LiveSessionClient(
         })
         return obj["result"]?.jsonObject?.get("processInstanceId")?.jsonPrimitive?.contentOrNull
     }
-    suspend fun command(id: String, value: JsonObject): JsonElement =
-        post(path(id) + "/commands", buildJsonObject { put("command", value) })["result"] ?: JsonNull
+    suspend fun command(id: String, value: JsonObject): JsonElement {
+        val sudo = value["type"]?.jsonPrimitive?.contentOrNull == "answer_sudo"
+        if (sudo && (value["cancelled"]?.jsonPrimitive?.booleanOrNull != true || value.containsKey("password"))) {
+            require(base.isHttps) { "管理员密码仅能通过 HTTPS 连接提交，请先配置 HTTPS 后端" }
+        }
+        return try {
+            post(path(id) + "/commands", buildJsonObject { put("command", value) })["result"] ?: JsonNull
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            if (sudo && e is LiveApiException) throw LiveApiException(e.status, "sudo_answer_failed", "授权提交失败，请检查请求状态；不要自动重复执行")
+            if (sudo) throw IOException("授权提交失败，请检查请求状态；不要自动重复执行")
+            throw e
+        }
+    }
     suspend fun claim(id: String): LiveLease = pidashJson.decodeFromJsonElement(LiveLease.serializer(),
         post(path(id) + "/claim", buildJsonObject { put("requestedLeaseMs", 30_000) })["result"] ?: JsonNull)
     suspend fun renew(id: String, lease: String): LiveLease = pidashJson.decodeFromJsonElement(LiveLease.serializer(),

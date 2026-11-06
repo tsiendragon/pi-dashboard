@@ -316,11 +316,16 @@ export type LiveSessionCommand =
   | { type: 'feature_command'; leaseId: string; feature: 'btw'; command: BtwFeatureCommand }
   | { type: 'feature_command'; leaseId: string; feature: 'background-commands'; command: { type: 'background'; toolCallId: string } }
   | { type: 'answer_ui'; id: string; value?: string; cancelled?: boolean }
+  | { type: 'answer_sudo'; id: string; password?: string; cancelled?: boolean }
 
 /** A pending extension UI request projected from a live session (L1 emits `extension_ui`). */
 export interface LiveSessionUiRequest {
   id: string
-  method: 'confirm' | 'select' | 'input' | 'editor'
+  method: 'confirm' | 'select' | 'input' | 'editor' | 'sudo'
+  command?: string
+  cwd?: string
+  host?: string
+  expiresAt?: number
   title: string
   message?: string
   options?: string[]
