@@ -13,10 +13,15 @@ import androidx.compose.foundation.layout.size
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Spacing
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,6 +34,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -113,7 +119,16 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
             }
         }
         if (backends.isEmpty()) item { Text("机器配置已删除，请返回机器列表。", Modifier.padding(16.dp)) }
-        notice?.let { message -> item { Text(message, Modifier.padding(16.dp)) } }
+        notice?.let { message ->
+            item {
+                Text(
+                    message,
+                    style = PiType.footnote,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                )
+            }
+        }
         if (sections.isEmpty() && backends.isNotEmpty()) item {
             val ready = states[backendId]?.connected == true
             Text(when {
@@ -130,7 +145,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                         .clickable {
                             toggled = if (section.id in toggled) toggled - section.id else toggled + section.id
                         }
-                        .padding(horizontal = Spacing.xl, vertical = Spacing.sm),
+                        .padding(horizontal = Spacing.xl, vertical = Spacing.xs),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -483,7 +498,12 @@ fun NewLiveSessionDialog(
     )
 }
 
-/** One row inside a grouped card: emoji + color avatar, title, mono cwd, and direct mobile action bar. */
+/**
+ * One row inside a grouped card: order number, emoji avatar, title, mono cwd and tags.
+ * Secondary actions live behind a trailing ⋯ menu (and long press) so a row stays two to
+ * three text lines tall; sorting mode swaps the menu for ↑ ↓ arrows.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionRow(
     row: AggregatedLiveSession,
@@ -508,122 +528,125 @@ private fun SessionRow(
     val subagent = row.summary.role == "subagent" || row.summary.parentSessionId != null
     val accentColor = parseHexColor(row.meta.color) ?: MaterialTheme.colorScheme.primary
     val emojiText = row.meta.emoji.takeIf { it.isNotBlank() } ?: if (subagent) "🤖" else "💬"
+    var actions by remember { mutableStateOf(false) }
 
-    Column(
+    Row(
         Modifier.fillMaxWidth()
-            .clickable { onOpen(row.key) }
-            .padding(horizontal = Spacing.md, vertical = Spacing.md),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                orderNumber.toString().padStart(2, '0'),
-                style = PiType.monoMicro,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            .combinedClickable(
+                onClick = { onOpen(row.key) },
+                onLongClick = { if (!subagent) actions = true },
             )
-            // Clickable emoji & color avatar box
-            Box(
-                Modifier.size(36.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(9.dp))
-                    .border(
-                        width = if (row.meta.color.isNotBlank()) 2.dp else 1.dp,
-                        color = if (row.meta.color.isNotBlank()) accentColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                        shape = RoundedCornerShape(9.dp),
-                    )
-                    .clickable(enabled = !busy) { onEditAppearance() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(emojiText, style = MaterialTheme.typography.bodyLarge)
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (running) {
-                        StatusDot(MaterialTheme.colorScheme.primary)
-                    }
-                    Text(
-                        row.summary.title,
-                        style = PiType.callout.copy(fontWeight = FontWeight.SemiBold),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (row.meta.pinned) {
-                        Text("📌", style = PiType.caption)
-                    }
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            orderNumber.toString().padStart(2, '0'),
+            style = PiType.monoMicro,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        )
+        // Clickable emoji & color avatar box
+        Box(
+            Modifier.size(30.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                .border(
+                    width = if (row.meta.color.isNotBlank()) 2.dp else 1.dp,
+                    color = if (row.meta.color.isNotBlank()) accentColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(8.dp),
+                )
+                .clickable(enabled = !busy) { onEditAppearance() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(emojiText, style = MaterialTheme.typography.bodyMedium)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (running) {
+                    StatusDot(MaterialTheme.colorScheme.primary)
                 }
                 Text(
-                    row.summary.cwd,
-                    style = PiType.monoMicro,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    row.summary.title,
+                    style = PiType.callout.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
-                MetaLine(
-                    listOfNotNull(
-                        row.summary.claim.state.takeIf { it == "claimed" }?.let { "已接管" },
-                        row.summary.model?.let { "${it.provider}/${it.id}" },
-                    ) + row.meta.tags.take(2).map { "#$it" }
-                )
-            }
-        }
-
-        // Direct mobile action bar (matches mockup's session-row-actions)
-        if (!subagent) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                RowPillButton(text = "↑", enabled = canMoveUp && !busy, onClick = onMoveUp)
-                RowPillButton(text = "↓", enabled = canMoveDown && !busy, onClick = onMoveDown)
-                if (sortingMode) {
-                    RowPillButton(text = "置顶本组", enabled = canMoveUp && !busy, onClick = onMoveTop)
-                    RowPillButton(text = if (row.meta.pinned) "取消置顶" else "置顶", enabled = !busy, onClick = onTogglePin)
+                if (row.meta.pinned) {
+                    Text("📌", style = PiType.caption)
                 }
-                RowPillButton(
-                    text = "重载",
-                    enabled = !busy && row.summary.status != "reconnecting",
-                    onClick = onReload,
-                )
-                RowPillButton(
-                    text = "重启",
-                    enabled = !busy && row.summary.status != "reconnecting",
-                    onClick = onRestart,
-                )
-                RowPillButton(
-                    text = "关闭会话",
-                    enabled = !busy && row.summary.canShutdown,
-                    onClick = onShutdown,
-                )
-                RowPillButton(text = "改名 / 装扮", enabled = !busy, onClick = onEditAppearance)
-                RowPillButton(text = "分组", enabled = groupEnabled && !busy, onClick = onGroup)
+            }
+            Text(
+                row.summary.cwd,
+                style = PiType.monoMicro,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            MetaLine(
+                listOfNotNull(
+                    row.summary.claim.state.takeIf { it == "claimed" }?.let { "已接管" },
+                    row.summary.model?.let { "${it.provider}/${it.id}" },
+                ) + row.meta.tags.take(2).map { "#$it" }
+            )
+        }
+        if (sortingMode) {
+            RowIconButton(icon = Icons.Filled.KeyboardArrowUp, label = "上移", enabled = canMoveUp && !busy, onClick = onMoveUp)
+            RowIconButton(icon = Icons.Filled.KeyboardArrowDown, label = "下移", enabled = canMoveDown && !busy, onClick = onMoveDown)
+        }
+        if (!subagent) {
+            Box {
+                IconButton(onClick = { actions = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.MoreVert,
+                        contentDescription = "会话操作",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(expanded = actions, onDismissRequest = { actions = false }) {
+                    DropdownMenuItem(text = { Text("重载扩展") },
+                        enabled = !busy && row.summary.status != "reconnecting",
+                        onClick = { actions = false; onReload() })
+                    DropdownMenuItem(text = { Text("重启 Pi 进程…") },
+                        enabled = !busy && row.summary.status != "reconnecting",
+                        onClick = { actions = false; onRestart() })
+                    HorizontalDivider()
+                    DropdownMenuItem(text = { Text("改名 / 装扮") }, enabled = !busy,
+                        onClick = { actions = false; onEditAppearance() })
+                    DropdownMenuItem(text = { Text("移动到分组…") }, enabled = groupEnabled && !busy,
+                        onClick = { actions = false; onGroup() })
+                    if (sortingMode) {
+                        DropdownMenuItem(text = { Text("置顶本组") }, enabled = canMoveUp && !busy,
+                            onClick = { actions = false; onMoveTop() })
+                        DropdownMenuItem(text = { Text(if (row.meta.pinned) "取消置顶" else "置顶") }, enabled = !busy,
+                            onClick = { actions = false; onTogglePin() })
+                    }
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("关闭会话…", color = MaterialTheme.colorScheme.error) },
+                        enabled = !busy && row.summary.canShutdown,
+                        onClick = { actions = false; onShutdown() },
+                    )
+                }
             }
         }
-    }
+}
 }
 
 @Composable
-private fun RowPillButton(
-    text: String,
+private fun RowIconButton(
+    icon: ImageVector,
+    label: String,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.7f else 0.3f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (enabled) 0.35f else 0.15f)),
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = PiType.micro.copy(fontWeight = FontWeight.Medium),
-            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(32.dp)) {
+        Icon(
+            icon,
+            contentDescription = label,
+            modifier = Modifier.size(20.dp),
+            tint = if (enabled) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
         )
     }
 }
