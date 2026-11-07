@@ -110,6 +110,7 @@ internal fun NativeStepCard(
     onOpenPath: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
     showArguments: Boolean = false,
+    precedingThinking: List<LiveTimelineItem> = emptyList(),
 ) {
     var open by remember(item.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
@@ -120,7 +121,8 @@ internal fun NativeStepCard(
         if (it.length > 65_536) it.take(65_536) + "\n（长内容已截断；完整内容请使用 WebUI）" else it
     }
     val toolThinking = item.thinking?.takeIf { showArguments && it.isNotBlank() }
-    val expandable = output.isNotEmpty() || arguments != null || toolThinking != null || (showArguments && item.images.isNotEmpty())
+    val thinkingCount = precedingThinking.size + if (toolThinking != null) 1 else 0
+    val expandable = output.isNotEmpty() || arguments != null || thinkingCount > 0 || (showArguments && item.images.isNotEmpty())
     val active = item.isError || item.status == "error" || item.status == "running"
     Column(Modifier.fillMaxWidth().animateContentSize()) {
         Row(
@@ -168,9 +170,15 @@ internal fun NativeStepCard(
                     modifier = Modifier.padding(start = Spacing.xs),
                 )
             }
+            if (thinkingCount > 0) Text(
+                if (thinkingCount == 1) "思考" else "$thinkingCount 段思考",
+                style = PiType.caption, color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = Spacing.sm),
+            )
             if (expandable) Icon(
                 imageVector = if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                contentDescription = if (open) "收起输出" else "展开输出",
+                contentDescription = if (showArguments) { if (open) "收起记录" else "展开记录" }
+                    else { if (open) "收起输出" else "展开输出" },
                 tint = scheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = Spacing.xs).size(16.dp),
             )
@@ -186,16 +194,21 @@ internal fun NativeStepCard(
                         .padding(Spacing.sm),
                     verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                 ) {
-                    if (arguments != null) {
-                        Text("参数", style = PiType.caption, color = scheme.onSurfaceVariant)
-                        Text(arguments, style = PiType.mono, color = scheme.onSurface)
+                    precedingThinking.forEachIndexed { index, thought ->
+                        Text(if (precedingThinking.size == 1) "执行前思考" else "执行前思考 ${index + 1}",
+                            style = PiType.caption, color = scheme.onSurfaceVariant)
+                        Text(thought.thinking.orEmpty(), style = PiType.mono, color = scheme.onSurfaceVariant)
                     }
                     if (toolThinking != null) {
                         Text("思考", style = PiType.caption, color = scheme.onSurfaceVariant)
                         Text(toolThinking, style = PiType.mono, color = scheme.onSurface)
                     }
+                    if (arguments != null) {
+                        Text("参数", style = PiType.caption, color = scheme.onSurfaceVariant)
+                        Text(arguments, style = PiType.mono, color = scheme.onSurface)
+                    }
                     if (output.isNotEmpty()) {
-                        if (arguments != null || toolThinking != null) Text("输出", style = PiType.caption, color = scheme.onSurfaceVariant)
+                        if (arguments != null || thinkingCount > 0) Text("输出", style = PiType.caption, color = scheme.onSurfaceVariant)
                         MarkdownBody(output, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl, style = PiType.mono)
                     }
                     if (showArguments) item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
@@ -355,7 +368,12 @@ internal fun NativeMessageCard(
                         .clickable { showThinking = !showThinking }.padding(horizontal = Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ExpandHint(showThinking, collapsedLabel = "思考", expandedLabel = "收起思考")
+                    Text(if (showThinking) "收起思考" else "思考", style = PiType.caption, color = scheme.onSurfaceVariant)
+                    Text(item.thinking.orEmpty().lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(160).orEmpty(),
+                        modifier = Modifier.weight(1f).padding(horizontal = Spacing.sm), style = PiType.footnote,
+                        color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Icon(if (showThinking) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                        contentDescription = null, modifier = Modifier.size(16.dp), tint = scheme.onSurfaceVariant)
                 }
             }
             Collapsible(visible = showThinking && item.thinking != null) { item.thinking?.let {

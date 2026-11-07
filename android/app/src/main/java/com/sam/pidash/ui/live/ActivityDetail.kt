@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -43,6 +46,7 @@ import com.sam.pidash.domain.model.LiveActivity
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.activityStatus
 import com.sam.pidash.domain.model.groupActivityDetail
+import com.sam.pidash.domain.model.detailTraceEntries
 import com.sam.pidash.domain.model.isDetailTool
 import com.sam.pidash.domain.model.TranscriptRow
 import com.sam.pidash.ui.common.StatusDot
@@ -160,8 +164,9 @@ internal fun ActivityDetailDialog(
  * A group of consecutive steps, drawn exactly like the card's 「执行步骤」 block so the
  * detail page and the feed read as one product: tinted box, hairline border, header pill.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DetailTraceBlock(
+internal fun DetailTraceBlock(
     row: ActivityDetailRow.Trace,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -179,6 +184,7 @@ private fun DetailTraceBlock(
         "${row.unknownCount} 状态未确认".takeIf { row.unknownCount > 0 },
     ).joinToString(" · ")
     val failed = row.failedCount > 0
+    val entries = remember(row.items) { detailTraceEntries(row.items) }
 
     Column(
         Modifier.fillMaxWidth()
@@ -193,42 +199,35 @@ private fun DetailTraceBlock(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                "执行记录",
-                style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold),
-                color = scheme.onSurface,
-            )
-            Surface(
-                color = if (failed) scheme.errorContainer else scheme.surface,
-                shape = RoundedCornerShape(99.dp),
-            ) {
-                Text(
-                    counts,
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp),
-                    style = PiType.monoMicro,
-                    color = if (failed) scheme.onErrorContainer else scheme.onSurfaceVariant,
-                )
-            }
-            if (states.isNotEmpty()) Text(
-                states,
-                style = PiType.caption,
-                color = if (failed) scheme.error else scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            FlowRow(
                 modifier = Modifier.weight(1f),
-            ) else Spacer(Modifier.weight(1f))
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text("执行记录", modifier = Modifier.align(Alignment.CenterVertically),
+                    style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold), color = scheme.onSurface)
+                Surface(modifier = Modifier.align(Alignment.CenterVertically), color = scheme.surface, shape = RoundedCornerShape(99.dp)) {
+                    Text(counts, modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp),
+                        style = PiType.monoMicro, color = scheme.onSurfaceVariant)
+                }
+                if (states.isNotEmpty()) Text(states, modifier = Modifier.align(Alignment.CenterVertically),
+                    style = PiType.caption, color = if (failed) scheme.error else scheme.onSurfaceVariant)
+            }
             ExpandHint(expanded)
         }
         Collapsible(visible = expanded) {
             Column(Modifier.fillMaxWidth()) {
                 HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
                 ) {
-                    row.items.forEach { entry ->
-                        if (isDetailTool(entry)) NativeStepCard(entry, onOpenPath, onOpenUrl, showArguments = true)
-                        else NativeMessageCard(entry, onOpenPath, onOpenUrl, compactAssistant = true)
+                    entries.forEachIndexed { index, entry ->
+                        key(entry.item.id) {
+                            if (index > 0) HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
+                            if (isDetailTool(entry.item)) NativeStepCard(entry.item, onOpenPath, onOpenUrl,
+                                showArguments = true, precedingThinking = entry.precedingThinking)
+                            else NativeMessageCard(entry.item, onOpenPath, onOpenUrl, compactAssistant = true)
+                        }
                     }
                 }
             }
