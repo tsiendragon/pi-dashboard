@@ -996,11 +996,26 @@ fun LiveSessionScreen(
                     }
                 } else if (timeline.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            if (detail == null) "正在同步会话详情…" else "这段会话还没有消息。",
-                            style = PiType.meta,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                        ) {
+                            if (detail == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Text(
+                                if (detail == null) "正在同步会话详情…" else "这段会话还没有消息。",
+                                style = PiType.footnote,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (detail == null) Text(
+                                "首次打开需要拉取完整记录，稍等片刻。",
+                                style = PiType.caption,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            ) else Text(
+                                "在下方输入框发一条消息即可开始。",
+                                style = PiType.caption,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            )
+                        }
                     }
                 } else LazyColumn(
                     state = listState,

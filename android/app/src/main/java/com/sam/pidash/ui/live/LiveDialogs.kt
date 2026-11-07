@@ -34,6 +34,7 @@ import com.sam.pidash.domain.model.LiveSummary
 import com.sam.pidash.domain.model.LiveUiRequest
 import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Spacing
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -245,6 +246,7 @@ internal fun LiveMetadataDialog(
     }) { Text("保存") } }, dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("取消") } })
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun LiveModelDialog(
     repo: PiDashRepository,
@@ -276,10 +278,19 @@ internal fun LiveModelDialog(
         if (allowed.isEmpty()) THINKING_LADDER_LEVELS
         else THINKING_LADDER_LEVELS.filter { it.id in allowed }.ifEmpty { THINKING_LADDER_LEVELS }
     }
-    AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, containerColor = MaterialTheme.colorScheme.surface,
-        title = { Text(if (thinking) "思考强度" else "选择模型", style = PiType.headline) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // A model list is a picker, not a confirmation: it belongs in a sheet the thumb can reach,
+    // with the same drag-to-dismiss gesture as the rest of the app.
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 620.dp)) {
+            Text(
+                if (thinking) "思考强度" else "选择模型",
+                style = PiType.headline,
+                modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs),
+            )
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     shape = RoundedCornerShape(10.dp),
@@ -474,12 +485,20 @@ internal fun LiveModelDialog(
                     }
                 }
             }
-        },
-        confirmButton = {
-            if (thinking) TextButton(enabled = !busy && level.isNotBlank() && !level.equals(summary?.thinkingLevel, ignoreCase = true), onClick = { onThinking(level.trim()) }) { Text("应用", style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold)) }
-        },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(if (thinking) "取消" else "关闭", style = PiType.footnote) } },
-    )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(enabled = !busy, onClick = onDismiss) { Text(if (thinking) "取消" else "关闭", style = PiType.footnote) }
+                if (thinking) TextButton(
+                    enabled = !busy && level.isNotBlank() && !level.equals(summary?.thinkingLevel, ignoreCase = true),
+                    onClick = { onThinking(level.trim()) },
+                ) { Text("应用", style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold)) }
+            }
+        }
+    }
 }
 
 @Composable
