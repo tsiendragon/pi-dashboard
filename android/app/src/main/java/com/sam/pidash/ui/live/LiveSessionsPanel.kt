@@ -11,6 +11,7 @@ import com.sam.pidash.ui.common.StatusDot
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -243,7 +244,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                     Text(
                         "  ${section.sessions.size}",
                         style = PiType.footnote,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -666,7 +667,7 @@ private fun SessionRow(
         Text(
             orderNumber.toString().padStart(2, '0'),
             style = PiType.monoMicro,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         // Clickable emoji & color avatar box
         Box(
@@ -674,7 +675,7 @@ private fun SessionRow(
                 .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
                 .border(
                     width = if (row.meta.color.isNotBlank()) 2.dp else 1.dp,
-                    color = if (row.meta.color.isNotBlank()) accentColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    color = if (row.meta.color.isNotBlank()) accentColor else MaterialTheme.colorScheme.outline.copy(alpha = Tints.Border),
                     shape = RoundedCornerShape(8.dp),
                 )
                 .clickable(enabled = !busy) { onEditAppearance() },
@@ -786,11 +787,11 @@ private fun SessionActionsSheet(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        HorizontalDivider(Modifier.padding(vertical = Spacing.sm), color = scheme.outline.copy(alpha = 0.3f))
+        HorizontalDivider(Modifier.padding(vertical = Spacing.sm), color = scheme.outline.copy(alpha = Tints.Hairline))
         val reconnecting = row.summary.status == "reconnecting"
         SheetAction(Icons.Filled.Refresh, "重载扩展", enabled = !busy && !reconnecting) { onDismiss(); onReload() }
         SheetAction(Icons.Filled.PlayArrow, "重启 Pi 进程", enabled = !busy && !reconnecting) { onDismiss(); onRestart() }
-        HorizontalDivider(Modifier.padding(vertical = Spacing.xs), color = scheme.outline.copy(alpha = 0.2f))
+        HorizontalDivider(Modifier.padding(vertical = Spacing.xs), color = scheme.outline.copy(alpha = Tints.Hairline))
         SheetAction(Icons.Filled.Edit, "改名 / 装扮", enabled = !busy) { onDismiss(); onRename() }
         SheetAction(Icons.AutoMirrored.Filled.List, "移动到分组", enabled = groupEnabled && !busy) { onDismiss(); onGroup() }
         if (sortingMode) {
@@ -805,7 +806,7 @@ private fun SessionActionsSheet(
                 enabled = !busy,
             ) { onDismiss(); onPin() }
         }
-        HorizontalDivider(Modifier.padding(vertical = Spacing.xs), color = scheme.outline.copy(alpha = 0.2f))
+        HorizontalDivider(Modifier.padding(vertical = Spacing.xs), color = scheme.outline.copy(alpha = Tints.Hairline))
         SheetAction(
             Icons.Filled.Close,
             "关闭会话",

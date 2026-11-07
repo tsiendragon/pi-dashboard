@@ -49,6 +49,7 @@ import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.common.Collapsible
 import com.sam.pidash.ui.common.ExpandHint
 import com.sam.pidash.ui.theme.Hairline
+import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Spacing
 
@@ -122,7 +123,7 @@ internal fun ActivityDetailDialog(
                     }
                     ActivityStatusPill(status, Modifier.padding(start = Spacing.sm))
                 }
-                HorizontalDivider(thickness = Hairline, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = Hairline, color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
                 LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentPadding = PaddingValues(start = Spacing.md, end = Spacing.md, top = Spacing.xs, bottom = endClearance),
@@ -181,8 +182,8 @@ private fun DetailTraceBlock(
 
     Column(
         Modifier.fillMaxWidth()
-            .background(scheme.surfaceVariant.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
-            .border(1.dp, scheme.outline.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
+            .background(scheme.surfaceVariant.copy(alpha = Tints.Block), RoundedCornerShape(8.dp))
+            .border(1.dp, scheme.outline.copy(alpha = Tints.Border), RoundedCornerShape(8.dp)),
     ) {
         Row(
             Modifier.fillMaxWidth()
@@ -220,7 +221,7 @@ private fun DetailTraceBlock(
         }
         Collapsible(visible = expanded) {
             Column(Modifier.fillMaxWidth()) {
-                HorizontalDivider(color = scheme.outline.copy(alpha = 0.2f))
+                HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
                 Column(
                     Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(Spacing.xs),

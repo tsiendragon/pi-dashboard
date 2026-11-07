@@ -34,6 +34,7 @@ import com.sam.pidash.domain.model.LiveSummary
 import com.sam.pidash.domain.model.LiveUiRequest
 import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -206,7 +207,7 @@ internal fun LiveMetadataDialog(
                                 modifier = Modifier.weight(1f).height(40.dp),
                                 shape = RoundedCornerShape(8.dp),
                                 color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                                border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = Tints.Border)),
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(symbol.ifEmpty { "∅" }, style = PiType.body)
@@ -323,7 +324,7 @@ internal fun LiveModelDialog(
                             Row(
                                 Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.09f) else Color.Transparent)
+                                    .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = Tints.Tint) else Color.Transparent)
                                     .selectable(selected = selected, enabled = !busy, role = Role.RadioButton) { level = item.id }
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -332,7 +333,7 @@ internal fun LiveModelDialog(
                                 Row(Modifier.width(24.dp).height(18.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                                     for (bar in 1..5) Box(
                                         Modifier.width(3.dp).height((3 + bar * 3).dp)
-                                            .background(if (bar <= item.bars) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(2.dp)),
+                                            .background(if (bar <= item.bars) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline), RoundedCornerShape(2.dp)),
                                     )
                                 }
                                 Text(item.title, modifier = Modifier.weight(1f), style = PiType.subhead.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal), color = MaterialTheme.colorScheme.onSurface)
@@ -374,8 +375,8 @@ internal fun LiveModelDialog(
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = Tints.Block),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = Tints.Border)),
                         ) {
                             Column(Modifier.fillMaxWidth()) {
                                 Row(
@@ -399,14 +400,14 @@ internal fun LiveModelDialog(
                                     }
                                 }
                                 models.forEachIndexed { idx, option ->
-                                    if (idx > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                                    if (idx > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
                                     val selected = option.provider == summary?.model?.provider && option.id == summary.model.id
                                     val nonOffLevels = option.thinkingLevels.filter { it != "off" }
                                     val ctxLabel = formatContextTokens(option.contextWindow)
                                     Row(
                                         Modifier.fillMaxWidth()
                                             .clickable(enabled = !busy) { onModel(option) }
-                                            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f) else Color.Transparent)
+                                            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = Tints.Block) else Color.Transparent)
                                             .padding(horizontal = 12.dp, vertical = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -422,7 +423,7 @@ internal fun LiveModelDialog(
                                                 )
                                                 if (selected) {
                                                     Surface(
-                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = Tints.TintSoft),
                                                         shape = RoundedCornerShape(4.dp),
                                                     ) {
                                                         Text(
@@ -446,7 +447,7 @@ internal fun LiveModelDialog(
                                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                                                     if (nonOffLevels.isNotEmpty() || option.reasoning) {
                                                         Surface(
-                                                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f),
+                                                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = Tints.Block),
                                                             shape = RoundedCornerShape(4.dp),
                                                         ) {
                                                             Text(
@@ -461,7 +462,7 @@ internal fun LiveModelDialog(
                                                         Surface(
                                                             color = MaterialTheme.colorScheme.surface,
                                                             shape = RoundedCornerShape(4.dp),
-                                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline)),
                                                         ) {
                                                             Text(
                                                                 "📦 $ctxLabel 上下文",
@@ -485,7 +486,7 @@ internal fun LiveModelDialog(
                     }
                 }
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm),
                 horizontalArrangement = Arrangement.End,

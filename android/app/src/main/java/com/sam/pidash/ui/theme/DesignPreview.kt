@@ -83,7 +83,7 @@ private fun ColourRolesPreview() {
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp), color = scheme.outline)
                 Text("代码高亮", style = PiType.caption, color = scheme.onSurfaceVariant)
-                Row(Modifier.fillMaxWidth().background(scheme.surfaceVariant.copy(alpha = 0.5f), Radii.chip).padding(8.dp)) {
+                Row(Modifier.fillMaxWidth().background(scheme.surfaceVariant.copy(alpha = Tints.Block), Radii.chip).padding(8.dp)) {
                     val palette = CodeColors.of(false)
                     listOf("kw" to palette.keyword, "str" to palette.string, "num" to palette.number,
                         "type" to palette.type, "fn" to palette.function, "cmt" to palette.comment).forEach { (label, color) ->

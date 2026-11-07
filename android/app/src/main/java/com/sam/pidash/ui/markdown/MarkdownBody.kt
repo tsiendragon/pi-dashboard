@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import com.sam.pidash.ui.theme.Hairline
+import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.CodeColors
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
@@ -104,7 +105,7 @@ private fun Block(block: MdBlock, style: TextStyle, onOpenPath: (String) -> Unit
         is MdBlock.Quote -> Row(Modifier.fillMaxWidth()) {
             Box(
                 Modifier.widthIn(min = 2.dp).height(IntrinsicSize.Min)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = Tints.Border)),
             )
             Column(
                 Modifier.padding(start = 8.dp),
@@ -144,13 +145,13 @@ private fun CodeBlock(block: MdBlock.Code) {
             Text(
                 (block.language ?: "code").lowercase(),
                 style = PiType.action.copy(fontFamily = FontFamily.Monospace),
-                color = scheme.onSurfaceVariant.copy(alpha = 0.75f),
+                color = scheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 "复制",
                 style = PiType.action,
-                color = scheme.onSurfaceVariant.copy(alpha = 0.75f),
+                color = scheme.onSurfaceVariant,
                 modifier = Modifier
                     .clip(Radii.chip)
                     .clickable { clipboard.setText(AnnotatedString(block.code)) }
@@ -186,7 +187,7 @@ private fun TableBlock(block: MdBlock.Table, style: TextStyle, onOpenPath: (Stri
                 }
             }
         }
-        HorizontalDivider(thickness = Hairline, color = scheme.outline.copy(alpha = 0.6f))
+        HorizontalDivider(thickness = Hairline, color = scheme.outline.copy(alpha = Tints.Separator))
         block.rows.forEach { row ->
             Row {
                 row.forEach { cell ->

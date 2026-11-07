@@ -71,10 +71,16 @@ class LiveNotifier(private val context: Context) {
             // "completed" instead of stacking two rows for the same conversation.
             .setSortKey(alert.sessionKey)
             .build()
-        manager.notify(alert.sessionKey.hashCode().let { if (it == Int.MIN_VALUE) 0 else it }, notification)
+        manager.notify(idFor(alert.sessionKey), notification)
     }
 
+    /** Opening a conversation clears its pending alert — the user has seen it. */
+    fun cancel(sessionKey: String) = manager.cancel(idFor(sessionKey))
+
     private companion object {
+        fun idFor(sessionKey: String): Int =
+            sessionKey.hashCode().let { if (it == Int.MIN_VALUE) 0 else it }
+
         const val CHANNEL = "live_alerts"
         const val GROUP = "live_alerts"
     }

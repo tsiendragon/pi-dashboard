@@ -46,6 +46,23 @@ object PiPalette {
     val DarkError = Color(0xFFFF453A)
 }
 
+/**
+ * The only opacities the UI may apply to a theme colour.
+ *
+ * Before this existed the code had twenty different alphas — 0.06, 0.09, 0.10, 0.14, 0.16,
+ * 0.18 … — which nobody can name and the eye reads as inconsistent. Five steps are enough:
+ * a wash, a stronger wash, a filled block, a border and a hairline. Text never multiplies
+ * the label colour; `onSurfaceVariant` already carries its opacity.
+ */
+object Tints {
+    const val Tint = 0.10f
+    const val TintSoft = 0.16f
+    const val Block = 0.45f
+    const val Border = 0.35f
+    const val Hairline = 0.20f
+    const val Separator = 0.60f
+}
+
 /** 4 dp grid; margins and section gaps follow iOS rhythm (16 / 24 / 32). */
 object Spacing {
     val xxs = 2.dp

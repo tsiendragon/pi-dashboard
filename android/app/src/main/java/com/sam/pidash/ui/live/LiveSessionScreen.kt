@@ -52,6 +52,7 @@ import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.ProseMaxWidth
 import com.sam.pidash.ui.theme.Motion
 import com.sam.pidash.ui.theme.Spacing
@@ -64,6 +65,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.sam.pidash.PiDashApp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -171,9 +173,13 @@ fun LiveSessionScreen(
     var busy by remember(sessionKey) { mutableStateOf(false) }
     var notice by remember(sessionKey) { mutableStateOf<String?>(null) }
     val haptics = LocalHapticFeedback.current
-    val snackbarHostState = remember { SnackbarHostState() }
-    var pulling by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val notifier = remember { (context.applicationContext as PiDashApp).notifier }
+    val snackbarHostState = remember { SnackbarHostState() }
+    // Arriving in the conversation — from the list or from a notification — means the alert
+    // about it has served its purpose.
+    LaunchedEffect(sessionKey) { notifier.cancel(sessionKey.slotKey) }
+    var pulling by remember { mutableStateOf(false) }
     // Same limits as the WebUI; reading/compressing happens off the picker callback's
     // critical path only because these are local files, and failures keep the draft.
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
@@ -469,7 +475,7 @@ fun LiveSessionScreen(
                         enabled = !busy && summary?.status != "reconnecting",
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = Tints.Border)),
                     ) {
                         Text(
                             "重载",
@@ -482,7 +488,7 @@ fun LiveSessionScreen(
                         enabled = !busy && !heldElsewhere,
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = Tints.Border)),
                     ) {
                         Text(
                             "重启",
@@ -503,7 +509,7 @@ fun LiveSessionScreen(
                                 Text(
                                     label,
                                     modifier = Modifier.background(
-                                        if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                        if (active) MaterialTheme.colorScheme.primary.copy(alpha = Tints.Tint)
                                         else androidx.compose.ui.graphics.Color.Transparent,
                                         RoundedCornerShape(6.dp),
                                     ).padding(horizontal = 8.dp, vertical = 4.dp),
@@ -591,7 +597,7 @@ fun LiveSessionScreen(
                     }
                 }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
             }
         },
         bottomBar = {
@@ -707,7 +713,7 @@ fun LiveSessionScreen(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = Tints.Border)),
                     ) {
                         Row(
                             Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -732,7 +738,7 @@ fun LiveSessionScreen(
                         enabled = !busy,
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = Tints.Border)),
                     ) {
                         Row(
                             Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -757,7 +763,7 @@ fun LiveSessionScreen(
                             enabled = !busy,
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = Tints.Border)),
                         ) {
                             Row(
                                 Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -918,7 +924,7 @@ fun LiveSessionScreen(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.Send, "发送", modifier = Modifier.size(18.dp),
-                                tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -1014,11 +1020,11 @@ fun LiveSessionScreen(
                             if (detail == null) Text(
                                 "首次打开需要拉取完整记录，稍等片刻。",
                                 style = PiType.caption,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             ) else Text(
                                 "在下方输入框发一条消息即可开始。",
                                 style = PiType.caption,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -1381,7 +1387,7 @@ fun LiveSessionScreen(
                 onClick = onClick,
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = Tints.Border)),
                 shadowElevation = 2.dp,
             ) {
                 Row(

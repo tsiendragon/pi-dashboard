@@ -60,6 +60,7 @@ import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
 import kotlinx.serialization.json.Json
@@ -136,7 +137,7 @@ internal fun NativeStepCard(
             Text(
                 name,
                 style = PiType.monoMicro,
-                color = if (item.isError || item.status == "error") scheme.error else scheme.onSurface.copy(alpha = 0.9f),
+                color = if (item.isError || item.status == "error") scheme.error else scheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = if (showArguments) Modifier.widthIn(max = 96.dp) else Modifier,
@@ -146,7 +147,7 @@ internal fun NativeStepCard(
                 Text(
                     detail,
                     style = PiType.monoMicro,
-                    color = scheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    color = scheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -170,7 +171,7 @@ internal fun NativeStepCard(
             if (expandable) Icon(
                 imageVector = if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                 contentDescription = if (open) "收起输出" else "展开输出",
-                tint = scheme.onSurfaceVariant.copy(alpha = 0.7f),
+                tint = scheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = Spacing.xs).size(16.dp),
             )
         }
@@ -179,7 +180,7 @@ internal fun NativeStepCard(
                 Column(
                     Modifier.fillMaxWidth()
                         .padding(top = Spacing.xs, bottom = Spacing.sm)
-                        .background(scheme.surfaceVariant.copy(alpha = 0.5f), Radii.chip)
+                        .background(scheme.surfaceVariant.copy(alpha = Tints.Block), Radii.chip)
                         .heightIn(max = 320.dp)
                         .verticalScroll(rememberScrollState())
                         .padding(Spacing.sm),
@@ -292,10 +293,10 @@ internal fun NativeMessageCard(
                 if (long) MetaAction(
                     if (expanded) "收起" else "展开全部（${preview.lineCount} 行）",
                     { expanded = !expanded },
-                    tint = scheme.onPrimary.copy(alpha = 0.8f),
+                    tint = scheme.onPrimary,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    val tint = scheme.onPrimary.copy(alpha = 0.8f)
+                    val tint = scheme.onPrimary
                     if (onQuote != null && item.text.isNotBlank()) MetaAction("引用", { onQuote(item) }, enabled, tint)
                     if (onAnnotate != null && item.text.isNotBlank()) MetaAction("批注", { onAnnotate(item) }, enabled, tint)
                     if (item.forkable && !item.entryId.isNullOrBlank() && onFork != null) {
@@ -396,7 +397,7 @@ internal fun NativeMessageCard(
                 Text(
                     it,
                     style = PiType.monoMicro,
-                    color = scheme.onSurfaceVariant.copy(alpha = 0.9f),
+                    color = scheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = Spacing.sm),
                 )
             }
@@ -410,7 +411,7 @@ private fun AttachmentImage(data: String, index: Int) {
     var open by remember(data) { mutableStateOf(false) }
     Box(
         Modifier.size(160.dp).clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = Tints.Block))
             .clickable(enabled = bitmap != null) { open = true },
     ) {
         if (bitmap != null) Image(
@@ -444,7 +445,7 @@ internal fun NativeStepGroup(
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().clip(Radii.chip)
-                .background(scheme.surfaceVariant.copy(alpha = 0.6f))
+                .background(scheme.surfaceVariant.copy(alpha = Tints.Block))
                 .clickable { open = !open }.heightIn(min = 48.dp)
                 .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
@@ -459,7 +460,7 @@ internal fun NativeStepGroup(
             Text(
                 "${group.items.size} 个步骤",
                 style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold),
-                color = scheme.onSurface.copy(alpha = 0.9f),
+                color = scheme.onSurface,
             )
             Spacer(Modifier.size(Spacing.sm))
             Text(state.first, style = PiType.micro, color = state.second)
@@ -468,7 +469,7 @@ internal fun NativeStepGroup(
                 Text(
                     group.names.joinToString(" · "),
                     style = PiType.monoMicro,
-                    color = scheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    color = scheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -487,7 +488,7 @@ internal fun NativeStepGroup(
 /** A faint rule between logical blocks keeps long transcripts scannable. */
 @Composable
 internal fun TranscriptSeparator() {
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
 }
 
 @Composable

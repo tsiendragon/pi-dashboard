@@ -23,6 +23,7 @@ import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.common.backendOriginLabel
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
 import kotlinx.coroutines.launch
 
@@ -91,7 +92,7 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
                         Text(
                             backendOriginLabel(backend.baseUrl),
                             style = PiType.monoMicro,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )

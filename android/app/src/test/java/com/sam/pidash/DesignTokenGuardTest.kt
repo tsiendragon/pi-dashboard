@@ -44,6 +44,18 @@ class DesignTokenGuardTest {
     }
 
     @Test
+    fun `theme colours are only dimmed through the tint scale`() {
+        val literal = Regex(
+            """(?:MaterialTheme\.colorScheme|scheme)\.(?:outline|outlineVariant|surfaceVariant|primary|secondaryContainer|tertiaryContainer)\.copy\(alpha = (?!Tints\.)[\w.]+\)""",
+        )
+        val offenders = kotlinFiles().filter { literal.containsMatchIn(it.readText()) }
+        assertTrue(
+            "Use Tints.* instead of a literal alpha: ${offenders.map { it.name }}",
+            offenders.isEmpty(),
+        )
+    }
+
+    @Test
     fun `glyphs are not used as icons`() {
         val banned = listOf('⌃', '⌄', '▾', '▴', '›')
         val offenders = kotlinFiles().filter { file ->

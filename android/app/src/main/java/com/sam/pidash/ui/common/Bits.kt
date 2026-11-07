@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.ui.theme.Hairline
+import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Motion
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
@@ -114,7 +115,7 @@ fun InsetSeparator(modifier: Modifier = Modifier, inset: Dp = Spacing.lg) {
             .fillMaxWidth()
             .padding(start = inset)
             .height(Hairline)
-            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+            .background(MaterialTheme.colorScheme.outline.copy(alpha = Tints.Separator)),
     )
 }
 

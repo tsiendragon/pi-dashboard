@@ -55,6 +55,7 @@ import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
 
@@ -114,7 +115,7 @@ internal fun NativeActivityCard(
         color = scheme.surface,
         border = BorderStroke(
             width = if (status.running) 1.5.dp else 1.dp,
-            color = accent?.copy(alpha = 0.55f) ?: scheme.outline.copy(alpha = 0.35f),
+            color = accent?.copy(alpha = 0.55f) ?: scheme.outline.copy(alpha = Tints.Border),
         ),
         tonalElevation = 1.dp,
     ) {
@@ -122,7 +123,7 @@ internal fun NativeActivityCard(
             // ── 1. Activity Header (User Request) ──
             Column(
                 Modifier.fillMaxWidth()
-                    .background(scheme.secondaryContainer.copy(alpha = 0.45f))
+                    .background(scheme.secondaryContainer.copy(alpha = Tints.Block))
                     .clickable { promptExpanded = !promptExpanded }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -133,7 +134,7 @@ internal fun NativeActivityCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Surface(
-                        color = scheme.primary.copy(alpha = 0.14f),
+                        color = scheme.primary.copy(alpha = Tints.TintSoft),
                         shape = RoundedCornerShape(99.dp),
                     ) {
                         Text(
@@ -167,7 +168,7 @@ internal fun NativeActivityCard(
                 }
             }
 
-            HorizontalDivider(color = scheme.outline.copy(alpha = 0.2f))
+            HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
 
             // ── 2. Activity Body ──
             Column(
@@ -178,8 +179,8 @@ internal fun NativeActivityCard(
                 if (progressNotes.isNotEmpty()) {
                     Column(
                         Modifier.fillMaxWidth()
-                            .background(scheme.surfaceVariant.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
-                            .border(1.dp, scheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .background(scheme.surfaceVariant.copy(alpha = Tints.Block), RoundedCornerShape(8.dp))
+                            .border(1.dp, scheme.outline.copy(alpha = Tints.Hairline), RoundedCornerShape(8.dp))
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
@@ -211,8 +212,8 @@ internal fun NativeActivityCard(
                     }
                     Column(
                         Modifier.fillMaxWidth()
-                            .background(scheme.surfaceVariant.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
-                            .border(1.dp, scheme.outline.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
+                            .background(scheme.surfaceVariant.copy(alpha = Tints.Block), RoundedCornerShape(8.dp))
+                            .border(1.dp, scheme.outline.copy(alpha = Tints.Border), RoundedCornerShape(8.dp)),
                     ) {
                         Row(
                             Modifier.fillMaxWidth()
@@ -243,7 +244,7 @@ internal fun NativeActivityCard(
                         }
                         Collapsible(visible = stepsExpanded) {
                             Column(Modifier.fillMaxWidth()) {
-                                HorizontalDivider(color = scheme.outline.copy(alpha = 0.2f))
+                                HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
                                 Column(
                                     Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
                                     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -261,8 +262,8 @@ internal fun NativeActivityCard(
                 if (thinkingText.isNotBlank()) {
                     Column(
                         Modifier.fillMaxWidth()
-                            .background(scheme.primary.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
-                            .border(1.dp, scheme.primary.copy(alpha = 0.25f), RoundedCornerShape(8.dp)),
+                            .background(scheme.primary.copy(alpha = Tints.Tint), RoundedCornerShape(8.dp))
+                            .border(1.dp, scheme.primary.copy(alpha = Tints.TintSoft), RoundedCornerShape(8.dp)),
                     ) {
                         Row(
                             Modifier.fillMaxWidth()
@@ -280,7 +281,7 @@ internal fun NativeActivityCard(
                         }
                         Collapsible(visible = thinkingExpanded) {
                             Column(Modifier.fillMaxWidth()) {
-                                HorizontalDivider(color = scheme.primary.copy(alpha = 0.18f))
+                                HorizontalDivider(color = scheme.primary.copy(alpha = Tints.TintSoft))
                                 SelectionContainer {
                                     Text(
                                         thinkingText,
@@ -300,7 +301,7 @@ internal fun NativeActivityCard(
                     val summaryText = followUpSummary(followUp.text)
                     Column(
                         Modifier.fillMaxWidth()
-                            .background(scheme.tertiaryContainer.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                            .background(scheme.tertiaryContainer.copy(alpha = Tints.Block), RoundedCornerShape(8.dp))
                             .padding(horizontal = 10.dp, vertical = 7.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
@@ -341,12 +342,12 @@ internal fun NativeActivityCard(
                 }
             }
 
-            HorizontalDivider(color = scheme.outline.copy(alpha = 0.2f))
+            HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
 
             // ── 3. Activity Footer ──
             Row(
                 Modifier.fillMaxWidth()
-                    .background(scheme.surfaceVariant.copy(alpha = 0.35f))
+                    .background(scheme.surfaceVariant.copy(alpha = Tints.Block))
                     .clickable(onClick = onOpen)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -380,7 +381,7 @@ internal fun ActivityStatusPill(status: ActivityStatus, modifier: Modifier = Mod
         modifier = modifier,
         color = when {
             status.failed -> scheme.errorContainer
-            status.running -> scheme.primary.copy(alpha = 0.14f)
+            status.running -> scheme.primary.copy(alpha = Tints.TintSoft)
             else -> scheme.secondaryContainer
         },
         shape = RoundedCornerShape(99.dp),
