@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.AggregatedLiveSession
@@ -651,7 +652,10 @@ private fun SessionRow(
 
     Row(
         Modifier.fillMaxWidth()
+            .semantics(mergeDescendants = true) {}
             .combinedClickable(
+                onClickLabel = "打开会话",
+                onLongClickLabel = "会话操作",
                 onClick = { onOpen(row.key) },
                 onLongClick = {
                     if (!subagent) {
@@ -718,7 +722,7 @@ private fun SessionRow(
             RowIconButton(icon = Icons.Filled.KeyboardArrowDown, label = "下移", enabled = canMoveDown && !busy, onClick = onMoveDown)
         }
         if (!subagent) {
-            IconButton(onClick = { actions = true }, modifier = Modifier.size(32.dp)) {
+            IconButton(onClick = { actions = true }, modifier = Modifier.size(48.dp)) {
                 Icon(
                     Icons.Filled.MoreVert,
                     contentDescription = "会话操作",
@@ -849,7 +853,7 @@ private fun RowIconButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(32.dp)) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(44.dp)) {
         Icon(
             icon,
             contentDescription = label,
