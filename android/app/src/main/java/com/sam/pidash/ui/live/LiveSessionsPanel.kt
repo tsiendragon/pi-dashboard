@@ -20,7 +20,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.List
@@ -76,6 +75,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingUndo by remember { mutableStateOf<(() -> Unit)?>(null) }
     var refreshing by remember { mutableStateOf(false) }
+    var connectionInfo by remember { mutableStateOf(false) }
     var signingIn by remember { mutableStateOf<Backend?>(null) }
     var signingOut by remember { mutableStateOf<Backend?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -142,40 +142,24 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     ) {
         items(backends, key = { "backend:${it.id}" }) { backend ->
             val state = states[backend.id]
-            ListItem(headlineContent = { Text(liveConnectionLabel(state)) }, supportingContent = {
-                Column {
-                    Text("打开只读，不会抢占现有会话。", style = PiType.subhead)
-                    state?.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                }
-            }, trailingContent = { TextButton(onClick = {
-                if (state?.needsToken != false) signingIn = backend else signingOut = backend
-            }) { Text(if (state?.needsToken != false) "登录" else "断开") } })
+            LiveConnectionStrip(
+                label = liveConnectionLabel(state), connected = state?.connected == true,
+                needsToken = state?.needsToken != false, error = state?.message,
+                onInfo = { connectionInfo = true },
+                onAuthAction = { if (state?.needsToken != false) signingIn = backend else signingOut = backend },
+            )
         }
         item {
             Column(Modifier.padding(horizontal = 12.dp)) {
-                OutlinedTextField(
-                    query, { query = it }, Modifier.fillMaxWidth(),
-                    placeholder = { Text("搜索标题、路径、模型、#标签") },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, Modifier.size(18.dp)) },
-                    trailingIcon = if (query.isNotEmpty()) {{
-                        IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Filled.Close, contentDescription = "清除搜索", Modifier.size(18.dp))
-                        }
-                    } } else null,
-                    singleLine = true,
-                    enabled = !sorting,
+                SessionListControls(
+                    query = query, onQueryChange = { query = it },
+                    runningOnly = runningOnly, onRunningChange = { runningOnly = !runningOnly },
+                    children = children, onChildrenChange = { children = !children },
+                    sorting = sorting, onSortingChange = { sorting = !sorting; notice = null },
+                    canGroup = org.loaded && !sorting,
+                    canSort = org.loaded && !sortBusy && (sorting || (query.isBlank() && !runningOnly)),
+                    onGroups = { groupError = null; managing = true },
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(runningOnly, { runningOnly = !runningOnly }, enabled = !sorting, label = { Text("工作中") })
-                    FilterChip(children, { children = !children }, enabled = !sorting, label = { Text("子 Agent") })
-                    TextButton(enabled = org.loaded && !sorting, onClick = { groupError = null; managing = true }) { Text("分组") }
-                    FilterChip(
-                        selected = sorting,
-                        enabled = org.loaded && !sortBusy && (sorting || (query.isBlank() && !runningOnly)),
-                        onClick = { sorting = !sorting; notice = null },
-                        label = { Text(if (sorting) "完成排序" else "排序模式") },
-                    )
-                }
                 if (!sorting && (query.isNotBlank() || runningOnly)) Text("清除搜索和筛选后可调整顺序。", style = PiType.subhead)
                 if (sorting) Text("仅调整同一分组内的顺序；与网页共享。", style = PiType.subhead)
                 org.error?.let { Text("分组/排序未刷新：$it", color = MaterialTheme.colorScheme.error, style = PiType.subhead) }
@@ -433,6 +417,14 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
             dismissButton = {
                 TextButton(enabled = !busy, onClick = { restartingRow = null }) { Text("取消") }
             },
+        )
+    }
+    if (connectionInfo) {
+        AlertDialog(
+            onDismissRequest = { connectionInfo = false },
+            title = { Text("连接与只读说明") },
+            text = { Text("打开会话只读，不会抢占现有会话。需要控制或执行操作时，仍按原有流程获取控制权及授权。") },
+            confirmButton = { TextButton(onClick = { connectionInfo = false }) { Text("知道了") } },
         )
     }
     signingIn?.let { backend ->

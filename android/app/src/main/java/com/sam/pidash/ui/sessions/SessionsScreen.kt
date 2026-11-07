@@ -16,22 +16,14 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -56,10 +48,12 @@ import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.ui.common.InsetSeparator
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.common.relativeTime
-import com.sam.pidash.ui.common.AppVersionLabel
+import com.sam.pidash.ui.common.CompactHeaderAction
+import com.sam.pidash.ui.common.CompactPageHeader
+import com.sam.pidash.ui.common.PrimaryCreateAction
+import com.sam.pidash.ui.live.SessionModeTabs
 import com.sam.pidash.ui.live.LiveSessionsPanel
 import com.sam.pidash.ui.live.NewLiveSessionDialog
-import com.sam.pidash.ui.theme.Hairline
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
@@ -93,67 +87,27 @@ fun SessionsScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                    ) {
-                        Text(
-                            backends.firstOrNull()?.name ?: "机器 Dashboard",
-                            style = PiType.pageTitle,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        AppVersionLabel()
-                    }
-                },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回机器列表") } },
+            CompactPageHeader(
+                title = backends.firstOrNull()?.name ?: "机器 Dashboard",
+                navigationIcon = { CompactHeaderAction(Icons.AutoMirrored.Filled.ArrowBack, "返回机器列表", onBack) },
                 actions = {
-                    IconButton(onClick = {
+                    CompactHeaderAction(Icons.Filled.Refresh, "刷新") {
                         scope.launch {
                             if (liveTab) repo.live.refreshMachine(backendId) else repo.refreshAll()
                         }
-                    }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "刷新")
                     }
-                    TextButton(enabled = backends.isNotEmpty(), onClick = { showNew = true }) {
-                        Text("新建会话", style = PiType.footnote)
-                    }
-                    IconButton(onClick = onOpenBackends) {
-                        Icon(Icons.Filled.Settings, contentDescription = "服务器")
-                    }
+                    CompactHeaderAction(Icons.Filled.Settings, "服务器", onOpenBackends)
                 },
             )
         },
         floatingActionButton = {
             if (backends.isNotEmpty()) {
-                FloatingActionButton(onClick = { showNew = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = "新建会话")
-                }
+                PrimaryCreateAction("新建会话", onClick = { showNew = true })
             }
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            TabRow(
-                selectedTabIndex = if (liveTab) 0 else 1,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary,
-                divider = { HorizontalDivider(thickness = Hairline) },
-            ) {
-                Tab(
-                    selected = liveTab,
-                    onClick = { liveTab = true },
-                    text = { Text("Live Pi", style = PiType.footnote) },
-                )
-                Tab(
-                    selected = !liveTab,
-                    onClick = { liveTab = false },
-                    text = { Text("Chat", style = PiType.footnote) },
-                )
-            }
+            SessionModeTabs(liveTab = liveTab, onChange = { liveTab = it })
             if (liveTab) {
                 LiveSessionsPanel(repo = repo, backendId = backendId, onOpen = onOpenLive)
             } else Box(Modifier.fillMaxSize()) {

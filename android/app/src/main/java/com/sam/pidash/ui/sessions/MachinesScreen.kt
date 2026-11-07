@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -16,7 +15,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.ConnectionState
-import com.sam.pidash.ui.common.AppVersionLabel
+import com.sam.pidash.ui.common.CompactHeaderAction
+import com.sam.pidash.ui.common.CompactPageHeader
+import com.sam.pidash.ui.common.PrimaryCreateAction
 import com.sam.pidash.ui.common.GroupedCard
 import com.sam.pidash.ui.common.MetaLine
 import com.sam.pidash.ui.common.MetaText
@@ -36,34 +37,18 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
     val chat by repo.connection.collectAsState()
     val scope = rememberCoroutineScope()
     Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
-        TopAppBar(title = {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-            ) {
-                Text(
-                    "机器 / Dashboard",
-                    style = PiType.pageTitle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                AppVersionLabel()
-            }
-        }, actions = {
-            IconButton(onClick = { scope.launch { repo.live.refreshAll() } }) { Icon(Icons.Default.Refresh, "刷新机器状态") }
-            IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "管理机器") }
+        CompactPageHeader(title = "机器 / Dashboard", actions = {
+            CompactHeaderAction(Icons.Default.Refresh, "刷新机器状态") { scope.launch { repo.live.refreshAll() } }
+            CompactHeaderAction(Icons.Default.Settings, "管理机器", onSettings)
         })
     }, floatingActionButton = {
-        FloatingActionButton(onClick = onSettings) { Icon(Icons.Default.Add, "添加机器") }
+        PrimaryCreateAction("添加机器", onClick = onSettings)
     }) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(start = Spacing.md, end = Spacing.md, top = Spacing.sm, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
-            item { MetaText("先选择机器，再查看它自己的分组、会话与进度。", maxLines = 2) }
             if (backends.isEmpty()) item {
                 MetaText("尚未配置 Dashboard，请点 + 添加现有服务器地址。", maxLines = 2)
             }
