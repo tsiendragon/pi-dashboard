@@ -362,6 +362,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Android 5.11（build 42）在机器列表顶部提供「新建会话」，Live Pi 详情的「会话操作」菜单也可在同机新建。列表和详情均提供带确认的「关闭会话」，通过现有专用 `shutdown` 指令退出进程，不删除记录、不抢占控制权、不自动重试。要求扩展具备 `session_shutdown` 能力，且会话处于非重连的 TUI 模式；旧扩展需用户自行更新并 `/reload`。已有服务器具备这些接口时仅安装新版 App，无需重启 Dashboard。请求超时后应刷新确认实际状态。
 
+新建 Live Pi 时，空工作目录下会直接展示最多 3 个快捷目录；「搜索全部目录」可按项目名或完整路径关键词筛选（忽略大小写，多个关键词同时匹配）。建议来自当前服务器现有的 `/api/live-sessions/repo-candidates` 与 `/api/live-sessions/start-options`，项目优先、同路径去重；换服务器清空目录和搜索状态。没有建议/加载失败时仍可手动输入绝对路径。搜索只过滤已返回的候选，不是全盘目录扫描，选中建议也不代表已获得启动权限：服务端仍校验 `liveSessions.roots`。项目建议来源及 `liveSessions.repoRoots` 配置见 [config.md](config.md)；如果这些接口已可用，仅安装新版 App 即生效，无需重启服务。更改服务器配置时，由用户执行 `./run.sh`（或自己的启动方式）加载，agent 不代为重启。
+
 ### Android GitHub 发布（每个新可安装版本）
 
 下载入口：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)。仓库为公开仓库，APK、校验值和更新说明均可公开下载；访问服务器仍需既有入口授权与 Live 登录令牌。
