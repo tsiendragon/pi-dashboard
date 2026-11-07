@@ -111,7 +111,7 @@ internal fun NativeActivityCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = Radii.card,
         color = scheme.surface,
         border = BorderStroke(
             width = if (status.running) 1.5.dp else 1.dp,

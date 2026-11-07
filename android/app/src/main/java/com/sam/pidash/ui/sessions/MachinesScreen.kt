@@ -35,7 +35,7 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
     val states by repo.live.backendStates.collectAsState()
     val chat by repo.connection.collectAsState()
     val scope = rememberCoroutineScope()
-    Scaffold(containerColor = MaterialTheme.colorScheme.surfaceVariant, topBar = {
+    Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
         TopAppBar(title = {
             Row(
                 Modifier.fillMaxWidth(),
@@ -44,7 +44,7 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
             ) {
                 Text(
                     "机器 / Dashboard",
-                    style = PiType.headline,
+                    style = PiType.pageTitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
@@ -60,7 +60,7 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
     }) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(start = Spacing.lg, end = Spacing.lg, top = Spacing.sm, bottom = 96.dp),
+            contentPadding = PaddingValues(start = Spacing.md, end = Spacing.md, top = Spacing.sm, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
             item { MetaText("先选择机器，再查看它自己的分组、会话与进度。", maxLines = 2) }
@@ -76,13 +76,13 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
                 val live = state?.connected == true
                 GroupedCard(Modifier.clickable { onOpen(backend.id) }) {
                     Column(
-                        Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.md),
                         verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                             Text(
                                 backend.name,
-                                style = PiType.headline,
+                                style = PiType.rowTitle,
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,

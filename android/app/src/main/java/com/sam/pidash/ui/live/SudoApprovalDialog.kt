@@ -95,7 +95,7 @@ internal fun SudoApprovalContent(
                         }
                     }
                     Column(Modifier.weight(1f)) {
-                        Text("管理员授权", style = PiType.headline)
+                        Text("管理员授权", style = PiType.pageTitle)
                         Text("以 root 运行 · 仅这一次", style = PiType.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(if (remaining > 0) "${remaining / 60}:${(remaining % 60).toString().padStart(2, '0')}" else "已过期",

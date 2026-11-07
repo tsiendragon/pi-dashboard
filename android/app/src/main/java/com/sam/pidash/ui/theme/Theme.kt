@@ -82,25 +82,32 @@ private val DarkColors = darkColorScheme(
     onErrorContainer = PiPalette.DarkError,
 )
 
-/** One radius family: 8 chips, 10 grouped cards, 14 sheets, 18 bubbles. */
+/** One radius family: 8 chips, 14 cards/sheets, 18 bubbles. */
 private val PiShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(12.dp),
+    small = Radii.card,
+    medium = Radii.card,
     large = RoundedCornerShape(14.dp),
     extraLarge = RoundedCornerShape(16.dp),
 )
 
-private val PiTypography = Typography(
+/** Cover every slot: dialogs must not silently inherit Material's unrelated 24 sp headline. */
+internal val PiTypography = Typography(
+    displayLarge = PiType.largeTitle,
+    displayMedium = PiType.title,
+    displaySmall = PiType.headline,
+    headlineLarge = PiType.title,
+    headlineMedium = PiType.headline,
+    headlineSmall = PiType.pageTitle,
+    titleLarge = PiType.pageTitle,
+    titleMedium = PiType.pageTitle,
+    titleSmall = PiType.rowTitle,
     bodyLarge = PiType.body,
-    bodyMedium = PiType.callout,
-    bodySmall = PiType.subhead,
+    bodyMedium = PiType.body,
+    bodySmall = PiType.footnote,
     labelLarge = PiType.footnote,
     labelMedium = PiType.footnote,
-    labelSmall = PiType.action,
-    titleLarge = PiType.title,
-    titleMedium = PiType.headline,
-    titleSmall = PiType.callout,
+    labelSmall = PiType.caption,
 )
 
 @Composable

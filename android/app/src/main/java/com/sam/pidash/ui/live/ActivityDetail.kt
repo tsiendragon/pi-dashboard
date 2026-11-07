@@ -97,7 +97,7 @@ internal fun ActivityDetailDialog(
                     Column(Modifier.weight(1f)) {
                         Text(
                             "本轮记录",
-                            style = PiType.callout.copy(fontWeight = FontWeight.SemiBold),
+                            style = PiType.pageTitle,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )

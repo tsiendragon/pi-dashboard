@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,7 +72,7 @@ import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     val backends by repo.backends.collectAsState()
@@ -96,7 +98,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -107,7 +109,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                     ) {
                         Text(
                             "设置",
-                            style = PiType.headline,
+                            style = PiType.pageTitle,
                             maxLines = 1,
                             modifier = Modifier.weight(1f, fill = false),
                         )
@@ -128,7 +130,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
         },
     ) { padding ->
         LazyColumn(
-            Modifier.fillMaxSize().padding(padding).padding(horizontal = Spacing.lg),
+            Modifier.fillMaxSize().padding(padding).padding(horizontal = Spacing.md),
             contentPadding = PaddingValues(top = Spacing.sm, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
@@ -145,7 +147,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                             style = PiType.caption,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                             AppTheme.entries.forEach { option ->
                                 FilterChip(
                                     selected = theme == option,
@@ -161,7 +163,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                             style = PiType.caption,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                             AppFontScale.entries.forEach { option ->
                                 FilterChip(
                                     selected = fontScale == option,
@@ -212,7 +214,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
                             Text(
                                 backend.name,
-                                style = PiType.headline,
+                                style = PiType.rowTitle,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -370,7 +372,7 @@ private fun AddBackendDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("添加服务器", style = PiType.headline) },
+        title = { Text("添加服务器", style = PiType.pageTitle) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 OutlinedTextField(

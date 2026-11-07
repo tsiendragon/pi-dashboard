@@ -285,7 +285,7 @@ internal fun LiveModelDialog(
         Column(Modifier.fillMaxWidth().heightIn(max = 620.dp)) {
             Text(
                 if (thinking) "思考强度" else "选择模型",
-                style = PiType.headline,
+                style = PiType.pageTitle,
                 modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs),
             )
             Column(

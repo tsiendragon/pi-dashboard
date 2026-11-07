@@ -441,7 +441,7 @@ fun LiveSessionScreen(
                                     summary?.title ?: "Live Pi",
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    style = PiType.callout.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                    style = PiType.pageTitle,
                                     modifier = Modifier.weight(1f, fill = false),
                                 )
                                 Icon(

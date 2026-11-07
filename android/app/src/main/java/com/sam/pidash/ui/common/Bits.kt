@@ -119,14 +119,17 @@ fun InsetSeparator(modifier: Modifier = Modifier, inset: Dp = Spacing.lg) {
     )
 }
 
-/** Inset-grouped container: rounded 10 dp card on the grouped background. */
+/** The same quiet border, surface and radius as the main Live activity cards. */
 @Composable
 fun GroupedCard(modifier: Modifier = Modifier, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    androidx.compose.foundation.layout.Column(
-        modifier.fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, Radii.card),
-        content = content,
-    )
+    androidx.compose.material3.Surface(
+        modifier = modifier.fillMaxWidth(), shape = Radii.card,
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = Tints.Border)),
+        tonalElevation = 1.dp,
+    ) {
+        Column(content = content)
+    }
 }
 
 /** Section heading: 12 sp semibold, muted, no rule under it. */

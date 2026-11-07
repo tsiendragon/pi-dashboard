@@ -91,7 +91,7 @@ fun SessionsScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -102,7 +102,7 @@ fun SessionsScreen(
                     ) {
                         Text(
                             backends.firstOrNull()?.name ?: "机器 Dashboard",
-                            style = PiType.headline,
+                            style = PiType.pageTitle,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false),
@@ -178,7 +178,7 @@ fun SessionsScreen(
                     }
 
                     else -> LazyColumn(
-                        Modifier.fillMaxSize().padding(horizontal = Spacing.lg),
+                        Modifier.fillMaxSize().padding(horizontal = Spacing.md),
                         contentPadding = PaddingValues(top = Spacing.sm, bottom = 96.dp),
                     ) {
                         itemsIndexed(
@@ -304,7 +304,7 @@ private fun NewSessionDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("在哪台机器新建会话？", style = PiType.headline) },
+        title = { Text("在哪台机器新建会话？", style = PiType.pageTitle) },
         text = {
             Column {
                 backends.forEach { backend ->

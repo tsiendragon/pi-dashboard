@@ -78,8 +78,8 @@ object Spacing {
 val Hairline = 0.5.dp
 
 object Radii {
-    /** Inset-grouped card / code block. */
-    val card = RoundedCornerShape(10.dp)
+    /** Same 14 dp card silhouette as the main Live activity feed. */
+    val card = RoundedCornerShape(14.dp)
     /** Sheet and dialog. */
     val sheet = RoundedCornerShape(14.dp)
     /** Message bubble; the sender's tail corner is tightened at the call site. */
@@ -91,16 +91,20 @@ val ProseMaxWidth = 680.dp
 
 /** Shared type scale for readable content and compact application chrome. */
 object PiType {
-    val largeTitle = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
-    val title = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
-    val headline = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.1).sp)
-    val body = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
-    val userMessage = TextStyle(fontSize = 14.sp, lineHeight = 20.sp)
-    val callout = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
-    val subhead = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
-    val footnote = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontFeatureSettings = "tnum")
-    val caption = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFeatureSettings = "tnum")
-    val action = TextStyle(fontSize = 12.sp, lineHeight = 16.sp)
+    private val prose = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Normal, letterSpacing = 0.sp)
+    val largeTitle = prose.copy(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
+    val title = prose.copy(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
+    val headline = prose.copy(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.1).sp)
+    val body = prose.copy(fontSize = 15.sp, lineHeight = 22.sp)
+    val userMessage = prose.copy(fontSize = 14.sp, lineHeight = 20.sp)
+    val callout = body
+    val subhead = body
+    val footnote = prose.copy(fontSize = 13.sp, lineHeight = 18.sp, fontFeatureSettings = "tnum")
+    val caption = prose.copy(fontSize = 12.sp, lineHeight = 16.sp, fontFeatureSettings = "tnum")
+    val action = prose.copy(fontSize = 12.sp, lineHeight = 16.sp)
+    // Page/dialog chrome follows the main Live session header, not Material's 24 sp default.
+    val pageTitle = callout.copy(fontWeight = FontWeight.SemiBold)
+    val rowTitle = callout.copy(fontWeight = FontWeight.Medium)
     val mono = TextStyle(fontSize = 13.sp, lineHeight = 20.sp, fontFamily = FontFamily.Monospace)
     val monoMicro = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontFamily = FontFamily.Monospace)
 
