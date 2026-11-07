@@ -63,11 +63,16 @@ class LiveNotifier(private val context: Context) {
             .setContentIntent(open)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
+            .setGroup(GROUP)
+            // One notification per session: a later "needs input" replaces the earlier
+            // "completed" instead of stacking two rows for the same conversation.
+            .setSortKey(alert.sessionKey)
             .build()
-        manager.notify("${alert.sessionKey}:${alert.kind}".hashCode().let { if (it == Int.MIN_VALUE) 0 else it }, notification)
+        manager.notify(alert.sessionKey.hashCode().let { if (it == Int.MIN_VALUE) 0 else it }, notification)
     }
 
     private companion object {
         const val CHANNEL = "live_alerts"
+        const val GROUP = "live_alerts"
     }
 }

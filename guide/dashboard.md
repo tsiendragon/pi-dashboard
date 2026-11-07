@@ -168,8 +168,9 @@ Cookie 状态文件使用 0600 串行原子写，防止并发旧写恢复已注�
 xml/html、css/markdown；`text`/`log` 等纯文本块保持不着色，未知语言只做通用分词。配色按明暗主题固定，
 超过 20 000 字符或 600 行的块跳过高亮以避免卡顿。这与 highlight.js 不是同一实现，个别语言细节可能不同。
 
-**后台会话提醒**（3.8 起，默认关闭）：在「管理机器」页底部打开「后台会话提醒」，Android 13+ 会同时请求
-`POST_NOTIFICATIONS`。只有两件事会通知：**一轮回复结束**（running → idle）与**Agent 等待你回答**
+**后台会话提醒**（3.8 起，默认关闭）：在「管理机器」页底部打开「后台会话提醒」，Android 13+ 会先弹出说明、
+再请求 `POST_NOTIFICATIONS`；用户拒绝后可点「打开设置」跳到系统通知设置页，App 不会重复弹权限框。
+同一会话只保留一条通知：后到的「待你回答」会替换先前的「回复结束」，并按通知组归并。只有两件事会通知：**一轮回复结束**（running → idle）与**Agent 等待你回答**
 （pending UI 数量增加）。通知正文只有会话名与一句说明，**不含消息正文、命令或路径**——锁屏不是可信面。
 同一会话同一类事件 30 秒内只发一次。
 
@@ -356,6 +357,13 @@ cd android
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+**截图回归（5.20 起）**：`app/src/test/java/com/sam/pidash/ScreenshotTest.kt` 用 Roborazzi + Robolectric 在 JVM
+上渲染三张基线（状态胶囊、展开提示、Markdown 正文），基线图提交在 `app/src/test/screenshots/`。
+改动这些组件后先 `./gradlew :app:recordRoborazziDebug --tests "com.sam.pidash.ScreenshotTest" --rerun-tasks`
+更新基线，再 `./gradlew :app:verifyRoborazziDebug` 核对。该链路只进入 unitTest 配置
+（roborazzi 1.44.0、robolectric 4.14.1、androidx.test.ext:junit 1.2.1），不改变 APK 体积与运行时依赖；
+首次运行需要联网下载 Robolectric 的 android-all jar。
 
 安装可使用下述用户已授权的 GitHub Release，或私有本地传输。公开发布的只是通用 App 产物，不包含设备配置/登录身份，也不开放私有 Dashboard 服务。服务器原有配置可保留，首次 Live 使用需粘贴访问令牌。
 若提示签名不一致，先核对签名来源，不要通过卸载旧 App 绕过，以免丢失本地配置与登录状态。

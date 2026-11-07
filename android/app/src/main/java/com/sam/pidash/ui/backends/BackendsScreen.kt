@@ -1,8 +1,10 @@
 package com.sam.pidash.ui.backends
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
@@ -79,6 +81,10 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     val fontScale by displayPrefs.fontScale.collectAsState()
     var alertsEnabled by remember { mutableStateOf(notifier.prefs.enabled) }
     var alertsNeedsPermission by remember { mutableStateOf(false) }
+    // Android 13+: ask once, after saying why. The system dialog is a one-shot; a user who
+    // says no can still turn it on from system settings, so we link there instead of
+    // re-prompting in a loop.
+    var alertsRationale by remember { mutableStateOf(false) }
     // Android 13+: enabling alerts asks for the runtime permission instead of failing silently.
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         alertsNeedsPermission = !granted
@@ -249,22 +255,53 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                                 ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
                                 PackageManager.PERMISSION_GRANTED
                             ) {
-                                permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                alertsRationale = true
                             } else {
                                 notifier.prefs.enabled = true
                                 alertsEnabled = true
                             }
                         })
                     }
-                    if (alertsNeedsPermission) Text(
-                        "系统未授予通知权限，提醒不会出现；可到系统设置里打开本应用的通知。",
-                        style = PiType.caption,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md),
-                    )
+                    if (alertsNeedsPermission) Row(
+                        Modifier.fillMaxWidth().padding(start = Spacing.lg, end = Spacing.sm, bottom = Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "系统未授予通知权限，提醒不会出现。",
+                            style = PiType.caption,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = {
+                            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            runCatching { context.startActivity(intent) }
+                        }) { Text("打开设置", style = PiType.caption) }
+                    }
                 }
             }
         }
+    }
+
+    if (alertsRationale) {
+        AlertDialog(
+            onDismissRequest = { alertsRationale = false },
+            title = { Text("允许本应用发送通知？") },
+            text = {
+                Text(
+                    "开启后，会话跑完或 Agent 等你回答时会发一条系统通知。通知只包含会话标题与状态，" +
+                        "不含消息正文、命令或路径；仅在 App 仍存活并退到后台时生效。",
+                    style = PiType.footnote,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    alertsRationale = false
+                    permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }) { Text("继续") }
+            },
+            dismissButton = { TextButton(onClick = { alertsRationale = false }) { Text("暂不") } },
+        )
     }
 
     if (showAdd) {

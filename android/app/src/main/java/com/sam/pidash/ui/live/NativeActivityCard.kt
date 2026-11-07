@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.HorizontalDivider
@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.activityReplies
 import com.sam.pidash.data.remote.activityTools
+import com.sam.pidash.domain.model.ActivityPhase
 import com.sam.pidash.domain.model.ActivityStatus
 import com.sam.pidash.domain.model.FollowUpKind
 import com.sam.pidash.domain.model.LiveActivity
@@ -359,7 +360,7 @@ internal fun NativeActivityCard(
                         color = scheme.primary,
                     )
                     Icon(
-                        Icons.Filled.KeyboardArrowRight, contentDescription = null,
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
                         modifier = Modifier.size(16.dp), tint = scheme.primary,
                     )
                 }
@@ -392,6 +393,8 @@ internal fun ActivityStatusPill(status: ActivityStatus, modifier: Modifier = Mod
             when {
                 status.failed -> StatusDot(scheme.error, size = 6.dp)
                 status.running -> PulsingDot(scheme.primary)
+                // Waiting for a human is not "done": a dot, never a check mark.
+                status.phase == ActivityPhase.WAITING -> StatusDot(scheme.onSecondaryContainer, size = 6.dp)
                 else -> Icon(
                     Icons.Filled.Check, contentDescription = null,
                     modifier = Modifier.size(13.dp), tint = scheme.primary,
