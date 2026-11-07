@@ -14,6 +14,7 @@ enum class LiveAlertKind { COMPLETED, NEEDS_INPUT }
 
 data class LiveAlert(
     val kind: LiveAlertKind,
+    val backendId: String,
     val sessionKey: String,
     val title: String,
     val text: String,
@@ -23,6 +24,7 @@ data class LiveAlert(
 const val LIVE_ALERT_MIN_INTERVAL_MS = 30_000L
 
 fun findLiveAlert(
+    backendId: String,
     processInstanceId: String,
     previous: LiveSummary?,
     current: LiveSummary,
@@ -33,6 +35,7 @@ fun findLiveAlert(
     if (currentPendingUi > previousPendingUi) {
         return LiveAlert(
             kind = LiveAlertKind.NEEDS_INPUT,
+            backendId = backendId,
             sessionKey = processInstanceId,
             title = "需要你回答：$title",
             text = "Agent 正在等待你的选择或确认",
@@ -41,6 +44,7 @@ fun findLiveAlert(
     if (previous?.status == "running" && current.status == "idle") {
         return LiveAlert(
             kind = LiveAlertKind.COMPLETED,
+            backendId = backendId,
             sessionKey = processInstanceId,
             title = "已完成：$title",
             text = "这一轮回复结束，可以回来看结果",

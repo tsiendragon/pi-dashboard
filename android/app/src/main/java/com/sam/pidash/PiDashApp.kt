@@ -6,11 +6,13 @@ import com.sam.pidash.data.local.DisplayPrefs
 import com.sam.pidash.data.local.EncryptedLiveCookieStore
 import com.sam.pidash.data.local.EncryptedLiveDetailCache
 import com.sam.pidash.data.repo.PiDashRepository
+import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.notify.LiveAlertWatcher
 import com.sam.pidash.notify.LiveNotifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Holds app-scoped singletons (manual DI — no framework needed). */
 class PiDashApp : Application() {
@@ -23,6 +25,9 @@ class PiDashApp : Application() {
 
     lateinit var notifier: LiveNotifier
         private set
+
+    /** Set from a notification tap; [AppNav] consumes it once the nav host is ready. */
+    val pendingSession = MutableStateFlow<SessionKey?>(null)
     private lateinit var alerts: LiveAlertWatcher
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

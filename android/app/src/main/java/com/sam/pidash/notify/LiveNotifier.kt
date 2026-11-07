@@ -48,11 +48,14 @@ class LiveNotifier(private val context: Context) {
 
     fun post(alert: LiveAlert) {
         if (!canNotify()) return
+        // Tapping lands on the conversation that asked for attention, not the app's front page.
         val open = PendingIntent.getActivity(
             context,
-            0,
+            alert.sessionKey.hashCode(),
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(MainActivity.EXTRA_BACKEND_ID, alert.backendId)
+                putExtra(MainActivity.EXTRA_SLOT_KEY, alert.sessionKey)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

@@ -50,6 +50,7 @@ class LiveAlertWatcher(
         summaries[key.slotKey] = current
         pending[key.slotKey] = detail.pendingUi.size
         val alert = findLiveAlert(
+            backendId = key.backendId,
             processInstanceId = key.slotKey,
             previous = previous,
             current = current,

@@ -52,6 +52,7 @@ import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.ProseMaxWidth
 import com.sam.pidash.ui.theme.Motion
 import com.sam.pidash.ui.theme.Spacing
 import com.sam.pidash.data.remote.FileAttachments
@@ -463,7 +464,7 @@ fun LiveSessionScreen(
                     Surface(
                         onClick = {
                             notice = null
-                            perform("已发送重载扩展指令") { live.reload(sessionKey) }
+                            perform("已重载扩展") { live.reload(sessionKey) }
                         },
                         enabled = !busy && summary?.status != "reconnecting",
                         shape = RoundedCornerShape(8.dp),
@@ -980,10 +981,14 @@ fun LiveSessionScreen(
                 },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             ) {
+                // On a tablet or unfolded phone the transcript stops growing at reading width
+                // instead of stretching a 900 dp line of prose across the screen.
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                val side = if (maxWidth > ProseMaxWidth) (maxWidth - ProseMaxWidth) / 2 else Spacing.md
                 if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.xs),
+                    contentPadding = PaddingValues(horizontal = side, vertical = Spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
                     items(activities, key = { "activity:${it.id}" }) { activity ->
@@ -1020,7 +1025,7 @@ fun LiveSessionScreen(
                 } else LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.xs),
+                    contentPadding = PaddingValues(horizontal = side, vertical = Spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
                     items(rows, key = { it.id }) { row ->
@@ -1056,6 +1061,7 @@ fun LiveSessionScreen(
                         }
                     },
                 )
+                }
             }
             }
         }

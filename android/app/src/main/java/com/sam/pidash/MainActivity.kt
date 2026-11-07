@@ -1,5 +1,6 @@
 package com.sam.pidash
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.ui.nav.AppNav
 import com.sam.pidash.ui.theme.PiDashTheme
 
@@ -34,9 +36,24 @@ class MainActivity : ComponentActivity() {
         super.onPause()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openFrom(intent)
+    }
+
+    private fun openFrom(intent: Intent?) {
+        val backendId = intent?.getStringExtra(EXTRA_BACKEND_ID) ?: return
+        val slotKey = intent.getStringExtra(EXTRA_SLOT_KEY) ?: return
+        (application as PiDashApp).pendingSession.value = SessionKey(backendId, slotKey)
+        // Consume the extras so a rotation or process restore does not re-navigate.
+        intent.removeExtra(EXTRA_BACKEND_ID)
+        intent.removeExtra(EXTRA_SLOT_KEY)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        openFrom(intent)
         val repo = (application as PiDashApp).repository
         val displayPrefs = (application as PiDashApp).displayPrefs
         setContent {
@@ -53,5 +70,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    companion object {
+        const val EXTRA_BACKEND_ID = "com.sam.pidash.extra.BACKEND_ID"
+        const val EXTRA_SLOT_KEY = "com.sam.pidash.extra.SLOT_KEY"
     }
 }

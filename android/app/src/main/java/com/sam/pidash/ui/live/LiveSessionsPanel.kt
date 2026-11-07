@@ -132,7 +132,12 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
         },
         modifier = Modifier.fillMaxSize(),
     ) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val side = if (maxWidth > 720.dp) (maxWidth - 720.dp) / 2 else 0.dp
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = side, end = side, bottom = 96.dp),
+    ) {
         items(backends, key = { "backend:${it.id}" }) { backend ->
             val state = states[backend.id]
             ListItem(headlineContent = { Text(liveConnectionLabel(state)) }, supportingContent = {
@@ -298,8 +303,8 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                                     actionBusyKey = row.key; notice = null
                                     scope.launch {
                                         repo.live.reload(row.key).fold(
-                                            onSuccess = { notice = "已发送重载指令：${row.summary.title}" },
-                                            onFailure = { notice = "重载失败：${it.message}" },
+                                            onSuccess = { notice = "已重载扩展：${row.summary.title}" },
+                                            onFailure = { notice = "重载扩展失败：${it.message}" },
                                         )
                                         actionBusyKey = null
                                     }
@@ -325,6 +330,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
         snackbarHostState,
         Modifier.align(Alignment.BottomCenter).padding(start = Spacing.md, end = Spacing.md, bottom = 84.dp),
     )
+    }
     }
     if (managing) AlertDialog(onDismissRequest = { if (!groupBusy) managing = false }, title = { Text("本机分组") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -390,7 +396,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
         val busy = actionBusyKey == target.key
         AlertDialog(
             onDismissRequest = { if (!busy) restartingRow = null },
-            title = { Text("⚡ 重启 Pi 会话进程？") },
+            title = { Text("重启 Pi 进程？") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("将重启「${target.summary.title}」的 Pi 进程，尝试从原会话恢复。")

@@ -8,6 +8,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import com.sam.pidash.PiDashApp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -40,6 +45,16 @@ object Routes {
 @Composable
 fun AppNav(repo: PiDashRepository) {
     val nav = rememberNavController()
+    val app = LocalContext.current.applicationContext as PiDashApp
+    val pending by app.pendingSession.collectAsState()
+
+    // A notification tap may arrive before or after the first frame; either way the nav host
+    // is ready by the time this effect runs, and the request is cleared after use.
+    LaunchedEffect(pending) {
+        val key = pending ?: return@LaunchedEffect
+        app.pendingSession.value = null
+        nav.navigate(Routes.live(key)) { launchSingleTop = true }
+    }
 
     // Drilling into a session slides in from the right; going back reveals the list from the left.
     // Both are short enough to feel instant and long enough to explain where the content came from.

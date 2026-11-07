@@ -11,22 +11,28 @@ class LiveAlertsTest {
         LiveSummary(processInstanceId = process, sessionId = "s", sessionName = name, cwd = "/w", status = status)
 
     @Test fun finishingARunNotifiesOnce() {
-        val alert = findLiveAlert("p1", summary(status = "running"), summary(status = "idle"), 0, 0, "会话")!!
+        val alert = findLiveAlert("b1", "p1", summary(status = "running"), summary(status = "idle"), 0, 0, "会话")!!
         assertEquals(LiveAlertKind.COMPLETED, alert.kind)
         assertTrue(alert.title.startsWith("已完成"))
-        assertNull(findLiveAlert("p1", summary(status = "idle"), summary(status = "idle"), 0, 0, "会话"))
+        assertNull(findLiveAlert("b1", "p1", summary(status = "idle"), summary(status = "idle"), 0, 0, "会话"))
     }
 
     @Test fun aNewPendingPromptNeedsInput() {
-        val alert = findLiveAlert("p1", summary(status = "running"), summary(status = "running"), 0, 1, "会话")!!
+        val alert = findLiveAlert("b1", "p1", summary(status = "running"), summary(status = "running"), 0, 1, "会话")!!
         assertEquals(LiveAlertKind.NEEDS_INPUT, alert.kind)
         assertTrue(alert.title.startsWith("需要你回答"))
         // An already-answerable prompt that stays pending must not re-notify.
-        assertNull(findLiveAlert("p1", summary(status = "running"), summary(status = "running"), 1, 1, "会话"))
+        assertNull(findLiveAlert("b1", "p1", summary(status = "running"), summary(status = "running"), 1, 1, "会话"))
     }
 
     @Test fun theFirstSightingOfASessionDoesNotNotify() {
-        assertNull(findLiveAlert("p1", null, summary(status = "idle"), 0, 0, "会话"))
+        assertNull(findLiveAlert("b1", "p1", null, summary(status = "idle"), 0, 0, "会话"))
+    }
+
+    @Test fun theAlertKeepsItsBackendForDeepLinks() {
+        val alert = findLiveAlert("b1", "p1", summary(status = "running"), summary(status = "idle"), 0, 0, "会话")!!
+        assertEquals("b1", alert.backendId)
+        assertEquals("p1", alert.sessionKey)
     }
 
     @Test fun titlesAreCappedForTheShade() {
