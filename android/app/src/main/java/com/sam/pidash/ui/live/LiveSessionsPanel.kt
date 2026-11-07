@@ -21,6 +21,11 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
@@ -609,7 +614,7 @@ fun NewLiveSessionDialog(
  * Secondary actions live behind a trailing ⋯ menu (and long press) so a row stays two to
  * three text lines tall; sorting mode swaps the menu for ↑ ↓ arrows.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun SessionRow(
     row: AggregatedLiveSession,
@@ -706,43 +711,128 @@ private fun SessionRow(
             RowIconButton(icon = Icons.Filled.KeyboardArrowDown, label = "下移", enabled = canMoveDown && !busy, onClick = onMoveDown)
         }
         if (!subagent) {
-            Box {
-                IconButton(onClick = { actions = true }, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Filled.MoreVert,
-                        contentDescription = "会话操作",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                DropdownMenu(expanded = actions, onDismissRequest = { actions = false }) {
-                    DropdownMenuItem(text = { Text("重载扩展") },
-                        enabled = !busy && row.summary.status != "reconnecting",
-                        onClick = { actions = false; onReload() })
-                    DropdownMenuItem(text = { Text("重启 Pi 进程…") },
-                        enabled = !busy && row.summary.status != "reconnecting",
-                        onClick = { actions = false; onRestart() })
-                    HorizontalDivider()
-                    DropdownMenuItem(text = { Text("改名 / 装扮") }, enabled = !busy,
-                        onClick = { actions = false; onEditAppearance() })
-                    DropdownMenuItem(text = { Text("移动到分组…") }, enabled = groupEnabled && !busy,
-                        onClick = { actions = false; onGroup() })
-                    if (sortingMode) {
-                        DropdownMenuItem(text = { Text("置顶本组") }, enabled = canMoveUp && !busy,
-                            onClick = { actions = false; onMoveTop() })
-                        DropdownMenuItem(text = { Text(if (row.meta.pinned) "取消置顶" else "置顶") }, enabled = !busy,
-                            onClick = { actions = false; onTogglePin() })
-                    }
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text("关闭会话…", color = MaterialTheme.colorScheme.error) },
-                        enabled = !busy && row.summary.canShutdown,
-                        onClick = { actions = false; onShutdown() },
-                    )
-                }
+            IconButton(onClick = { actions = true }, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Filled.MoreVert,
+                    contentDescription = "会话操作",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
+    }
+
+    if (actions) {
+        ModalBottomSheet(onDismissRequest = { actions = false }) {
+            SessionActionsSheet(
+                row = row,
+                busy = busy,
+                groupEnabled = groupEnabled,
+                sortingMode = sortingMode,
+                canMoveTop = canMoveUp,
+                onDismiss = { actions = false },
+                onReload = onReload,
+                onRestart = onRestart,
+                onRename = onEditAppearance,
+                onGroup = onGroup,
+                onPin = onTogglePin,
+                onMoveTop = onMoveTop,
+                onShutdown = onShutdown,
+            )
+        }
+    }
 }
+
+/**
+ * The row's secondary actions as a bottom sheet: thumb-reachable, 48 dp rows, destructive
+ * action last and in red. A dropdown anchored to a 32 dp icon is fine on desktop, not here.
+ */
+@Composable
+private fun SessionActionsSheet(
+    row: AggregatedLiveSession,
+    busy: Boolean,
+    groupEnabled: Boolean,
+    sortingMode: Boolean,
+    canMoveTop: Boolean,
+    onDismiss: () -> Unit,
+    onReload: () -> Unit,
+    onRestart: () -> Unit,
+    onRename: () -> Unit,
+    onGroup: () -> Unit,
+    onPin: () -> Unit,
+    onMoveTop: () -> Unit,
+    onShutdown: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().padding(bottom = Spacing.lg)) {
+        Column(Modifier.padding(horizontal = Spacing.lg)) {
+            Text(
+                row.summary.title,
+                style = PiType.callout.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                row.summary.cwd,
+                style = PiType.monoMicro,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        HorizontalDivider(Modifier.padding(vertical = Spacing.sm), color = scheme.outline.copy(alpha = 0.3f))
+        val reconnecting = row.summary.status == "reconnecting"
+        SheetAction(Icons.Filled.Refresh, "重载扩展", enabled = !busy && !reconnecting) { onDismiss(); onReload() }
+        SheetAction(Icons.Filled.PlayArrow, "重启 Pi 进程", enabled = !busy && !reconnecting) { onDismiss(); onRestart() }
+        HorizontalDivider(Modifier.padding(vertical = Spacing.xs), color = scheme.outline.copy(alpha = 0.2f))
+        SheetAction(Icons.Filled.Edit, "改名 / 装扮", enabled = !busy) { onDismiss(); onRename() }
+        SheetAction(Icons.AutoMirrored.Filled.List, "移动到分组", enabled = groupEnabled && !busy) { onDismiss(); onGroup() }
+        if (sortingMode) {
+            SheetAction(
+                Icons.Filled.KeyboardArrowUp,
+                "置顶本组",
+                enabled = canMoveTop && !busy,
+            ) { onDismiss(); onMoveTop() }
+            SheetAction(
+                Icons.Filled.Star,
+                if (row.meta.pinned) "取消置顶" else "置顶",
+                enabled = !busy,
+            ) { onDismiss(); onPin() }
+        }
+        HorizontalDivider(Modifier.padding(vertical = Spacing.xs), color = scheme.outline.copy(alpha = 0.2f))
+        SheetAction(
+            Icons.Filled.Close,
+            "关闭会话",
+            enabled = !busy && row.summary.canShutdown,
+            destructive = true,
+        ) { onDismiss(); onShutdown() }
+    }
+}
+
+@Composable
+private fun SheetAction(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val tint = when {
+        !enabled -> scheme.onSurfaceVariant.copy(alpha = 0.4f)
+        destructive -> scheme.error
+        else -> scheme.onSurface
+    }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = Spacing.lg),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = tint)
+        Text(label, style = PiType.callout, color = tint)
+    }
 }
 
 @Composable

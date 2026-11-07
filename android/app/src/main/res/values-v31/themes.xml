@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Android 12+ draws its own launch splash before the first frame. Giving it the app icon
+      and the page colour makes the cold start look intentional instead of a white flash with
+      a mismatched system background. No library: the platform attributes are enough.
+    -->
+    <style name="Theme.PiDash" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/splash_background</item>
+    </style>
+</resources>
