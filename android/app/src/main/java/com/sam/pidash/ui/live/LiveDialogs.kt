@@ -107,7 +107,7 @@ internal fun LiveTextDialog(
     AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text(label) }, enabled = !busy)
-            Text("保存时尝试取得控制权，不会抢占其他端。", style = MaterialTheme.typography.bodySmall)
+            Text("保存时尝试取得控制权，不会抢占其他端。", style = PiType.subhead)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         }
@@ -148,7 +148,7 @@ internal fun LiveMetadataDialog(
                         .border(2.dp, accentColor, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(emoji.ifBlank { "💬" }, style = MaterialTheme.typography.titleLarge)
+                    Text(emoji.ifBlank { "💬" }, style = PiType.title)
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (initialTitle != null) {
@@ -161,12 +161,12 @@ internal fun LiveMetadataDialog(
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
-                        Text("会话预览", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text("会话预览", style = PiType.callout, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
 
-            Text("标记颜色", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("标记颜色", style = PiType.footnote, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SESSION_COLOR_PRESETS.forEach { (hex, label) ->
                     val dotColor = parseHexColor(hex)
@@ -179,7 +179,7 @@ internal fun LiveMetadataDialog(
                             .clickable(enabled = !busy) { color = hex },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (hex.isEmpty()) Text("∅", style = MaterialTheme.typography.labelSmall)
+                        if (hex.isEmpty()) Text("∅", style = PiType.action)
                         else if (selected) Icon(
                             Icons.Filled.Check, contentDescription = null,
                             modifier = Modifier.size(16.dp), tint = Color.White,
@@ -188,7 +188,7 @@ internal fun LiveMetadataDialog(
                 }
             }
 
-            Text("选择表情符号", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("选择表情符号", style = PiType.footnote, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 SESSION_EMOJI_PRESETS.keys.forEach { tab ->
                     FilterChip(selected = category == tab, enabled = !busy, onClick = { category = tab }, label = { Text(tab) })
@@ -209,7 +209,7 @@ internal fun LiveMetadataDialog(
                                 border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text(symbol.ifEmpty { "∅" }, style = MaterialTheme.typography.bodyLarge)
+                                    Text(symbol.ifEmpty { "∅" }, style = PiType.body)
                                 }
                             }
                         }
@@ -299,12 +299,12 @@ internal fun LiveModelDialog(
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
                             "当前模型：${summary?.model?.let { "${it.provider}/${it.id}" } ?: "默认"}",
-                            style = MaterialTheme.typography.labelMedium,
+                            style = PiType.footnote,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
                             "当前思考强度：${summary?.thinkingLevel?.takeIf { it.isNotBlank() } ?: "未知"}",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = PiType.subhead,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -316,7 +316,7 @@ internal fun LiveModelDialog(
                 }
                 operationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 if (thinking) {
-                    if (levels.isEmpty()) Text("当前模型未返回支持的档位，请以实际模型支持情况为准。", style = MaterialTheme.typography.bodySmall)
+                    if (levels.isEmpty()) Text("当前模型未返回支持的档位，请以实际模型支持情况为准。", style = PiType.subhead)
                     Column(Modifier.selectableGroup()) {
                         visibleLevels.forEach { item ->
                             val selected = level.equals(item.id, ignoreCase = true)
@@ -385,7 +385,7 @@ internal fun LiveModelDialog(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text(provider, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Text(provider, style = PiType.footnote, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                     Surface(
                                         color = MaterialTheme.colorScheme.surface,
                                         shape = RoundedCornerShape(99.dp),
@@ -393,7 +393,7 @@ internal fun LiveModelDialog(
                                         Text(
                                             "${models.size} 个模型",
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                            style = MaterialTheme.typography.labelSmall,
+                                            style = PiType.action,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
@@ -415,7 +415,7 @@ internal fun LiveModelDialog(
                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 Text(
                                                     option.name.ifBlank { option.id },
-                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    style = PiType.callout,
                                                     fontWeight = FontWeight.SemiBold,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
@@ -428,7 +428,7 @@ internal fun LiveModelDialog(
                                                         Text(
                                                             "当前",
                                                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                                            style = MaterialTheme.typography.labelSmall,
+                                                            style = PiType.action,
                                                             color = MaterialTheme.colorScheme.primary,
                                                             fontWeight = FontWeight.Bold,
                                                         )
@@ -437,7 +437,7 @@ internal fun LiveModelDialog(
                                             }
                                             Text(
                                                 "${option.provider}/${option.id}",
-                                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                                style = PiType.action.copy(fontFamily = FontFamily.Monospace),
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
@@ -452,7 +452,7 @@ internal fun LiveModelDialog(
                                                             Text(
                                                                 if (nonOffLevels.isNotEmpty()) "🧠 思考 ${nonOffLevels.size} 档" else "🧠 支持思考",
                                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                                                                style = MaterialTheme.typography.labelSmall,
+                                                                style = PiType.action,
                                                                 color = MaterialTheme.colorScheme.onTertiaryContainer,
                                                             )
                                                         }
@@ -466,7 +466,7 @@ internal fun LiveModelDialog(
                                                             Text(
                                                                 "📦 $ctxLabel 上下文",
                                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                                                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                                                style = PiType.action.copy(fontFamily = FontFamily.Monospace),
                                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                             )
                                                         }
@@ -522,7 +522,7 @@ internal fun LiveInspectionDialog(repo: PiDashRepository, key: SessionKey, conte
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                content?.let { SelectionContainer { Text(it, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)) } }
+                content?.let { SelectionContainer { Text(it, style = PiType.subhead.copy(fontFamily = FontFamily.Monospace)) } }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
@@ -552,7 +552,7 @@ internal fun LiveExtensionDialog(request: LiveUiRequest, onAnswer: suspend (Stri
         title = { Text(request.title.ifBlank { "扩展请求" }) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("请明确回答或取消；若其他端先回答，此请求会自动消失。", style = MaterialTheme.typography.bodySmall)
+                Text("请明确回答或取消；若其他端先回答，此请求会自动消失。", style = PiType.subhead)
                 request.message?.let { SelectionContainer { Text(it) } }
                 when (request.method) {
                     "confirm" -> Text("是否允许本次操作？")

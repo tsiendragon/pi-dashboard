@@ -426,7 +426,7 @@ fun LiveSessionScreen(
                                 .border(1.5.dp, accentColor, RoundedCornerShape(8.dp)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(emojiText, style = MaterialTheme.typography.bodyMedium)
+                            Text(emojiText, style = PiType.callout)
                         }
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -598,7 +598,7 @@ fun LiveSessionScreen(
                 SelectionContainer {
                     Column(Modifier.heightIn(max = 100.dp).verticalScroll(rememberScrollState())) {
                         errors[sessionKey]?.takeIf { it != notice }?.let {
-                            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            Text(it, color = MaterialTheme.colorScheme.error, style = PiType.subhead)
                         }
                     }
                 }
@@ -957,7 +957,7 @@ fun LiveSessionScreen(
             val backend = backendStates[sessionKey.backendId]
             if (backend?.connected != true || backend.message != null) {
                 Text(backend?.message ?: if (backend?.needsToken == true) "需要重新输入访问令牌" else "连接中断或正在连接；下方可能是缓存内容。",
-                    Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = PiType.subhead)
             }
             val atBottom by remember(listState) {
                 derivedStateOf {
@@ -1068,7 +1068,7 @@ fun LiveSessionScreen(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         draftReview.quote?.let { quoted ->
-                            Text("${draftReview.label}：$quoted", style = MaterialTheme.typography.bodySmall,
+                            Text("${draftReview.label}：$quoted", style = PiType.subhead,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         OutlinedTextField(value = note, onValueChange = { note = it }, minLines = 3,
@@ -1089,50 +1089,50 @@ fun LiveSessionScreen(
                 Surface(shape = RoundedCornerShape(12.dp)) {
                     Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("用量统计", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            Text("用量统计", style = PiType.callout, modifier = Modifier.weight(1f))
                             TextButton(enabled = !usageBusy, onClick = {
                                 shiftMonth(usageMonth ?: usage?.month.orEmpty(), -1)?.let { loadUsage(it) }
                             }) { Text("◀") }
-                            Text(usageMonth?.takeIf { it.isNotBlank() } ?: "本月", style = MaterialTheme.typography.labelSmall)
+                            Text(usageMonth?.takeIf { it.isNotBlank() } ?: "本月", style = PiType.action)
                             TextButton(enabled = !usageBusy, onClick = {
                                 shiftMonth(usageMonth ?: usage?.month.orEmpty(), 1)?.let { loadUsage(it) }
                             }) { Text("▶") }
                         }
-                        if (usageBusy) Text("读取中…", style = MaterialTheme.typography.labelSmall)
-                        usageError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                        if (usageBusy) Text("读取中…", style = PiType.action)
+                        usageError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PiType.subhead) }
                         usage?.let { report ->
                             Text(
                                 "${humanTokens(report.total.totalTokens)} tokens · ${report.currency} ${humanUsd(report.total.costUsd)}" +
                                     " · 缓存命中 ${cacheHitPercent(report.total)}% · ${report.recordCount} 条记录",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = PiType.subhead,
                             )
                             Text(
                                 "输入 ${humanTokens(report.total.inputTokens)} · 输出 ${humanTokens(report.total.outputTokens)}" +
                                     " · 缓存读 ${humanTokens(report.total.cacheReadTokens)}",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = PiType.action,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             if (report.timezone.isNotBlank()) Text("时区 ${report.timezone}",
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                style = PiType.action, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(8.dp))
                             val models = remember(report) { topModels(report) }
                             if (models.isNotEmpty()) {
-                                Text("按模型", style = MaterialTheme.typography.labelSmall)
+                                Text("按模型", style = PiType.action)
                                 models.forEach { model ->
                                     Text(
                                         "· ${model.key}  ${humanTokens(model.totalTokens)}  ${humanUsd(model.costUsd)}",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = PiType.subhead,
                                     )
                                 }
                             }
                             val sessions = remember(report) { topSessions(report) }
                             if (sessions.isNotEmpty()) {
                                 Spacer(Modifier.height(8.dp))
-                                Text("按会话", style = MaterialTheme.typography.labelSmall)
+                                Text("按会话", style = PiType.action)
                                 sessions.forEach { item ->
                                     Text(
                                         "· ${item.label.ifBlank { item.key.take(8) }}  ${humanTokens(item.totalTokens)}  ${humanUsd(item.costUsd)}",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = PiType.subhead,
                                         maxLines = 1,
                                     )
                                 }
@@ -1184,25 +1184,25 @@ fun LiveSessionScreen(
             Dialog(onDismissRequest = { tree = null; treeError = null; treeBusy = false }) {
                 Surface(shape = RoundedCornerShape(12.dp)) {
                     Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
-                        Text("会话树 / 子 Agent", style = MaterialTheme.typography.titleSmall)
+                        Text("会话树 / 子 Agent", style = PiType.callout)
                         Text(
                             when {
                                 treeBusy -> "读取中…"
                                 treeError != null -> treeError!!
                                 else -> "${rows.size} 个会话文件" + if (tree?.truncated == true) "（已截断）" else ""
                             },
-                            style = MaterialTheme.typography.labelSmall,
+                            style = PiType.action,
                             color = if (treeError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(8.dp))
                         rows.forEach { row ->
                             Row(Modifier.fillMaxWidth().padding(start = (row.depth * 14).dp, top = 3.dp, bottom = 3.dp)) {
-                                Text(if (row.forked) "└ " else "", style = MaterialTheme.typography.labelSmall,
+                                Text(if (row.forked) "└ " else "", style = PiType.action,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         sessionTreeLabel(row.entry),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = PiType.subhead,
                                         color = if (row.entry.isFocus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                     )
                                     val sub = listOfNotNull(
@@ -1210,7 +1210,7 @@ fun LiveSessionScreen(
                                         row.entry.forkAnchorId?.take(8)?.let { "分叉点 $it…" },
                                         row.forks.takeIf { it > 0 }?.let { "$it 个子 Agent" },
                                     ).joinToString(" · ")
-                                    if (sub.isNotBlank()) Text(sub, style = MaterialTheme.typography.labelSmall,
+                                    if (sub.isNotBlank()) Text(sub, style = PiType.action,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                                 }
                             }
@@ -1302,7 +1302,7 @@ fun LiveSessionScreen(
                 Surface(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().padding(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            SelectionContainer { Text(path, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, maxLines = 2) }
+                            SelectionContainer { Text(path, Modifier.weight(1f), style = PiType.action, maxLines = 2) }
                             TextButton(onClick = { preview = null }) { Text("关闭") }
                         }
                         HorizontalDivider()
@@ -1319,7 +1319,7 @@ fun LiveSessionScreen(
                                 Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
                                     Text(
                                         content.ifBlank { "（空文件）" },
-                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                        style = PiType.subhead.copy(fontFamily = FontFamily.Monospace),
                                     )
                                 }
                             }
@@ -1347,14 +1347,14 @@ fun LiveSessionScreen(
             else -> MaterialTheme.colorScheme.secondaryContainer
         }
         Column(Modifier.fillMaxWidth().background(background, MaterialTheme.shapes.medium).padding(12.dp)) {
-            Text("${item.role}${item.toolName?.let { " · $it" } ?: ""}${if (item.isError) " · 错误" else ""}", style = MaterialTheme.typography.labelSmall)
+            Text("${item.role}${item.toolName?.let { " · $it" } ?: ""}${if (item.isError) " · 错误" else ""}", style = PiType.action)
             item.thinking?.takeIf { it.isNotBlank() }?.let { thinking ->
                 TextButton(onClick = { showThinking = !showThinking }) { Text(if (showThinking) "收起思考" else "查看思考") }
-                if (showThinking) SelectionContainer { Text(thinking, style = MaterialTheme.typography.bodySmall) }
+                if (showThinking) SelectionContainer { Text(thinking, style = PiType.subhead) }
             }
             SelectionContainer {
                 Text(item.text.ifBlank { if (item.thinking.isNullOrBlank()) "（等待内容…）" else "（思考中）" },
-                    style = if (tool) MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace) else MaterialTheme.typography.bodyMedium)
+                    style = if (tool) PiType.subhead.copy(fontFamily = FontFamily.Monospace) else PiType.callout)
             }
             if (item.role == "user" && item.forkable && !item.entryId.isNullOrBlank()) {
                 TextButton(enabled = enabled, onClick = { onFork(item.entryId) }) { Text("从此消息分叉…") }

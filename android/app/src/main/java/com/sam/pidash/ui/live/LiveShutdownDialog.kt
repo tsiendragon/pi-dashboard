@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.SessionKey
 import kotlinx.coroutines.launch
+import com.sam.pidash.ui.theme.PiType
 
 /** Destructive action is explicit and never retried automatically. */
 @Composable
@@ -29,7 +30,7 @@ fun LiveShutdownDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("将退出「$title」的 Pi 进程，中断正在执行的任务。已保存的会话记录不会删除。")
-                Text("不会自动重试。若请求超时，请先刷新列表确认进程状态，避免重复操作。", style = MaterialTheme.typography.bodySmall)
+                Text("不会自动重试。若请求超时，请先刷新列表确认进程状态，避免重复操作。", style = PiType.subhead)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             }

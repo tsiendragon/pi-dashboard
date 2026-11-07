@@ -25,6 +25,7 @@ import com.sam.pidash.data.remote.elapsedSeconds
 import com.sam.pidash.data.remote.isActive
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
 import com.sam.pidash.domain.model.LiveBackgroundTask
+import com.sam.pidash.ui.theme.PiType
 
 /**
  * Background command panel, projected from the `background-commands` feature
@@ -47,10 +48,10 @@ internal fun BackgroundCommandsDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {
-                Text("后台命令", style = MaterialTheme.typography.titleSmall)
+                Text("后台命令", style = PiType.callout)
                 Text(
                     "$active 个运行中 · 共 ${tasks.size} 个",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = PiType.action,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -65,7 +66,7 @@ internal fun BackgroundCommandsDialog(
                         val current = item.taskId == task?.taskId
                         Text(
                             item.title.ifBlank { item.taskId },
-                            style = MaterialTheme.typography.labelSmall,
+                            style = PiType.action,
                             color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
                                 .background(
@@ -79,19 +80,19 @@ internal fun BackgroundCommandsDialog(
                     }
                 }
                 if (task == null) {
-                    Text("没有后台命令记录。", style = MaterialTheme.typography.bodySmall)
+                    Text("没有后台命令记录。", style = PiType.subhead)
                     return@Column
                 }
                 Text(
                     "${task.taskId} · ${task.status}" +
                         " · ${task.elapsedSeconds(System.currentTimeMillis())}s" +
                         (task.pid?.let { " · pid $it" } ?: ""),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = PiType.action,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (task.command.isNotBlank()) Text(
                     task.command,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    style = PiType.subhead.copy(fontFamily = FontFamily.Monospace),
                     maxLines = 3,
                 )
                 val outcome = listOfNotNull(
@@ -101,17 +102,17 @@ internal fun BackgroundCommandsDialog(
                 ).joinToString(" · ")
                 if (outcome.isNotBlank()) Text(
                     outcome,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = PiType.action,
                     color = if (task.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (task.canMoveToBackground()) TextButton(
                     enabled = !busy,
                     onClick = { onMoveToBackground(task) },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                ) { Text("转入后台", style = MaterialTheme.typography.labelSmall) }
+                ) { Text("转入后台", style = PiType.action) }
                 Text(
                     if (task.outputTruncated) "输出（尾部，已截断）" else "输出（尾部）",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = PiType.action,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Column(
@@ -122,12 +123,12 @@ internal fun BackgroundCommandsDialog(
                 ) {
                     Text(
                         task.outputTail.ifBlank { "（还没有输出）" },
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        style = PiType.subhead.copy(fontFamily = FontFamily.Monospace),
                     )
                 }
                 Text(
                     "取消需要网页端或扩展操作；App 只展示与转入后台。",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = PiType.action,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

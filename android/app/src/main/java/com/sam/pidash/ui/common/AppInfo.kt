@@ -6,13 +6,14 @@ import androidx.compose.runtime.Composable
 import com.sam.pidash.BuildConfig
 import com.sam.pidash.domain.model.LiveBackendState
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import com.sam.pidash.ui.theme.PiType
 
 fun appVersionText(name: String = BuildConfig.VERSION_NAME, code: Int = BuildConfig.VERSION_CODE): String =
     "v$name · build $code"
 
 @Composable
 fun AppVersionLabel() {
-    Text(appVersionText(), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+    Text(appVersionText(), style = PiType.action, maxLines = 1)
 }
 
 /** Show only the origin; never echo embedded credentials, URL tokens, paths or fragments. */

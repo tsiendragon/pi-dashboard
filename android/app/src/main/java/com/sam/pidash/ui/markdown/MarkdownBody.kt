@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import com.sam.pidash.ui.theme.Hairline
+import com.sam.pidash.ui.theme.CodeColors
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
@@ -60,7 +61,7 @@ fun MarkdownBody(
     modifier: Modifier = Modifier,
     onOpenPath: (String) -> Unit = {},
     onOpenUrl: (String) -> Unit = {},
-    style: TextStyle = MaterialTheme.typography.bodyMedium,
+    style: TextStyle = PiType.callout,
 ) {
     val blocks = remember(markdown) { MarkdownParser.parse(markdown) }
     Column(
@@ -199,14 +200,17 @@ private fun TableBlock(block: MdBlock.Table, style: TextStyle, onOpenPath: (Stri
 }
 
 /** Palette is fixed per theme: readable on both surfaces and independent of the dashboard theme. */
-private fun codeColor(kind: CodeTokenKind, dark: Boolean): Color = when (kind) {
-    CodeTokenKind.Keyword -> if (dark) Color(0xFFC792EA) else Color(0xFF7C3AED)
-    CodeTokenKind.String -> if (dark) Color(0xFFC3E88D) else Color(0xFF047857)
-    CodeTokenKind.Comment -> if (dark) Color(0xFF7F8C98) else Color(0xFF6B7280)
-    CodeTokenKind.Number -> if (dark) Color(0xFFF78C6C) else Color(0xFFB45309)
-    CodeTokenKind.Type -> if (dark) Color(0xFF82AAFF) else Color(0xFF1D4ED8)
-    CodeTokenKind.Function -> if (dark) Color(0xFF89DDFF) else Color(0xFF0E7490)
-    CodeTokenKind.Plain -> Color.Unspecified
+private fun codeColor(kind: CodeTokenKind, dark: Boolean): Color {
+    val palette = CodeColors.of(dark)
+    return when (kind) {
+        CodeTokenKind.Keyword -> palette.keyword
+        CodeTokenKind.String -> palette.string
+        CodeTokenKind.Comment -> palette.comment
+        CodeTokenKind.Number -> palette.number
+        CodeTokenKind.Type -> palette.type
+        CodeTokenKind.Function -> palette.function
+        CodeTokenKind.Plain -> Color.Unspecified
+    }
 }
 
 private class TapSpan(val start: Int, val end: Int, val url: String?, val path: String?)

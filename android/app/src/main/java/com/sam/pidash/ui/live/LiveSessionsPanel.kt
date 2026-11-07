@@ -137,7 +137,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
             val state = states[backend.id]
             ListItem(headlineContent = { Text(liveConnectionLabel(state)) }, supportingContent = {
                 Column {
-                    Text("打开只读，不会抢占现有会话。", style = MaterialTheme.typography.bodySmall)
+                    Text("打开只读，不会抢占现有会话。", style = PiType.subhead)
                     state?.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             }, trailingContent = { TextButton(onClick = {
@@ -169,9 +169,9 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                         label = { Text(if (sorting) "完成排序" else "排序模式") },
                     )
                 }
-                if (!sorting && (query.isNotBlank() || runningOnly)) Text("清除搜索和筛选后可调整顺序。", style = MaterialTheme.typography.bodySmall)
-                if (sorting) Text("仅调整同一分组内的顺序；与网页共享。", style = MaterialTheme.typography.bodySmall)
-                org.error?.let { Text("分组/排序未刷新：$it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                if (!sorting && (query.isNotBlank() || runningOnly)) Text("清除搜索和筛选后可调整顺序。", style = PiType.subhead)
+                if (sorting) Text("仅调整同一分组内的顺序；与网页共享。", style = PiType.subhead)
+                org.error?.let { Text("分组/排序未刷新：$it", color = MaterialTheme.colorScheme.error, style = PiType.subhead) }
             }
         }
         if (backends.isEmpty()) item { Text("机器配置已删除，请返回机器列表。", Modifier.padding(16.dp)) }
@@ -329,7 +329,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     if (managing) AlertDialog(onDismissRequest = { if (!groupBusy) managing = false }, title = { Text("本机分组") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             org.groups.forEach { Text("${it.name} · ${it.sessionIds.size} 个会话") }
-            Text("与网页共用分组和排序。点击会话右侧「分组」可移动；重命名、合并、删除和拖动排序暂用网页。", style = MaterialTheme.typography.bodySmall)
+            Text("与网页共用分组和排序。点击会话右侧「分组」可移动；重命名、合并、删除和拖动排序暂用网页。", style = PiType.subhead)
             OutlinedTextField(groupName, { groupName = it }, label = { Text("新分组名") }, enabled = !groupBusy)
             groupError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
@@ -394,7 +394,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("将重启「${target.summary.title}」的 Pi 进程，尝试从原会话恢复。")
-                    Text("在途任务可能中断；重启失败时请刷新列表确认状态，避免重复操作。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("在途任务可能中断；重启失败时请刷新列表确认状态，避免重复操作。", style = PiType.subhead, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     rowActionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
@@ -561,7 +561,7 @@ fun NewLiveSessionDialog(
                     modifier = Modifier.fillMaxWidth(), enabled = !busy && !waiting)
                 OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("模型（可选，provider/id）") },
                     modifier = Modifier.fillMaxWidth(), enabled = !busy && !waiting)
-                Text("思考强度（可选）", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("思考强度（可选）", style = PiType.footnote, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     (listOf("" to "默认") + THINKING_LADDER_LEVELS.map { it.id to it.title.substringBefore(" · ") }).forEach { (id, label) ->
                         FilterChip(
@@ -574,7 +574,7 @@ fun NewLiveSessionDialog(
                 }
                 OutlinedTextField(value = thinking, onValueChange = { thinking = it }, label = { Text("思考等级（可选）") },
                     modifier = Modifier.fillMaxWidth(), enabled = !busy && !waiting)
-                Text("启动失败不会创建普通 Chat，也不会自动重试。", style = MaterialTheme.typography.bodySmall)
+                Text("启动失败不会创建普通 Chat，也不会自动重试。", style = PiType.subhead)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (waiting) {
@@ -674,7 +674,7 @@ private fun SessionRow(
                 .clickable(enabled = !busy) { onEditAppearance() },
             contentAlignment = Alignment.Center,
         ) {
-            Text(emojiText, style = MaterialTheme.typography.bodyMedium)
+            Text(emojiText, style = PiType.callout)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
