@@ -329,7 +329,7 @@ curl -s localhost:7777/api/tts/config | jq '{available, reason, endpoint}'
 {
   "liveSessions": {
     "roots": ["/home/you", "/home/you/repos"],
-    "repoRoots": ["/home/you/repos"],
+    "repoRoots": ["/home/you/apps", "/home/you/repos"],
     "disconnectGraceMs": 60000,
     "launch": { "command": "/home/you/pi-stack/pi/bin/pi", "args": [], "unsetEnv": [], "approve": true }
   }
@@ -345,6 +345,8 @@ curl -s localhost:7777/api/tts/config | jq '{available, reason, endpoint}'
 | `unsetEnv` / `launch.unsetEnv` | 启动前真正从 pane 环境删除的变量（`env -u`，不是置空）。**写在 `launch` 里面**，顶部写不会生效 |
 | `launch.approve` | `true` 给 pane 追加 `--approve`（信任工程内的 `.pi` 扩展/skills/settings），`false` 追加 `--no-approve`；不写则保留 pi 自己的行为——会弹「是否信任该目录」的交互提问，而 pane 里没人能回答，启动就会卡住 |
 | `disconnectGraceMs` | 断连宽限时间（默认 15000 毫秒） |
+
+若希望在 Android「新建 Live Pi → 搜索全部目录」或网页启动目录框里搜索 `apps`、`repos` 下的项目，将这两个父目录加入 `repoRoots`（如上例），而不是逐个填写仓库。关键词匹配返回的项目名和完整路径；仅扫描父目录的下一层。`repoRoots` 在服务启动时加载，保存后由用户执行 `./run.sh`（或自己的启动方式）生效，再重新打开创建会话弹窗刷新建议；不需要重新安装 APK，也不要由 agent 重启服务。
 
 `enabled` 是派生值：实际是否启用看 `enabled && roots.length > 0`，所以**开关是 `roots`**；写 `"enabled": false` 可以强制关闭，写 `true` 不会把空 `roots` 变成开启。
 
