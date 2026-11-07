@@ -34,6 +34,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -58,6 +60,8 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     val organizations by repo.live.organization.collectAsState()
     val org = organizations[backendId] ?: LiveOrganization()
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    var pendingUndo by remember { mutableStateOf<(() -> Unit)?>(null) }
     var signingIn by remember { mutableStateOf<Backend?>(null) }
     var signingOut by remember { mutableStateOf<Backend?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -87,6 +91,22 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
             groupBusy = false
         }
     }
+    // One feedback channel for the whole list: transient, non-blocking, and reversible
+    // when the action can be undone (pin, reorder).
+    LaunchedEffect(notice) {
+        val message = notice ?: return@LaunchedEffect
+        notice = null
+        val undo = pendingUndo
+        pendingUndo = null
+        val result = snackbarHostState.showSnackbar(
+            message = message,
+            actionLabel = if (undo != null) "撤销" else null,
+            withDismissAction = undo == null && message.length > 24,
+            duration = SnackbarDuration.Short,
+        )
+        if (result == SnackbarResult.ActionPerformed) undo?.invoke()
+    }
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
         items(backends, key = { "backend:${it.id}" }) { backend ->
             val state = states[backend.id]
@@ -119,16 +139,6 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
             }
         }
         if (backends.isEmpty()) item { Text("机器配置已删除，请返回机器列表。", Modifier.padding(16.dp)) }
-        notice?.let { message ->
-            item {
-                Text(
-                    message,
-                    style = PiType.footnote,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm),
-                )
-            }
-        }
         if (sections.isEmpty() && backends.isNotEmpty()) item {
             val ready = states[backendId]?.connected == true
             Text(when {
@@ -170,8 +180,16 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                                 sortBusy = true; notice = null
                                 scope.launch {
                                     repo.live.moveSession(row.key, direction).fold(
-                                        onSuccess = { notice = "已更新「${row.summary.title}」顺序" },
-                                        onFailure = { notice = "排序失败：${it.message ?: "请刷新后重试"}" },
+                                        onSuccess = {
+                                            val reverse = when (direction) {
+                                                SessionMove.UP -> SessionMove.DOWN
+                                                SessionMove.DOWN -> SessionMove.UP
+                                                SessionMove.TOP -> SessionMove.DOWN
+                                            }
+                                            pendingUndo = { scope.launch { repo.live.moveSession(row.key, reverse) } }
+                                            notice = "已更新「${row.summary.title}」顺序"
+                                        },
+                                        onFailure = { pendingUndo = null; notice = "排序失败：${it.message ?: "请刷新后重试"}" },
                                     )
                                     sortBusy = false
                                 }
@@ -193,8 +211,13 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                                     scope.launch {
                                         val nextPin = !row.meta.pinned
                                         repo.live.patchMeta(row.key, pinned = nextPin).fold(
-                                            onSuccess = { notice = if (nextPin) "已置顶「${row.summary.title}」" else "已取消置顶「${row.summary.title}」" },
-                                            onFailure = { notice = "操作失败：${it.message}" },
+                                            onSuccess = {
+                                                pendingUndo = {
+                                                    scope.launch { repo.live.patchMeta(row.key, pinned = !nextPin) }
+                                                }
+                                                notice = if (nextPin) "已置顶「${row.summary.title}」" else "已取消置顶「${row.summary.title}」"
+                                            },
+                                            onFailure = { pendingUndo = null; notice = "操作失败：${it.message}" },
                                         )
                                         actionBusyKey = null
                                     }
@@ -225,6 +248,11 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                 }
             }
         }
+    }
+    SnackbarHost(
+        snackbarHostState,
+        Modifier.align(Alignment.BottomCenter).padding(start = Spacing.md, end = Spacing.md, bottom = 84.dp),
+    )
     }
     if (managing) AlertDialog(onDismissRequest = { if (!groupBusy) managing = false }, title = { Text("本机分组") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -529,12 +557,18 @@ private fun SessionRow(
     val accentColor = parseHexColor(row.meta.color) ?: MaterialTheme.colorScheme.primary
     val emojiText = row.meta.emoji.takeIf { it.isNotBlank() } ?: if (subagent) "🤖" else "💬"
     var actions by remember { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
 
     Row(
         Modifier.fillMaxWidth()
             .combinedClickable(
                 onClick = { onOpen(row.key) },
-                onLongClick = { if (!subagent) actions = true },
+                onLongClick = {
+                    if (!subagent) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        actions = true
+                    }
+                },
             )
             .padding(horizontal = Spacing.md, vertical = Spacing.sm),
         verticalAlignment = Alignment.CenterVertically,

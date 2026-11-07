@@ -1,7 +1,15 @@
 package com.sam.pidash.ui.common
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
@@ -13,6 +21,10 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.ui.theme.Hairline
+import com.sam.pidash.ui.theme.Motion
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
@@ -126,6 +139,39 @@ fun SectionLabel(text: String) {
     )
 }
 
+/**
+ * "展开 / 收起" affordance used by every collapsible block.
+ *
+ * One component instead of a text glyph: the chevron keeps its optical size and baseline
+ * in any font, and the label never drifts a pixel per call site.
+ */
+@Composable
+fun ExpandHint(
+    expanded: Boolean,
+    modifier: Modifier = Modifier,
+    collapsedLabel: String = "展开",
+    expandedLabel: String = "收起",
+) {
+    Row(
+        modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            if (expanded) expandedLabel else collapsedLabel,
+            style = PiType.micro,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Icon(
+            imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /** Icon-free row used by lists: content on the left, one muted action on the right. */
 @Composable
 fun TextRow(
@@ -143,4 +189,26 @@ fun TextRow(
         Box(Modifier.weight(1f)) { content() }
         trailing?.invoke()
     }
+}
+
+/**
+ * A block that grows and fades instead of snapping into place.
+ *
+ * Every collapsible surface in the app goes through this one composable so the whole app
+ * shares a single expand rhythm; [animateContentSize] on the parent keeps the surrounding
+ * card from jumping when the child swaps content.
+ */
+@Composable
+fun Collapsible(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable AnimatedVisibilityScope.() -> Unit,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = expandVertically(Motion.content()) + fadeIn(Motion.fast()),
+        exit = shrinkVertically(Motion.content()) + fadeOut(Motion.fast()),
+        content = content,
+    )
 }

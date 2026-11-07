@@ -1,6 +1,12 @@
 package com.sam.pidash.ui.nav
 
 import android.net.Uri
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -14,6 +20,7 @@ import com.sam.pidash.ui.chat.ChatScreen
 import com.sam.pidash.ui.live.LiveSessionScreen
 import com.sam.pidash.ui.sessions.SessionsScreen
 import com.sam.pidash.ui.sessions.MachinesScreen
+import com.sam.pidash.ui.theme.Motion
 
 object Routes {
     const val SESSIONS = "sessions"
@@ -33,6 +40,13 @@ object Routes {
 @Composable
 fun AppNav(repo: PiDashRepository) {
     val nav = rememberNavController()
+
+    // Drilling into a session slides in from the right; going back reveals the list from the left.
+    // Both are short enough to feel instant and long enough to explain where the content came from.
+    val pushEnter: EnterTransition = slideInHorizontally(Motion.screen()) { it / 5 } + fadeIn(Motion.fast())
+    val pushExit: ExitTransition = slideOutHorizontally(Motion.screen()) { -it / 10 } + fadeOut(Motion.fast())
+    val popEnter: EnterTransition = slideInHorizontally(Motion.screen()) { -it / 10 } + fadeIn(Motion.fast())
+    val popExit: ExitTransition = slideOutHorizontally(Motion.screen()) { it / 5 } + fadeOut(Motion.fast())
 
     NavHost(navController = nav, startDestination = Routes.SESSIONS) {
         composable(Routes.SESSIONS) {
@@ -59,6 +73,10 @@ fun AppNav(repo: PiDashRepository) {
                 navArgument("backendId") { type = NavType.StringType },
                 navArgument("processId") { type = NavType.StringType },
             ),
+            enterTransition = { pushEnter },
+            exitTransition = { pushExit },
+            popEnterTransition = { popEnter },
+            popExitTransition = { popExit },
         ) { entry ->
             LiveSessionScreen(
                 repo = repo,
@@ -82,6 +100,10 @@ fun AppNav(repo: PiDashRepository) {
                 navArgument("backendId") { type = NavType.StringType },
                 navArgument("slotKey") { type = NavType.StringType },
             ),
+            enterTransition = { pushEnter },
+            exitTransition = { pushExit },
+            popEnterTransition = { popEnter },
+            popExitTransition = { popExit },
         ) { entry ->
             val backendId = entry.arguments?.getString("backendId").orEmpty()
             val slotKey = entry.arguments?.getString("slotKey").orEmpty()

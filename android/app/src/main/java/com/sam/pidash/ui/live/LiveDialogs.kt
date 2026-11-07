@@ -13,6 +13,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -177,7 +179,10 @@ internal fun LiveMetadataDialog(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (hex.isEmpty()) Text("∅", style = MaterialTheme.typography.labelSmall)
-                        else if (selected) Text("✓", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        else if (selected) Icon(
+                            Icons.Filled.Check, contentDescription = null,
+                            modifier = Modifier.size(16.dp), tint = Color.White,
+                        )
                     }
                 }
             }
@@ -458,9 +463,10 @@ internal fun LiveModelDialog(
                                                 }
                                             }
                                         }
-                                        if (selected) {
-                                            Text("✓", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                        }
+                                        if (selected) Icon(
+                                            Icons.Filled.Check, contentDescription = "已选择",
+                                            modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary,
+                                        )
                                     }
                                 }
                             }

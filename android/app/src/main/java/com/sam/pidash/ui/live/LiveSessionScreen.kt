@@ -1,5 +1,10 @@
 package com.sam.pidash.ui.live
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,7 +24,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -43,6 +51,7 @@ import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Motion
 import com.sam.pidash.ui.theme.Spacing
 import com.sam.pidash.data.remote.FileAttachments
 import com.sam.pidash.data.remote.ImageAttachments
@@ -52,6 +61,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -156,6 +167,8 @@ fun LiveSessionScreen(
     var deliverAs by remember(sessionKey) { mutableStateOf<String?>(null) }
     var busy by remember(sessionKey) { mutableStateOf(false) }
     var notice by remember(sessionKey) { mutableStateOf<String?>(null) }
+    val haptics = LocalHapticFeedback.current
+    val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     // Same limits as the WebUI; reading/compressing happens off the picker callback's
     // critical path only because these are local files, and failures keep the draft.
@@ -370,7 +383,16 @@ fun LiveSessionScreen(
         }
     }
 
+    // Every action reports through one channel: a snackbar that leaves on its own, so the
+    // composer never keeps a stale line of feedback under the draft.
+    LaunchedEffect(notice) {
+        val message = notice ?: return@LaunchedEffect
+        notice = null
+        snackbarHostState.showSnackbar(message, withDismissAction = message.length > 24, duration = SnackbarDuration.Short)
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
                 val accentColor = parseHexColor(aggregate?.meta?.color) ?: MaterialTheme.colorScheme.primary
@@ -412,7 +434,10 @@ fun LiveSessionScreen(
                                     style = PiType.callout.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                                     modifier = Modifier.weight(1f, fill = false),
                                 )
-                                Text("▾", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Icon(
+                                    Icons.Filled.ArrowDropDown, contentDescription = null,
+                                    modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                 StatusDot(
@@ -569,7 +594,6 @@ fun LiveSessionScreen(
             Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).imePadding().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 2.dp)) {
                 SelectionContainer {
                     Column(Modifier.heightIn(max = 100.dp).verticalScroll(rememberScrollState())) {
-                        notice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         errors[sessionKey]?.takeIf { it != notice }?.let {
                             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                         }
@@ -698,7 +722,10 @@ fun LiveSessionScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text("▾", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(
+                                Icons.Filled.ArrowDropDown, contentDescription = null,
+                                modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                     Surface(
@@ -719,7 +746,10 @@ fun LiveSessionScreen(
                                 style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                                 color = MaterialTheme.colorScheme.primary,
                             )
-                            Text("▾", style = PiType.micro, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(
+                                Icons.Filled.ArrowDropDown, contentDescription = null,
+                                modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                     Box {
@@ -730,7 +760,16 @@ fun LiveSessionScreen(
                             color = MaterialTheme.colorScheme.surface,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                         ) {
-                            Text("快捷 ▾", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = PiType.micro)
+                            Row(
+                                Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("快捷", style = PiType.micro)
+                                Icon(
+                                    Icons.Filled.ArrowDropDown, contentDescription = null,
+                                    modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                         DropdownMenu(expanded = promptsOpen, onDismissRequest = { promptsOpen = false }) {
                             if (draft.isNotBlank()) DropdownMenuItem(
@@ -791,7 +830,13 @@ fun LiveSessionScreen(
                                 .forEach { (value, label) ->
                                     DropdownMenuItem(
                                         text = {
-                                            Text(if (deliverAs == value) "✓ $label" else label)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (deliverAs == value) Icon(
+                                                    Icons.Filled.Check, contentDescription = null,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
+                                                Text(label)
+                                            }
                                         },
                                         onClick = { addMenu = false; deliverAs = value },
                                     )
@@ -847,6 +892,7 @@ fun LiveSessionScreen(
                             quotes.isNotEmpty() || reviews.isNotEmpty()) &&
                         ImageAttachments.validate(attachments) == null
                     IconButton(enabled = canSend, modifier = Modifier.size(48.dp), onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         val typed = draft
                         val images = attachments
                         val sentQuotes = quotes
@@ -915,357 +961,413 @@ fun LiveSessionScreen(
                 Text(backend?.message ?: if (backend?.needsToken == true) "需要重新输入访问令牌" else "连接中断或正在连接；下方可能是缓存内容。",
                     Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
-            if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.xs),
-                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-            ) {
-                items(activities, key = { "activity:${it.id}" }) { activity ->
-                    NativeActivityCard(
-                        activity = activity,
-                        onOpen = { openActivityId = activity.id },
-                        onOpenPath = ::openPathPreview,
-                        onOpenUrl = ::openExternalUrl,
-                    )
-                }
-            } else if (timeline.isEmpty()) {
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text(
-                        if (detail == null) "正在同步会话详情…" else "这段会话还没有消息。",
-                        style = PiType.meta,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.xs),
-                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-            ) {
-                items(rows, key = { it.id }) { row ->
-                    NativeTimelineRow(
-                        row = row,
-                        onOpenPath = ::openPathPreview,
-                        onOpenUrl = ::openExternalUrl,
-                        compactUser = true,
-                        compactAssistant = true,
-                        enabled = !busy && !heldElsewhere && cachedSnapshot == null,
-                        onFork = { entryId -> notice = null; forkEntry = entryId; dialog = "fork" },
-                        onQuote = { item ->
-                            normalizeQuote(item.text)?.let { quoted ->
-                                if (quotes.size >= 4) notice = "一次最多引用 4 段"
-                                else quotes = quotes + AppQuote("q${item.id}", quoted, item.role, item.entryId)
-                            }
-                        },
-                        onAnnotate = { item ->
-                            val quoted = normalizeQuote(item.text).orEmpty()
-                            annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
-                        },
-                    )
+            val atBottom by remember(listState) {
+                derivedStateOf {
+                    val info = listState.layoutInfo
+                    val last = info.visibleItemsInfo.lastOrNull()
+                    last == null || (last.index >= info.totalItemsCount - 1 &&
+                        last.offset + last.size <= info.viewportEndOffset + 8)
                 }
             }
-        }
-    }
-
-    annotating?.let { draftReview ->
-        var note by remember(draftReview.id) { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { annotating = null },
-            title = { Text("批注") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    draftReview.quote?.let { quoted ->
-                        Text("${draftReview.label}：$quoted", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    OutlinedTextField(value = note, onValueChange = { note = it }, minLines = 3,
-                        placeholder = { Text("写下你的批注…") }, modifier = Modifier.fillMaxWidth())
-                }
-            },
-            confirmButton = {
-                TextButton(enabled = note.isNotBlank(), onClick = {
-                    reviews = reviews + draftReview.copy(content = note.trim())
-                    annotating = null
-                }) { Text("添加") }
-            },
-            dismissButton = { TextButton(onClick = { annotating = null }) { Text("取消") } },
-        )
-    }
-    if (usage != null || usageError != null || usageBusy) {
-        Dialog(onDismissRequest = { usage = null; usageError = null; usageBusy = false }) {
-            Surface(shape = RoundedCornerShape(12.dp)) {
-                Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("用量统计", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                        TextButton(enabled = !usageBusy, onClick = {
-                            shiftMonth(usageMonth ?: usage?.month.orEmpty(), -1)?.let { loadUsage(it) }
-                        }) { Text("◀") }
-                        Text(usageMonth?.takeIf { it.isNotBlank() } ?: "本月", style = MaterialTheme.typography.labelSmall)
-                        TextButton(enabled = !usageBusy, onClick = {
-                            shiftMonth(usageMonth ?: usage?.month.orEmpty(), 1)?.let { loadUsage(it) }
-                        }) { Text("▶") }
-                    }
-                    if (usageBusy) Text("读取中…", style = MaterialTheme.typography.labelSmall)
-                    usageError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                    usage?.let { report ->
-                        Text(
-                            "${humanTokens(report.total.totalTokens)} tokens · ${report.currency} ${humanUsd(report.total.costUsd)}" +
-                                " · 缓存命中 ${cacheHitPercent(report.total)}% · ${report.recordCount} 条记录",
-                            style = MaterialTheme.typography.bodySmall,
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    items(activities, key = { "activity:${it.id}" }) { activity ->
+                        NativeActivityCard(
+                            activity = activity,
+                            onOpen = { openActivityId = activity.id },
+                            onOpenPath = ::openPathPreview,
+                            onOpenUrl = ::openExternalUrl,
                         )
+                    }
+                } else if (timeline.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            "输入 ${humanTokens(report.total.inputTokens)} · 输出 ${humanTokens(report.total.outputTokens)}" +
-                                " · 缓存读 ${humanTokens(report.total.cacheReadTokens)}",
-                            style = MaterialTheme.typography.labelSmall,
+                            if (detail == null) "正在同步会话详情…" else "这段会话还没有消息。",
+                            style = PiType.meta,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (report.timezone.isNotBlank()) Text("时区 ${report.timezone}",
-                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(8.dp))
-                        val models = remember(report) { topModels(report) }
-                        if (models.isNotEmpty()) {
-                            Text("按模型", style = MaterialTheme.typography.labelSmall)
-                            models.forEach { model ->
-                                Text(
-                                    "· ${model.key}  ${humanTokens(model.totalTokens)}  ${humanUsd(model.costUsd)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                        }
-                        val sessions = remember(report) { topSessions(report) }
-                        if (sessions.isNotEmpty()) {
-                            Spacer(Modifier.height(8.dp))
-                            Text("按会话", style = MaterialTheme.typography.labelSmall)
-                            sessions.forEach { item ->
-                                Text(
-                                    "· ${item.label.ifBlank { item.key.take(8) }}  ${humanTokens(item.totalTokens)}  ${humanUsd(item.costUsd)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { usage = null; usageError = null; usageBusy = false }) { Text("关闭") }
+                } else LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    items(rows, key = { it.id }) { row ->
+                        NativeTimelineRow(
+                            row = row,
+                            onOpenPath = ::openPathPreview,
+                            onOpenUrl = ::openExternalUrl,
+                            compactUser = true,
+                            compactAssistant = true,
+                            enabled = !busy && !heldElsewhere && cachedSnapshot == null,
+                            onFork = { entryId -> notice = null; forkEntry = entryId; dialog = "fork" },
+                            onQuote = { item ->
+                                normalizeQuote(item.text)?.let { quoted ->
+                                    if (quotes.size >= 4) notice = "一次最多引用 4 段"
+                                    else quotes = quotes + AppQuote("q${item.id}", quoted, item.role, item.entryId)
+                                }
+                            },
+                            onAnnotate = { item ->
+                                val quoted = normalizeQuote(item.text).orEmpty()
+                                annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
+                            },
+                        )
                     }
                 }
+                JumpToLatestPill(
+                    visible = !atBottom && listState.layoutInfo.totalItemsCount > 0,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = Spacing.md, bottom = Spacing.sm),
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        scope.launch {
+                            val last = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                            listState.animateScrollToItem(last)
+                        }
+                    },
+                )
+            }
             }
         }
-    }
-    if (showBackground && background != null) {
-        BackgroundCommandsDialog(
-            snapshot = background,
-            selected = backgroundSelected,
-            busy = busy,
-            onSelect = { backgroundSelected = it },
-            onDismiss = { showBackground = false },
-            onMoveToBackground = { task ->
-                val toolCallId = task.toolCallId
-                if (toolCallId.isNullOrBlank()) notice = "这个命令没有可移交的工具调用标识"
-                else perform("已请求转入后台") { live.backgroundToolCall(sessionKey, toolCallId) }
-            },
-        )
-    }
-    if (showGoal) {
-        val current = goal
-        if (current == null) {
+
+        annotating?.let { draftReview ->
+            var note by remember(draftReview.id) { mutableStateOf("") }
             AlertDialog(
-                onDismissRequest = { showGoal = false },
-                title = { Text("目标") },
-                text = { Text("这个会话还没有目标记录。目标由 Agent 用 /goal 命令维护，本页只读。") },
-                confirmButton = {
-                    TextButton(onClick = { showGoal = false; draft = "/goal " }) { Text("用 /goal 设置") }
-                },
-                dismissButton = { TextButton(onClick = { showGoal = false }) { Text("关闭") } },
-            )
-        } else {
-            LiveGoalDialog(
-                goal = current,
-                onDismiss = { showGoal = false },
-                onEditWithCommand = { showGoal = false; draft = "/goal " },
-            )
-        }
-    }
-    if (tree != null || treeError != null || treeBusy) {
-        val rows = remember(tree) { tree?.let { sessionTreeRows(it.sessions) }.orEmpty() }
-        Dialog(onDismissRequest = { tree = null; treeError = null; treeBusy = false }) {
-            Surface(shape = RoundedCornerShape(12.dp)) {
-                Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
-                    Text("会话树 / 子 Agent", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        when {
-                            treeBusy -> "读取中…"
-                            treeError != null -> treeError!!
-                            else -> "${rows.size} 个会话文件" + if (tree?.truncated == true) "（已截断）" else ""
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (treeError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    rows.forEach { row ->
-                        Row(Modifier.fillMaxWidth().padding(start = (row.depth * 14).dp, top = 3.dp, bottom = 3.dp)) {
-                            Text(if (row.forked) "└ " else "", style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    sessionTreeLabel(row.entry),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (row.entry.isFocus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                )
-                                val sub = listOfNotNull(
-                                    row.entry.cwd,
-                                    row.entry.forkAnchorId?.take(8)?.let { "分叉点 $it…" },
-                                    row.forks.takeIf { it > 0 }?.let { "$it 个子 Agent" },
-                                ).joinToString(" · ")
-                                if (sub.isNotBlank()) Text(sub, style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                            }
-                        }
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { tree = null; treeError = null; treeBusy = false }) { Text("关闭") }
-                    }
-                }
-            }
-        }
-    }
-    val dismiss = { if (!busy) { dialog = null; forkEntry = null } }
-    when (dialog) {
-        "title", "meta" -> LiveMetadataDialog(
-            meta = aggregate?.meta,
-            busy = busy,
-            error = notice,
-            onDismiss = dismiss,
-            initialTitle = summary?.title ?: summary?.sessionName.orEmpty(),
-        ) { tags, pinned, emoji, color, nextTitle ->
-            perform("会话装扮与名称已更新", close = true) {
-                if (nextTitle != null) {
-                    val renamed = live.rename(sessionKey, nextTitle)
-                    if (renamed.isFailure) return@perform renamed
-                }
-                val saved = live.patchMeta(sessionKey, tags, pinned, emoji, color)
-                if (saved.isFailure && nextTitle != null) {
-                    Result.failure(IllegalStateException("名称已更新，但装扮保存失败：${saved.exceptionOrNull()?.message ?: "请重试"}"))
-                } else saved
-            }
-        }
-        "model", "thinking" -> LiveModelDialog(repo, sessionKey, summary, dialog == "thinking", busy, notice, dismiss,
-            onModel = { option -> perform("模型已更新", close = true) {
-                ensureLease().fold(onSuccess = { live.setModel(sessionKey, option.provider, option.id) }, onFailure = { Result.failure(it) })
-            } },
-            onThinking = { level -> perform("已请求切换思考等级", close = true) {
-                ensureLease().fold(onSuccess = { live.setThinking(sessionKey, level) }, onFailure = { Result.failure(it) })
-            } },
-        )
-        "new-session" -> NewLiveSessionDialog(
-            repo = repo,
-            backends = configuredBackends.filter { it.id == sessionKey.backendId },
-            onDismiss = dismiss,
-            onOpen = { key -> dialog = null; onOpenLive(key) },
-        )
-        "shutdown" -> LiveShutdownDialog(repo, sessionKey, summary?.title ?: "Pi",
-            onDismiss = dismiss,
-            onAccepted = { dialog = null; onBack() },
-        )
-        "context", "tree" -> LiveInspectionDialog(repo, sessionKey, dialog == "context", dismiss)
-        "compact", "reload", "restart", "fork" -> {
-            val action = dialog
-            val label = when (action) { "compact" -> "压缩上下文"; "reload" -> "重载扩展"; "restart" -> "重启 Pi 进程"; else -> "从此用户消息分叉" }
-            val realFork = forkEntry?.takeIf { id -> timeline.any { it.role == "user" && it.forkable && it.entryId == id } }
-            AlertDialog(onDismissRequest = { dismiss() }, title = { Text("确认$label？") },
+                onDismissRequest = { annotating = null },
+                title = { Text("批注") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (action == "fork") "将从真实用户条目 ${realFork ?: "（条目已不可用）"} 创建分支。" else "这会修改正在运行的 Pi 会话。")
-                        Text("执行时将尝试取得控制权，不会抢占其他端。不会自动重试；服务器不支持或拒绝时会显示原始错误。")
-                        notice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        draftReview.quote?.let { quoted ->
+                            Text("${draftReview.label}：$quoted", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedTextField(value = note, onValueChange = { note = it }, minLines = 3,
+                            placeholder = { Text("写下你的批注…") }, modifier = Modifier.fillMaxWidth())
                     }
                 },
-                confirmButton = { TextButton(enabled = !busy && !heldElsewhere && cachedSnapshot == null && (action != "fork" || realFork != null), onClick = {
-                    when (action) {
-                        "fork" -> transition(false, realFork)
-                        "restart" -> transition(true)
-                        else -> perform("已请求$label", close = true) {
-                            ensureLease().fold(onSuccess = {
-                                if (action == "compact") live.compact(sessionKey) else live.reload(sessionKey)
-                            }, onFailure = { Result.failure(it) })
-                        }
-                    }
-                }) { Text("确认执行") } },
-                dismissButton = { TextButton(enabled = !busy, onClick = { dismiss() }) { Text("取消") } },
+                confirmButton = {
+                    TextButton(enabled = note.isNotBlank(), onClick = {
+                        reviews = reviews + draftReview.copy(content = note.trim())
+                        annotating = null
+                    }) { Text("添加") }
+                },
+                dismissButton = { TextButton(onClick = { annotating = null }) { Text("取消") } },
             )
         }
-        "remaining" -> AlertDialog(onDismissRequest = { dismiss() }, title = { Text("原生 Live Pi 范围") },
-            text = { Text("已支持实时对话与会话控制。文件浏览/上传、PTY 终端、完整工作流图谱和复杂编辑仍请使用 WebUI；此处不宣称完整功能对齐。") },
-            confirmButton = { TextButton(onClick = { dismiss() }) { Text("知道了") } })
-    }
-
-    previewError?.let { message ->
-        AlertDialog(onDismissRequest = { previewError = null }, title = { Text("预览失败") },
-            text = { Text(message) }, confirmButton = { TextButton(onClick = { previewError = null }) { Text("知道了") } })
-    }
-    preview?.let { (path, content) ->
-        Dialog(onDismissRequest = { preview = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-            Surface(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize().padding(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        SelectionContainer { Text(path, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, maxLines = 2) }
-                        TextButton(onClick = { preview = null }) { Text("关闭") }
-                    }
-                    HorizontalDivider()
-                    if (content == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("读取中…") }
-                    else if (path.endsWith(".md", true) || path.endsWith(".markdown", true)) {
-                        SelectionContainer {
-                            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                                MarkdownBody(content, onOpenPath = ::openPathPreview, onOpenUrl = ::openExternalUrl)
+        if (usage != null || usageError != null || usageBusy) {
+            Dialog(onDismissRequest = { usage = null; usageError = null; usageBusy = false }) {
+                Surface(shape = RoundedCornerShape(12.dp)) {
+                    Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("用量统计", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            TextButton(enabled = !usageBusy, onClick = {
+                                shiftMonth(usageMonth ?: usage?.month.orEmpty(), -1)?.let { loadUsage(it) }
+                            }) { Text("◀") }
+                            Text(usageMonth?.takeIf { it.isNotBlank() } ?: "本月", style = MaterialTheme.typography.labelSmall)
+                            TextButton(enabled = !usageBusy, onClick = {
+                                shiftMonth(usageMonth ?: usage?.month.orEmpty(), 1)?.let { loadUsage(it) }
+                            }) { Text("▶") }
+                        }
+                        if (usageBusy) Text("读取中…", style = MaterialTheme.typography.labelSmall)
+                        usageError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                        usage?.let { report ->
+                            Text(
+                                "${humanTokens(report.total.totalTokens)} tokens · ${report.currency} ${humanUsd(report.total.costUsd)}" +
+                                    " · 缓存命中 ${cacheHitPercent(report.total)}% · ${report.recordCount} 条记录",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                "输入 ${humanTokens(report.total.inputTokens)} · 输出 ${humanTokens(report.total.outputTokens)}" +
+                                    " · 缓存读 ${humanTokens(report.total.cacheReadTokens)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (report.timezone.isNotBlank()) Text("时区 ${report.timezone}",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(8.dp))
+                            val models = remember(report) { topModels(report) }
+                            if (models.isNotEmpty()) {
+                                Text("按模型", style = MaterialTheme.typography.labelSmall)
+                                models.forEach { model ->
+                                    Text(
+                                        "· ${model.key}  ${humanTokens(model.totalTokens)}  ${humanUsd(model.costUsd)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                            val sessions = remember(report) { topSessions(report) }
+                            if (sessions.isNotEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text("按会话", style = MaterialTheme.typography.labelSmall)
+                                sessions.forEach { item ->
+                                    Text(
+                                        "· ${item.label.ifBlank { item.key.take(8) }}  ${humanTokens(item.totalTokens)}  ${humanUsd(item.costUsd)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                    )
+                                }
                             }
                         }
-                    } else {
-                        // Plain files are shown verbatim: monospace, no markdown guessing.
-                        SelectionContainer {
-                            Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                                Text(
-                                    content.ifBlank { "（空文件）" },
-                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { usage = null; usageError = null; usageBusy = false }) { Text("关闭") }
+                        }
+                    }
+                }
+            }
+        }
+        if (showBackground && background != null) {
+            BackgroundCommandsDialog(
+                snapshot = background,
+                selected = backgroundSelected,
+                busy = busy,
+                onSelect = { backgroundSelected = it },
+                onDismiss = { showBackground = false },
+                onMoveToBackground = { task ->
+                    val toolCallId = task.toolCallId
+                    if (toolCallId.isNullOrBlank()) notice = "这个命令没有可移交的工具调用标识"
+                    else perform("已请求转入后台") { live.backgroundToolCall(sessionKey, toolCallId) }
+                },
+            )
+        }
+        if (showGoal) {
+            val current = goal
+            if (current == null) {
+                AlertDialog(
+                    onDismissRequest = { showGoal = false },
+                    title = { Text("目标") },
+                    text = { Text("这个会话还没有目标记录。目标由 Agent 用 /goal 命令维护，本页只读。") },
+                    confirmButton = {
+                        TextButton(onClick = { showGoal = false; draft = "/goal " }) { Text("用 /goal 设置") }
+                    },
+                    dismissButton = { TextButton(onClick = { showGoal = false }) { Text("关闭") } },
+                )
+            } else {
+                LiveGoalDialog(
+                    goal = current,
+                    onDismiss = { showGoal = false },
+                    onEditWithCommand = { showGoal = false; draft = "/goal " },
+                )
+            }
+        }
+        if (tree != null || treeError != null || treeBusy) {
+            val rows = remember(tree) { tree?.let { sessionTreeRows(it.sessions) }.orEmpty() }
+            Dialog(onDismissRequest = { tree = null; treeError = null; treeBusy = false }) {
+                Surface(shape = RoundedCornerShape(12.dp)) {
+                    Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
+                        Text("会话树 / 子 Agent", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            when {
+                                treeBusy -> "读取中…"
+                                treeError != null -> treeError!!
+                                else -> "${rows.size} 个会话文件" + if (tree?.truncated == true) "（已截断）" else ""
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (treeError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        rows.forEach { row ->
+                            Row(Modifier.fillMaxWidth().padding(start = (row.depth * 14).dp, top = 3.dp, bottom = 3.dp)) {
+                                Text(if (row.forked) "└ " else "", style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        sessionTreeLabel(row.entry),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (row.entry.isFocus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    val sub = listOfNotNull(
+                                        row.entry.cwd,
+                                        row.entry.forkAnchorId?.take(8)?.let { "分叉点 $it…" },
+                                        row.forks.takeIf { it > 0 }?.let { "$it 个子 Agent" },
+                                    ).joinToString(" · ")
+                                    if (sub.isNotBlank()) Text(sub, style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                }
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { tree = null; treeError = null; treeBusy = false }) { Text("关闭") }
+                        }
+                    }
+                }
+            }
+        }
+        val dismiss = { if (!busy) { dialog = null; forkEntry = null } }
+        when (dialog) {
+            "title", "meta" -> LiveMetadataDialog(
+                meta = aggregate?.meta,
+                busy = busy,
+                error = notice,
+                onDismiss = dismiss,
+                initialTitle = summary?.title ?: summary?.sessionName.orEmpty(),
+            ) { tags, pinned, emoji, color, nextTitle ->
+                perform("会话装扮与名称已更新", close = true) {
+                    if (nextTitle != null) {
+                        val renamed = live.rename(sessionKey, nextTitle)
+                        if (renamed.isFailure) return@perform renamed
+                    }
+                    val saved = live.patchMeta(sessionKey, tags, pinned, emoji, color)
+                    if (saved.isFailure && nextTitle != null) {
+                        Result.failure(IllegalStateException("名称已更新，但装扮保存失败：${saved.exceptionOrNull()?.message ?: "请重试"}"))
+                    } else saved
+                }
+            }
+            "model", "thinking" -> LiveModelDialog(repo, sessionKey, summary, dialog == "thinking", busy, notice, dismiss,
+                onModel = { option -> perform("模型已更新", close = true) {
+                    ensureLease().fold(onSuccess = { live.setModel(sessionKey, option.provider, option.id) }, onFailure = { Result.failure(it) })
+                } },
+                onThinking = { level -> perform("已请求切换思考等级", close = true) {
+                    ensureLease().fold(onSuccess = { live.setThinking(sessionKey, level) }, onFailure = { Result.failure(it) })
+                } },
+            )
+            "new-session" -> NewLiveSessionDialog(
+                repo = repo,
+                backends = configuredBackends.filter { it.id == sessionKey.backendId },
+                onDismiss = dismiss,
+                onOpen = { key -> dialog = null; onOpenLive(key) },
+            )
+            "shutdown" -> LiveShutdownDialog(repo, sessionKey, summary?.title ?: "Pi",
+                onDismiss = dismiss,
+                onAccepted = { dialog = null; onBack() },
+            )
+            "context", "tree" -> LiveInspectionDialog(repo, sessionKey, dialog == "context", dismiss)
+            "compact", "reload", "restart", "fork" -> {
+                val action = dialog
+                val label = when (action) { "compact" -> "压缩上下文"; "reload" -> "重载扩展"; "restart" -> "重启 Pi 进程"; else -> "从此用户消息分叉" }
+                val realFork = forkEntry?.takeIf { id -> timeline.any { it.role == "user" && it.forkable && it.entryId == id } }
+                AlertDialog(onDismissRequest = { dismiss() }, title = { Text("确认$label？") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(if (action == "fork") "将从真实用户条目 ${realFork ?: "（条目已不可用）"} 创建分支。" else "这会修改正在运行的 Pi 会话。")
+                            Text("执行时将尝试取得控制权，不会抢占其他端。不会自动重试；服务器不支持或拒绝时会显示原始错误。")
+                            notice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        }
+                    },
+                    confirmButton = { TextButton(enabled = !busy && !heldElsewhere && cachedSnapshot == null && (action != "fork" || realFork != null), onClick = {
+                        when (action) {
+                            "fork" -> transition(false, realFork)
+                            "restart" -> transition(true)
+                            else -> perform("已请求$label", close = true) {
+                                ensureLease().fold(onSuccess = {
+                                    if (action == "compact") live.compact(sessionKey) else live.reload(sessionKey)
+                                }, onFailure = { Result.failure(it) })
+                            }
+                        }
+                    }) { Text("确认执行") } },
+                    dismissButton = { TextButton(enabled = !busy, onClick = { dismiss() }) { Text("取消") } },
+                )
+            }
+            "remaining" -> AlertDialog(onDismissRequest = { dismiss() }, title = { Text("原生 Live Pi 范围") },
+                text = { Text("已支持实时对话与会话控制。文件浏览/上传、PTY 终端、完整工作流图谱和复杂编辑仍请使用 WebUI；此处不宣称完整功能对齐。") },
+                confirmButton = { TextButton(onClick = { dismiss() }) { Text("知道了") } })
+        }
+
+        previewError?.let { message ->
+            AlertDialog(onDismissRequest = { previewError = null }, title = { Text("预览失败") },
+                text = { Text(message) }, confirmButton = { TextButton(onClick = { previewError = null }) { Text("知道了") } })
+        }
+        preview?.let { (path, content) ->
+            Dialog(onDismissRequest = { preview = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+                Surface(Modifier.fillMaxSize()) {
+                    Column(Modifier.fillMaxSize().padding(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SelectionContainer { Text(path, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, maxLines = 2) }
+                            TextButton(onClick = { preview = null }) { Text("关闭") }
+                        }
+                        HorizontalDivider()
+                        if (content == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("读取中…") }
+                        else if (path.endsWith(".md", true) || path.endsWith(".markdown", true)) {
+                            SelectionContainer {
+                                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                    MarkdownBody(content, onOpenPath = ::openPathPreview, onOpenUrl = ::openExternalUrl)
+                                }
+                            }
+                        } else {
+                            // Plain files are shown verbatim: monospace, no markdown guessing.
+                            SelectionContainer {
+                                Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                    Text(
+                                        content.ifBlank { "（空文件）" },
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        detail?.pendingUi?.firstOrNull { it.id !in answered }?.let { request ->
+            // Only an explicit answer invokes the repository; never auto-answer prompts.
+            LiveExtensionDialog(request = request, onAnswer = { value, cancelled ->
+                live.answer(sessionKey, request, value, cancelled).onSuccess { answered = answered + request.id }
+            })
+        }
     }
-    detail?.pendingUi?.firstOrNull { it.id !in answered }?.let { request ->
-        // Only an explicit answer invokes the repository; never auto-answer prompts.
-        LiveExtensionDialog(request = request, onAnswer = { value, cancelled ->
-            live.answer(sessionKey, request, value, cancelled).onSuccess { answered = answered + request.id }
-        })
-    }
-}
 
-@Composable
-internal fun LiveTimelineCard(item: LiveTimelineItem, enabled: Boolean, onFork: (String) -> Unit) {
-    val tool = item.toolName != null || item.role == "tool" || item.role == "toolResult"
-    var showThinking by remember(item.id) { mutableStateOf(false) }
-    val background = when {
-        item.isError -> MaterialTheme.colorScheme.errorContainer
-        item.role == "user" -> MaterialTheme.colorScheme.primaryContainer
-        tool -> MaterialTheme.colorScheme.surfaceVariant
-        else -> MaterialTheme.colorScheme.secondaryContainer
+    @Composable
+    internal fun LiveTimelineCard(item: LiveTimelineItem, enabled: Boolean, onFork: (String) -> Unit) {
+        val tool = item.toolName != null || item.role == "tool" || item.role == "toolResult"
+        var showThinking by remember(item.id) { mutableStateOf(false) }
+        val background = when {
+            item.isError -> MaterialTheme.colorScheme.errorContainer
+            item.role == "user" -> MaterialTheme.colorScheme.primaryContainer
+            tool -> MaterialTheme.colorScheme.surfaceVariant
+            else -> MaterialTheme.colorScheme.secondaryContainer
+        }
+        Column(Modifier.fillMaxWidth().background(background, MaterialTheme.shapes.medium).padding(12.dp)) {
+            Text("${item.role}${item.toolName?.let { " · $it" } ?: ""}${if (item.isError) " · 错误" else ""}", style = MaterialTheme.typography.labelSmall)
+            item.thinking?.takeIf { it.isNotBlank() }?.let { thinking ->
+                TextButton(onClick = { showThinking = !showThinking }) { Text(if (showThinking) "收起思考" else "查看思考") }
+                if (showThinking) SelectionContainer { Text(thinking, style = MaterialTheme.typography.bodySmall) }
+            }
+            SelectionContainer {
+                Text(item.text.ifBlank { if (item.thinking.isNullOrBlank()) "（等待内容…）" else "（思考中）" },
+                    style = if (tool) MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace) else MaterialTheme.typography.bodyMedium)
+            }
+            if (item.role == "user" && item.forkable && !item.entryId.isNullOrBlank()) {
+                TextButton(enabled = enabled, onClick = { onFork(item.entryId) }) { Text("从此消息分叉…") }
+            }
+        }
     }
-    Column(Modifier.fillMaxWidth().background(background, MaterialTheme.shapes.medium).padding(12.dp)) {
-        Text("${item.role}${item.toolName?.let { " · $it" } ?: ""}${if (item.isError) " · 错误" else ""}", style = MaterialTheme.typography.labelSmall)
-        item.thinking?.takeIf { it.isNotBlank() }?.let { thinking ->
-            TextButton(onClick = { showThinking = !showThinking }) { Text(if (showThinking) "收起思考" else "查看思考") }
-            if (showThinking) SelectionContainer { Text(thinking, style = MaterialTheme.typography.bodySmall) }
-        }
-        SelectionContainer {
-            Text(item.text.ifBlank { if (item.thinking.isNullOrBlank()) "（等待内容…）" else "（思考中）" },
-                style = if (tool) MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace) else MaterialTheme.typography.bodyMedium)
-        }
-        if (item.role == "user" && item.forkable && !item.entryId.isNullOrBlank()) {
-            TextButton(enabled = enabled, onClick = { onFork(item.entryId) }) { Text("从此消息分叉…") }
+
+    /** Marks the way back to the newest message once the reader has scrolled into history. */
+    @Composable
+    private fun JumpToLatestPill(visible: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+        AnimatedVisibility(
+            visible = visible,
+            modifier = modifier,
+            enter = fadeIn(Motion.fast()) + scaleIn(Motion.fast(), initialScale = 0.9f),
+            exit = fadeOut(Motion.fast()) + scaleOut(Motion.fast(), targetScale = 0.9f),
+        ) {
+            Surface(
+                onClick = onClick,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                shadowElevation = 2.dp,
+            ) {
+                Row(
+                    Modifier.padding(start = 10.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowDown, contentDescription = null,
+                        modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary,
+                    )
+                Text(
+                    "最新",
+                    style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
     }
 }

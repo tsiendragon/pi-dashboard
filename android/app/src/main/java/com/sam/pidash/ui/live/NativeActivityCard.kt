@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,6 +19,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +48,8 @@ import com.sam.pidash.domain.model.activityStatus
 import com.sam.pidash.domain.model.followUpSummary
 import com.sam.pidash.domain.model.quoteOrCommentKind
 import com.sam.pidash.ui.common.MetaAction
+import com.sam.pidash.ui.common.Collapsible
+import com.sam.pidash.ui.common.ExpandHint
 import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.markdown.MarkdownBody
@@ -231,20 +238,18 @@ internal fun NativeActivityCard(
                                     )
                                 }
                             }
-                            Text(
-                                if (stepsExpanded) "收起 ▴" else "展开 ▾",
-                                style = PiType.micro,
-                                color = scheme.onSurfaceVariant,
-                            )
+                            ExpandHint(stepsExpanded)
                         }
-                        if (stepsExpanded) {
-                            HorizontalDivider(color = scheme.outline.copy(alpha = 0.2f))
-                            Column(
-                                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                tools.forEach { step ->
-                                    NativeStepCard(item = step, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl)
+                        Collapsible(visible = stepsExpanded) {
+                            Column(Modifier.fillMaxWidth()) {
+                                HorizontalDivider(color = scheme.outline.copy(alpha = 0.2f))
+                                Column(
+                                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    tools.forEach { step ->
+                                        NativeStepCard(item = step, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl)
+                                    }
                                 }
                             }
                         }
@@ -270,21 +275,19 @@ internal fun NativeActivityCard(
                                 style = PiType.footnote.copy(fontWeight = FontWeight.Medium),
                                 color = scheme.primary,
                             )
-                            Text(
-                                if (thinkingExpanded) "收起 ▴" else "展开 ▾",
-                                style = PiType.micro,
-                                color = scheme.onSurfaceVariant,
-                            )
+                            ExpandHint(thinkingExpanded)
                         }
-                        if (thinkingExpanded) {
-                            HorizontalDivider(color = scheme.primary.copy(alpha = 0.18f))
-                            SelectionContainer {
-                                Text(
-                                    thinkingText,
-                                    modifier = Modifier.padding(10.dp),
-                                    style = PiType.monoMicro,
-                                    color = scheme.onSurfaceVariant,
-                                )
+                        Collapsible(visible = thinkingExpanded) {
+                            Column(Modifier.fillMaxWidth()) {
+                                HorizontalDivider(color = scheme.primary.copy(alpha = 0.18f))
+                                SelectionContainer {
+                                    Text(
+                                        thinkingText,
+                                        modifier = Modifier.padding(10.dp),
+                                        style = PiType.monoMicro,
+                                        color = scheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
@@ -349,11 +352,17 @@ internal fun NativeActivityCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 ActivityStatusPill(status)
-                Text(
-                    "查看详情  ›",
-                    style = PiType.micro.copy(fontWeight = FontWeight.Medium),
-                    color = scheme.primary,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "查看详情",
+                        style = PiType.micro.copy(fontWeight = FontWeight.Medium),
+                        color = scheme.primary,
+                    )
+                    Icon(
+                        Icons.Filled.KeyboardArrowRight, contentDescription = null,
+                        modifier = Modifier.size(16.dp), tint = scheme.primary,
+                    )
+                }
             }
         }
     }
@@ -383,7 +392,10 @@ internal fun ActivityStatusPill(status: ActivityStatus, modifier: Modifier = Mod
             when {
                 status.failed -> StatusDot(scheme.error, size = 6.dp)
                 status.running -> PulsingDot(scheme.primary)
-                else -> Text("✓", style = PiType.micro.copy(fontWeight = FontWeight.Bold), color = scheme.primary)
+                else -> Icon(
+                    Icons.Filled.Check, contentDescription = null,
+                    modifier = Modifier.size(13.dp), tint = scheme.primary,
+                )
             }
             Text(
                 status.label,

@@ -1,5 +1,6 @@
 package com.sam.pidash.ui.live
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,6 +46,8 @@ import com.sam.pidash.domain.model.groupActivityDetail
 import com.sam.pidash.domain.model.isDetailTool
 import com.sam.pidash.domain.model.TranscriptRow
 import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.common.Collapsible
+import com.sam.pidash.ui.common.ExpandHint
 import com.sam.pidash.ui.theme.Hairline
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Spacing
@@ -213,22 +216,19 @@ private fun DetailTraceBlock(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             ) else Spacer(Modifier.weight(1f))
-            Text(
-                if (expanded) "收起 ▴" else "展开 ▾",
-                style = PiType.micro,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-            )
+            ExpandHint(expanded)
         }
-        if (expanded) {
-            HorizontalDivider(color = scheme.outline.copy(alpha = 0.2f))
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-            ) {
-                row.items.forEach { entry ->
-                    if (isDetailTool(entry)) NativeStepCard(entry, onOpenPath, onOpenUrl, showArguments = true)
-                    else NativeMessageCard(entry, onOpenPath, onOpenUrl, compactAssistant = true)
+        Collapsible(visible = expanded) {
+            Column(Modifier.fillMaxWidth()) {
+                HorizontalDivider(color = scheme.outline.copy(alpha = 0.2f))
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                ) {
+                    row.items.forEach { entry ->
+                        if (isDetailTool(entry)) NativeStepCard(entry, onOpenPath, onOpenUrl, showArguments = true)
+                        else NativeMessageCard(entry, onOpenPath, onOpenUrl, compactAssistant = true)
+                    }
                 }
             }
         }

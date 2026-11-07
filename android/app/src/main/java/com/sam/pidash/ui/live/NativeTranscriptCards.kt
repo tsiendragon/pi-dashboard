@@ -1,6 +1,7 @@
 package com.sam.pidash.ui.live
 
 import androidx.compose.foundation.Image
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -49,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.TranscriptRow
 import com.sam.pidash.ui.common.InsetSeparator
+import com.sam.pidash.ui.common.Collapsible
+import com.sam.pidash.ui.common.ExpandHint
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.markdown.MarkdownBody
@@ -114,7 +119,7 @@ internal fun NativeStepCard(
     val toolThinking = item.thinking?.takeIf { showArguments && it.isNotBlank() }
     val expandable = output.isNotEmpty() || arguments != null || toolThinking != null || (showArguments && item.images.isNotEmpty())
     val active = item.isError || item.status == "error" || item.status == "running"
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().animateContentSize()) {
         Row(
             Modifier.fillMaxWidth()
                 .then(if (expandable) Modifier.clickable { open = !open } else Modifier)
@@ -160,14 +165,14 @@ internal fun NativeStepCard(
                     modifier = Modifier.padding(start = Spacing.xs),
                 )
             }
-            if (expandable) Text(
-                if (open) "⌃" else "⌄",
-                style = PiType.action,
-                color = scheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.padding(start = Spacing.xs),
+            if (expandable) Icon(
+                imageVector = if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (open) "收起输出" else "展开输出",
+                tint = scheme.onSurfaceVariant.copy(alpha = 0.7f),
+                modifier = Modifier.padding(start = Spacing.xs).size(16.dp),
             )
         }
-        if (open && expandable) {
+        Collapsible(visible = open && expandable) {
             SelectionContainer {
                 Column(
                     Modifier.fillMaxWidth()
@@ -304,7 +309,7 @@ internal fun NativeMessageCard(
         val hasThinking = !item.thinking.isNullOrBlank()
         val hasContent = item.text.isNotBlank() || item.images.isNotEmpty() || item.isError
         var menuOpen by remember(item.id) { mutableStateOf(false) }
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        Column(Modifier.fillMaxWidth().animateContentSize(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
             if (hasContent) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
@@ -347,20 +352,20 @@ internal fun NativeMessageCard(
                         .clickable { showThinking = !showThinking }.padding(horizontal = Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(if (showThinking) "⌃  收起思考" else "⌄  思考", style = PiType.footnote, color = scheme.onSurfaceVariant)
+                    ExpandHint(showThinking, collapsedLabel = "思考", expandedLabel = "收起思考")
                 }
             }
-            if (showThinking) item.thinking?.let {
+            Collapsible(visible = showThinking && item.thinking != null) { item.thinking?.let {
                 SelectionContainer {
                     Text(it, style = PiType.monoMicro, color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = Spacing.sm))
                 }
-            }
+            } }
         }
         return
     }
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+    Column(Modifier.fillMaxWidth().animateContentSize(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
         if (item.text.isNotBlank()) {
             MarkdownBody(
@@ -384,7 +389,7 @@ internal fun NativeMessageCard(
                 if (onAnnotate != null) MetaAction("批注", { onAnnotate(item) }, enabled)
             }
         }
-        if (showThinking) item.thinking?.let {
+        Collapsible(visible = showThinking && item.thinking != null) { item.thinking?.let {
             SelectionContainer {
                 Text(
                     it,
@@ -393,7 +398,7 @@ internal fun NativeMessageCard(
                     modifier = Modifier.padding(start = Spacing.sm),
                 )
             }
-        }
+        } }
     }
 }
 
@@ -439,7 +444,12 @@ internal fun NativeStepGroup(
                 .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(if (open) "⌃" else "⌄", style = PiType.action, color = scheme.onSurfaceVariant)
+            Icon(
+                imageVector = if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (open) "收起" else "展开",
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
             Spacer(Modifier.size(Spacing.xs))
             Text(
                 "${group.items.size} 个步骤",
