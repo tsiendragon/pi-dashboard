@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.common.rememberAttachmentBitmap
 import com.sam.pidash.ui.common.MetaLine
 import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.MetaAction
@@ -57,6 +58,7 @@ import com.sam.pidash.data.remote.FileAttachments
 import com.sam.pidash.data.remote.ImageAttachments
 import com.sam.pidash.domain.model.LiveImage
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -169,6 +171,7 @@ fun LiveSessionScreen(
     var notice by remember(sessionKey) { mutableStateOf<String?>(null) }
     val haptics = LocalHapticFeedback.current
     val snackbarHostState = remember { SnackbarHostState() }
+    var pulling by remember { mutableStateOf(false) }
     val context = LocalContext.current
     // Same limits as the WebUI; reading/compressing happens off the picker callback's
     // critical path only because these are local files, and failures keep the draft.
@@ -657,12 +660,7 @@ fun LiveSessionScreen(
                 ) {
                     attachments.forEachIndexed { index, image ->
                         Box {
-                            val preview = remember(image.data) {
-                                runCatching {
-                                    val bytes = android.util.Base64.decode(image.data, android.util.Base64.DEFAULT)
-                                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                                }.getOrNull()
-                            }
+                            val preview = rememberAttachmentBitmap(image.data, maxPx = 320)
                             if (preview != null) Image(preview, "待发送图片 ${index + 1}", Modifier.size(56.dp),
                                 contentScale = ContentScale.Crop)
                             else Box(Modifier.size(56.dp).background(MaterialTheme.colorScheme.surfaceVariant))
@@ -969,7 +967,19 @@ fun LiveSessionScreen(
                         last.offset + last.size <= info.viewportEndOffset + 8)
                 }
             }
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            PullToRefreshBox(
+                isRefreshing = pulling,
+                onRefresh = {
+                    if (!pulling) {
+                        pulling = true
+                        scope.launch {
+                            live.refresh(sessionKey).onFailure { notice = "刷新失败：${it.message}" }
+                            pulling = false
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
                 if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),

@@ -52,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.TranscriptRow
 import com.sam.pidash.ui.common.InsetSeparator
+import com.sam.pidash.ui.common.rememberAttachmentBitmap
+import com.sam.pidash.ui.common.ImageViewerDialog
 import com.sam.pidash.ui.common.Collapsible
 import com.sam.pidash.ui.common.ExpandHint
 import com.sam.pidash.ui.common.MetaAction
@@ -404,18 +406,21 @@ internal fun NativeMessageCard(
 
 @Composable
 private fun AttachmentImage(data: String, index: Int) {
-    val bitmap = remember(data) {
-        runCatching {
-            val bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT)
-            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        }.getOrNull()
+    val bitmap = rememberAttachmentBitmap(data)
+    var open by remember(data) { mutableStateOf(false) }
+    Box(
+        Modifier.size(160.dp).clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .clickable(enabled = bitmap != null) { open = true },
+    ) {
+        if (bitmap != null) Image(
+            bitmap,
+            "附件 ${index + 1}，点按查看大图",
+            Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
     }
-    if (bitmap != null) Image(
-        bitmap,
-        "附件 ${index + 1}",
-        Modifier.size(160.dp).clip(RoundedCornerShape(10.dp)),
-        contentScale = ContentScale.Crop,
-    )
+    if (open && bitmap != null) ImageViewerDialog(bitmap) { open = false }
 }
 
 /**

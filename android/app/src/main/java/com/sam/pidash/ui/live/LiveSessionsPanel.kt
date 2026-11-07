@@ -19,6 +19,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
@@ -31,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -39,6 +42,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.AggregatedLiveSession
@@ -47,10 +51,12 @@ import com.sam.pidash.domain.model.machineSessionSections
 import com.sam.pidash.ui.common.liveConnectionLabel
 import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.LiveRepoCandidate
+import com.sam.pidash.domain.model.liveDirectoryOptions
 import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.domain.model.SessionMove
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (SessionKey) -> Unit) {
     val allBackends by repo.backends.collectAsState()
@@ -62,6 +68,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingUndo by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var refreshing by remember { mutableStateOf(false) }
     var signingIn by remember { mutableStateOf<Backend?>(null) }
     var signingOut by remember { mutableStateOf<Backend?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -106,7 +113,20 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
         )
         if (result == SnackbarResult.ActionPerformed) undo?.invoke()
     }
-    Box(Modifier.fillMaxSize()) {
+    // Pull down to re-read this machine; the same call the overflow menu uses.
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            if (!refreshing) {
+                refreshing = true
+                scope.launch {
+                    repo.live.refreshMachine(backendId).onFailure { notice = "刷新失败：${it.message}" }
+                    refreshing = false
+                }
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    ) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
         items(backends, key = { "backend:${it.id}" }) { backend ->
             val state = states[backend.id]
@@ -121,7 +141,18 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
         }
         item {
             Column(Modifier.padding(horizontal = 12.dp)) {
-                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("搜索标题 / 路径 / 模型 / 分组 / #标签") }, singleLine = true, enabled = !sorting)
+                OutlinedTextField(
+                    query, { query = it }, Modifier.fillMaxWidth(),
+                    placeholder = { Text("搜索标题、路径、模型、#标签") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, Modifier.size(18.dp)) },
+                    trailingIcon = if (query.isNotEmpty()) {{
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Filled.Close, contentDescription = "清除搜索", Modifier.size(18.dp))
+                        }
+                    } } else null,
+                    singleLine = true,
+                    enabled = !sorting,
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(runningOnly, { runningOnly = !runningOnly }, enabled = !sorting, label = { Text("工作中") })
                     FilterChip(children, { children = !children }, enabled = !sorting, label = { Text("子 Agent") })
@@ -141,11 +172,47 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
         if (backends.isEmpty()) item { Text("机器配置已删除，请返回机器列表。", Modifier.padding(16.dp)) }
         if (sections.isEmpty() && backends.isNotEmpty()) item {
             val ready = states[backendId]?.connected == true
-            Text(when {
-                !ready -> "尚未取得 Live 列表，请先完成配对/连接；这不代表服务器没有会话。"
-                query.isNotBlank() || runningOnly -> "没有匹配的会话，请清除搜索或筛选。"
-                else -> "本机暂无主 Live 会话；可显示子 Agent，或点 + 选择目录启动。"
-            }, Modifier.padding(16.dp))
+            // An empty list is a state with an obvious next step, not a dead end: every case
+            // offers the one action that actually changes the outcome.
+            val filtered = query.isNotBlank() || runningOnly
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = Spacing.xl, vertical = 40.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+            ) {
+                Text(
+                    when {
+                        !ready -> "还没有连上这台机器"
+                        filtered -> "没有匹配的会话"
+                        else -> "这台机器还没有 Live 会话"
+                    },
+                    style = PiType.callout.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    when {
+                        !ready -> "配对或输入访问令牌后才会显示列表，这不代表服务器没有会话。"
+                        filtered -> "清除搜索和筛选，回到完整列表。"
+                        else -> "在服务器上启动一个 Pi 会话，或从这里新建。"
+                    },
+                    style = PiType.footnote,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.size(Spacing.xs))
+                when {
+                    !ready -> Button(onClick = {
+                        scope.launch { repo.live.refreshMachine(backendId) }
+                    }) { Text("重新连接") }
+                    filtered -> Button(onClick = { query = ""; runningOnly = false }) { Text("清除筛选") }
+                    else -> Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        Button(onClick = { children = true }) { Text("显示子 Agent") }
+                        OutlinedButton(onClick = {
+                            scope.launch { repo.live.refreshMachine(backendId) }
+                        }) { Text("刷新列表") }
+                    }
+                }
+            }
         }
         sections.forEach { section ->
             val collapsed = query.isBlank() && (section.collapsedByDefault != (section.id in toggled))
@@ -159,7 +226,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        section.name.uppercase(),
+                        section.name,
                         style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -426,19 +493,20 @@ fun NewLiveSessionDialog(
 ) {
     val scope = rememberCoroutineScope()
     var backendId by remember { mutableStateOf(backends.firstOrNull()?.id.orEmpty()) }
-    var cwd by remember { mutableStateOf("") }
+    var cwd by remember(backendId) { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
     var thinking by remember { mutableStateOf("") }
-    var roots by remember { mutableStateOf(emptyList<String>()) }
-    var candidates by remember { mutableStateOf(emptyList<LiveRepoCandidate>()) }
-    var loading by remember { mutableStateOf(false) }
+    var roots by remember(backendId) { mutableStateOf(emptyList<String>()) }
+    var candidates by remember(backendId) { mutableStateOf(emptyList<LiveRepoCandidate>()) }
+    var loading by remember(backendId) { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var waiting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var optionsError by remember { mutableStateOf<String?>(null) }
+    var optionsError by remember(backendId) { mutableStateOf<String?>(null) }
     var backendMenu by remember { mutableStateOf(false) }
-    var cwdMenu by remember { mutableStateOf(false) }
+    var cwdMenu by remember(backendId) { mutableStateOf(false) }
+    val directoryOptions = remember(candidates, roots) { liveDirectoryOptions(candidates, roots) }
 
     LaunchedEffect(backendId) {
         cwd = ""; roots = emptyList(); candidates = emptyList(); optionsError = null; error = null
@@ -468,19 +536,22 @@ fun NewLiveSessionDialog(
                 }
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 optionsError?.let { Text("目录选项加载失败：$it\n可手动填写绝对路径；启动权限由服务器校验。", color = MaterialTheme.colorScheme.error) }
-                Box {
-                    TextButton(enabled = !busy && !waiting && (roots.isNotEmpty() || candidates.isNotEmpty()),
-                        onClick = { cwdMenu = true }) { Text("从服务器根目录 / 项目选择") }
-                    DropdownMenu(expanded = cwdMenu, onDismissRequest = { cwdMenu = false }) {
-                        candidates.forEach { candidate -> DropdownMenuItem(
-                            text = { Column { Text(candidate.name); Text(candidate.path, style = MaterialTheme.typography.bodySmall) } },
-                            onClick = { cwd = candidate.path; cwdMenu = false },
-                        ) }
-                        roots.forEach { root -> DropdownMenuItem(text = { Text(root) }, onClick = { cwd = root; cwdMenu = false }) }
-                    }
-                }
                 OutlinedTextField(value = cwd, onValueChange = { cwd = it }, label = { Text("工作目录（绝对路径）") },
                     modifier = Modifier.fillMaxWidth(), enabled = !busy && !waiting, singleLine = true)
+                if (!loading && cwd.isBlank() && directoryOptions.isNotEmpty()) {
+                    Text("快捷选择", style = PiType.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    directoryOptions.take(3).forEach { option ->
+                        LiveDirectoryChoice(option, enabled = !busy && !waiting, onSelect = { cwd = option.path })
+                    }
+                }
+                TextButton(enabled = !busy && !waiting && !loading && directoryOptions.isNotEmpty(),
+                    onClick = { cwdMenu = true }) {
+                    Text(if (directoryOptions.isEmpty()) "搜索目录" else "搜索全部目录（${directoryOptions.size}）")
+                }
+                if (!loading && directoryOptions.isEmpty() && optionsError == null) {
+                    Text("服务器暂无目录建议，可直接填写绝对路径。", style = PiType.footnote,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("标题（可选）") },
                     modifier = Modifier.fillMaxWidth(), enabled = !busy && !waiting)
                 OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("模型（可选，provider/id）") },
@@ -524,6 +595,13 @@ fun NewLiveSessionDialog(
         },
         dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(if (waiting) "返回列表" else "取消") } },
     )
+    if (cwdMenu) {
+        LiveDirectoryPicker(
+            serverName = backends.firstOrNull { it.id == backendId }?.name ?: backendId,
+            options = directoryOptions, currentPath = cwd,
+            onSelect = { cwd = it; cwdMenu = false }, onDismiss = { cwdMenu = false },
+        )
+    }
 }
 
 /**
