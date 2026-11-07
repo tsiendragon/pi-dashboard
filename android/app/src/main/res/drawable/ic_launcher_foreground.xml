@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Simple π foreground for adaptive icon -->
+<!-- Custom path artwork: no font dependency. Every stroke fits the adaptive icon's 66dp safe circle. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#FF000000"
-        android:pathData="M20,36 L88,36 M38,36 L38,78 M70,36 Q88,36 88,54 Q88,72 70,72 L54,72" />
-    <!-- π symbol as text approximation using filled circle -->
-    <path
-        android:fillColor="#FF000000"
-        android:pathData="M30,34 L78,34 L78,40 L30,40 Z
-                          M36,40 L44,40 L44,76 L36,76 Z
-                          M64,40 L72,40 L72,60 Q72,70 60,70 L52,70 L52,64 L60,64 Q64,64 64,60 Z" />
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#FFB75A"
+        android:strokeWidth="6.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M31,41 C39,38 49,38 59,39 C65,39.6 69,40 73,39" />
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#FFB75A"
+        android:strokeWidth="6.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M43,40 C43,50 42,61 37,70" />
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#FFB75A"
+        android:strokeWidth="6.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M62,41 L62,61 C62,68 65,71 71,69" />
+    <path android:fillColor="#70D4BE"
+        android:pathData="M79,57 C80.1,57 81,57.9 81,59 L81,69 C81,70.1 80.1,71 79,71 C77.9,71 77,70.1 77,69 L77,59 C77,57.9 77.9,57 79,57 Z" />
 </vector>

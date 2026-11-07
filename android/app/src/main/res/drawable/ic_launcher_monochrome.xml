@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same silhouette as the full-colour foreground; Android supplies themed icon colours. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M31,41 C39,38 49,38 59,39 C65,39.6 69,40 73,39" />
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M43,40 C43,50 42,61 37,70" />
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M62,41 L62,61 C62,68 65,71 71,69" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M79,57 C80.1,57 81,57.9 81,59 L81,69 C81,70.1 80.1,71 79,71 C77.9,71 77,70.1 77,69 L77,59 C77,57.9 77.9,57 79,57 Z" />
+</vector>

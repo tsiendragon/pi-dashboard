@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher-owned mask supplies the outline. Do not bake a rounded tile into the foreground. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:angle="315" android:startColor="#25334A" android:endColor="#101722" />
+</shape>
