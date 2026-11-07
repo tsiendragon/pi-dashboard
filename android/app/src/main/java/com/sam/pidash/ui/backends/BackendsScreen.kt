@@ -31,6 +31,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Switch
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.DashboardClient
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.AppFontScale
+import com.sam.pidash.domain.model.AppTheme
 import com.sam.pidash.domain.model.ConnectionState
 import com.sam.pidash.ui.common.AppVersionLabel
 import com.sam.pidash.ui.common.GroupedCard
@@ -64,6 +66,7 @@ import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.common.backendOriginLabel
 import com.sam.pidash.ui.common.liveConnectionLabel
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
 import kotlinx.coroutines.launch
 
@@ -79,6 +82,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     val notifier = remember { (context.applicationContext as PiDashApp).notifier }
     val displayPrefs = remember { (context.applicationContext as PiDashApp).displayPrefs }
     val fontScale by displayPrefs.fontScale.collectAsState()
+    val theme by displayPrefs.theme.collectAsState()
     var alertsEnabled by remember { mutableStateOf(notifier.prefs.enabled) }
     var alertsNeedsPermission by remember { mutableStateOf(false) }
     // Android 13+: ask once, after saying why. The system dialog is a one-shot; a user who
@@ -135,6 +139,22 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                         Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
                         verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
+                        Text("外观", style = PiType.callout, maxLines = 1)
+                        Text(
+                            "默认跟随系统的深浅色设置；也可以只让本 App 固定一种，页面与状态栏会一起切换。",
+                            style = PiType.caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            AppTheme.entries.forEach { option ->
+                                FilterChip(
+                                    selected = theme == option,
+                                    onClick = { displayPrefs.setTheme(option) },
+                                    label = { Text(option.label) },
+                                )
+                            }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
                         Text("字体大小", style = PiType.callout, maxLines = 1)
                         Text(
                             "默认跟随系统字号，可再整体缩小或放大；仅影响本 App，重启后保留。",

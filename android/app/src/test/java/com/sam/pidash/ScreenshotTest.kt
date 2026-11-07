@@ -9,7 +9,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
@@ -67,6 +71,26 @@ class ScreenshotTest {
     }
 
     @Test
+    fun statusPillsDark() {
+        compose.setContent {
+            PiDashTheme(darkTheme = true) {
+                Surface(color = MaterialTheme.colorScheme.background) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(Spacing.lg),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        ActivityStatusPill(ActivityStatus(ActivityPhase.DONE, "已回复"))
+                        ActivityStatusPill(ActivityStatus(ActivityPhase.COMMAND, "执行命令", "bash"))
+                        ActivityStatusPill(ActivityStatus(ActivityPhase.FAILED, "失败"))
+                        ActivityStatusPill(ActivityStatus(ActivityPhase.WAITING, "待确认"))
+                    }
+                }
+            }
+        }
+        compose.onRoot().captureRoboImage("src/test/screenshots/status-pills-dark.png")
+    }
+
+    @Test
     fun expandHints() {
         compose.setContent {
             PiDashTheme {
@@ -86,6 +110,33 @@ class ScreenshotTest {
             }
         }
         compose.onRoot().captureRoboImage("src/test/screenshots/expand-hints.png")
+    }
+
+    @Test
+    fun typeScaleAtTwoHundredPercent() {
+        // System font scale 2.0 is the stress case for every fixed-height row in the app.
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 2f)) {
+                PiDashTheme {
+                    Surface(color = MaterialTheme.colorScheme.background) {
+                        Column(Modifier.fillMaxWidth().padding(Spacing.md)) {
+                            Text("会话 finnote", style = PiType.callout)
+                            Text("/home/tsien/apps/pi-dashboard", style = PiType.monoMicro)
+                            Text("openai-codex/gpt-6.1-sol · 12 步", style = PiType.caption)
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = Spacing.sm),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                            ) {
+                                ExpandHint(expanded = false)
+                                ActivityStatusPill(ActivityStatus(ActivityPhase.WAITING, "待确认"))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        compose.onRoot().captureRoboImage("src/test/screenshots/type-scale-large-font.png")
     }
 
     @Test

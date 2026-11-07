@@ -2,6 +2,7 @@ package com.sam.pidash.data.local
 
 import android.content.Context
 import com.sam.pidash.domain.model.AppFontScale
+import com.sam.pidash.domain.model.AppTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,6 +21,15 @@ class DisplayPrefs(context: Context) {
     )
     val fontScale: StateFlow<AppFontScale> = _fontScale.asStateFlow()
 
+    private val _theme = MutableStateFlow(AppTheme.fromStorage(prefs.getString(KEY_THEME, null)))
+    val theme: StateFlow<AppTheme> = _theme.asStateFlow()
+
+    fun setTheme(theme: AppTheme) {
+        if (_theme.value == theme) return
+        prefs.edit().putString(KEY_THEME, theme.storageValue).apply()
+        _theme.value = theme
+    }
+
     fun setFontScale(scale: AppFontScale) {
         if (_fontScale.value == scale) return
         prefs.edit().putString(KEY_FONT_SCALE, scale.storageValue).apply()
@@ -28,5 +38,6 @@ class DisplayPrefs(context: Context) {
 
     private companion object {
         const val KEY_FONT_SCALE = "font_scale"
+        const val KEY_THEME = "theme"
     }
 }

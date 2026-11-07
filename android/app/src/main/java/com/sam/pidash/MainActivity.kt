@@ -6,6 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
+import com.sam.pidash.domain.model.AppTheme
+import androidx.core.view.WindowCompat
+import androidx.compose.runtime.SideEffect
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalDensity
@@ -58,6 +62,18 @@ class MainActivity : ComponentActivity() {
         val displayPrefs = (application as PiDashApp).displayPrefs
         setContent {
             val fontScale by displayPrefs.fontScale.collectAsState()
+            val theme by displayPrefs.theme.collectAsState()
+            val dark = when (theme) {
+                AppTheme.LIGHT -> false
+                AppTheme.DARK -> true
+                AppTheme.SYSTEM -> isSystemInDarkTheme()
+            }
+            // System bars follow the in-app choice, not just the OS setting.
+            SideEffect {
+                val bars = WindowCompat.getInsetsController(window, window.decorView)
+                bars.isAppearanceLightStatusBars = !dark
+                bars.isAppearanceLightNavigationBars = !dark
+            }
             val density = LocalDensity.current
             // Keep dp sizing untouched and scale only sp text on top of the system font scale.
             val adjustedDensity = if (fontScale.multiplier == 1f) density else Density(
@@ -65,7 +81,7 @@ class MainActivity : ComponentActivity() {
                 fontScale = density.fontScale * fontScale.multiplier,
             )
             CompositionLocalProvider(LocalDensity provides adjustedDensity) {
-                PiDashTheme {
+                PiDashTheme(darkTheme = dark) {
                     AppNav(repo)
                 }
             }
