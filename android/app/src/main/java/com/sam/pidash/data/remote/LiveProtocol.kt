@@ -96,7 +96,7 @@ fun reduceLiveEvent(detail: LiveDetail, message: JsonObject): LiveDetail? {
     var pending = detail.pendingUi
     if (type == "extension_ui") {
         val request = runCatching { pidashJson.decodeFromJsonElement<LiveUiRequest>(data) }.getOrNull()
-        if (request != null && request.method in setOf("confirm", "select", "input", "editor")) pending = pending.filterNot { it.id == request.id } + request
+        if (request != null && request.method in setOf("confirm", "select", "input", "editor", "sudo")) pending = pending.filterNot { it.id == request.id } + request
     }
     if (type == "extension_ui_closed") pending = pending.filterNot { it.id == data.str("id") }
     val entries = detail.entries.toMutableList()

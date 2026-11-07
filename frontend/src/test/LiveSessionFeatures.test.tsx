@@ -35,6 +35,12 @@ function renderFeatures(overrides: Partial<Props> = {}) {
 const btwPanel = () => within(screen.getByLabelText('BTW').closest('details') as HTMLElement)
 
 describe('LiveSessionFeatures', () => {
+  it('shows current context telemetry inside the quick tools panel', () => {
+    renderFeatures({ contextUsage: { tokens: 12345, contextWindow: 100000, percent: 12.345 } })
+    const panel = within(screen.getByLabelText('快捷短语').closest('details') as HTMLElement)
+    expect(panel.getByText('12,345 / 100,000 tokens')).toBeInTheDocument()
+    expect(panel.getByText('上下文 · 12.3%')).toBeInTheDocument()
+  })
   it('renders BTW, scheduler, subagent and workflow snapshots', () => {
     renderFeatures({
       features: {

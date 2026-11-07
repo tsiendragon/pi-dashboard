@@ -16,11 +16,17 @@ function fixture() {
   } }
   registry.connect({ type: 'hello', protocolVersion: 2, brokerToken: 'token', processInstanceId: 'p', sessionId: 's', pid: 42, cwd: '/tmp', mode: 'tui' }, '/tmp', transport)
   registry.applySnapshot({ type: 'snapshot', processInstanceId: 'p', revision: 1, sequence: 0, summary: { processInstanceId: 'p', sessionId: 's', pid: 42, cwd: '/tmp', canonicalCwd: '/tmp', mode: 'tui', status: 'running', claim: { state: 'unclaimed' }, startedAt: 1, lastActivityAt: 2, revision: 1, eventSequence: 0 }, entries: [] }, transport, '/tmp')
-  registry.applyEvent({ type: 'event', processInstanceId: 'p', sequence: 1, event: { type: 'extension_ui', data: { id: 'sudo-1', method: 'sudo', title: 'Authorize', host: 'machine', cwd: '/tmp', command: '["/usr/bin/id"]', expiresAt: 2000 } } }, transport)
+  registry.applyEvent({ type: 'event', processInstanceId: 'p', sequence: 1, event: { type: 'extension_ui', data: { id: 'sudo-1', method: 'sudo', title: 'Authorize', message: '检查 UID，不修改文件。', host: 'machine', cwd: '/tmp', command: '["/usr/bin/id"]', expiresAt: 2000 } } }, transport)
   sent.length = 0 // discard the initial snapshot handshake's resync
   return { registry, sent, transport, expire: () => { now = 3000 } }
 }
 describe('dedicated sudo answer channel', () => {
+  it('retains the execution explanation and immutable argv in the projected request', () => {
+    const { registry } = fixture()
+    expect(registry.get('p')?.pendingUi[0]).toMatchObject({
+      method: 'sudo', message: '检查 UID，不修改文件。', command: '["/usr/bin/id"]',
+    })
+  })
   it('validates a bounded secret without accepting replacement commands or ambiguous cancellation', () => {
     expect(validateLiveSessionCommand({ type: 'answer_sudo', id: 'id', password: '' }, true).type).toBe('answer_sudo')
     for (const extra of [{ password: 'a\nb' }, { password: 'x'.repeat(4097) }, { password: 'x', executable: '/bad' }, { password: 'x', cancelled: true }]) {

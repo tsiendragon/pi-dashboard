@@ -3208,6 +3208,7 @@ export default function LiveSessionPage() {
                   busy={busy}
                   cwd={summary.canonicalCwd}
                   status={summary.status}
+                  contextUsage={summary.contextUsage}
                   onFileOpen={path => { void handleFileOpen(path) }}
                   onOpenBtw={() => { void btwCommand({ type: 'open' }).catch(() => {}) }}
                   onCloseBtw={() => { void btwCommand({ type: 'close' }).catch(() => {}) }}

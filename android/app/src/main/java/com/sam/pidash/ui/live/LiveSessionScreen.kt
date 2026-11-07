@@ -525,6 +525,9 @@ fun LiveSessionScreen(
                             Icon(Icons.Filled.MoreVert, "会话操作")
                         }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            ContextUsageSummary(summary?.contextUsage, cachedSnapshot != null,
+                                backendStates[sessionKey.backendId]?.connected == true && summary?.status != "reconnecting")
+                            HorizontalDivider()
                             DropdownMenuItem(text = { Text("新建 Live Pi 会话…") }, enabled = !busy, onClick = {
                                 menu = false; dialog = "new-session"
                             })
@@ -777,6 +780,9 @@ fun LiveSessionScreen(
                             }
                         }
                         DropdownMenu(expanded = promptsOpen, onDismissRequest = { promptsOpen = false }) {
+                            ContextUsageSummary(summary?.contextUsage, cachedSnapshot != null,
+                                backendStates[sessionKey.backendId]?.connected == true && summary?.status != "reconnecting")
+                            HorizontalDivider()
                             if (draft.isNotBlank()) DropdownMenuItem(
                                 text = { Text("请先清空草稿", style = PiType.footnote) },
                                 enabled = false, onClick = {},
@@ -800,6 +806,9 @@ fun LiveSessionScreen(
                             Icon(Icons.Filled.Add, "附加内容", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
+                            ContextUsageSummary(summary?.contextUsage, cachedSnapshot != null,
+                                backendStates[sessionKey.backendId]?.connected == true && summary?.status != "reconnecting")
+                            HorizontalDivider()
                             if (addMenuShowTools) {
                                 DropdownMenuItem(
                                     text = { Text("模型：${summary?.model?.id ?: "选择模型"}", maxLines = 1, overflow = TextOverflow.Ellipsis) },

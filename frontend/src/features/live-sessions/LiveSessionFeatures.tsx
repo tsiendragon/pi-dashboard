@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { LiveSessionStatus } from '@shared/live-sessions'
+import type { LiveSessionStatus, LiveSessionSummary } from '@shared/live-sessions'
+import ContextUsagePanel from './ContextUsagePanel'
 import type { SessionGoalSummary } from './sessionGoal'
 import { goalProgressOf } from './sessionGoal'
 import GoalAnchorDialog from './goal/GoalAnchorDialog'
@@ -86,11 +87,12 @@ function SessionAction({ label, icon, disabled, danger, onClick, title, badge, d
   </button>
 }
 
-export default function LiveSessionFeatures({ features, busy, cwd, status, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, goal, goalLoaded = true, onGoalSync, goalBusy = false, onCompact, onClear, onReload, onAbort, onSendPrompt }: {
+export default function LiveSessionFeatures({ features, busy, cwd, status, contextUsage, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, goal, goalLoaded = true, onGoalSync, goalBusy = false, onCompact, onClear, onReload, onAbort, onSendPrompt }: {
   features: Record<string, unknown>
   busy?: boolean
   cwd?: string
   status: LiveSessionStatus
+  contextUsage?: LiveSessionSummary['contextUsage']
   onFileOpen: (path: string) => void
   onOpenBtw: () => void
   onCloseBtw: () => void
@@ -238,6 +240,7 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, compa
     </>}
 
     <Feature title="快捷短语" icon="prompts">
+      <ContextUsagePanel usage={contextUsage} stale={status === 'reconnecting'} />
       <div className="space-y-2">
         {QUICK_PROMPTS.map(p => (
           <button

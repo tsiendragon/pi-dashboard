@@ -1,5 +1,7 @@
 package com.sam.pidash.ui.live
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -30,6 +32,17 @@ import kotlinx.coroutines.launch
 
 @Composable
 internal fun SudoApprovalDialog(request: LiveUiRequest, onAnswer: suspend (String?, Boolean) -> Result<Unit>) {
+    // An incomplete/old-host request must not open an authorization/password dialog at all.
+    val rejectedAtEntry = remember(request.id) { !sudoReviewReady(request, System.currentTimeMillis()) }
+    if (rejectedAtEntry) {
+        val context = LocalContext.current
+        LaunchedEffect(request.id) {
+            onAnswer(null, true).onFailure {
+                Toast.makeText(context, "已拒绝无效 sudo 请求，取消未确认送达。请检查连接；旧工具需 /reload 后重新申请。", Toast.LENGTH_LONG).show()
+            }
+        }
+        return
+    }
     // Deliberately not rememberSaveable, ViewModel state, transcript state, or a preference.
     var password by remember(request.id) { mutableStateOf("") }
     var busy by remember(request.id) { mutableStateOf(false) }
@@ -148,7 +161,7 @@ internal fun SudoApprovalContent(
                     }
                     if (!valid) Text(when {
                         (request.expiresAt ?: 0) <= now -> "请求已过期，请取消后重新申请。"
-                        request.message.isNullOrBlank() -> "缺少执行说明，暂不能授权。请先更新扩展并重新申请。"
+                        request.message.isNullOrBlank() -> "缺少执行说明，不能授权。请更新扩展并 /reload 后重新申请。"
                         else -> "请求信息不完整或格式无效，暂不能授权。"
                     }, style = PiType.footnote, color = MaterialTheme.colorScheme.error)
                     error?.let { Text(it, style = PiType.footnote, color = MaterialTheme.colorScheme.error) }

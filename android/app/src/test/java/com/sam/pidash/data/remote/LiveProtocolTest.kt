@@ -12,6 +12,14 @@ class LiveProtocolTest {
     private fun event(sequence: Int, type: String, data: String = "{}", process: String = "p") = obj("""{"type":"event","processInstanceId":"$process","sequence":$sequence,"event":{"type":"$type","data":$data}}""")
     private fun reduce(detail: LiveDetail, sequence: Int, type: String, data: String = "{}") = reduceLiveEvent(detail, event(sequence, type, data))!!
 
+    @Test fun sudoEventsPreserveReasonAndArgumentsUntilClosed() {
+        val state = reduce(detail(), 1, "extension_ui", """{"id":"sudo-1","method":"sudo","message":"检查 UID，不修改文件。","command":"[\"/usr/bin/id\",\"-u\"]","host":"fixture","cwd":"/tmp","expiresAt":999999}""")
+        assertEquals("sudo", state.pendingUi.single().method)
+        assertEquals("检查 UID，不修改文件。", state.pendingUi.single().message)
+        assertEquals("[\"/usr/bin/id\",\"-u\"]", state.pendingUi.single().command)
+        assertTrue(reduce(state, 2, "extension_ui_closed", """{"id":"sudo-1"}""").pendingUi.isEmpty())
+    }
+
     @Test fun persistedMessagesExposeOnlyRealForkIds() {
         val items = projectLiveTimeline(detail("""{"type":"message","id":"entry-user","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":1000}}"""))
         assertEquals("hello", items.single().text)
