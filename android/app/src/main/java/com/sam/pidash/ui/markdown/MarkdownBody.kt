@@ -1,10 +1,11 @@
 package com.sam.pidash.ui.markdown
 
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.DisableSelection
+import com.sam.pidash.ui.common.CopyTextAction
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
 import com.sam.pidash.ui.theme.Hairline
 import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.CodeColors
@@ -25,7 +26,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,10 +33,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -65,11 +63,13 @@ fun MarkdownBody(
     style: TextStyle = PiType.callout,
 ) {
     val blocks = remember(markdown) { MarkdownParser.parse(markdown) }
-    Column(
-        modifier,
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(com.sam.pidash.ui.theme.Spacing.sm),
-    ) {
-        blocks.forEach { block -> Block(block, style, onOpenPath, onOpenUrl) }
+    SelectionContainer {
+        Column(
+            modifier,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(com.sam.pidash.ui.theme.Spacing.sm),
+        ) {
+            blocks.forEach { block -> Block(block, style, onOpenPath, onOpenUrl) }
+        }
     }
 }
 
@@ -121,7 +121,6 @@ private fun Block(block: MdBlock, style: TextStyle, onOpenPath: (String) -> Unit
 
 @Composable
 private fun CodeBlock(block: MdBlock.Code) {
-    val clipboard = LocalClipboardManager.current
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
     val scheme = MaterialTheme.colorScheme
     val highlighted = remember(block.code, block.language, dark) {
@@ -138,25 +137,15 @@ private fun CodeBlock(block: MdBlock.Code) {
             if (cursor < block.code.length) append(block.code.substring(cursor))
         }
     }
-    // Minimal: no border, no header rule. The language sits above in 11 sp grey and
-    // "复制" only appears as text on the same line.
+    // Chrome does not become part of the user's text selection.
     Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                (block.language ?: "code").lowercase(),
-                style = PiType.action.copy(fontFamily = FontFamily.Monospace),
-                color = scheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                "复制",
-                style = PiType.action,
-                color = scheme.onSurfaceVariant,
-                modifier = Modifier
-                    .clip(Radii.chip)
-                    .clickable { clipboard.setText(AnnotatedString(block.code)) }
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
-            )
+        DisableSelection {
+            Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text((block.language ?: "code").lowercase(),
+                    style = PiType.action.copy(fontFamily = FontFamily.Monospace),
+                    color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                CopyTextAction(block.code)
+            }
         }
         Box(
             Modifier.fillMaxWidth()
@@ -241,7 +230,7 @@ private fun InlineText(
         style = style,
         softWrap = softWrap,
         onTextLayout = { layout = it },
-        modifier = Modifier.pointerInput(annotated) {
+        modifier = if (taps.isEmpty()) Modifier else Modifier.pointerInput(annotated) {
             detectTapGestures { offset ->
                 val result = layout ?: return@detectTapGestures
                 val index = result.getOffsetForPosition(offset)

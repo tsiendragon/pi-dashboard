@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
@@ -51,6 +53,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.TranscriptRow
+import com.sam.pidash.ui.common.CopyTextAction
+import com.sam.pidash.ui.common.rememberCopyText
 import com.sam.pidash.ui.common.InsetSeparator
 import com.sam.pidash.ui.common.rememberAttachmentBitmap
 import com.sam.pidash.ui.common.ImageViewerDialog
@@ -104,6 +108,7 @@ private fun toolOutput(item: LiveTimelineItem): String =
 private fun isRunCode(item: LiveTimelineItem) =
     item.toolName?.lowercase()?.let { "run" in it && "code" in it } == true
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun NativeStepCard(
     item: LiveTimelineItem,
@@ -118,11 +123,13 @@ internal fun NativeStepCard(
     val detail = toolArgumentPreview(item)
     val output = toolOutput(item)
     val arguments = item.toolArgs?.takeIf { showArguments && it.isNotBlank() }?.let {
-        if (it.length > 65_536) it.take(65_536) + "\n（长内容已截断；完整内容请使用 WebUI）" else it
+        if (it.length > 65_536) it.take(65_536) + "\n（展示已截断；可复制原文，或在 WebUI 查看）" else it
     }
     val toolThinking = item.thinking?.takeIf { showArguments && it.isNotBlank() }
+    val thinkingText = (precedingThinking.mapNotNull { it.thinking } + listOfNotNull(toolThinking)).joinToString("\n\n")
     val thinkingCount = precedingThinking.size + if (toolThinking != null) 1 else 0
-    val expandable = output.isNotEmpty() || arguments != null || thinkingCount > 0 || (showArguments && item.images.isNotEmpty())
+    val hasCopyableArgs = !item.toolArgs.isNullOrBlank()
+    val expandable = output.isNotEmpty() || hasCopyableArgs || thinkingCount > 0 || (showArguments && item.images.isNotEmpty())
     val active = item.isError || item.status == "error" || item.status == "running"
     Column(Modifier.fillMaxWidth().animateContentSize()) {
         Row(
@@ -177,7 +184,7 @@ internal fun NativeStepCard(
             )
             if (expandable) Icon(
                 imageVector = if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                contentDescription = if (showArguments) { if (open) "收起记录" else "展开记录" }
+                contentDescription = if (showArguments || hasCopyableArgs) { if (open) "收起记录" else "展开记录" }
                     else { if (open) "收起输出" else "展开输出" },
                 tint = scheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = Spacing.xs).size(16.dp),
@@ -194,6 +201,11 @@ internal fun NativeStepCard(
                         .padding(Spacing.sm),
                     verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                 ) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        if (thinkingText.isNotEmpty()) CopyTextAction(thinkingText, "复制思考")
+                        if (hasCopyableArgs) CopyTextAction(item.toolArgs.orEmpty(), "复制参数")
+                        if (output.isNotEmpty()) CopyTextAction(item.text, "复制输出")
+                    }
                     precedingThinking.forEachIndexed { index, thought ->
                         Text(if (precedingThinking.size == 1) "执行前思考" else "执行前思考 ${index + 1}",
                             style = PiType.caption, color = scheme.onSurfaceVariant)
@@ -231,6 +243,7 @@ internal fun NativeMessageCard(
     compactAssistant: Boolean = false,
     expandedByDefault: Boolean = false,
 ) {
+    val copy = rememberCopyText()
     var expanded by remember(item.id) { mutableStateOf(expandedByDefault) }
     var showThinking by remember(item.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
@@ -241,7 +254,7 @@ internal fun NativeMessageCard(
 
     if (user && compactUser) {
         val canFork = item.forkable && !item.entryId.isNullOrBlank() && onFork != null
-        val hasActions = long || (item.text.isNotBlank() && (onQuote != null || onAnnotate != null)) || canFork
+        val hasActions = item.text.isNotBlank() || long || canFork
         var menuOpen by remember(item.id) { mutableStateOf(false) }
         BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
             Row(
@@ -255,17 +268,20 @@ internal fun NativeMessageCard(
                     verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                 ) {
                     item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
-                    if (item.text.isNotBlank()) Text(
-                        visible + if (long && !expanded) "…" else "",
-                        style = PiType.userMessage,
-                        color = scheme.onPrimaryContainer,
-                    )
+                    if (item.text.isNotBlank()) SelectionContainer {
+                        Text(visible + if (long && !expanded) "…" else "",
+                            style = PiType.userMessage, color = scheme.onPrimaryContainer)
+                    }
                 }
                 if (hasActions) Box {
                     IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.Filled.MoreVert, contentDescription = if (long && !expanded) "用户消息操作，可展开全文" else "用户消息操作", tint = scheme.onPrimaryContainer, modifier = Modifier.size(20.dp))
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (item.text.isNotBlank()) DropdownMenuItem(
+                            text = { Text("复制文字") },
+                            onClick = { menuOpen = false; copy(item.text) },
+                        )
                         if (long) DropdownMenuItem(
                             text = { Text(if (expanded) "收起" else "展开全部（${preview.lineCount} 行）") },
                             onClick = { menuOpen = false; expanded = !expanded },
@@ -302,7 +318,9 @@ internal fun NativeMessageCard(
                 verticalArrangement = Arrangement.spacedBy(Spacing.xs),
             ) {
                 item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
-                if (item.text.isNotBlank()) Text(visible, style = PiType.userMessage, color = scheme.onPrimary)
+                if (item.text.isNotBlank()) SelectionContainer {
+                    Text(visible, style = PiType.userMessage, color = scheme.onPrimary)
+                }
                 if (long) MetaAction(
                     if (expanded) "收起" else "展开全部（${preview.lineCount} 行）",
                     { expanded = !expanded },
@@ -310,6 +328,7 @@ internal fun NativeMessageCard(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                     val tint = scheme.onPrimary
+                    if (item.text.isNotBlank()) CopyTextAction(item.text, "复制文字", tint)
                     if (onQuote != null && item.text.isNotBlank()) MetaAction("引用", { onQuote(item) }, enabled, tint)
                     if (onAnnotate != null && item.text.isNotBlank()) MetaAction("批注", { onAnnotate(item) }, enabled, tint)
                     if (item.forkable && !item.entryId.isNullOrBlank() && onFork != null) {
@@ -338,11 +357,17 @@ internal fun NativeMessageCard(
                         )
                         if (item.isError && item.text.isBlank()) Text("出错了", style = PiType.meta, color = scheme.error)
                     }
-                    if (long || hasThinking || (item.text.isNotBlank() && (onQuote != null || onAnnotate != null))) Box {
+                    if (long || hasThinking || item.text.isNotBlank()) Box {
                         IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Filled.MoreVert, contentDescription = if (long && !expanded) "回复操作，可展开全文" else "回复操作", tint = scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            if (item.text.isNotBlank()) DropdownMenuItem(
+                                text = { Text("复制正文") }, onClick = { menuOpen = false; copy(item.text) },
+                            )
+                            if (hasThinking) DropdownMenuItem(
+                                text = { Text("复制思考") }, onClick = { menuOpen = false; copy(item.thinking.orEmpty()) },
+                            )
                             if (long) DropdownMenuItem(
                                 text = { Text(if (expanded) "收起" else "展开全部（${preview.lineCount} 行）") },
                                 onClick = { menuOpen = false; expanded = !expanded },
@@ -378,8 +403,11 @@ internal fun NativeMessageCard(
             }
             Collapsible(visible = showThinking && item.thinking != null) { item.thinking?.let {
                 SelectionContainer {
-                    Text(it, style = PiType.monoMicro, color = scheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = Spacing.sm))
+                    Column {
+                        Text(it, style = PiType.monoMicro, color = scheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = Spacing.sm))
+                        CopyTextAction(it, "复制思考")
+                    }
                 }
             } }
         }
@@ -406,18 +434,18 @@ internal fun NativeMessageCard(
                 MetaAction(if (showThinking) "收起思考" else "思考", { showThinking = !showThinking })
             }
             if (item.text.isNotBlank()) {
+                CopyTextAction(item.text, "复制正文")
                 if (onQuote != null) MetaAction("引用", { onQuote(item) }, enabled)
                 if (onAnnotate != null) MetaAction("批注", { onAnnotate(item) }, enabled)
             }
         }
         Collapsible(visible = showThinking && item.thinking != null) { item.thinking?.let {
             SelectionContainer {
-                Text(
-                    it,
-                    style = PiType.monoMicro,
-                    color = scheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = Spacing.sm),
-                )
+                Column {
+                    Text(it, style = PiType.monoMicro, color = scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = Spacing.sm))
+                    CopyTextAction(it, "复制思考")
+                }
             }
         } }
     }

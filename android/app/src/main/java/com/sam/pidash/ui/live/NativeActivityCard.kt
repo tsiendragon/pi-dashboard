@@ -16,12 +16,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.HorizontalDivider
@@ -48,6 +51,7 @@ import com.sam.pidash.domain.model.LiveActivity
 import com.sam.pidash.domain.model.activityStatus
 import com.sam.pidash.domain.model.followUpSummary
 import com.sam.pidash.domain.model.quoteOrCommentKind
+import com.sam.pidash.ui.common.rememberCopyText
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.common.Collapsible
 import com.sam.pidash.ui.common.ExpandHint
@@ -85,6 +89,9 @@ internal fun NativeActivityCard(
     }
     val tools = remember(activity.items) { activityTools(activity) }
     val replies = remember(activity.items) { activityReplies(activity) }
+    val latestReply = replies.lastOrNull()
+    val copy = rememberCopyText()
+    var copyMenuOpen by remember(activity.id) { mutableStateOf(false) }
     val progressNotes = remember(activity.items, replies) {
         val replyIds = replies.map { it.id }.toSet()
         activity.items.filter {
@@ -154,13 +161,11 @@ internal fun NativeActivityCard(
                     }
                 }
                 if (prompt.isNotBlank()) {
-                    Text(
-                        prompt,
-                        style = PiType.userMessage.copy(fontWeight = FontWeight.Medium),
-                        color = scheme.onSurface,
-                        maxLines = if (promptExpanded) 24 else 4,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    SelectionContainer {
+                        Text(prompt, style = PiType.userMessage.copy(fontWeight = FontWeight.Medium),
+                            color = scheme.onSurface, maxLines = if (promptExpanded) 24 else 4,
+                            overflow = TextOverflow.Ellipsis)
+                    }
                 } else if (firstUser?.images?.isNotEmpty() == true) {
                     MetaText("用户发送了 ${firstUser.images.size} 张图片")
                 } else {
@@ -190,13 +195,10 @@ internal fun NativeActivityCard(
                             color = scheme.onSurfaceVariant,
                         )
                         progressNotes.takeLast(3).forEach { note ->
-                            Text(
-                                "• ${note.text.replace('\n', ' ').trim()}",
-                                style = PiType.footnote,
-                                color = scheme.onSurface,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            SelectionContainer {
+                                Text("• ${note.text.replace('\n', ' ').trim()}", style = PiType.footnote,
+                                    color = scheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }
@@ -306,12 +308,11 @@ internal fun NativeActivityCard(
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(kind, style = PiType.micro.copy(fontWeight = FontWeight.SemiBold), color = scheme.tertiary)
-                        Text(summaryText, style = PiType.footnote, color = scheme.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        SelectionContainer { Text(summaryText, style = PiType.footnote, color = scheme.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis) }
                     }
                 }
 
                 // Final Reply (`activity-reply-markdown`)
-                val latestReply = replies.lastOrNull()
                 if (latestReply != null && latestReply.text.isNotBlank()) {
                     val lines = latestReply.text.split('\n')
                     val isLong = lines.size > CARD_REPLY_LINES || latestReply.text.length > CARD_REPLY_CHARS
@@ -346,15 +347,28 @@ internal fun NativeActivityCard(
 
             // ── 3. Activity Footer ──
             Row(
-                Modifier.fillMaxWidth()
+                Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     .background(scheme.surfaceVariant.copy(alpha = Tints.Block))
                     .clickable(onClick = onOpen)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 ActivityStatusPill(status)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (prompt.isNotBlank() || !latestReply?.text.isNullOrBlank() || thinkingText.isNotBlank() || progressNotes.isNotEmpty()) Box {
+                        MetaAction("复制", { copyMenuOpen = true }, tint = scheme.primary)
+                        DropdownMenu(expanded = copyMenuOpen, onDismissRequest = { copyMenuOpen = false }) {
+                            if (!latestReply?.text.isNullOrBlank()) DropdownMenuItem(text = { Text("复制回复") },
+                                onClick = { copyMenuOpen = false; copy(latestReply?.text.orEmpty()) })
+                            if (prompt.isNotBlank()) DropdownMenuItem(text = { Text("复制请求") },
+                                onClick = { copyMenuOpen = false; copy(firstUser?.text.orEmpty()) })
+                            if (thinkingText.isNotBlank()) DropdownMenuItem(text = { Text("复制思考") },
+                                onClick = { copyMenuOpen = false; copy(activity.items.mapNotNull { it.thinking?.takeIf { text -> text.isNotBlank() } }.joinToString("\n\n")) })
+                            if (progressNotes.isNotEmpty()) DropdownMenuItem(text = { Text("复制进度") },
+                                onClick = { copyMenuOpen = false; copy(progressNotes.joinToString("\n\n") { it.text }) })
+                        }
+                    }
                     Text(
                         "查看详情",
                         style = PiType.micro.copy(fontWeight = FontWeight.Medium),
