@@ -51,6 +51,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.sam.pidash.domain.model.wholeMessageText
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.TranscriptRow
 import com.sam.pidash.ui.common.CopyTextAction
@@ -202,6 +203,9 @@ internal fun NativeStepCard(
                     verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                 ) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        CopyTextAction(wholeMessageText(item.copy(thinking =
+                            (precedingThinking.mapNotNull { it.thinking } + listOfNotNull(item.thinking))
+                                .filter { it.isNotEmpty() }.joinToString("\n\n").ifEmpty { null })), "复制整条")
                         if (thinkingText.isNotEmpty()) CopyTextAction(thinkingText, "复制思考")
                         if (hasCopyableArgs) CopyTextAction(item.toolArgs.orEmpty(), "复制参数")
                         if (output.isNotEmpty()) CopyTextAction(item.text, "复制输出")
@@ -230,6 +234,7 @@ internal fun NativeStepCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun NativeMessageCard(
     item: LiveTimelineItem,
@@ -244,6 +249,7 @@ internal fun NativeMessageCard(
     expandedByDefault: Boolean = false,
 ) {
     val copy = rememberCopyText()
+    val whole = remember(item) { wholeMessageText(item) }
     var expanded by remember(item.id) { mutableStateOf(expandedByDefault) }
     var showThinking by remember(item.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
@@ -254,7 +260,7 @@ internal fun NativeMessageCard(
 
     if (user && compactUser) {
         val canFork = item.forkable && !item.entryId.isNullOrBlank() && onFork != null
-        val hasActions = item.text.isNotBlank() || long || canFork
+        val hasActions = whole.isNotEmpty() || long || canFork
         var menuOpen by remember(item.id) { mutableStateOf(false) }
         BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
             Row(
@@ -278,6 +284,8 @@ internal fun NativeMessageCard(
                         Icon(Icons.Filled.MoreVert, contentDescription = if (long && !expanded) "用户消息操作，可展开全文" else "用户消息操作", tint = scheme.onPrimaryContainer, modifier = Modifier.size(20.dp))
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (whole.isNotEmpty()) DropdownMenuItem(text = { Text("复制整条消息") },
+                            onClick = { menuOpen = false; copy(whole) })
                         if (item.text.isNotBlank()) DropdownMenuItem(
                             text = { Text("复制文字") },
                             onClick = { menuOpen = false; copy(item.text) },
@@ -326,8 +334,9 @@ internal fun NativeMessageCard(
                     { expanded = !expanded },
                     tint = scheme.onPrimary,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                     val tint = scheme.onPrimary
+                    if (whole.isNotEmpty()) CopyTextAction(whole, "复制整条消息", tint)
                     if (item.text.isNotBlank()) CopyTextAction(item.text, "复制文字", tint)
                     if (onQuote != null && item.text.isNotBlank()) MetaAction("引用", { onQuote(item) }, enabled, tint)
                     if (onAnnotate != null && item.text.isNotBlank()) MetaAction("批注", { onAnnotate(item) }, enabled, tint)
@@ -357,11 +366,13 @@ internal fun NativeMessageCard(
                         )
                         if (item.isError && item.text.isBlank()) Text("出错了", style = PiType.meta, color = scheme.error)
                     }
-                    if (long || hasThinking || item.text.isNotBlank()) Box {
+                    if (long || hasThinking || whole.isNotEmpty()) Box {
                         IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Filled.MoreVert, contentDescription = if (long && !expanded) "回复操作，可展开全文" else "回复操作", tint = scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            if (whole.isNotEmpty()) DropdownMenuItem(text = { Text("复制整条消息") },
+                                onClick = { menuOpen = false; copy(whole) })
                             if (item.text.isNotBlank()) DropdownMenuItem(
                                 text = { Text("复制正文") }, onClick = { menuOpen = false; copy(item.text) },
                             )
@@ -406,7 +417,10 @@ internal fun NativeMessageCard(
                     Column {
                         Text(it, style = PiType.monoMicro, color = scheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = Spacing.sm))
-                        CopyTextAction(it, "复制思考")
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                            if (!hasContent) CopyTextAction(whole, "复制整条消息")
+                            CopyTextAction(it, "复制思考")
+                        }
                     }
                 }
             } }
@@ -426,10 +440,8 @@ internal fun NativeMessageCard(
             if (long) MetaAction(if (expanded) "收起" else "展开全部（${preview.lineCount} 行）", { expanded = !expanded })
         }
         if (item.isError && item.text.isBlank()) Text("出错了", style = PiType.meta, color = scheme.error)
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            if (whole.isNotEmpty()) CopyTextAction(whole, "复制整条消息")
             if (!item.thinking.isNullOrBlank()) {
                 MetaAction(if (showThinking) "收起思考" else "思考", { showThinking = !showThinking })
             }

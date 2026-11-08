@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.sam.pidash.domain.model.wholeActivityText
+import com.sam.pidash.domain.model.wholeMessageText
 import com.sam.pidash.domain.model.LiveActivity
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.ui.common.CopyTextAction
@@ -73,6 +75,51 @@ class TextCopyTest {
     private fun pickActivityCopy(label: String) {
         compose.onNodeWithText("复制").performScrollTo().performClick()
         compose.onNodeWithText(label).performClick()
+    }
+
+    @Test fun wholeAssistantIncludesHiddenBodyAndThinkingWithoutOwnership() {
+        val item = message(longText(), thinking = "  思考原文\n尾部  ")
+        fixture { NativeMessageCard(item, {}, {}, compactAssistant = true, enabled = false) }
+        compose.onNodeWithText("TAIL_ONLY_IN_FULL_SOURCE", substring = true).assertDoesNotExist()
+        compose.onNodeWithContentDescription("回复操作，可展开全文").performClick()
+        compose.onNodeWithText("复制整条消息").assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(wholeMessageText(item), copied()) }
+    }
+    @Test fun wholeUserIncludesHiddenOriginalWhitespace() {
+        val raw = "  ${longText()}  "
+        fixture { NativeMessageCard(message(raw, "user"), {}, {}, compactUser = true, enabled = false) }
+        compose.onNodeWithContentDescription("用户消息操作，可展开全文").performClick()
+        compose.onNodeWithText("复制整条消息").performClick()
+        compose.runOnIdle { assertEquals(raw, copied()) }
+    }
+    @Test fun wholeActivityIncludesEveryRecordAndDoesNotNavigate() {
+        var opens = 0
+        val items = listOf(message("  请求  ", "user"), message("中间回复", thinking = "思考"),
+            tool("{\"command\":\"pwd\"}", "原始错误").copy(isError = true), message(longText()).copy(id = "final"))
+        fixture { NativeActivityCard(LiveActivity("turn", "本轮", "done", items), { opens++ }) }
+        pickActivityCopy("复制整条消息")
+        compose.runOnIdle { assertEquals(wholeActivityText(items), copied()); assertEquals(0, opens) }
+    }
+    @Test fun wholeToolIncludesPrecedingAndOwnThinkingEvenInCompactMode() {
+        val before = listOf(message("", thinking = "重复"), message("", thinking = "重复"))
+        val item = tool("{\"command\":\"pwd\"}", "  输出\n尾行  ").copy(thinking = "自身思考")
+        fixture { NativeStepCard(item, {}, {}, precedingThinking = before) }
+        openTool()
+        compose.onNodeWithText("复制整条").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(wholeMessageText(item.copy(thinking = "重复\n\n重复\n\n自身思考")), copied()) }
+    }
+    @Test fun emptyActivityCannotOverwriteClipboardWithWholeCopy() {
+        fixture { NativeActivityCard(LiveActivity("turn", "本轮", "done", listOf(message(""))), {}) }
+        compose.runOnIdle { clipboard().setPrimaryClip(ClipData.newPlainText("test", "sentinel")) }
+        compose.onNodeWithText("复制").performScrollTo().performClick()
+        compose.onNodeWithText("复制整条消息").assertIsNotEnabled()
+        compose.runOnIdle { assertEquals("sentinel", copied()) }
+    }
+    @Test fun wholeCopyInNonCompactLayoutRemainsReachableAtLargeFont() {
+        val item = message(longText(), thinking = "思考")
+        fixture(scale = 2f) { NativeMessageCard(item, {}, {}, enabled = false, onQuote = {}, onAnnotate = {}) }
+        compose.onNodeWithText("复制整条消息").performScrollTo().assertHeightIsAtLeast(48.dp).performClick()
+        compose.runOnIdle { assertEquals(wholeMessageText(item), copied()) }
     }
 
     @Test fun readOnlyUserCopiesFullSourceNotPreview() {

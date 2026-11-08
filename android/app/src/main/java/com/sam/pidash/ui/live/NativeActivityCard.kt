@@ -47,6 +47,7 @@ import com.sam.pidash.data.remote.activityTools
 import com.sam.pidash.domain.model.ActivityPhase
 import com.sam.pidash.domain.model.ActivityStatus
 import com.sam.pidash.domain.model.FollowUpKind
+import com.sam.pidash.domain.model.wholeActivityText
 import com.sam.pidash.domain.model.LiveActivity
 import com.sam.pidash.domain.model.activityStatus
 import com.sam.pidash.domain.model.followUpSummary
@@ -356,9 +357,12 @@ internal fun NativeActivityCard(
             ) {
                 ActivityStatusPill(status)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    if (prompt.isNotBlank() || !latestReply?.text.isNullOrBlank() || thinkingText.isNotBlank() || progressNotes.isNotEmpty()) Box {
+                    if (activity.items.isNotEmpty()) Box {
                         MetaAction("复制", { copyMenuOpen = true }, tint = scheme.primary)
                         DropdownMenu(expanded = copyMenuOpen, onDismissRequest = { copyMenuOpen = false }) {
+                            val whole = if (copyMenuOpen) wholeActivityText(activity.items) else ""
+                            DropdownMenuItem(text = { Text("复制整条消息") }, enabled = whole.isNotEmpty(),
+                                onClick = { copyMenuOpen = false; copy(whole) })
                             if (!latestReply?.text.isNullOrBlank()) DropdownMenuItem(text = { Text("复制回复") },
                                 onClick = { copyMenuOpen = false; copy(latestReply?.text.orEmpty()) })
                             if (prompt.isNotBlank()) DropdownMenuItem(text = { Text("复制请求") },
