@@ -29,6 +29,7 @@ import com.sam.pidash.domain.model.LiveActivity
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.ui.common.CopyTextAction
 import com.sam.pidash.ui.common.copyPlainText
+import com.sam.pidash.ui.live.BottomRefreshBox
 import com.sam.pidash.ui.live.NativeActivityCard
 import com.sam.pidash.ui.live.NativeMessageCard
 import com.sam.pidash.ui.live.NativeStepCard
@@ -261,6 +262,20 @@ class TextCopyTest {
         fixture { CopyTextAction("完整原文") }
         compose.onNodeWithText("复制").assertHeightIsAtLeast(48.dp).performClick()
         compose.runOnIdle { assertEquals("完整原文", copied()); assertEquals("已复制", ShadowToast.getTextOfLatestToast()) }
+    }
+    @Test fun bottomRefreshContainerDoesNotStealMessageSelectionOrCopy() {
+        var refreshes = 0
+        fixture {
+            BottomRefreshBox(false, { true }, { refreshes++ }, Modifier.fillMaxWidth().height(300.dp)) {
+                NativeMessageCard(message("alpha beta gamma"), {}, {}, compactAssistant = true)
+            }
+        }
+        compose.onNodeWithText("alpha beta gamma").performTouchInput { longClick(center) }
+        compose.runOnIdle {
+            assertNotNull(toolbar.copy); toolbar.copy!!.invoke()
+            assertFalse(copied().isNullOrEmpty()); assertTrue("alpha beta gamma".contains(copied()!!))
+            assertEquals(0, refreshes)
+        }
     }
     @Test fun plainUserLongPressOffersSelection() {
         val text = "alpha beta gamma"

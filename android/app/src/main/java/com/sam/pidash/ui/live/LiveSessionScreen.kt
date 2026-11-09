@@ -60,7 +60,6 @@ import com.sam.pidash.data.remote.FileAttachments
 import com.sam.pidash.data.remote.ImageAttachments
 import com.sam.pidash.domain.model.LiveImage
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -534,7 +533,7 @@ fun LiveSessionScreen(
                             DropdownMenuItem(text = { Text("关闭会话…", color = MaterialTheme.colorScheme.error) },
                                 enabled = !busy && cachedSnapshot == null && summary?.canShutdown == true,
                                 onClick = { menu = false; dialog = "shutdown" })
-                            DropdownMenuItem(text = { Text("刷新") }, enabled = !busy, onClick = {
+                            DropdownMenuItem(text = { Text("刷新") }, enabled = !busy && !pulling, onClick = {
                                 menu = false; perform("已刷新", allowCached = true) { live.refresh(sessionKey) }
                             })
                             listOf("meta" to "改名 / 表情 / 颜色 / 标签", "model" to "选择模型", "thinking" to "思考强度",
@@ -983,14 +982,18 @@ fun LiveSessionScreen(
                         last.offset + last.size <= info.viewportEndOffset + 8)
                 }
             }
-            PullToRefreshBox(
+            BottomRefreshBox(
                 isRefreshing = pulling,
+                atBottom = { !listState.canScrollForward },
+                enabled = !busy,
+                gestureKey = sessionKey to viewMode,
                 onRefresh = {
                     if (!pulling) {
                         pulling = true
                         scope.launch {
-                            live.refresh(sessionKey).onFailure { notice = "刷新失败：${it.message}" }
-                            pulling = false
+                            try {
+                                live.refresh(sessionKey).onFailure { notice = "刷新失败：${it.message}" }
+                            } finally { pulling = false }
                         }
                     }
                 },
@@ -1015,7 +1018,7 @@ fun LiveSessionScreen(
                         )
                     }
                 } else if (timeline.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).heightIn(min = maxHeight), contentAlignment = Alignment.Center) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
