@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { uiAnswered } from '../../store/liveSessionsSlice'
 import type { LiveSessionSummary, LiveSessionUiRequest } from '@shared/live-sessions'
@@ -16,14 +17,24 @@ import { hasConfirmationMarker } from '../supervisor/pendingConfirmation'
 export default function LiveSessionExtensionUiModal({ processInstanceId }: { processInstanceId?: string } = {}) {
   const pendingUi = useAppSelector(state => state.liveSessions.pendingUi)
   const sessions = useAppSelector(state => state.liveSessions.sessions)
+  const location = useLocation()
+  // The open conversation answers plain confirmations in its own card; this corner stack must
+  // not show the same request twice, but keep every other session's prompt reachable.
+  const openSessionId = useMemo(() => {
+    const match = /^\/live-sessions\/([^/?#]+)/.exec(location.pathname)
+    return match ? decodeURIComponent(match[1]) : undefined
+  }, [location.pathname])
   const scoped = useMemo(() => {
     const buckets = processInstanceId ? [[processInstanceId, pendingUi[processInstanceId]] as const] : Object.entries(pendingUi)
     return buckets.flatMap(([sessionId, bucket]) =>
       // Requests that name their target object are carried by the task page and the sidebar badge.
       // Only the ones with nowhere to live stay in this modal, which is now a small fallback card.
-      Object.values(bucket ?? {}).filter(request => !hasConfirmationMarker(request)).map(request => ({ sessionId, request })),
+      Object.values(bucket ?? {})
+        .filter(request => !hasConfirmationMarker(request))
+        .filter(request => !(request.method === 'confirm' && sessionId === openSessionId))
+        .map(request => ({ sessionId, request })),
     )
-  }, [pendingUi, processInstanceId])
+  }, [pendingUi, processInstanceId, openSessionId])
   if (scoped.length === 0) return null
   return (
     // A corner stack, not a screen-covering modal: these are requests with no page of their own, and
