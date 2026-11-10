@@ -230,9 +230,9 @@ internal fun ChatCloseDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AlertDialog(
+    AlertDialog(shape = Radii.sheet,
         onDismissRequest = { if (!closing) onDismiss() },
-        title = { Text("关闭这个 Chat 会话？") },
+        title = { Text("关闭这个 Chat 会话？", style = PiType.pageTitle) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                 Text("将结束该 Chat 的 Pi 进程并从列表移除；正在生成的回复会被中断。", style = PiType.subhead)

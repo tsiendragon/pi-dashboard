@@ -69,6 +69,7 @@ import com.sam.pidash.ui.common.liveConnectionLabel
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
+import com.sam.pidash.ui.theme.Radii
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -282,9 +283,9 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     }
 
     if (alertsRationale) {
-        AlertDialog(
+        AlertDialog(shape = Radii.sheet,
             onDismissRequest = { alertsRationale = false },
-            title = { Text("允许本应用发送通知？") },
+            title = { Text("允许本应用发送通知？", style = PiType.pageTitle) },
             text = {
                 Text(
                     "开启后，会话跑完或 Agent 等你回答时会发一条系统通知。通知只包含会话标题与状态，" +
@@ -346,7 +347,7 @@ private fun AddBackendDialog(
     var testResult by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    AlertDialog(
+    AlertDialog(shape = Radii.sheet,
         onDismissRequest = onDismiss,
         title = { Text("添加服务器", style = PiType.pageTitle) },
         text = {

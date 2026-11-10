@@ -21,7 +21,7 @@ import com.sam.pidash.ui.common.PrimaryCreateAction
 import com.sam.pidash.ui.common.GroupedCard
 import com.sam.pidash.ui.common.MetaLine
 import com.sam.pidash.ui.common.MetaText
-import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.common.backendOriginLabel
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Tints
@@ -72,7 +72,7 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            if (running > 0) StatusDot(MaterialTheme.colorScheme.primary)
+                            if (running > 0) PulsingDot(MaterialTheme.colorScheme.primary, size = 5.dp, contentDescription = "运行中")
                         }
                         Text(
                             backendOriginLabel(backend.baseUrl),

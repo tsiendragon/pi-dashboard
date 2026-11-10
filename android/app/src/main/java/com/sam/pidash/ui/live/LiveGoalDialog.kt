@@ -25,6 +25,7 @@ import com.sam.pidash.domain.model.goalSummary
 import com.sam.pidash.domain.model.workItemGlyph
 import com.sam.pidash.domain.model.workItemLabel
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
 
 /**
  * Read-only goal anchor: objective, checklist progress, blockers and staleness.
@@ -38,7 +39,7 @@ internal fun LiveGoalDialog(
     onEditWithCommand: () -> Unit,
 ) {
     val summary = goalSummary(goal) ?: return
-    AlertDialog(
+    AlertDialog(shape = Radii.sheet,
         onDismissRequest = onDismiss,
         title = {
             Column {

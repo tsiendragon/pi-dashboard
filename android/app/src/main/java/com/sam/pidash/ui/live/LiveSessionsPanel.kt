@@ -320,7 +320,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     )
     }
     }
-    if (managing) AlertDialog(onDismissRequest = { if (!groupBusy) managing = false }, title = { Text("本机分组") }, text = {
+    if (managing) AlertDialog(shape = Radii.sheet, onDismissRequest = { if (!groupBusy) managing = false }, title = { Text("本机分组", style = PiType.pageTitle) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             org.groups.forEach { Text("${it.name} · ${it.sessionIds.size} 个会话") }
             Text("与网页共用分组和排序。点击会话右侧「分组」可移动；重命名、合并、删除和拖动排序暂用网页。", style = PiType.subhead)
@@ -334,7 +334,7 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
             groupBusy = false
         }
     }) { Text(if (groupBusy) "提交中…" else "新建分组") } }, dismissButton = { TextButton(enabled = !groupBusy, onClick = { managing = false }) { Text("关闭") } })
-    moving?.let { row -> AlertDialog(onDismissRequest = { if (!groupBusy) moving = null }, title = { Text("移动「${row.summary.title}」") }, text = {
+    moving?.let { row -> AlertDialog(shape = Radii.sheet, onDismissRequest = { if (!groupBusy) moving = null }, title = { Text("移动「${row.summary.title}」", style = PiType.pageTitle) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             TextButton(enabled = !groupBusy, onClick = { move(row, null) }) { Text("未分组") }
             org.groups.forEach { group -> TextButton(enabled = !groupBusy, onClick = { move(row, group.id) }) { Text(group.name) } }
@@ -382,9 +382,9 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
     }
     restartingRow?.let { target ->
         val busy = actionBusyKey == target.key
-        AlertDialog(
+        AlertDialog(shape = Radii.sheet,
             onDismissRequest = { if (!busy) restartingRow = null },
-            title = { Text("重启 Pi 进程？") },
+            title = { Text("重启 Pi 进程？", style = PiType.pageTitle) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("将重启「${target.summary.title}」的 Pi 进程，尝试从原会话恢复。")
@@ -422,9 +422,9 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
         )
     }
     if (connectionInfo) {
-        AlertDialog(
+        AlertDialog(shape = Radii.sheet,
             onDismissRequest = { connectionInfo = false },
-            title = { Text("连接与只读说明") },
+            title = { Text("连接与只读说明", style = PiType.pageTitle) },
             text = { Text("打开会话只读，不会抢占现有会话。需要控制或执行操作时，仍按原有流程获取控制权及授权。") },
             confirmButton = { TextButton(onClick = { connectionInfo = false }) { Text("知道了") } },
         )
@@ -433,9 +433,9 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
         LiveTokenDialog(repo, backend, onDismiss = { signingIn = null })
     }
     signingOut?.let { backend ->
-        AlertDialog(
+        AlertDialog(shape = Radii.sheet,
             onDismissRequest = { signingOut = null },
-            title = { Text("断开 ${backend.name}？") },
+            title = { Text("断开 ${backend.name}？", style = PiType.pageTitle) },
             text = { Text("这台手机将无法控制 Live Pi，直到重新输入访问令牌。普通 Chat 不受影响。") },
             confirmButton = {
                 TextButton(onClick = {
@@ -461,9 +461,9 @@ private fun LiveTokenDialog(repo: PiDashRepository, backend: Backend, onDismiss:
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     fun close() { token = ""; onDismiss() }
-    AlertDialog(
+    AlertDialog(shape = Radii.sheet,
         onDismissRequest = { close() },
-        title = { Text("登录 ${backend.name}") },
+        title = { Text("登录 ${backend.name}", style = PiType.pageTitle) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("粘贴这台机器的访问令牌（64 位十六进制）。它就在 Dashboard 的 ~/.pi/agent/run/pi-dashboard/live-control-token 文件里——与网页登录用的是同一个令牌。")
@@ -526,9 +526,9 @@ fun NewLiveSessionDialog(
             .joinToString("\n").takeIf { it.isNotBlank() }
         loading = false
     }
-    AlertDialog(
+    AlertDialog(shape = Radii.sheet,
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("新建 Live Pi") },
+        title = { Text("新建 Live Pi", style = PiType.pageTitle) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box {

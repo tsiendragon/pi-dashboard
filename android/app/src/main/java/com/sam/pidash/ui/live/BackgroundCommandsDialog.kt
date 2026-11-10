@@ -26,6 +26,7 @@ import com.sam.pidash.data.remote.isActive
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
 import com.sam.pidash.domain.model.LiveBackgroundTask
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
 
 /**
  * Background command panel, projected from the `background-commands` feature
@@ -44,7 +45,7 @@ internal fun BackgroundCommandsDialog(
     val tasks = snapshot.tasks
     val task = tasks.firstOrNull { it.taskId == selected } ?: tasks.lastOrNull()
     val active = tasks.count { it.isActive() }
-    AlertDialog(
+    AlertDialog(shape = Radii.sheet,
         onDismissRequest = onDismiss,
         title = {
             Column {

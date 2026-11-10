@@ -256,7 +256,7 @@ private fun NewSessionDialog(
     onDismiss: () -> Unit,
     onPick: (String) -> Unit,
 ) {
-    AlertDialog(
+    AlertDialog(shape = Radii.sheet,
         onDismissRequest = onDismiss,
         title = { Text("在哪台机器新建会话？", style = PiType.pageTitle) },
         text = {

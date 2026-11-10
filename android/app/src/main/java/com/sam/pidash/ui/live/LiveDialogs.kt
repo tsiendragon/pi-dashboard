@@ -107,7 +107,7 @@ internal fun LiveTextDialog(
     onSubmit: (String) -> Unit,
 ) {
     var value by remember { mutableStateOf(initial) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = {
+    AlertDialog(shape = Radii.sheet, onDismissRequest = onDismiss, title = { Text(title, style = PiType.pageTitle) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             PiTextField(value = value, onValueChange = { value = it }, label = label, enabled = !busy)
             Text("保存时尝试取得控制权，不会抢占其他端。", style = PiType.subhead)
@@ -135,7 +135,7 @@ internal fun LiveMetadataDialog(
     var category by remember { mutableStateOf(SESSION_EMOJI_PRESETS.keys.first()) }
     val accentColor = parseHexColor(color) ?: MaterialTheme.colorScheme.primary
 
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("设置会话装扮与名称") }, text = {
+    AlertDialog(shape = Radii.sheet, onDismissRequest = onDismiss, title = { Text("设置会话装扮与名称", style = PiType.pageTitle) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 Modifier.fillMaxWidth()
@@ -151,7 +151,7 @@ internal fun LiveMetadataDialog(
                         .border(2.dp, accentColor, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(emoji.ifBlank { "💬" }, style = PiType.title)
+                    Text(emoji.ifBlank { "💬" }, style = PiType.pageTitle)
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (initialTitle != null) {
@@ -517,7 +517,7 @@ internal fun LiveInspectionDialog(repo: PiDashRepository, key: SessionKey, conte
             onFailure = { error = it.message ?: "加载失败" })
         loading = false
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (context) "上下文（只读）" else "会话树（只读）") },
+    AlertDialog(shape = Radii.sheet, onDismissRequest = onDismiss, title = { Text(if (context) "上下文（只读）" else "会话树（只读）", style = PiType.pageTitle) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -546,10 +546,10 @@ internal fun LiveExtensionDialog(request: LiveUiRequest, onAnswer: suspend (Stri
         }
     }
     val supported = request.method in listOf("confirm", "select", "input", "editor")
-    AlertDialog(
+    AlertDialog(shape = Radii.sheet,
         onDismissRequest = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-        title = { Text(request.title.ifBlank { "扩展请求" }) },
+        title = { Text(request.title.ifBlank { "扩展请求" }, style = PiType.pageTitle) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("请明确回答或取消；若其他端先回答，此请求会自动消失。", style = PiType.subhead)

@@ -60,10 +60,13 @@ internal fun ComposerPill(
         horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         leading()
+        // The field keeps the same 44 dp height as the buttons so a single line is vertically
+        // centred; growing text expands upward while the buttons stay on the bottom edge.
+        Box(Modifier.weight(1f).heightIn(min = 44.dp), contentAlignment = Alignment.CenterStart) {
         BasicTextField(
             value = draft,
             onValueChange = onDraftChange,
-            modifier = Modifier.weight(1f).padding(vertical = Spacing.sm)
+            modifier = Modifier.fillMaxWidth()
                 .heightIn(max = maxHeight)
                 .onFocusChanged { onFocusChange(it.isFocused) }
                 .testTag("composer-field"),
@@ -84,6 +87,7 @@ internal fun ComposerPill(
                 }
             },
         )
+        }
         if (trailing != null) trailing()
         else IconButton(enabled = canSend, onClick = onSend, modifier = Modifier.size(44.dp).testTag("composer-send")) {
             Box(

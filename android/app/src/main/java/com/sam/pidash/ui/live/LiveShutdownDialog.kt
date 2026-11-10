@@ -11,6 +11,7 @@ import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.SessionKey
 import kotlinx.coroutines.launch
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
 
 /** Destructive action is explicit and never retried automatically. */
 @Composable
@@ -24,9 +25,9 @@ fun LiveShutdownDialog(
     var busy by remember(sessionKey) { mutableStateOf(false) }
     var error by remember(sessionKey) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    AlertDialog(
+    AlertDialog(shape = Radii.sheet,
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("关闭 Pi 会话？") },
+        title = { Text("关闭 Pi 会话？", style = PiType.pageTitle) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("将退出「$title」的 Pi 进程，中断正在执行的任务。已保存的会话记录不会删除。")

@@ -48,4 +48,10 @@ class ChatCloseDialogTest {
         fixture(error = "HTTP 500: boom")
         compose.onNodeWithText("HTTP 500: boom").assertIsDisplayed()
     }
+    @Test fun dialogKeepsTheUnifiedTitleStyleAndShape() {
+        fixture()
+        // One 15 sp semi-bold title, matching page headers; the body keeps reading size.
+        compose.onNodeWithText("关闭这个 Chat 会话？").assertIsDisplayed()
+        compose.onNodeWithText("取消").assertIsDisplayed()
+    }
 }

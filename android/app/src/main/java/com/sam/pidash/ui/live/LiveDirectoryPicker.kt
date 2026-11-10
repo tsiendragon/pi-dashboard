@@ -51,9 +51,9 @@ internal fun LiveDirectoryPicker(
 ) {
     var query by remember { mutableStateOf("") }
     val matches = remember(options, query) { searchLiveDirectories(options, query) }
-    AlertDialog(
+    AlertDialog(shape = Radii.sheet,
         onDismissRequest = onDismiss,
-        title = { Text("选择工作目录") },
+        title = { Text("选择工作目录", style = PiType.pageTitle) },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 Text(serverName, style = PiType.footnote, color = MaterialTheme.colorScheme.onSurfaceVariant)

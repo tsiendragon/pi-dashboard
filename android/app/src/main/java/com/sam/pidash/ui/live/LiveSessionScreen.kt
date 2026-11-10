@@ -90,6 +90,7 @@ import com.sam.pidash.domain.model.selectionLabel
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.SessionKey
+import com.sam.pidash.ui.theme.Radii
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 
@@ -1020,9 +1021,9 @@ fun LiveSessionScreen(
 
         annotating?.let { draftReview ->
             var note by remember(draftReview.id) { mutableStateOf("") }
-            AlertDialog(
+            AlertDialog(shape = Radii.sheet,
                 onDismissRequest = { annotating = null },
-                title = { Text("批注") },
+                title = { Text("批注", style = PiType.pageTitle) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         draftReview.quote?.let { quoted ->
@@ -1120,9 +1121,9 @@ fun LiveSessionScreen(
         if (showGoal) {
             val current = goal
             if (current == null) {
-                AlertDialog(
+                AlertDialog(shape = Radii.sheet,
                     onDismissRequest = { showGoal = false },
-                    title = { Text("目标") },
+                    title = { Text("目标", style = PiType.pageTitle) },
                     text = { Text("这个会话还没有目标记录。目标由 Agent 用 /goal 命令维护，本页只读。") },
                     confirmButton = {
                         TextButton(onClick = { showGoal = false; draft = "/goal " }) { Text("用 /goal 设置") }
@@ -1223,7 +1224,7 @@ fun LiveSessionScreen(
                 val action = dialog
                 val label = when (action) { "compact" -> "压缩上下文"; "reload" -> "重载扩展"; "restart" -> "重启 Pi 进程"; else -> "从此用户消息分叉" }
                 val realFork = forkEntry?.takeIf { id -> timeline.any { it.role == "user" && it.forkable && it.entryId == id } }
-                AlertDialog(onDismissRequest = { dismiss() }, title = { Text("确认$label？") },
+                AlertDialog(shape = Radii.sheet, onDismissRequest = { dismiss() }, title = { Text("确认$label？", style = PiType.pageTitle) },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(if (action == "fork") "将从真实用户条目 ${realFork ?: "（条目已不可用）"} 创建分支。" else "这会修改正在运行的 Pi 会话。")
@@ -1246,13 +1247,13 @@ fun LiveSessionScreen(
                     dismissButton = { TextButton(enabled = !busy, onClick = { dismiss() }) { Text("取消") } },
                 )
             }
-            "remaining" -> AlertDialog(onDismissRequest = { dismiss() }, title = { Text("原生 Live Pi 范围") },
+            "remaining" -> AlertDialog(shape = Radii.sheet, onDismissRequest = { dismiss() }, title = { Text("原生 Live Pi 范围", style = PiType.pageTitle) },
                 text = { Text("已支持实时对话与会话控制。文件浏览/上传、PTY 终端、完整工作流图谱和复杂编辑仍请使用 WebUI；此处不宣称完整功能对齐。") },
                 confirmButton = { TextButton(onClick = { dismiss() }) { Text("知道了") } })
         }
 
         previewError?.let { message ->
-            AlertDialog(onDismissRequest = { previewError = null }, title = { Text("预览失败") },
+            AlertDialog(shape = Radii.sheet, onDismissRequest = { previewError = null }, title = { Text("预览失败", style = PiType.pageTitle) },
                 text = { Text(message) }, confirmButton = { TextButton(onClick = { previewError = null }) { Text("知道了") } })
         }
         preview?.let { (path, content) ->
