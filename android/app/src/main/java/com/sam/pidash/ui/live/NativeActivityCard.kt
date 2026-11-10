@@ -116,10 +116,7 @@ internal fun NativeActivityCard(
         modifier = Modifier.fillMaxWidth(),
         shape = Radii.card,
         color = scheme.surface,
-        border = BorderStroke(
-            width = if (status.running) 1.5.dp else 1.dp,
-            color = accent?.copy(alpha = 0.55f) ?: scheme.outline.copy(alpha = Tints.Border),
-        ),
+        border = BorderStroke(1.dp, accent?.copy(alpha = Tints.Border) ?: scheme.outline.copy(alpha = Tints.Border)),
         tonalElevation = 1.dp,
     ) {
         Column(Modifier.fillMaxWidth()) {
@@ -147,14 +144,8 @@ internal fun NativeActivityCard(
                             color = scheme.primary,
                         )
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (tools.isNotEmpty()) {
-                            MetaText("${tools.size} 步操作")
-                        }
-                        if (followUps.isNotEmpty()) {
-                            MetaText("追问 ${followUps.size}")
-                        }
-                    }
+                    // Step counts live in the trace header below; repeating them here doubled the noise.
+                    if (followUps.isNotEmpty()) MetaText("追问 ${followUps.size}")
                 }
                 if (prompt.isNotBlank()) {
                     SelectionContainer {
@@ -199,96 +190,47 @@ internal fun NativeActivityCard(
                     }
                 }
 
-                // Collapsible Execution Steps (`⚡ 执行步骤`)
+                // Collapsible execution steps and thinking share one header component with
+                // the full-record page: same box, pill and chevron, only the accent differs.
                 if (tools.isNotEmpty()) {
                     val runningCount = tools.count { it.status == "running" }
                     val errorCount = tools.count { it.isError }
-                    val stepSummary = when {
-                        errorCount > 0 -> "${tools.size} 步 · $errorCount 步失败"
-                        runningCount > 0 -> "${tools.size} 步 · $runningCount 步执行中"
-                        else -> "${tools.size} 步全部完成"
+                    val states = buildList {
+                        if (errorCount > 0) add(TraceState("$errorCount 步失败", TraceTone.ERROR))
+                        if (runningCount > 0) add(TraceState("$runningCount 步执行中", TraceTone.RUNNING))
                     }
-                    Column(
-                        Modifier.fillMaxWidth()
-                            .background(scheme.surfaceVariant.copy(alpha = Tints.Block), RoundedCornerShape(8.dp))
-                            .border(1.dp, scheme.outline.copy(alpha = Tints.Border), RoundedCornerShape(8.dp)),
+                    TraceBlock(
+                        title = "执行步骤",
+                        counts = "${tools.size} 步" + if (states.isEmpty()) " · 全部完成" else "",
+                        states = states,
+                        expanded = stepsExpanded,
+                        onToggle = { stepsExpanded = !stepsExpanded },
                     ) {
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clickable { stepsExpanded = !stepsExpanded }
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                        Column(
+                            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    "执行步骤",
-                                    style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold),
-                                    color = scheme.onSurface,
-                                )
-                                Surface(
-                                    color = if (errorCount > 0) scheme.errorContainer else scheme.surface,
-                                    shape = RoundedCornerShape(99.dp),
-                                ) {
-                                    Text(
-                                        stepSummary,
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp),
-                                        style = PiType.monoMicro,
-                                        color = if (errorCount > 0) scheme.onErrorContainer else scheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                            ExpandHint(stepsExpanded)
-                        }
-                        Collapsible(visible = stepsExpanded) {
-                            Column(Modifier.fillMaxWidth()) {
-                                HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
-                                Column(
-                                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    tools.forEach { step ->
-                                        NativeStepCard(item = step, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl)
-                                    }
-                                }
+                            tools.forEach { step ->
+                                NativeStepCard(item = step, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl)
                             }
                         }
                     }
                 }
 
-                // Collapsible Thinking Box (`💭 思考过程`)
                 if (thinkingText.isNotBlank()) {
-                    Column(
-                        Modifier.fillMaxWidth()
-                            .background(scheme.primary.copy(alpha = Tints.Tint), RoundedCornerShape(8.dp))
-                            .border(1.dp, scheme.primary.copy(alpha = Tints.TintSoft), RoundedCornerShape(8.dp)),
+                    TraceBlock(
+                        title = "思考过程",
+                        accent = scheme.primary,
+                        expanded = thinkingExpanded,
+                        onToggle = { thinkingExpanded = !thinkingExpanded },
                     ) {
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clickable { thinkingExpanded = !thinkingExpanded }
-                                .padding(horizontal = 10.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
+                        SelectionContainer {
                             Text(
-                                "思考过程",
-                                style = PiType.footnote.copy(fontWeight = FontWeight.Medium),
-                                color = scheme.primary,
+                                thinkingText,
+                                modifier = Modifier.padding(10.dp),
+                                style = PiType.monoMicro,
+                                color = scheme.onSurfaceVariant,
                             )
-                            ExpandHint(thinkingExpanded)
-                        }
-                        Collapsible(visible = thinkingExpanded) {
-                            Column(Modifier.fillMaxWidth()) {
-                                HorizontalDivider(color = scheme.primary.copy(alpha = Tints.TintSoft))
-                                SelectionContainer {
-                                    Text(
-                                        thinkingText,
-                                        modifier = Modifier.padding(10.dp),
-                                        style = PiType.monoMicro,
-                                        color = scheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
                         }
                     }
                 }

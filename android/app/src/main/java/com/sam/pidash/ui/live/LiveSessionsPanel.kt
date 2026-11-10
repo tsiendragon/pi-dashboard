@@ -661,7 +661,9 @@ private fun SessionRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
+        // Order numbers only mean something while reordering; the rest of the time they are
+        // noise in front of every title.
+        if (sortingMode) Text(
             orderNumber.toString().padStart(2, '0'),
             style = PiType.monoMicro,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -825,7 +827,8 @@ private fun SheetAction(
     val tint = when {
         !enabled -> scheme.onSurfaceVariant.copy(alpha = 0.4f)
         destructive -> scheme.error
-        else -> scheme.onSurface
+        // Secondary grey icons: the sheet is a quiet action list, not a toolbar of solid glyphs.
+        else -> scheme.onSurfaceVariant
     }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp)

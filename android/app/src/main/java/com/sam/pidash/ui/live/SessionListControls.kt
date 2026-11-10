@@ -1,6 +1,8 @@
 package com.sam.pidash.ui.live
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
@@ -85,20 +87,46 @@ internal fun SessionListControls(
     onGroups: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth()) {
-        OutlinedTextField(
-            value = query, onValueChange = onQueryChange,
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "搜索会话" },
-            placeholder = { Text("搜索会话", style = PiType.footnote,
-                maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            textStyle = PiType.body,
-            leadingIcon = { Icon(Icons.Filled.Search, null, Modifier.size(18.dp)) },
-            trailingIcon = if (query.isNotEmpty()) {{
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Filled.Close, "清除搜索", Modifier.size(18.dp))
+        // One quiet, filled field instead of an outlined box: it now shares the chips' fill,
+        // radius and vertical rhythm, so search + filters read as a single control row.
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = Radii.card,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .padding(start = Spacing.md, end = Spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            ) {
+                Icon(Icons.Filled.Search, null, Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.weight(1f).semantics { contentDescription = "搜索会话" },
+                    enabled = !sorting,
+                    singleLine = true,
+                    textStyle = PiType.body.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (query.isEmpty()) Text(
+                                "搜索会话", style = PiType.footnote,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                            inner()
+                        }
+                    },
+                )
+                if (query.isNotEmpty()) IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Filled.Close, "清除搜索", Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }} else null,
-            singleLine = true, enabled = !sorting, shape = Radii.card,
-        )
+            }
+        }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ListFilter("工作中", runningOnly, !sorting, onRunningChange)
             ListFilter("子 Agent", children, !sorting, onChildrenChange)

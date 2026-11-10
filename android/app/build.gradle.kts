@@ -14,8 +14,8 @@ android {
         applicationId = "com.sam.pidash"
         minSdk = 26
         targetSdk = 35
-        versionCode = 64
-        versionName = "5.33"
+        versionCode = 65
+        versionName = "5.34"
     }
 
     buildTypes {

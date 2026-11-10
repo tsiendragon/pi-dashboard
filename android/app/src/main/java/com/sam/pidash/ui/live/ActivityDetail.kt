@@ -2,13 +2,8 @@ package com.sam.pidash.ui.live
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -35,8 +30,6 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -49,9 +42,6 @@ import com.sam.pidash.domain.model.groupActivityDetail
 import com.sam.pidash.domain.model.detailTraceEntries
 import com.sam.pidash.domain.model.isDetailTool
 import com.sam.pidash.domain.model.TranscriptRow
-import com.sam.pidash.ui.common.StatusDot
-import com.sam.pidash.ui.common.Collapsible
-import com.sam.pidash.ui.common.ExpandHint
 import com.sam.pidash.ui.theme.Hairline
 import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.PiType
@@ -105,14 +95,11 @@ internal fun ActivityDetailDialog(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        // The status pill on the right already carries state; a second dot was noise.
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(5.dp),
                         ) {
-                            StatusDot(
-                                if (status.running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                size = 6.dp,
-                            )
                             Text(
                                 listOfNotNull(
                                     "${activity.items.size} 条记录".takeIf { activity.items.isNotEmpty() },
@@ -161,10 +148,9 @@ internal fun ActivityDetailDialog(
 }
 
 /**
- * A group of consecutive steps, drawn exactly like the card's 「执行步骤」 block so the
- * detail page and the feed read as one product: tinted box, hairline border, header pill.
+ * A group of consecutive steps. It uses the same [TraceBlock] header as the activity card,
+ * so the feed and the full-record page can no longer drift into two different looks.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun DetailTraceBlock(
     row: ActivityDetailRow.Trace,
@@ -178,60 +164,28 @@ internal fun DetailTraceBlock(
         "${row.toolCount} 步".takeIf { row.toolCount > 0 },
         "${row.thinkingCount} 段思考".takeIf { row.thinkingCount > 0 },
     ).joinToString(" · ")
-    val states = listOfNotNull(
-        "${row.failedCount} 失败".takeIf { row.failedCount > 0 },
-        "${row.runningCount} 进行中".takeIf { row.runningCount > 0 },
-        "${row.unknownCount} 状态未确认".takeIf { row.unknownCount > 0 },
-    ).joinToString(" · ")
-    val failed = row.failedCount > 0
     val entries = remember(row.items) { detailTraceEntries(row.items) }
 
-    Column(
-        Modifier.fillMaxWidth()
-            .background(scheme.surfaceVariant.copy(alpha = Tints.Block), RoundedCornerShape(8.dp))
-            .border(1.dp, scheme.outline.copy(alpha = Tints.Border), RoundedCornerShape(8.dp)),
+    TraceBlock(
+        title = "执行记录",
+        counts = counts.ifBlank { null },
+        states = buildList {
+            if (row.failedCount > 0) add(TraceState("${row.failedCount} 失败", TraceTone.ERROR))
+            if (row.runningCount > 0) add(TraceState("${row.runningCount} 进行中", TraceTone.RUNNING))
+            if (row.unknownCount > 0) add(TraceState("${row.unknownCount} 状态未确认"))
+        },
+        expanded = expanded,
+        onToggle = onToggle,
     ) {
-        Row(
-            Modifier.fillMaxWidth()
-                .clickable(onClick = onToggle)
-                .heightIn(min = 48.dp)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            FlowRow(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text("执行记录", modifier = Modifier.align(Alignment.CenterVertically),
-                    style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold), color = scheme.onSurface)
-                Surface(modifier = Modifier.align(Alignment.CenterVertically), color = scheme.surface, shape = RoundedCornerShape(99.dp)) {
-                    Text(counts, modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp),
-                        style = PiType.monoMicro, color = scheme.onSurfaceVariant)
-                }
-                if (states.isNotEmpty()) Text(states, modifier = Modifier.align(Alignment.CenterVertically),
-                    style = PiType.caption, color = if (failed) scheme.error else scheme.onSurfaceVariant)
-            }
-            ExpandHint(expanded)
-        }
-        Collapsible(visible = expanded) {
-            Column(Modifier.fillMaxWidth()) {
-                HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
-                Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
-                ) {
-                    entries.forEachIndexed { index, entry ->
-                        key(entry.item.id) {
-                            if (index > 0) HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
-                            if (isDetailTool(entry.item)) NativeStepCard(entry.item, onOpenPath, onOpenUrl,
-                                showArguments = true, precedingThinking = entry.precedingThinking)
-                            else NativeMessageCard(entry.item, onOpenPath, onOpenUrl, compactAssistant = true)
-                        }
-                    }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
+            entries.forEachIndexed { index, entry ->
+                key(entry.item.id) {
+                    if (index > 0) HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
+                    if (isDetailTool(entry.item)) NativeStepCard(entry.item, onOpenPath, onOpenUrl,
+                        showArguments = true, precedingThinking = entry.precedingThinking)
+                    else NativeMessageCard(entry.item, onOpenPath, onOpenUrl, compactAssistant = true)
                 }
             }
         }
     }
 }
-
