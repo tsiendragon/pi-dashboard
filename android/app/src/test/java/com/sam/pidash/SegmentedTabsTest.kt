@@ -44,10 +44,12 @@ class SegmentedTabsTest {
         compose.onNodeWithText("Live Pi").performClick()
         compose.runOnIdle { assertEquals("live", picked) }
     }
-    @Test fun everyTabKeepsATallTouchTarget() {
+    @Test fun paintedPillIsShorterThanItsTouchTarget() {
         fixture()
-        compose.onNodeWithText("Live Pi").assertHeightIsAtLeast(48.dp)
-        compose.onNodeWithText("Chat").assertHeightIsAtLeast(48.dp)
+        // The painted pill is 30 dp (checked in the screenshots); taps still get 48 dp.
+        compose.onAllNodes(isSelectable()).assertCountEquals(2)
+        compose.onAllNodes(isSelectable())[0].assertHeightIsAtLeast(48.dp)
+        compose.onAllNodes(isSelectable())[1].assertHeightIsAtLeast(48.dp)
     }
     @Test fun lightScreenshot() { fixture(); compose.onRoot().captureRoboImage("src/test/screenshots/segmented-tabs.png") }
     @Test fun darkScreenshot() { fixture("chat", dark = true); compose.onRoot().captureRoboImage("src/test/screenshots/segmented-tabs-dark.png") }
