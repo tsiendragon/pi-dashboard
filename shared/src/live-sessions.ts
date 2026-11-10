@@ -322,6 +322,22 @@ export type LiveSessionCommand =
   | { type: 'answer_ui'; id: string; value?: string; cancelled?: boolean }
   | { type: 'answer_sudo'; id: string; password?: string; cancelled?: boolean }
 
+/** One prompt the bridge is still holding before dispatch (`get_queue`). */
+export interface LiveSessionQueueItem {
+  id: string
+  text: string
+  channel: string
+  deliverAs?: 'steer' | 'followUp'
+  imageCount: number
+}
+
+export interface LiveSessionQueue {
+  /** Oldest first; every one of these can still be withdrawn. */
+  items: LiveSessionQueueItem[]
+  /** Already handed to pi, so it cannot be recalled. */
+  active: { id: string; text: string } | null
+}
+
 /** A pending extension UI request projected from a live session (L1 emits `extension_ui`). */
 export interface LiveSessionUiRequest {
   id: string

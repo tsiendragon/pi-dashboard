@@ -1,4 +1,4 @@
-import type { LiveSessionCommand, LiveSessionContextView, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionMetaPatch, LiveSessionModelOption, LiveSessionReloadResult, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
+import type { LiveSessionCommand, LiveSessionContextView, LiveSessionQueue, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionMetaPatch, LiveSessionModelOption, LiveSessionReloadResult, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
 import type { SessionTreeGraph } from '@shared/session-tree'
 import type { CompactionMark } from './compactionWatch'
 
@@ -129,7 +129,15 @@ export const liveSessionApi = {
   contextView: (processInstanceId: string) => post<{ ok: true; result: LiveSessionContextView }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'get_context' } },
   ).then(result => result.result),
-  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'resync' | 'input' | 'abort' | 'set_session_name' | 'get_models' | 'get_context' | 'set_model' | 'compact' | 'reload' | 'shutdown' | 'feature_command' | 'answer_ui' | 'answer_sudo' }>) => post<{ ok: true; result: unknown }>(
+  /** Prompts the bridge still holds, oldest first (needs the `input_queue` capability). */
+  queue: (processInstanceId: string) => post<{ ok: true; result: LiveSessionQueue }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'get_queue' } },
+  ).then(result => result.result),
+  /** Withdraws one queued prompt; a prompt already given to pi fails with `queue_item_active`. */
+  cancelQueuedItem: (processInstanceId: string, id: string) => post<{ ok: true; result: { cancelled: boolean; remaining: number } }>(
+    `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'cancel_queue_item', id } },
+  ).then(result => result.result),
+  command: (processInstanceId: string, command: Extract<LiveSessionCommand, { type: 'resync' | 'input' | 'abort' | 'set_session_name' | 'get_models' | 'get_context' | 'set_model' | 'compact' | 'reload' | 'shutdown' | 'feature_command' | 'answer_ui' | 'answer_sudo' | 'get_queue' | 'cancel_queue_item' }>) => post<{ ok: true; result: unknown }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command },
   ),
   /** Close a tmux-first live session: kills the tmux session hosting its Pi. */
