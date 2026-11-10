@@ -97,6 +97,19 @@ class LivePiRepository(
         }
     }
 
+    /**
+     * Waits for a backend client to exist. A notification action can cold-start the
+     * process, where clients are populated asynchronously from the saved backends.
+     */
+    suspend fun awaitBackend(id: String, timeoutMs: Long = 4_000): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (synchronized(lock) { clients.containsKey(id) }) return true
+            delay(100)
+        }
+        return synchronized(lock) { clients.containsKey(id) }
+    }
+
     private fun client(id: String): LiveSessionClient = synchronized(lock) { clients[id] }
         ?: throw IOException("服务器未配置或地址无效")
     private fun isCurrentClient(id: String, api: LiveSessionClient): Boolean = synchronized(lock) { clients[id] === api }
@@ -708,6 +721,23 @@ class LivePiRepository(
         require(_details.value[key]?.summary?.capabilities?.contains("context_view") == true) { "此会话扩展不支持上下文检查" }
         client(key.backendId).command(key.slotKey, buildJsonObject { put("type", "get_context") })
     }
+    /** Read-only: prompts the bridge still holds, oldest first. */
+    suspend fun queue(key: SessionKey): Result<LiveQueue> = result(key) {
+        require(_details.value[key]?.summary?.capabilities?.contains("input_queue") == true) { "此会话扩展不支持队列查看" }
+        pidashJson.decodeFromJsonElement<LiveQueue>(
+            client(key.backendId).command(key.slotKey, buildJsonObject { put("type", "get_queue") }),
+        )
+    }
+
+    /** Withdraws one still-queued prompt; a prompt already sent to pi stays out of reach. */
+    suspend fun cancelQueued(key: SessionKey, id: String): Result<Int> = mutation(key) {
+        require(id.isNotBlank() && id.length <= 128) { "队列标识无效" }
+        val response = client(key.backendId).command(key.slotKey, buildJsonObject {
+            put("type", "cancel_queue_item"); put("id", id)
+        })
+        response.jsonObject["remaining"]?.jsonPrimitive?.intOrNull ?: 0
+    }
+
     suspend fun tree(key: SessionKey): Result<JsonElement> = result(key) {
         val file = _details.value[key]?.summary?.sessionFile ?: throw IOException("会话文件尚不可用")
         client(key.backendId).get("/api/session-tree?file=" + java.net.URLEncoder.encode(file, "UTF-8"))["result"] ?: JsonNull

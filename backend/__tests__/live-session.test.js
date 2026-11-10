@@ -420,6 +420,29 @@ describe('LiveSessionRegistry', () => {
     expect(commands.at(-1)).toEqual({ type: 'answer_ui', id: 'ui-2', cancelled: true })
   })
 
+  it('lets any browser read and prune the bridge queue without taking control', async () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const commands = []
+    const transport = {
+      send(envelope) {
+        if (envelope.type !== 'command') return
+        commands.push(envelope.command)
+        queueMicrotask(() => registry.handleCommandResult({ type: 'command_result', requestId: envelope.requestId, ok: true, result: { items: [], active: null } }, transport))
+      },
+    }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary(), entries: [] }, transport, '/tmp/root/task')
+
+    // Reading the queue is read-only, and withdrawing your own queued prompt must
+    // not require holding the lease: the phone often watches without control.
+    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'get_queue' })
+    expect(commands.at(-1)).toEqual({ type: 'get_queue' })
+
+    await registry.sendBrowserCommand('process-a', 'browser-b', { type: 'cancel_queue_item', id: 'q-1' })
+    expect(commands.at(-1)).toEqual({ type: 'cancel_queue_item', id: 'q-1' })
+  })
+
   it('exposes every attached Pi process, including multiple sessions in one worktree', () => {
     const registry = new LiveSessionRegistry()
     cleanups.push(() => registry.stop())

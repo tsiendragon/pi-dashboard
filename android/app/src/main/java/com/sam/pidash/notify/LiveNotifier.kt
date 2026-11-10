@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.Icon
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.sam.pidash.MainActivity
@@ -59,7 +60,7 @@ class LiveNotifier(private val context: Context) {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification: Notification = Notification.Builder(context, CHANNEL)
+        val builder = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_live)
             .setContentTitle(notificationTitle(alert.title))
             .setContentText(alert.text)
@@ -70,9 +71,44 @@ class LiveNotifier(private val context: Context) {
             // One notification per session: a later "needs input" replaces the earlier
             // "completed" instead of stacking two rows for the same conversation.
             .setSortKey(alert.sessionKey)
+        approvalActions(alert).forEach { action ->
+            builder.addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(context, R.drawable.ic_stat_live),
+                    action.label,
+                    answerIntent(alert, action.value),
+                ).build(),
+            )
+        }
+        // Approvals are actionable, so keep them off the lock screen: the public version
+        // carries no session name, no request and no buttons.
+        val notification = builder
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                Notification.Builder(context, CHANNEL)
+                    .setSmallIcon(R.drawable.ic_stat_live)
+                    .setContentTitle("PiDash 会话提醒")
+                    .setContentText("解锁后查看")
+                    .build(),
+            )
             .build()
         manager.notify(idFor(alert.sessionKey), notification)
     }
+
+    /** A shade button only ever answers the request the alert was built from. */
+    private fun answerIntent(alert: LiveAlert, value: String): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            (alert.sessionKey + alert.request?.id + value).hashCode(),
+            Intent(context, LiveAnswerReceiver::class.java).apply {
+                action = LiveAnswerReceiver.ACTION_ANSWER
+                putExtra(LiveAnswerReceiver.EXTRA_BACKEND, alert.backendId)
+                putExtra(LiveAnswerReceiver.EXTRA_SESSION, alert.sessionKey)
+                putExtra(LiveAnswerReceiver.EXTRA_REQUEST, alert.request?.id)
+                putExtra(LiveAnswerReceiver.EXTRA_ALLOW, value == "true")
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
 
     /** Opening a conversation clears its pending alert — the user has seen it. */
     fun cancel(sessionKey: String) = manager.cancel(idFor(sessionKey))

@@ -149,7 +149,7 @@ export function parseGoodbye(value: unknown): LiveSessionGoodbye {
 export function validateLiveSessionCommand(value: unknown, browserOnly = false): LiveSessionCommand {
   if (!record(value) || !nonEmptyString(value.type, 64)) throw new LiveSessionProtocolError('invalid_command', 'command type is required')
   if (jsonBytes(value) > LIVE_SESSION_MAX_COMMAND_BYTES) throw new LiveSessionProtocolError('command_too_large', 'command exceeds 8 MiB')
-  if (browserOnly && value.type !== 'resync' && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'get_context' && value.type !== 'set_model' && value.type !== 'compact' && value.type !== 'reload' && value.type !== 'shutdown' && value.type !== 'feature_command' && value.type !== 'answer_ui' && value.type !== 'answer_sudo') {
+  if (browserOnly && value.type !== 'resync' && value.type !== 'input' && value.type !== 'abort' && value.type !== 'set_session_name' && value.type !== 'get_models' && value.type !== 'get_context' && value.type !== 'set_model' && value.type !== 'compact' && value.type !== 'reload' && value.type !== 'shutdown' && value.type !== 'feature_command' && value.type !== 'answer_ui' && value.type !== 'answer_sudo' && value.type !== 'get_queue' && value.type !== 'cancel_queue_item') {
     throw new LiveSessionProtocolError('unsupported_command', 'browser command is not supported')
   }
   switch (value.type) {
@@ -205,6 +205,12 @@ export function validateLiveSessionCommand(value: unknown, browserOnly = false):
       } else break
       return value as unknown as LiveSessionCommand
     }
+    case 'get_queue':
+      if (onlyKeys(value, ['type'])) return value as { type: 'get_queue' }
+      break
+    case 'cancel_queue_item':
+      if (onlyKeys(value, ['type', 'id']) && nonEmptyString(value.id, 128)) return value as unknown as LiveSessionCommand
+      break
     case 'answer_sudo': {
       if (!onlyKeys(value, ['type', 'id', 'password', 'cancelled']) || !nonEmptyString(value.id, 256)) break
       if (value.cancelled !== undefined && typeof value.cancelled !== 'boolean') break

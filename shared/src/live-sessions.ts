@@ -315,6 +315,10 @@ export type LiveSessionCommand =
   | { type: 'shutdown' }
   | { type: 'feature_command'; leaseId: string; feature: 'btw'; command: BtwFeatureCommand }
   | { type: 'feature_command'; leaseId: string; feature: 'background-commands'; command: { type: 'background'; toolCallId: string } }
+  /** Read-only snapshot of prompts the bridge still holds before dispatch. */
+  | { type: 'get_queue' }
+  /** Withdraw one still-queued prompt; a dispatched prompt cannot be recalled. */
+  | { type: 'cancel_queue_item'; id: string }
   | { type: 'answer_ui'; id: string; value?: string; cancelled?: boolean }
   | { type: 'answer_sudo'; id: string; password?: string; cancelled?: boolean }
 

@@ -58,6 +58,19 @@ data class LiveDetail(
     val pendingUi: List<LiveUiRequest> = emptyList(),
     val goal: JsonElement? = null,
 )
+/** A prompt the bridge is still holding before dispatch (see `get_queue`). */
+@Serializable
+data class LiveQueueItem(
+    val id: String,
+    val text: String = "",
+    val channel: String = "",
+    val deliverAs: String? = null,
+    val imageCount: Int = 0,
+)
+
+@Serializable
+data class LiveQueue(val items: List<LiveQueueItem> = emptyList(), val active: LiveQueueItem? = null)
+
 @Serializable
 data class LiveMeta(val tags: List<String> = emptyList(), val pinned: Boolean = false, val tmux: String? = null, val emoji: String = "", val color: String = "")
 @Serializable

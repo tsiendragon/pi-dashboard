@@ -88,3 +88,21 @@ describe('live-session command validation', () => {
     }
   })
 })
+
+  it('accepts the read-only queue snapshot and a single withdrawal', () => {
+    expect(validateLiveSessionCommand({ type: 'get_queue' }, true)).toEqual({ type: 'get_queue' })
+    expect(validateLiveSessionCommand({ type: 'get_queue' }, false)).toEqual({ type: 'get_queue' })
+    expect(validateLiveSessionCommand({ type: 'cancel_queue_item', id: 'q-1' }, true)).toEqual({ type: 'cancel_queue_item', id: 'q-1' })
+  })
+
+  it('rejects malformed queue withdrawals', () => {
+    for (const payload of [
+      { type: 'cancel_queue_item' },
+      { type: 'cancel_queue_item', id: '' },
+      { type: 'cancel_queue_item', id: 'x'.repeat(129) },
+      { type: 'cancel_queue_item', id: 'q-1', leaseId: 'lease-1' },
+      { type: 'get_queue', includeActive: true },
+    ]) {
+      expect(() => validateLiveSessionCommand(payload, true)).toThrow(/invalid or unsupported/)
+    }
+  })

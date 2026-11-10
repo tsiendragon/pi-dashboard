@@ -30,6 +30,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Answers a confirm request from the notification shade; never exported. -->
+        <receiver
+            android:name=".notify.LiveAnswerReceiver"
+            android:exported="false" />
+
     </application>
 
 </manifest>

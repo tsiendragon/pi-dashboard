@@ -2,6 +2,7 @@ package com.sam.pidash.notify
 
 import com.sam.pidash.domain.model.LiveDetail
 import com.sam.pidash.domain.model.LiveSummary
+import com.sam.pidash.domain.model.LiveUiRequest
 import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.data.repo.LivePiRepository
 import kotlinx.coroutines.CoroutineScope
@@ -21,7 +22,7 @@ class LiveAlertWatcher(
     private val scope: CoroutineScope,
 ) {
     private val summaries = mutableMapOf<String, LiveSummary>()
-    private val pending = mutableMapOf<String, Int>()
+    private val pending = mutableMapOf<String, List<LiveUiRequest>>()
     private val lastPosted = mutableMapOf<String, Long>()
 
     fun start() {
@@ -39,26 +40,26 @@ class LiveAlertWatcher(
     private fun remember(details: Map<SessionKey, LiveDetail>) {
         details.forEach { (key, detail) ->
             summaries[key.slotKey] = detail.summary
-            pending[key.slotKey] = detail.pendingUi.size
+            pending[key.slotKey] = detail.pendingUi
         }
     }
 
     private fun inspect(key: SessionKey, detail: LiveDetail) {
         val current = detail.summary
         val previous = summaries[key.slotKey]
-        val previousPending = pending[key.slotKey] ?: 0
+        val previousPending = pending[key.slotKey].orEmpty()
         summaries[key.slotKey] = current
-        pending[key.slotKey] = detail.pendingUi.size
+        pending[key.slotKey] = detail.pendingUi
         val alert = findLiveAlert(
             backendId = key.backendId,
             processInstanceId = key.slotKey,
             previous = previous,
             current = current,
-            previousPendingUi = previousPending,
-            currentPendingUi = detail.pendingUi.size,
+            previousPending = previousPending,
+            pending = detail.pendingUi,
             title = current.title,
         ) ?: return
-        val stamp = "${alert.sessionKey}:${alert.kind}"
+        val stamp = "${alert.sessionKey}:${alert.kind}:${alert.request?.id.orEmpty()}"
         val now = System.currentTimeMillis()
         val last = lastPosted[stamp] ?: 0L
         if (now - last < LIVE_ALERT_MIN_INTERVAL_MS) return

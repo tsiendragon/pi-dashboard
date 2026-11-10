@@ -235,6 +235,21 @@ fun LiveSessionScreen(
     var dialog by remember(sessionKey) { mutableStateOf<String?>(null) }
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
     var answered by remember(sessionKey) { mutableStateOf(emptySet<String>()) }
+    // The request the user chose to open in a dialog; nothing opens itself.
+    var openedRequest by remember(sessionKey) { mutableStateOf<com.sam.pidash.domain.model.LiveUiRequest?>(null) }
+    var approvalBusy by remember(sessionKey) { mutableStateOf(false) }
+    var approvalError by remember(sessionKey) { mutableStateOf<String?>(null) }
+    // Prompts the bridge still holds; refreshed after a send, a withdrawal or a state change.
+    var queued by remember(sessionKey) { mutableStateOf<com.sam.pidash.domain.model.LiveQueue?>(null) }
+    var queueSheet by remember(sessionKey) { mutableStateOf(false) }
+    var queueBusy by remember(sessionKey) { mutableStateOf(false) }
+    var queueError by remember(sessionKey) { mutableStateOf<String?>(null) }
+    var queueRevision by remember(sessionKey) { mutableStateOf(0) }
+    val supportsQueue = summary?.capabilities?.contains("input_queue") == true
+    LaunchedEffect(sessionKey, summary?.status, queueRevision, supportsQueue, cachedSnapshot) {
+        if (!supportsQueue || cachedSnapshot != null) { queued = null; return@LaunchedEffect }
+        queued = live.queue(sessionKey).getOrNull()
+    }
     val goal = remember(detail) { detail?.let { liveGoalAnchor(it) } }
     val activities = remember(detail) { detail?.let { projectLiveActivities(it) }.orEmpty() }
     // Default is the activity view: a phone reads replies, not the whole transcript.
@@ -768,6 +783,47 @@ fun LiveSessionScreen(
                 }
                 // One GPT-style pill: attach and send sit inside the field container, so the
                 // composer reads as a single object instead of three separate controls.
+                if (supportsQueue) QueuedPromptsBar(
+                    items = queued?.items.orEmpty(),
+                    onOpen = { queueError = null; queueSheet = true },
+                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                )
+                // A pending request is answered here, in place: the agent is blocked, so the
+                // card sits where the user is already looking instead of covering the screen.
+                val pendingRequests = detail?.pendingUi?.filter { it.id !in answered }.orEmpty()
+                val oldest = pendingRequests.firstOrNull()
+                if (oldest != null && cachedSnapshot == null) {
+                    ApprovalCard(
+                        method = oldest.method,
+                        title = oldest.title,
+                        message = oldest.message,
+                        pendingCount = pendingRequests.size,
+                        busy = approvalBusy,
+                        error = approvalError,
+                        onAllow = {
+                            approvalBusy = true; approvalError = null
+                            scope.launch {
+                                live.answer(sessionKey, oldest, value = "true").fold(
+                                    onSuccess = { answered = answered + oldest.id; notifier.cancel(sessionKey.slotKey) },
+                                    onFailure = { approvalError = it.message ?: "回答失败；请求可能已在其他端处理。" },
+                                )
+                                approvalBusy = false
+                            }
+                        },
+                        onDeny = {
+                            approvalBusy = true; approvalError = null
+                            scope.launch {
+                                live.answer(sessionKey, oldest, value = "false").fold(
+                                    onSuccess = { answered = answered + oldest.id; notifier.cancel(sessionKey.slotKey) },
+                                    onFailure = { approvalError = it.message ?: "回答失败；请求可能已在其他端处理。" },
+                                )
+                                approvalBusy = false
+                            }
+                        },
+                        onOpen = { approvalError = null; openedRequest = oldest },
+                        modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                    )
+                }
                 val deliveryLabel = when (deliverAs) {
                     "steer" -> "引导"
                     "followUp" -> "排队"
@@ -798,6 +854,7 @@ fun LiveSessionScreen(
                         val text = composeOutgoing(typed, sentQuotes, sentReviews, FileAttachments.prefix(sentFiles))
                         perform("已发送") {
                             live.send(sessionKey, text, deliverAs, images).onSuccess {
+                                queueRevision++
                                 // Never discard the draft or the attachment on failed/uncertain delivery.
                                 if (draft == typed) draft = ""
                                 if (attachments == images) attachments = emptyList()
@@ -1287,10 +1344,31 @@ fun LiveSessionScreen(
                 }
             }
         }
-        detail?.pendingUi?.firstOrNull { it.id !in answered }?.let { request ->
+        if (queueSheet) QueuedPromptsSheet(
+            items = queued?.items.orEmpty(),
+            active = queued?.active,
+            busy = queueBusy,
+            error = queueError,
+            onCancel = { item ->
+                queueBusy = true; queueError = null
+                scope.launch {
+                    live.cancelQueued(sessionKey, item.id).fold(
+                        onSuccess = { queueRevision++; queueError = null },
+                        onFailure = { queueError = it.message ?: "撤回失败；这条可能已经开始执行。" },
+                    )
+                    queueBusy = false
+                }
+            },
+            onDismiss = { queueSheet = false },
+        )
+        openedRequest?.let { request ->
             // Only an explicit answer invokes the repository; never auto-answer prompts.
             LiveExtensionDialog(request = request, onAnswer = { value, cancelled ->
-                live.answer(sessionKey, request, value, cancelled).onSuccess { answered = answered + request.id }
+                live.answer(sessionKey, request, value, cancelled).onSuccess {
+                    answered = answered + request.id
+                    notifier.cancel(sessionKey.slotKey)
+                    openedRequest = null
+                }
             })
         }
     }

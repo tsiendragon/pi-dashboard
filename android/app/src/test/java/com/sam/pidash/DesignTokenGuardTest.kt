@@ -13,6 +13,11 @@ import java.io.File
  *    to the same sizes today, but drift the moment a token changes).
  * 2. Chevrons and check marks are vector icons, not borrowed text glyphs, which are the only
  *    way to keep their optical size stable across fonts and font scales.
+ * 3. Dialogs use the one sheet radius and font sizes come from PiType, so a copy-pasted
+ *    dialog cannot reintroduce 28 dp corners or a 20 sp title.
+ *
+ * These are the machine-checked part of docs/android-ui-contract.md; the rest of that
+ * contract is prose plus screenshot review.
  *
  * Screenshot tests would cover more, but they need a rendering harness this project does not
  * have offline; these checks cost nothing and fail in the same review loop.
@@ -66,6 +71,37 @@ class DesignTokenGuardTest {
             "Replace text chevrons with Icons.Filled.*: ${offenders.map { it.name }}",
             offenders.isEmpty(),
         )
+    }
+
+    @Test
+    fun `dialogs keep the shared sheet radius`() {
+        val offenders = mutableListOf<String>()
+        for (file in kotlinFiles()) {
+            val text = file.readText()
+            var index = text.indexOf("AlertDialog(")
+            while (index >= 0) {
+                // The shape parameter lives in the same call header; lamdas follow it.
+                val header = text.substring(index, (index + 320).coerceAtMost(text.length))
+                if (!header.contains("shape = Radii.sheet")) {
+                    offenders += "${file.name}:${text.take(index).count { it == '\n' } + 1}"
+                }
+                index = text.indexOf("AlertDialog(", index + 1)
+            }
+        }
+        assertEquals("Pass shape = Radii.sheet to every AlertDialog: $offenders", emptyList<String>(), offenders)
+    }
+
+    @Test
+    fun `font sizes come from the type scale`() {
+        val offenders = kotlinFiles()
+            .filterNot { it.invariantSeparatorsPath.contains("/ui/theme/") }
+            .flatMap { file ->
+                file.readLines().withIndex()
+                    .filter { (_, line) -> Regex("""\bfontSize\s*=""").containsMatchIn(line) }
+                    .filterNot { (_, line) -> line.contains("PiType") || line.contains("style.fontSize") }
+                    .map { (index, line) -> "${file.name}:${index + 1} ${line.trim()}" }
+            }
+        assertEquals("Use PiType.* (or scale a PiType style) instead of a literal fontSize: $offenders", emptyList<String>(), offenders)
     }
 
     private fun kotlinFiles(): List<File> =

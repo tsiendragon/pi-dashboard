@@ -554,7 +554,7 @@ export class LiveSessionRegistry extends EventEmitter {
 
   async sendBrowserCommand(processInstanceId: string, browserClientId: string, command: unknown): Promise<unknown> {
     const validated = validateLiveSessionCommand(command, true)
-    if (validated.type !== 'resync' && validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'get_context' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'shutdown' && validated.type !== 'feature_command' && validated.type !== 'answer_ui' && validated.type !== 'answer_sudo') {
+    if (validated.type !== 'resync' && validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'get_context' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'shutdown' && validated.type !== 'feature_command' && validated.type !== 'answer_ui' && validated.type !== 'answer_sudo' && validated.type !== 'get_queue' && validated.type !== 'cancel_queue_item') {
       throw new LiveSessionRegistryError('unsupported_command', 'browser command is not allowed')
     }
     if (validated.type === 'answer_ui' && this.entries.get(processInstanceId)?.pendingUi.get(validated.id)?.method === 'sudo') {
@@ -576,7 +576,7 @@ export class LiveSessionRegistry extends EventEmitter {
     }
     // answer_ui settles a pending extension UI request (first answer wins), so it
     // is deliberately dispatchable without holding the lease.
-    if (validated.type === 'resync' || validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'get_context' || validated.type === 'set_model' || validated.type === 'reload' || validated.type === 'shutdown' || validated.type === 'answer_ui') return this.dispatch(processInstanceId, validated)
+    if (validated.type === 'resync' || validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'get_context' || validated.type === 'set_model' || validated.type === 'reload' || validated.type === 'shutdown' || validated.type === 'answer_ui' || validated.type === 'get_queue' || validated.type === 'cancel_queue_item') return this.dispatch(processInstanceId, validated)
 
     this.requireLease(processInstanceId, browserClientId, validated.leaseId)
     return this.dispatch(processInstanceId, validated)
