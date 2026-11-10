@@ -793,14 +793,57 @@ fun LiveSessionScreen(
                         }
                     }
                 }
-                Row(verticalAlignment = Alignment.Bottom) {
+                // One GPT-style pill: attach and send sit inside the field container, so the
+                // composer reads as a single object instead of three separate controls.
+                val deliveryLabel = when (deliverAs) {
+                    "steer" -> "引导"
+                    "followUp" -> "排队"
+                    else -> null
+                }
+                if (deliveryLabel != null) Text(
+                    "投递方式：$deliveryLabel",
+                    modifier = Modifier.fillMaxWidth().padding(start = Spacing.md, bottom = 2.dp),
+                    style = PiType.caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                val canSend = !busy && cachedSnapshot == null && summary != null &&
+                    (draft.isNotBlank() || attachments.isNotEmpty() || files.isNotEmpty() ||
+                        quotes.isNotEmpty() || reviews.isNotEmpty()) &&
+                    ImageAttachments.validate(attachments) == null
+                ComposerPill(
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    enabled = !busy,
+                    canSend = canSend,
+                    onSend = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val typed = draft
+                        val images = attachments
+                        val sentQuotes = quotes
+                        val sentReviews = reviews
+                        val sentFiles = files
+                        val text = composeOutgoing(typed, sentQuotes, sentReviews, FileAttachments.prefix(sentFiles))
+                        perform("已发送") {
+                            live.send(sessionKey, text, deliverAs, images).onSuccess {
+                                // Never discard the draft or the attachment on failed/uncertain delivery.
+                                if (draft == typed) draft = ""
+                                if (attachments == images) attachments = emptyList()
+                                if (files == sentFiles) files = emptyList()
+                                if (quotes == sentQuotes) quotes = emptyList()
+                                if (reviews == sentReviews) reviews = emptyList()
+                            }
+                        }
+                    },
+                    onFocusChange = { composerFocused = it },
+                    maxHeight = composerMaxHeight,
+                ) {
                     Box {
                         var addMenu by remember { mutableStateOf(false) }
                         var addMenuShowTools by remember { mutableStateOf(false) }
                         IconButton(enabled = !busy, onClick = {
                             addMenuShowTools = !showComposerTools
                             addMenu = true
-                        }, modifier = Modifier.size(48.dp)) {
+                        }, modifier = Modifier.size(44.dp)) {
                             Icon(Icons.Filled.Add, "附加内容", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
@@ -853,86 +896,6 @@ fun LiveSessionScreen(
                                         onClick = { addMenu = false; deliverAs = value },
                                     )
                                 }
-                        }
-                    }
-                    // A single line stays compact; long drafts grow and then scroll within a bounded area.
-                    BasicTextField(
-                        value = draft,
-                        onValueChange = { draft = it },
-                        modifier = Modifier.weight(1f).padding(horizontal = Spacing.xxs)
-                            .heightIn(max = composerMaxHeight)
-                            .onFocusChanged { composerFocused = it.isFocused },
-                        textStyle = PiType.userMessage.copy(color = if (busy) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        maxLines = if (composerFocused) 8 else 4,
-                        enabled = !busy,
-                        decorationBox = { innerTextField ->
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    .heightIn(min = 36.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                Box(Modifier.weight(1f)) {
-                                    if (draft.isEmpty()) Text("输入消息…", style = PiType.userMessage, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    innerTextField()
-                                }
-                                val deliveryLabel = when (deliverAs) {
-                                    "steer" -> "引导"
-                                    "followUp" -> "排队"
-                                    else -> null
-                                }
-                                if (deliveryLabel != null || draft.isNotBlank()) {
-                                    val compactStatus = listOfNotNull(deliveryLabel, draft.length.toString().takeIf { draft.isNotBlank() }).joinToString(" · ")
-                                    val spokenStatus = listOfNotNull(deliveryLabel?.let { "投递方式：$it" }, "${draft.length} 字".takeIf { draft.isNotBlank() }).joinToString("，")
-                                    Text(
-                                        compactStatus,
-                                        modifier = Modifier.widthIn(max = 80.dp).semantics { contentDescription = spokenStatus },
-                                        style = PiType.caption,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        },
-                    )
-                    val canSend = !busy && cachedSnapshot == null && summary != null &&
-                        (draft.isNotBlank() || attachments.isNotEmpty() || files.isNotEmpty() ||
-                            quotes.isNotEmpty() || reviews.isNotEmpty()) &&
-                        ImageAttachments.validate(attachments) == null
-                    IconButton(enabled = canSend, modifier = Modifier.size(48.dp), onClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        val typed = draft
-                        val images = attachments
-                        val sentQuotes = quotes
-                        val sentReviews = reviews
-                        val sentFiles = files
-                        val text = composeOutgoing(typed, sentQuotes, sentReviews, FileAttachments.prefix(sentFiles))
-                        perform("已发送") {
-                            live.send(sessionKey, text, deliverAs, images).onSuccess {
-                                // Never discard the draft or the attachment on failed/uncertain delivery.
-                                if (draft == typed) draft = ""
-                                if (attachments == images) attachments = emptyList()
-                                if (files == sentFiles) files = emptyList()
-                                if (quotes == sentQuotes) quotes = emptyList()
-                                if (reviews == sentReviews) reviews = emptyList()
-                            }
-                        }
-                    }) {
-                        Box(
-                            modifier = Modifier.size(32.dp).background(
-                                if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
-                                CircleShape,
-                            ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Send, "发送", modifier = Modifier.size(18.dp),
-                                tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
                         }
                     }
                 }
