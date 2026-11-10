@@ -47,7 +47,8 @@ internal fun ComposerPill(
     maxHeight: Dp,
     modifier: Modifier = Modifier,
     placeholder: String = "输入消息…",
-    leading: @Composable () -> Unit,
+    trailing: (@Composable () -> Unit)? = null,
+    leading: @Composable () -> Unit = {},
 ) {
     Row(
         modifier.fillMaxWidth()
@@ -83,7 +84,8 @@ internal fun ComposerPill(
                 }
             },
         )
-        IconButton(enabled = canSend, onClick = onSend, modifier = Modifier.size(44.dp).testTag("composer-send")) {
+        if (trailing != null) trailing()
+        else IconButton(enabled = canSend, onClick = onSend, modifier = Modifier.size(44.dp).testTag("composer-send")) {
             Box(
                 Modifier.size(34.dp).background(
                     if (canSend) MaterialTheme.colorScheme.primary

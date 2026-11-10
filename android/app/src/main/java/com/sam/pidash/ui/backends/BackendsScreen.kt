@@ -16,33 +16,28 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -61,6 +56,10 @@ import com.sam.pidash.domain.model.AppFontScale
 import com.sam.pidash.domain.model.AppTheme
 import com.sam.pidash.domain.model.ConnectionState
 import com.sam.pidash.ui.common.AppVersionLabel
+import com.sam.pidash.ui.common.CompactPageHeader
+import com.sam.pidash.ui.common.PiTextField
+import com.sam.pidash.ui.common.PrimaryCreateAction
+import com.sam.pidash.ui.common.SegmentedTabs
 import com.sam.pidash.ui.common.GroupedCard
 import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.SectionLabel
@@ -100,33 +99,18 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                    ) {
-                        Text(
-                            "设置",
-                            style = PiType.pageTitle,
-                            maxLines = 1,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        AppVersionLabel()
-                    }
-                },
+            CompactPageHeader(
+                title = "设置",
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", modifier = Modifier.size(20.dp))
                     }
                 },
+                actions = { AppVersionLabel() },
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAdd = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "添加服务器")
-            }
+            PrimaryCreateAction("添加服务器") { showAdd = true }
         },
     ) { padding ->
         LazyColumn(
@@ -147,15 +131,11 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                             style = PiType.caption,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                            AppTheme.entries.forEach { option ->
-                                FilterChip(
-                                    selected = theme == option,
-                                    onClick = { displayPrefs.setTheme(option) },
-                                    label = { Text(option.label) },
-                                )
-                            }
-                        }
+                        SegmentedTabs(
+                            options = AppTheme.entries.map { it.storageValue to it.label },
+                            selected = theme.storageValue,
+                            onSelect = { value -> AppTheme.fromStorage(value).let(displayPrefs::setTheme) },
+                        )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
                         Text("字体大小", style = PiType.callout, maxLines = 1)
                         Text(
@@ -163,15 +143,11 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                             style = PiType.caption,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                            AppFontScale.entries.forEach { option ->
-                                FilterChip(
-                                    selected = fontScale == option,
-                                    onClick = { displayPrefs.setFontScale(option) },
-                                    label = { Text(option.label) },
-                                )
-                            }
-                        }
+                        SegmentedTabs(
+                            options = AppFontScale.entries.map { it.storageValue to it.label },
+                            selected = fontScale.storageValue,
+                            onSelect = { value -> AppFontScale.fromStorage(value).let(displayPrefs::setFontScale) },
+                        )
                     }
                 }
             }
@@ -375,26 +351,23 @@ private fun AddBackendDialog(
         title = { Text("添加服务器", style = PiType.pageTitle) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                OutlinedTextField(
+                PiTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("名称（可留空）") },
-                    singleLine = true,
+                    label = "名称（可留空）",
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
+                PiTextField(
                     value = url,
                     onValueChange = { url = it },
-                    label = { Text("地址") },
-                    placeholder = { Text("https://pi.example.com") },
-                    singleLine = true,
+                    label = "地址",
+                    placeholder = "https://pi.example.com",
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
+                PiTextField(
                     value = token,
                     onValueChange = { token = it },
-                    label = { Text("凭据（可留空）") },
-                    singleLine = true,
+                    label = "凭据（可留空）",
                     modifier = Modifier.fillMaxWidth(),
                 )
                 testResult?.let {

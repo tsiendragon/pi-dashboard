@@ -14,16 +14,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -36,9 +32,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -46,10 +39,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.common.SegmentedTabs
 import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.common.rememberAttachmentBitmap
-import com.sam.pidash.ui.common.MetaLine
-import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
@@ -68,9 +60,7 @@ import androidx.compose.ui.Modifier
 import com.sam.pidash.PiDashApp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -495,29 +485,11 @@ fun LiveSessionScreen(
                         )
                     }
                     }
-                    Row(Modifier.selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
-                        listOf("activity" to "活动", "full" to "完整").forEach { (mode, label) ->
-                            val active = viewMode == mode
-                            Box(
-                                Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .selectable(selected = active, role = Role.Tab) { viewMode = mode },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    label,
-                                    modifier = Modifier.background(
-                                        if (active) MaterialTheme.colorScheme.primary.copy(alpha = Tints.Tint)
-                                        else androidx.compose.ui.graphics.Color.Transparent,
-                                        RoundedCornerShape(6.dp),
-                                    ).padding(horizontal = 8.dp, vertical = 4.dp),
-                                    style = PiType.micro.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-                                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                    }
+                    SegmentedTabs(
+                        options = listOf("activity" to "活动", "full" to "完整"),
+                        selected = viewMode,
+                        onSelect = { viewMode = it },
+                    )
                     Box {
                         IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Filled.MoreVert, "会话操作")

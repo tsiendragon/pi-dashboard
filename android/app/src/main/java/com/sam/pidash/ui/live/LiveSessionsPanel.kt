@@ -12,6 +12,7 @@ import com.sam.pidash.ui.common.PulsingDot
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
 
@@ -729,7 +730,7 @@ private fun SessionRow(
     }
 
     if (actions) {
-        ModalBottomSheet(onDismissRequest = { actions = false }) {
+        ModalBottomSheet(onDismissRequest = { actions = false }, shape = Radii.sheet) {
             SessionActionsSheet(
                 row = row,
                 busy = busy,

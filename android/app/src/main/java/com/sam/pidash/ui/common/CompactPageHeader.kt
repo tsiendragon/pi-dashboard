@@ -23,6 +23,7 @@ import com.sam.pidash.ui.theme.Spacing
 internal fun CompactPageHeader(
     title: String,
     navigationIcon: (@Composable () -> Unit)? = null,
+    subtitle: String? = null,
     actions: @Composable RowScope.() -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface) {
@@ -32,8 +33,13 @@ internal fun CompactPageHeader(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             navigationIcon?.invoke()
-            Text(title, style = PiType.pageTitle, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(horizontal = Spacing.sm))
+            Column(Modifier.weight(1f).padding(horizontal = Spacing.sm)) {
+                Text(title, style = PiType.pageTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (subtitle != null) Text(
+                    subtitle, style = PiType.caption, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             actions()
         }
     }

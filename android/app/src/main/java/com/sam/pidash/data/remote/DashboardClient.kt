@@ -167,6 +167,12 @@ class DashboardClient(
         Unit
     }
 
+    /** Ends the slot's Pi process and removes it from the dashboard list; its session file stays. */
+    suspend fun deleteSlot(slotKey: String) = withContext(Dispatchers.IO) {
+        execute(jsonRequest("DELETE", "/api/chat/slots/${encodeKey(slotKey)}", "{}"))
+        Unit
+    }
+
     suspend fun renameSlot(slotKey: String, title: String) = withContext(Dispatchers.IO) {
         val body = pidashJson.encodeToString(RenameSlotRequest.serializer(), RenameSlotRequest(title))
         execute(jsonRequest("PATCH", "/api/chat/slots/${encodeKey(slotKey)}/title", body))

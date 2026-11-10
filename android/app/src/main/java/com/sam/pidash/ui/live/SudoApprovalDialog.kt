@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -13,8 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -23,6 +20,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sam.pidash.domain.model.LiveUiRequest
+import com.sam.pidash.ui.common.PiTextField
 import com.sam.pidash.ui.theme.Hairline
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
@@ -146,13 +144,11 @@ internal fun SudoApprovalContent(
                     HorizontalDivider(thickness = Hairline, color = MaterialTheme.colorScheme.outlineVariant)
                     Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         Text("root 权限可能修改系统。若调用脚本或解释器，也请核对其内容。", style = PiType.footnote, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        OutlinedTextField(value = password, onValueChange = {
+                        PiTextField(value = password, onValueChange = {
                             if (it.length <= 4096 && it.none { c -> c == '\n' || c == '\r' || c == '\u0000' }) onPasswordChange(it)
-                        }, modifier = Modifier.fillMaxWidth(), label = { Text("sudo 密码") },
-                            supportingText = { Text("密码不保存、不进入聊天。已有免密规则可留空。", style = PiType.caption) },
-                            enabled = !busy && valid, singleLine = true, shape = Radii.card,
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
+                        }, modifier = Modifier.fillMaxWidth(), label = "sudo 密码",
+                            supportingText = "密码不保存、不进入聊天。已有免密规则可留空。",
+                            enabled = !busy && valid, isPassword = true)
                         TextButton(onClick = { detailsExpanded = !detailsExpanded }, contentPadding = PaddingValues(horizontal = 0.dp)) {
                             Text(if (detailsExpanded) "收起权限说明" else "密码与权限说明")
                         }

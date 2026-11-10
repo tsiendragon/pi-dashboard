@@ -12,6 +12,8 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.Density
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.sam.pidash.ui.common.GroupedCard
+import com.sam.pidash.ui.common.PiTextField
+import com.sam.pidash.ui.common.SegmentedTabs
 import com.sam.pidash.ui.theme.PiDashTheme
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Spacing
@@ -53,16 +55,13 @@ class PageStyleScreenshotTest {
                                     Text("/srv/pi-dashboard", style = PiType.monoMicro, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            OutlinedTextField(value = "关键词", onValueChange = {}, modifier = Modifier.fillMaxWidth(),
-                                label = { Text("搜索项目") }, singleLine = true)
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                listOf("跟随系统", "浅色", "深色").forEach { label ->
-                                    FilterChip(selected = label == "跟随系统", onClick = {}, label = { Text(label) })
-                                }
-                            }
+                            PiTextField(value = "关键词", onValueChange = {}, modifier = Modifier.fillMaxWidth(),
+                                label = "搜索项目")
+                            SegmentedTabs(listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色"),
+                                selected = "system", onSelect = {})
                             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                                 TextButton(onClick = {}) { Text("取消") }
-                                Button(onClick = {}) { Text("继续") }
+                                TextButton(onClick = {}) { Text("继续") }
                             }
                         }
                     }

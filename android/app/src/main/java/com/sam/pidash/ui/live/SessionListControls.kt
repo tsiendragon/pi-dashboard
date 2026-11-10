@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.common.SegmentedTabs
 import com.sam.pidash.ui.theme.Hairline
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
@@ -23,22 +24,12 @@ import com.sam.pidash.ui.theme.Spacing
 
 @Composable
 internal fun SessionModeTabs(liveTab: Boolean, onChange: (Boolean) -> Unit) {
-    TabRow(
-        selectedTabIndex = if (liveTab) 0 else 1,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.primary,
-        divider = { HorizontalDivider(thickness = Hairline) },
-    ) {
-        listOf(true to "Live Pi", false to "Chat").forEach { (live, label) ->
-            Tab(
-                selected = liveTab == live, onClick = { onChange(live) },
-                modifier = Modifier.heightIn(min = 48.dp),
-                selectedContentColor = MaterialTheme.colorScheme.primary,
-                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ) {
-                Text(label, style = PiType.footnote, modifier = Modifier.padding(vertical = Spacing.sm))
-            }
-        }
+    Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.xs)) {
+        SegmentedTabs(
+            options = listOf("live" to "Live Pi", "chat" to "Chat"),
+            selected = if (liveTab) "live" else "chat",
+            onSelect = { onChange(it == "live") },
+        )
     }
 }
 

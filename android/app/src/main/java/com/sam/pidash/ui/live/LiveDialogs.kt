@@ -33,7 +33,9 @@ import com.sam.pidash.domain.model.LiveModelOption
 import com.sam.pidash.domain.model.LiveSummary
 import com.sam.pidash.domain.model.LiveUiRequest
 import com.sam.pidash.domain.model.SessionKey
+import com.sam.pidash.ui.common.PiTextField
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
 import kotlinx.coroutines.launch
@@ -107,7 +109,7 @@ internal fun LiveTextDialog(
     var value by remember { mutableStateOf(initial) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text(label) }, enabled = !busy)
+            PiTextField(value = value, onValueChange = { value = it }, label = label, enabled = !busy)
             Text("保存时尝试取得控制权，不会抢占其他端。", style = PiType.subhead)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -153,12 +155,11 @@ internal fun LiveMetadataDialog(
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (initialTitle != null) {
-                        OutlinedTextField(
+                        PiTextField(
                             value = title,
                             onValueChange = { if (it.length <= 120) title = it },
                             enabled = !busy,
-                            singleLine = true,
-                            label = { Text("会话名称") },
+                            label = "会话名称",
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
@@ -219,19 +220,18 @@ internal fun LiveMetadataDialog(
                 }
             }
 
-            OutlinedTextField(
+            PiTextField(
                 value = emoji,
                 onValueChange = { if (it.length <= 24 && it.none { ch -> ch.isISOControl() }) emoji = it },
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("自定义表情（可输入或粘贴，留空清除）") },
+                label = "自定义表情（可输入或粘贴，留空清除）",
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = pinned, enabled = !busy, onCheckedChange = { pinned = it })
                 Text("📌 置顶此会话", Modifier.clickable(enabled = !busy) { pinned = !pinned })
             }
-            OutlinedTextField(value = tags, onValueChange = { tags = it }, enabled = !busy, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("标签（逗号分隔）") })
+            PiTextField(value = tags, onValueChange = { tags = it }, enabled = !busy, modifier = Modifier.fillMaxWidth(), label = "标签（逗号分隔）")
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         }
@@ -281,7 +281,7 @@ internal fun LiveModelDialog(
     }
     // A model list is a picker, not a confirmation: it belongs in a sheet the thumb can reach,
     // with the same drag-to-dismiss gesture as the rest of the app.
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }) {
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, shape = Radii.sheet) {
         Column(Modifier.fillMaxWidth().heightIn(max = 620.dp)) {
             Text(
                 if (thinking) "思考强度" else "选择模型",
@@ -343,12 +343,11 @@ internal fun LiveModelDialog(
                     }
                 } else {
                     TextButton(enabled = !busy && !loading, onClick = { revision++ }) { Text("刷新模型列表", style = PiType.footnote) }
-                    OutlinedTextField(
+                    PiTextField(
                         value = query,
                         onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("🔍 搜索模型名称、ID 或服务商…") },
-                        singleLine = true,
+                        placeholder = "🔍 搜索模型名称、ID 或服务商…",
                     )
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(
@@ -560,8 +559,8 @@ internal fun LiveExtensionDialog(request: LiveUiRequest, onAnswer: suspend (Stri
                     "select" -> request.options.forEach { option ->
                         OutlinedButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = { respond(option) }) { Text(option) }
                     }
-                    "input", "editor" -> OutlinedTextField(value = value, onValueChange = { value = it }, enabled = !busy,
-                        modifier = Modifier.fillMaxWidth(), placeholder = { Text(request.placeholder.orEmpty()) },
+                    "input", "editor" -> PiTextField(value = value, onValueChange = { value = it }, enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(), placeholder = request.placeholder.orEmpty(),
                         singleLine = request.method == "input", minLines = if (request.method == "editor") 5 else 1,
                         maxLines = if (request.method == "editor") 12 else 1)
                     else -> Text("原生 UI 不支持此请求类型：${request.method}。可明确取消或在 WebUI / TUI 中处理。")

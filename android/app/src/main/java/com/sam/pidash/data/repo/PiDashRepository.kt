@@ -295,6 +295,19 @@ class PiDashRepository(
         clients[key.backendId]?.let { runCatching { it.stopSlot(key.slotKey) } }
     }
 
+    /** Close (delete) a chat slot: the server shuts the Pi process down and drops it from the list. */
+    suspend fun closeChatSlot(key: SessionKey): Result<Unit> {
+        val client = clients[key.backendId]
+            ?: return Result.failure(IllegalStateException("后端未连接"))
+        val result = runCatching { client.deleteSlot(key.slotKey) }
+        if (result.isSuccess) {
+            _running.update { it - key }
+            _streaming.update { it - key }
+            runCatching { client.refreshSlots() }
+        }
+        return result
+    }
+
     suspend fun createSlot(backendId: String): SessionKey? {
         val client = clients[backendId] ?: return null
         return runCatching {

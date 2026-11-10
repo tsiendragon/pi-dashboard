@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import com.sam.pidash.domain.model.LiveDirectoryOption
 import com.sam.pidash.domain.model.searchLiveDirectories
 import com.sam.pidash.ui.theme.Hairline
+import com.sam.pidash.ui.common.PiTextField
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
@@ -56,11 +57,11 @@ internal fun LiveDirectoryPicker(
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 Text(serverName, style = PiType.footnote, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(
-                    value = query, onValueChange = { query = it }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth(), label = { Text("搜索项目或路径") },
-                    placeholder = { Text("例如 pi、dashboard 或 /srv") },
-                    trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = { query = "" }) { Text("清空") } },
+                PiTextField(
+                    value = query, onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(), label = "搜索项目或路径",
+                    placeholder = "例如 pi、dashboard 或 /srv",
+                    trailing = { if (query.isNotEmpty()) TextButton(onClick = { query = "" }) { Text("清空") } },
                 )
                 Text("目录建议：${matches.size} / ${options.size}", style = PiType.caption,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
