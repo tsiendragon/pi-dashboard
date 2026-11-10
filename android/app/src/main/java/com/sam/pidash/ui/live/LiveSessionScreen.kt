@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.common.rememberAttachmentBitmap
 import com.sam.pidash.ui.common.MetaLine
 import com.sam.pidash.ui.common.MetaText
@@ -449,11 +450,9 @@ fun LiveSessionScreen(
                                 )
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                StatusDot(
-                                    if (cachedSnapshot == null && summary?.status == "running") MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.outline,
-                                    size = 6.dp,
-                                )
+                                val running = cachedSnapshot == null && summary?.status == "running"
+                                if (running) PulsingDot(MaterialTheme.colorScheme.primary, size = 6.dp, contentDescription = "运行中")
+                                else StatusDot(MaterialTheme.colorScheme.outline, size = 6.dp)
                                 Text(
                                     listOfNotNull(projectName, summary?.model?.id).joinToString(" · "),
                                     maxLines = 1,
@@ -682,7 +681,7 @@ fun LiveSessionScreen(
                 }
                 if (busy || owned) Row(verticalAlignment = Alignment.CenterVertically) {
                     if (busy) {
-                        StatusDot(MaterialTheme.colorScheme.primary)
+                        PulsingDot(MaterialTheme.colorScheme.primary, size = 5.dp)
                         Spacer(Modifier.size(6.dp))
                     }
                     Text(

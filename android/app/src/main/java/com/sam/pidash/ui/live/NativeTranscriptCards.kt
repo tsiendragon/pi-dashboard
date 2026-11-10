@@ -63,6 +63,7 @@ import com.sam.pidash.ui.common.Collapsible
 import com.sam.pidash.ui.common.ExpandHint
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Tints
@@ -141,7 +142,8 @@ internal fun NativeStepCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (active) {
-                StatusDot(if (item.isError || item.status == "error") scheme.error else scheme.primary)
+                if (item.isError || item.status == "error") StatusDot(scheme.error)
+                else PulsingDot(scheme.primary, size = 5.dp)
                 Spacer(Modifier.size(6.dp))
             }
             Text(

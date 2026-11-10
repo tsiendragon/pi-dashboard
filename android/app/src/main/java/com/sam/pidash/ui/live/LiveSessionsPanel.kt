@@ -8,6 +8,7 @@ import com.sam.pidash.ui.common.InsetSeparator
 import com.sam.pidash.ui.common.MetaLine
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.common.PulsingDot
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import com.sam.pidash.ui.theme.PiType
@@ -682,7 +683,7 @@ private fun SessionRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (running) {
-                    StatusDot(MaterialTheme.colorScheme.primary)
+                    PulsingDot(MaterialTheme.colorScheme.primary, size = 5.dp, contentDescription = "运行中")
                 }
                 Text(
                     row.summary.title,

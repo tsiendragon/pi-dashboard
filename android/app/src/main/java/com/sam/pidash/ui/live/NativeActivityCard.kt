@@ -1,10 +1,5 @@
 package com.sam.pidash.ui.live
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -38,7 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,6 +52,7 @@ import com.sam.pidash.ui.common.Collapsible
 import com.sam.pidash.ui.common.ExpandHint
 import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.StatusDot
+import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Tints
@@ -430,17 +425,4 @@ internal fun ActivityStatusPill(status: ActivityStatus, modifier: Modifier = Mod
             )
         }
     }
-}
-
-/** A dot that breathes while work is happening — the only motion in the app. */
-@Composable
-internal fun PulsingDot(color: androidx.compose.ui.graphics.Color) {
-    val transition = rememberInfiniteTransition(label = "activity")
-    val alpha by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.35f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "alpha",
-    )
-    Box(Modifier.alpha(alpha)) { StatusDot(color, size = 6.dp) }
 }
