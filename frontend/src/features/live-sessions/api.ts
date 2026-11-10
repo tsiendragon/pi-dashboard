@@ -1,4 +1,4 @@
-import type { LiveSessionCommand, LiveSessionContextView, LiveSessionQueue, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionMetaPatch, LiveSessionModelOption, LiveSessionReloadResult, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
+import type { LiveSessionAuditEntry, LiveSessionCommand, LiveSessionContextView, LiveSessionQueue, LiveSessionDetail, LiveSessionGroup, LiveSessionMeta, LiveSessionMetaPatch, LiveSessionModelOption, LiveSessionReloadResult, LiveSessionSummary, RepoCandidate } from '@shared/live-sessions'
 import type { SessionTreeGraph } from '@shared/session-tree'
 import type { CompactionMark } from './compactionWatch'
 
@@ -129,6 +129,10 @@ export const liveSessionApi = {
   contextView: (processInstanceId: string) => post<{ ok: true; result: LiveSessionContextView }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'get_context' } },
   ).then(result => result.result),
+  /** Who settled which request, newest first. Survives a dashboard restart. */
+  audit: (processInstanceId: string, limit = 50) => fetch(`/api/live-sessions/${encodeURIComponent(processInstanceId)}/audit?limit=${limit}`, { credentials: 'same-origin' })
+    .then(json<{ ok: true; result: { entries: LiveSessionAuditEntry[] } }>)
+    .then(body => body.result.entries),
   /** Prompts the bridge still holds, oldest first (needs the `input_queue` capability). */
   queue: (processInstanceId: string) => post<{ ok: true; result: LiveSessionQueue }>(
     `/api/live-sessions/${encodeURIComponent(processInstanceId)}/commands`, { command: { type: 'get_queue' } },

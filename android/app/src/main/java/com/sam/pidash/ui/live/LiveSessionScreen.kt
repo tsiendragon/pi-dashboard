@@ -527,6 +527,10 @@ fun LiveSessionScreen(
                                 "tree" to "会话树（只读）").forEach { (id, label) ->
                                 DropdownMenuItem(text = { Text(label) }, enabled = !busy, onClick = { menu = false; notice = null; dialog = id })
                             }
+                            DropdownMenuItem(
+                                text = { Text("审批与撤回记录（只读）…") },
+                                onClick = { menu = false; notice = null; dialog = "audit" },
+                            )
                             if (summary?.capabilities?.contains("context_view") == true) {
                                 DropdownMenuItem(text = { Text("检查上下文（只读）") }, enabled = !busy,
                                     onClick = { menu = false; notice = null; dialog = "context" })
@@ -1277,6 +1281,7 @@ fun LiveSessionScreen(
                 onAccepted = { dialog = null; onBack() },
             )
             "context", "tree" -> LiveInspectionDialog(repo, sessionKey, dialog == "context", dismiss)
+            "audit" -> LiveAuditDialog(live, sessionKey, dismiss)
             "compact", "reload", "restart", "fork" -> {
                 val action = dialog
                 val label = when (action) { "compact" -> "压缩上下文"; "reload" -> "重载扩展"; "restart" -> "重启 Pi 进程"; else -> "从此用户消息分叉" }

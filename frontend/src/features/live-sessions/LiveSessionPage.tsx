@@ -75,6 +75,7 @@ import { copyText } from '../../utils/clipboard'
 import LiveSessionsList from './LiveSessionsList'
 import ContextInspector from './ContextInspector'
 import LiveQueueBar, { LiveApprovalCard } from './LiveApprovalQueue'
+import LiveAuditDialog from './LiveAuditDialog'
 import { PendingDeliveryBar, pendingDeliveries, pendingDeliveryLabel, pendingDeliveryOf, pendingDeliveryTitle, queuedDeliveryFor } from './pendingDelivery'
 import { hasConfirmationMarker } from '../supervisor/pendingConfirmation'
 import { forkLiveSessionAtStep } from './forkPlacement'
@@ -2307,6 +2308,7 @@ export default function LiveSessionPage() {
   // Bumped after a send or abort so the queue bar re-reads the bridge instead of guessing.
   const [queueRevision, setQueueRevision] = useState(0)
   const [bridgeQueueCount, setBridgeQueueCount] = useState(0)
+  const [auditOpen, setAuditOpen] = useState(false)
   const [rewoundDraft, setRewoundDraft] = useState<{ id: string; text: string }>()
   const [forkNotice, setForkNotice] = useState<string>()
 
@@ -3077,6 +3079,7 @@ export default function LiveSessionPage() {
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
+      {auditOpen && activeId && <LiveAuditDialog processInstanceId={activeId} onClose={() => setAuditOpen(false)} load={liveSessionApi.audit} />}
       {sessionSidebarVisible && <LiveSessionsList sessions={sessions} sessionTitles={sessionTitles} subagentStatuses={subagentStatuses} activeId={activeId} onRefresh={refresh} pendingUiCounts={pendingUiCounts} onSelect={id => navigate(`/live-sessions/${encodeURIComponent(id)}`)} />}
       {/* 右栏（LiveSessionFeatures）放在下面那一行里当普通列，不覆盖 main。
           以前它用绝对定位盖在页面右侧全高，会从最顶端把标题栏的右端和白底横线截掉，
@@ -3098,6 +3101,7 @@ export default function LiveSessionPage() {
           <div className="flex shrink-0 items-center gap-1">
             {summary && ownedLeaseId && <button type="button" disabled={busy} onClick={() => { void release().catch(() => {}) }} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted disabled:opacity-50">释放控制</button>}
             <button type="button" onClick={() => navigate(summary?.sessionFile ? `/live-sessions/graph?file=${encodeURIComponent(summary.sessionFile)}` : '/live-sessions/graph')} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent" title="在会话家族图谱中查看该会话">◈ 在图谱中查看</button>
+            {activeId && <button type="button" onClick={() => setAuditOpen(true)} className="rounded border border-border bg-bg px-2 py-0.5 text-2xs text-muted hover:border-accent hover:text-accent" title="查看这一会话的审批与撤回记录（只读）">审批记录</button>}
             {/* 只读探查：旧会话（Pi 还在跑旧扩展）也保留入口，点开后会直接说明去重载，
                 而不是把这个功能藏起来让人找不到。 */}
             {activeId && (

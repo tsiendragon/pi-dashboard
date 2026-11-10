@@ -322,6 +322,21 @@ export type LiveSessionCommand =
   | { type: 'answer_ui'; id: string; value?: string; cancelled?: boolean }
   | { type: 'answer_sudo'; id: string; password?: string; cancelled?: boolean }
 
+/**
+ * One decision the dashboard recorded: an extension request settled, a sudo run
+ * authorized, or a queued prompt withdrawn. Never contains a password or sudo argv.
+ */
+export interface LiveSessionAuditEntry {
+  at: number
+  processInstanceId: string
+  sessionId?: string
+  action: 'allowed' | 'denied' | 'answered' | 'cancelled' | 'authorized' | 'withdrawn'
+  method?: 'confirm' | 'select' | 'input' | 'editor' | 'sudo' | 'queue'
+  title?: string
+  client?: string
+  detail?: string
+}
+
 /** One prompt the bridge is still holding before dispatch (`get_queue`). */
 export interface LiveSessionQueueItem {
   id: string

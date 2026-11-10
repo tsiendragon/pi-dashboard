@@ -721,6 +721,13 @@ class LivePiRepository(
         require(_details.value[key]?.summary?.capabilities?.contains("context_view") == true) { "此会话扩展不支持上下文检查" }
         client(key.backendId).command(key.slotKey, buildJsonObject { put("type", "get_context") })
     }
+    /** Read-only decision log; survives a dashboard restart because the server appends it. */
+    suspend fun audit(key: SessionKey): Result<List<LiveAuditEntry>> = result(key) {
+        val response = client(key.backendId).get("/api/live-sessions/${key.slotKey}/audit?limit=100")
+        val entries = response["result"]?.jsonObject?.get("entries") ?: JsonArray(emptyList())
+        pidashJson.decodeFromJsonElement(ListSerializer(LiveAuditEntry.serializer()), entries)
+    }
+
     /** Read-only: prompts the bridge still holds, oldest first. */
     suspend fun queue(key: SessionKey): Result<LiveQueue> = result(key) {
         require(_details.value[key]?.summary?.capabilities?.contains("input_queue") == true) { "此会话扩展不支持队列查看" }

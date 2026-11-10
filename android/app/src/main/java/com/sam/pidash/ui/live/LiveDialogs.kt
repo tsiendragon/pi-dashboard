@@ -27,7 +27,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.sam.pidash.data.repo.LivePiRepository
 import com.sam.pidash.data.repo.PiDashRepository
+import com.sam.pidash.domain.model.LiveAuditEntry
 import com.sam.pidash.domain.model.LiveMeta
 import com.sam.pidash.domain.model.LiveModelOption
 import com.sam.pidash.domain.model.LiveSummary
@@ -523,6 +525,107 @@ internal fun LiveInspectionDialog(repo: PiDashRepository, key: SessionKey, conte
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 content?.let { SelectionContainer { Text(it, style = PiType.subhead.copy(fontFamily = FontFamily.Monospace)) } }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+        dismissButton = { TextButton(enabled = !loading, onClick = { revision++ }) { Text("刷新") } },
+    )
+}
+
+/** Action labels stay in one place so the dialog and its tests cannot drift. */
+internal fun auditActionLabel(action: String): String = when (action) {
+    "allowed" -> "已允许"
+    "denied" -> "已拒绝"
+    "answered" -> "已回答"
+    "cancelled" -> "已取消"
+    "authorized" -> "已授权"
+    "withdrawn" -> "已撤回排队"
+    else -> "已记录"
+}
+
+internal fun auditMethodLabel(method: String?): String? = when (method) {
+    "confirm" -> "确认"
+    "select" -> "选择"
+    "input" -> "输入"
+    "editor" -> "编辑器"
+    "sudo" -> "sudo"
+    "queue" -> "排队消息"
+    else -> null
+}
+
+internal fun auditTone(action: String): Boolean = action in setOf("denied", "cancelled")
+
+@Composable
+internal fun LiveAuditList(
+    entries: List<LiveAuditEntry>?,
+    loading: Boolean,
+    error: String?,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        Text(
+            "记录由 Dashboard 本地保存：时间、决定与来源端；不会保存密码或 sudo 完整参数。",
+            style = PiType.caption,
+            color = scheme.onSurfaceVariant,
+        )
+        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        error?.let { Text("读取记录失败：$it", color = scheme.error, style = PiType.caption) }
+        if (!loading && error == null && entries != null && entries.isEmpty()) {
+            Text("这一会话还没有需要处理的请求或撤回。", style = PiType.caption, color = scheme.onSurfaceVariant)
+        }
+        entries.orEmpty().forEach { entry ->
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        auditActionLabel(entry.action),
+                        style = PiType.caption.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (auditTone(entry.action)) scheme.error else scheme.primary,
+                    )
+                    auditMethodLabel(entry.method)?.let { Text(it, style = PiType.caption, color = scheme.onSurfaceVariant) }
+                    Text(auditTime(entry.at), style = PiType.caption, color = scheme.onSurfaceVariant)
+                }
+                entry.client?.takeIf { it.isNotBlank() }?.let {
+                    Text("来源 $it", style = PiType.micro, color = scheme.onSurfaceVariant)
+                }
+                entry.title?.takeIf { it.isNotBlank() }?.let {
+                    SelectionContainer { Text(it, style = PiType.subhead, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                }
+                entry.detail?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = PiType.caption, color = scheme.onSurfaceVariant)
+                }
+            }
+            HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
+        }
+    }
+}
+
+private fun auditTime(at: Long): String {
+    if (at <= 0) return "—"
+    return java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(at))
+}
+
+@Composable
+internal fun LiveAuditDialog(live: LivePiRepository, key: SessionKey, onDismiss: () -> Unit) {
+    var entries by remember(key) { mutableStateOf<List<LiveAuditEntry>?>(null) }
+    var error by remember(key) { mutableStateOf<String?>(null) }
+    var loading by remember(key) { mutableStateOf(true) }
+    var revision by remember(key) { mutableIntStateOf(0) }
+    LaunchedEffect(key, revision) {
+        loading = true; error = null
+        live.audit(key).fold(
+            onSuccess = { entries = it },
+            onFailure = { error = it.message ?: "加载失败" },
+        )
+        loading = false
+    }
+    AlertDialog(
+        shape = Radii.sheet,
+        onDismissRequest = onDismiss,
+        title = { Text("审批与撤回记录（只读）", style = PiType.pageTitle) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                LiveAuditList(entries, loading, error)
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },

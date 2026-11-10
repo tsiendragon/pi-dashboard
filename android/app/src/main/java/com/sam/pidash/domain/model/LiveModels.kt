@@ -58,6 +58,19 @@ data class LiveDetail(
     val pendingUi: List<LiveUiRequest> = emptyList(),
     val goal: JsonElement? = null,
 )
+/** One decision recorded by the dashboard: who settled what, and when. */
+@Serializable
+data class LiveAuditEntry(
+    val at: Long = 0,
+    val processInstanceId: String = "",
+    val sessionId: String? = null,
+    val action: String = "",
+    val method: String? = null,
+    val title: String? = null,
+    val client: String? = null,
+    val detail: String? = null,
+)
+
 /** A prompt the bridge is still holding before dispatch (see `get_queue`). */
 @Serializable
 data class LiveQueueItem(

@@ -610,6 +610,20 @@ export class LiveSessionRoutes {
     })
 
     /**
+     * Decision log: which confirmation/sudo/queued-prompt the user settled, and when.
+     * Read-only; entries survive a restart because they are appended to a JSONL file.
+     */
+    this.app.get('/api/live-sessions/:processInstanceId/audit', requireAuth, async (req: Request, res: Response) => {
+      await this.respond(res, async () => {
+        const audit = this.registry.audit
+        if (!audit) throw new LiveSessionRegistryError('live_session_audit_unavailable', 'decision log is not configured')
+        const requested = Number(req.query.limit)
+        const limit = Number.isFinite(requested) ? Math.max(1, Math.min(Math.floor(requested), 200)) : 50
+        return { ok: true, result: { entries: audit.recent(req.params.processInstanceId as string, limit) } }
+      })
+    })
+
+    /**
      * Close one live session.
      *
      * A tmux-first session dies with its tmux session (the same handle the

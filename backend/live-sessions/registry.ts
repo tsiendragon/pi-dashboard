@@ -14,6 +14,7 @@ import {
   type LiveSessionSummary,
   type LiveSessionUiRequest,
 } from '../../shared/src/live-sessions.js'
+import { LiveSessionAuditStore, type LiveSessionAuditAction } from './audit.js'
 import { PI_SUBAGENT_CHILD_ENV, readProcessEnviron } from './process-env.js'
 import { validateLiveSessionCommand } from './protocol.js'
 import { SessionGoalFileTracker, type GoalFileScan } from './session-goal-tracker.js'
@@ -113,6 +114,8 @@ export interface LiveSessionRegistryOptions {
    */
   resyncRetryIntervalMs?: number
   now?: () => number
+  /** Where allowed/denied/withdrawn decisions are recorded. Omit in tests. */
+  audit?: LiveSessionAuditStore
 }
 
 function resultRecord(value: unknown): Record<string, unknown> | undefined {
@@ -174,6 +177,7 @@ export class LiveSessionRegistry extends EventEmitter {
     this.disconnectGraceMs = options.disconnectGraceMs ?? 15_000
     this.maxTimelineEntries = options.maxTimelineEntries ?? 1_000
     this.now = options.now || Date.now
+    this.audit = options.audit
     const goalFileSyncIntervalMs = options.goalFileSyncIntervalMs ?? 5_000
     if (goalFileSyncIntervalMs > 0) {
       this.goalFileSyncTimer = setInterval(() => {
@@ -552,6 +556,25 @@ export class LiveSessionRegistry extends EventEmitter {
     }
   }
 
+  /** Decision log; undefined when the registry runs without one (tests). */
+  readonly audit?: LiveSessionAuditStore
+
+  private recordAnswer(processInstanceId: string, browserClientId: string, command: { id: string; value?: string; cancelled?: boolean }, action: LiveSessionAuditAction): void {
+    if (!this.audit) return
+    const entry = this.entries.get(processInstanceId)
+    const request = entry?.pendingUi.get(command.id)
+    // The pending request may already be settled by another client; the answer still
+    // happened, so record it with whatever context is left instead of dropping it.
+    this.audit.record({
+      processInstanceId,
+      ...(entry?.summary?.sessionId ? { sessionId: entry.summary.sessionId } : {}),
+      action,
+      ...(request?.method ? { method: request.method } : {}),
+      ...(request?.title ? { title: request.title } : {}),
+      client: browserClientId.slice(0, 8),
+    })
+  }
+
   async sendBrowserCommand(processInstanceId: string, browserClientId: string, command: unknown): Promise<unknown> {
     const validated = validateLiveSessionCommand(command, true)
     if (validated.type !== 'resync' && validated.type !== 'input' && validated.type !== 'abort' && validated.type !== 'set_session_name' && validated.type !== 'get_models' && validated.type !== 'get_context' && validated.type !== 'set_model' && validated.type !== 'compact' && validated.type !== 'reload' && validated.type !== 'shutdown' && validated.type !== 'feature_command' && validated.type !== 'answer_ui' && validated.type !== 'answer_sudo' && validated.type !== 'get_queue' && validated.type !== 'cancel_queue_item') {
@@ -569,6 +592,7 @@ export class LiveSessionRegistry extends EventEmitter {
       // Never expose a bridge exception/result through the credential response.
       try {
         const result = await this.dispatch(processInstanceId, validated) as { accepted?: boolean }
+        if (result?.accepted === true) this.recordAnswer(processInstanceId, browserClientId, validated, validated.cancelled === true ? 'cancelled' : 'authorized')
         return { accepted: result?.accepted === true }
       } catch {
         throw new LiveSessionRegistryError('sudo_answer_failed', 'Sudo authorization could not be delivered; check request status before retrying')
@@ -576,7 +600,33 @@ export class LiveSessionRegistry extends EventEmitter {
     }
     // answer_ui settles a pending extension UI request (first answer wins), so it
     // is deliberately dispatchable without holding the lease.
-    if (validated.type === 'resync' || validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'get_context' || validated.type === 'set_model' || validated.type === 'reload' || validated.type === 'shutdown' || validated.type === 'answer_ui' || validated.type === 'get_queue' || validated.type === 'cancel_queue_item') return this.dispatch(processInstanceId, validated)
+    if (validated.type === 'answer_ui') {
+      const result = await this.dispatch(processInstanceId, validated)
+      const request = this.entries.get(processInstanceId)?.pendingUi.get(validated.id)
+      const action: LiveSessionAuditAction = validated.cancelled === true
+        ? 'cancelled'
+        : request?.method === 'confirm'
+          ? (validated.value === 'true' ? 'allowed' : validated.value === 'false' ? 'denied' : 'answered')
+          : 'answered'
+      this.recordAnswer(processInstanceId, browserClientId, validated, action)
+      return result
+    }
+    if (validated.type === 'cancel_queue_item') {
+      const result = await this.dispatch(processInstanceId, validated) as { cancelled?: boolean; remaining?: number } | undefined
+      if (result?.cancelled === true && this.audit) {
+        const entry = this.entries.get(processInstanceId)
+        this.audit.record({
+          processInstanceId,
+          ...(entry?.summary?.sessionId ? { sessionId: entry.summary.sessionId } : {}),
+          action: 'withdrawn',
+          method: 'queue',
+          client: browserClientId.slice(0, 8),
+          detail: `剩余 ${typeof result.remaining === 'number' ? result.remaining : 0} 条`,
+        })
+      }
+      return result
+    }
+    if (validated.type === 'resync' || validated.type === 'input' || validated.type === 'set_session_name' || validated.type === 'get_models' || validated.type === 'get_context' || validated.type === 'set_model' || validated.type === 'reload' || validated.type === 'shutdown' || validated.type === 'get_queue') return this.dispatch(processInstanceId, validated)
 
     this.requireLease(processInstanceId, browserClientId, validated.leaseId)
     return this.dispatch(processInstanceId, validated)
@@ -882,4 +932,9 @@ export class LiveSessionRegistry extends EventEmitter {
   }
 }
 
-export const liveSessionRegistry = new LiveSessionRegistry()
+function defaultAuditStore(): LiveSessionAuditStore | undefined {
+  // Vitest constructs registries per test; a shared audit file would leak between them.
+  return process.env.VITEST ? undefined : new LiveSessionAuditStore()
+}
+
+export const liveSessionRegistry = new LiveSessionRegistry({ audit: defaultAuditStore() })
