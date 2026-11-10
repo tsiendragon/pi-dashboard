@@ -221,8 +221,11 @@ class LiveSessionClient(
         Unit
     }
 
-    fun openSocket(listener: WebSocketListener): WebSocket {
-        val regular = request("/api/live-sessions/ws")
+    fun openSocket(listener: WebSocketListener): WebSocket = openSocketAt("/api/live-sessions/ws", listener)
+
+    /** Same auth (Bearer + Live cookie) on any dashboard WebSocket path. */
+    fun openSocketAt(path: String, listener: WebSocketListener): WebSocket {
+        val regular = request(path)
         val ws = regular.url.newBuilder().scheme(if (base.isHttps) "https" else "http").build()
         return http.newWebSocket(regular.newBuilder().url(ws).build(), listener)
     }

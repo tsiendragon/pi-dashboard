@@ -239,6 +239,8 @@ fun LiveSessionScreen(
     var openedRequest by remember(sessionKey) { mutableStateOf<com.sam.pidash.domain.model.LiveUiRequest?>(null) }
     var approvalBusy by remember(sessionKey) { mutableStateOf(false) }
     var approvalError by remember(sessionKey) { mutableStateOf<String?>(null) }
+    // Non-null while the interactive command console is open; "" means "ask for a command".
+    var execCommand by remember(sessionKey) { mutableStateOf<String?>(null) }
     // Prompts the bridge still holds; refreshed after a send, a withdrawal or a state change.
     var queued by remember(sessionKey) { mutableStateOf<com.sam.pidash.domain.model.LiveQueue?>(null) }
     var queueSheet by remember(sessionKey) { mutableStateOf(false) }
@@ -407,6 +409,9 @@ fun LiveSessionScreen(
         snackbarHostState.showSnackbar(message, withDismissAction = message.length > 24, duration = SnackbarDuration.Short)
     }
 
+    CompositionLocalProvider(LocalServerCommandRunner provides { command ->
+        execCommand = command
+    }) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -530,6 +535,11 @@ fun LiveSessionScreen(
                             DropdownMenuItem(
                                 text = { Text("审批与撤回记录（只读）…") },
                                 onClick = { menu = false; notice = null; dialog = "audit" },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("运行命令（交互式）…") },
+                                enabled = !summary?.canonicalCwd.isNullOrBlank(),
+                                onClick = { menu = false; notice = null; execCommand = "" },
                             )
                             if (summary?.capabilities?.contains("context_view") == true) {
                                 DropdownMenuItem(text = { Text("检查上下文（只读）") }, enabled = !busy,
@@ -1079,6 +1089,7 @@ fun LiveSessionScreen(
             }
             }
         }
+    }
 
         annotating?.let { draftReview ->
             var note by remember(draftReview.id) { mutableStateOf("") }
@@ -1241,6 +1252,14 @@ fun LiveSessionScreen(
                     }
                 }
             }
+        }
+        execCommand?.let { initial ->
+            ExecConsole(
+                initialCommand = initial,
+                cwd = summary?.canonicalCwd.orEmpty(),
+                openCommand = { live.exec(sessionKey) },
+                onDismiss = { execCommand = null },
+            )
         }
         val dismiss = { if (!busy) { dialog = null; forkEntry = null } }
         when (dialog) {

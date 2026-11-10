@@ -72,6 +72,7 @@ import { TimingLedger } from './timing-ledger.js'
 import { CodeChurnLedger } from './code-churn.js'
 import { SubagentStatsLedger } from './subagent-stats.js'
 import { handlePtyConnection, shutdownPtyClients } from './pty-manager.js'
+import { handleExecConnection } from './exec-manager.js'
 import { ASR_REALTIME_PATH, handleAsrRealtimeConnection } from './asr-realtime.js'
 
 process.env.PI_RUNTIME = 'dashboard'
@@ -1057,6 +1058,18 @@ server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     asrRealtimeWss.handleUpgrade(req, socket, head, (ws) => {
       asrRealtimeWss.emit('connection', ws, req)
     })
+    return
+  }
+  if (wsPath === '/api/exec/ws') {
+    // Same trust boundary as the WebUI terminal: an authenticated live-session browser
+    // identity, checked at the upgrade so no frame is read before auth.
+    const execIdentity = liveSessionAuth.getIdentity(req)
+    if (!execIdentity || !liveSessionAuth.isOriginAllowed(req, true, execIdentity)) {
+      console.warn('  WS upgrade rejected: unauthenticated /api/exec/ws', req.headers.origin)
+      socket.destroy()
+      return
+    }
+    ptyWss.handleUpgrade(req, socket, head, ws => handleExecConnection(ws, req, execIdentity))
     return
   }
   if (wsPath === '/api/pty') {

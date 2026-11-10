@@ -3,6 +3,9 @@ package com.sam.pidash.ui.markdown
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.DisableSelection
 import com.sam.pidash.ui.common.CopyTextAction
+import com.sam.pidash.ui.common.MetaAction
+import com.sam.pidash.ui.live.LocalServerCommandRunner
+import com.sam.pidash.ui.live.runnableLanguage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
@@ -144,6 +147,10 @@ private fun CodeBlock(block: MdBlock.Code) {
                 Text((block.language ?: "code").lowercase(),
                     style = PiType.action.copy(fontFamily = FontFamily.Monospace),
                     color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                val runner = LocalServerCommandRunner.current
+                if (runner != null && runnableLanguage(block.language)) {
+                    MetaAction("运行", onClick = { runner(block.code) })
+                }
                 CopyTextAction(block.code)
             }
         }
