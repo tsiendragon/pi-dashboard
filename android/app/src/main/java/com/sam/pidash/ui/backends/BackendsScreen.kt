@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.sam.pidash.PiDashApp
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,8 +53,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.DashboardClient
 import com.sam.pidash.data.repo.PiDashRepository
+import com.sam.pidash.data.local.CodeFontScale
+import com.sam.pidash.data.local.SettingsPrefs
 import com.sam.pidash.domain.model.AppFontScale
 import com.sam.pidash.domain.model.AppTheme
+import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.ConnectionState
 import com.sam.pidash.ui.common.AppVersionLabel
 import com.sam.pidash.ui.common.CompactPageHeader
@@ -83,8 +87,14 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     val context = LocalContext.current
     val notifier = remember { (context.applicationContext as PiDashApp).notifier }
     val displayPrefs = remember { (context.applicationContext as PiDashApp).displayPrefs }
+    val settingsPrefs = remember { (context.applicationContext as PiDashApp).settingsPrefs }
+    val cache = remember { (context.applicationContext as PiDashApp).liveDetailCache }
     val fontScale by displayPrefs.fontScale.collectAsState()
     val theme by displayPrefs.theme.collectAsState()
+    val codeScale by settingsPrefs.codeScale.collectAsState()
+    val collapseKeyboard by settingsPrefs.collapseKeyboard.collectAsState()
+    var editing by remember { mutableStateOf<Backend?>(null) }
+    var deleting by remember { mutableStateOf<Backend?>(null) }
     var alertsEnabled by remember { mutableStateOf(notifier.prefs.enabled) }
     var alertsNeedsPermission by remember { mutableStateOf(false) }
     // Android 13+: ask once, after saying why. The system dialog is a one-shot; a user who
@@ -149,26 +159,54 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                             selected = fontScale.storageValue,
                             onSelect = { value -> AppFontScale.fromStorage(value).let(displayPrefs::setFontScale) },
                         )
-                    }
-                }
-            }
-            item { SectionLabel("本地缓存") }
-            item {
-                GroupedCard {
-                    Column(
-                        Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.xxs),
-                    ) {
-                        Text("最近的 Live 会话正文", style = PiType.callout)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
+                        Text("代码字号", style = PiType.callout, maxLines = 1)
                         Text(
-                            "最近访问的对话记录及部分工具输出会加密保存在本机，最多 7 天；图片和待处理请求不缓存。断开或重新登录时会尝试清除。缓存仅用于快速显示，仍需与服务器同步。",
+                            "只影响代码块、工具输出和运行页；正文仍跟随上面的字体大小。",
                             style = PiType.caption,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        SegmentedTabs(
+                            options = CodeFontScale.entries.map { it.storageValue to it.label },
+                            selected = codeScale.storageValue,
+                            onSelect = { value -> CodeFontScale.fromStorage(value).let(settingsPrefs::setCodeScale) },
                         )
                     }
                 }
             }
+            item { SectionLabel("输入") }
+            item {
+                GroupedCard {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+                            Text("发送后收起键盘", style = PiType.callout, maxLines = 1)
+                            Text(
+                                "只在消息成功交给服务器后收起；失败时保留输入和键盘，方便重试。",
+                                style = PiType.caption,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = collapseKeyboard, onCheckedChange = settingsPrefs::setCollapseKeyboard)
+                    }
+                }
+            }
+            item { SectionLabel("新会话默认") }
+            item { SessionDefaultsCard(settingsPrefs) }
+            item { SectionLabel("本地缓存") }
+            item { CacheCard(settingsPrefs, cache) }
             item { SectionLabel("服务器") }
+            if (backends.isNotEmpty()) item {
+                Text(
+                    "点一行可编辑名称、地址与凭据；删除会同时清除本机授权与缓存。",
+                    style = PiType.caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = Spacing.xs),
+                )
+            }
             if (backends.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(vertical = Spacing.xl)) {
@@ -188,7 +226,10 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                         Modifier.fillMaxWidth().padding(start = Spacing.lg, end = Spacing.xs, top = Spacing.md, bottom = Spacing.md),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+                        Column(
+                            Modifier.weight(1f).clickable { editing = backend },
+                            verticalArrangement = Arrangement.spacedBy(Spacing.xxs),
+                        ) {
                             Text(
                                 backend.name,
                                 style = PiType.rowTitle,
@@ -216,7 +257,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                             }
                             MetaText(liveConnectionLabel(liveStates[backend.id]), maxLines = 1)
                         }
-                        IconButton(onClick = { scope.launch { repo.removeBackend(backend.id) } }) {
+                        IconButton(onClick = { deleting = backend }) {
                             Icon(
                                 Icons.Filled.Delete,
                                 contentDescription = "删除",
@@ -279,6 +320,11 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                     }
                 }
             }
+            if (alertsEnabled) {
+                item { NotificationDetailsCard(notifier.prefs) }
+            }
+            item { SectionLabel("关于") }
+            item { AboutCard(backends, connection, liveStates, cache, notifier.prefs) }
         }
     }
 
@@ -304,7 +350,8 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     }
 
     if (showAdd) {
-        AddBackendDialog(
+        BackendDialog(
+            initial = null,
             onDismiss = { showAdd = false },
             onSave = { name, url, token ->
                 scope.launch {
@@ -312,6 +359,47 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                     showAdd = false
                 }
             },
+        )
+    }
+    editing?.let { backend ->
+        BackendDialog(
+            initial = backend,
+            onDismiss = { editing = null },
+            onSave = { name, url, token ->
+                scope.launch {
+                    repo.updateBackend(
+                        backend.copy(
+                            name = name.trim().ifBlank { url.trim().trimEnd('/') },
+                            baseUrl = url.trim().trimEnd('/'),
+                            token = token.trim(),
+                        ),
+                    )
+                    editing = null
+                }
+            },
+            onOpenInBrowser = {
+                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(backend.baseUrl))
+                runCatching { context.startActivity(intent) }
+            },
+        )
+    }
+    deleting?.let { backend ->
+        AlertDialog(shape = Radii.sheet,
+            onDismissRequest = { deleting = null },
+            title = { Text("删除这台服务器？", style = PiType.pageTitle) },
+            text = {
+                Text(
+                    "将删除「${backend.name}」的本机配置、授权与缓存；服务器上的会话不会被删除。重新添加需要再配对一次。",
+                    style = PiType.footnote,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleting = null
+                    scope.launch { repo.removeBackend(backend.id) }
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } },
         )
     }
 }
@@ -336,20 +424,22 @@ private fun connectionLabel(state: ConnectionState?): String = when (state) {
 }
 
 @Composable
-private fun AddBackendDialog(
+private fun BackendDialog(
+    initial: Backend?,
     onDismiss: () -> Unit,
     onSave: (name: String, url: String, token: String) -> Unit,
+    onOpenInBrowser: (() -> Unit)? = null,
 ) {
-    var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("https://") }
-    var token by remember { mutableStateOf("") }
+    var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
+    var url by remember(initial) { mutableStateOf(initial?.baseUrl ?: "https://") }
+    var token by remember(initial) { mutableStateOf(initial?.token.orEmpty()) }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     AlertDialog(shape = Radii.sheet,
         onDismissRequest = onDismiss,
-        title = { Text("添加服务器", style = PiType.pageTitle) },
+        title = { Text(if (initial == null) "添加服务器" else "编辑服务器", style = PiType.pageTitle) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 PiTextField(
@@ -371,6 +461,7 @@ private fun AddBackendDialog(
                     label = "凭据（可留空）",
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (onOpenInBrowser != null) TextButton(onClick = onOpenInBrowser) { Text("在浏览器打开") }
                 testResult?.let {
                     Text(it, style = PiType.footnote)
                 }

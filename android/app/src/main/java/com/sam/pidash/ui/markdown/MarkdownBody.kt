@@ -13,6 +13,7 @@ import com.sam.pidash.ui.theme.Hairline
 import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.CodeColors
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.codeTextStyle
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -160,7 +161,7 @@ private fun CodeBlock(block: MdBlock.Code) {
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.sm, vertical = 6.dp),
         ) {
-            Text(highlighted, style = PiType.mono)
+            Text(highlighted, style = codeTextStyle(PiType.mono))
         }
     }
 }

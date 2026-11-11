@@ -113,6 +113,22 @@ class LiveDetailCacheTest {
         }
     }
 
+    @Test fun statsReportSizeAndClearAllRemovesOnlyTheSnapshotStore() = runBlocking {
+        val cache = cache()
+        val key = liveDetailCacheKey(backend, cookie, "stats-fixture")!!
+        val empty = cache.stats()
+        assertEquals(0, empty.entries)
+        assertNull(empty.lastSavedAt)
+        assertTrue(cache.save(key, detail(entries = listOf("stats body")), now = 5_000))
+        val stats = cache.stats()
+        assertEquals(1, stats.entries)
+        assertTrue(stats.bytes > 0)
+        assertEquals(5_000L, stats.lastSavedAt)
+        cache.clearAll()
+        assertEquals(LiveDetailCacheStats(), cache.stats())
+        assertFalse(directory.resolve("live-detail-cache-v1").toFile().listFiles().orEmpty().any { it.isFile })
+    }
+
     @Test fun anotherBackendOriginCredentialCookieOrProcessCannotReadTheSnapshot() = runBlocking {
         val cache = cache()
         val key = liveDetailCacheKey(backend, cookie, "process-fixture")!!
@@ -198,7 +214,7 @@ class LiveDetailCacheTest {
     }
 
     private fun cache(limits: LiveDetailCacheLimits = LiveDetailCacheLimits()) =
-        EncryptedLiveDetailCache(directory.toFile(), AesGcmLiveDetailCipher { aesKey }, limits)
+        EncryptedLiveDetailCache(directory.toFile(), AesGcmLiveDetailCipher { aesKey }) { limits }
 
     private fun retainedFiles(): List<java.io.File> =
         directory.toFile().walkTopDown().filter { it.isFile }.toList()

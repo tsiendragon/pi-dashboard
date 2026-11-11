@@ -61,7 +61,7 @@ class AesGcmLiveDetailCipher(private val keyProvider: () -> SecretKey) : LiveDet
 class EncryptedLiveDetailCache(
     private val root: File,
     private val cipher: LiveDetailCipher,
-    private val limits: LiveDetailCacheLimits = LiveDetailCacheLimits(),
+    private val limitsProvider: () -> LiveDetailCacheLimits = { LiveDetailCacheLimits() },
 ) : LiveDetailCache {
 
     constructor(context: Context) : this(
@@ -69,9 +69,16 @@ class EncryptedLiveDetailCache(
         cipher = AesGcmLiveDetailCipher(::androidKeyStoreKey),
     )
 
+    constructor(context: Context, limitsProvider: () -> LiveDetailCacheLimits) : this(
+        root = File(context.noBackupFilesDir, ROOT_DIRECTORY),
+        cipher = AesGcmLiveDetailCipher(::androidKeyStoreKey),
+        limitsProvider = limitsProvider,
+    )
+
     private val lock = Any()
 
     override suspend fun load(key: LiveDetailCacheKey, now: Long): LiveCachedDetail? = withContext(Dispatchers.IO) {
+        val limits = limitsProvider()
         synchronized(lock) {
             val file = fileFor(key)
             if (!file.isFile) return@synchronized null
@@ -112,6 +119,7 @@ class EncryptedLiveDetailCache(
     }
 
     override suspend fun save(key: LiveDetailCacheKey, detail: LiveDetail, now: Long): Boolean = withContext(Dispatchers.IO) {
+        val limits = limitsProvider()
         val maxDetailBytes = limits.maxEntryBytes - ENVELOPE_RESERVE_BYTES
         if (maxDetailBytes <= 0) return@withContext false
         val prepared = prepareLiveDetailForCache(detail, maxDetailBytes)
@@ -139,7 +147,7 @@ class EncryptedLiveDetailCache(
                 val file = fileFor(key)
                 val directory = file.parentFile ?: return@synchronized false
                 if (!directory.isDirectory && !directory.mkdirs()) return@synchronized false
-                pruneLocked(now, incomingBytes = encrypted.size.toLong(), replace = file)
+                pruneLocked(now, incomingBytes = encrypted.size.toLong(), replace = file, limits = limits)
 
                 val temporary = File(directory, file.name + ".tmp")
                 FileOutputStream(temporary).use { output ->
@@ -173,6 +181,25 @@ class EncryptedLiveDetailCache(
         }
     }
 
+    override suspend fun stats(): LiveDetailCacheStats = withContext(Dispatchers.IO) {
+        synchronized(lock) {
+            if (!root.isDirectory) return@synchronized LiveDetailCacheStats()
+            val files = root.walkTopDown().filter { it.isFile && it.name.endsWith(".bin") }.toList()
+            LiveDetailCacheStats(
+                bytes = files.sumOf { it.length() },
+                entries = files.size,
+                lastSavedAt = files.maxOfOrNull { it.lastModified() },
+            )
+        }
+    }
+
+    override suspend fun clearAll() = withContext(Dispatchers.IO) {
+        synchronized(lock) {
+            root.listFiles()?.forEach { it.deleteRecursively() }
+            Unit
+        }
+    }
+
     private fun fileFor(key: LiveDetailCacheKey): File =
         File(File(root, key.backendStorageId()), key.storageId() + ".bin")
 
@@ -181,7 +208,7 @@ class EncryptedLiveDetailCache(
      * entry-count and byte budgets fit the incoming snapshot. `replace` is the
      * target file whose old bytes will disappear during the atomic move.
      */
-    private fun pruneLocked(now: Long, incomingBytes: Long, replace: File) {
+    private fun pruneLocked(now: Long, incomingBytes: Long, replace: File, limits: LiveDetailCacheLimits) {
         if (!root.isDirectory) return
         val files = root.walkTopDown()
             .filter { it.isFile && (it.name.endsWith(".bin") || it.name.endsWith(".tmp")) }

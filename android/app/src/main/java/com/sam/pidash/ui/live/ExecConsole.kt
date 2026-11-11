@@ -42,6 +42,7 @@ import com.sam.pidash.domain.model.TerminalTextBuffer
 import com.sam.pidash.ui.common.CopyTextAction
 import com.sam.pidash.ui.common.PiTextField
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.codeTextStyle
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
 import com.sam.pidash.ui.theme.Tints
@@ -209,7 +210,7 @@ internal fun ExecConsole(
                         SelectionContainer {
                             Text(
                                 output.ifBlank { if (running) "（等待输出…）" else "（没有输出）" },
-                                style = PiType.mono,
+                                style = codeTextStyle(PiType.mono),
                             )
                         }
                     }

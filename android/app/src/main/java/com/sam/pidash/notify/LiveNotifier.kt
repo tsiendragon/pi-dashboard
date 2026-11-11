@@ -49,6 +49,8 @@ class LiveNotifier(private val context: Context) {
 
     fun post(alert: LiveAlert) {
         if (!canNotify()) return
+        if (!prefs.allows(alert.kind)) return
+        if (prefs.inQuietHours(java.time.LocalTime.now().let { it.hour * 60 + it.minute })) return
         // Tapping lands on the conversation that asked for attention, not the app's front page.
         val open = PendingIntent.getActivity(
             context,
@@ -62,7 +64,7 @@ class LiveNotifier(private val context: Context) {
         )
         val builder = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_live)
-            .setContentTitle(notificationTitle(alert.title))
+            .setContentTitle(notificationTitle(if (prefs.hideTitle) "PiDash 会话提醒" else alert.title))
             .setContentText(alert.text)
             .setContentIntent(open)
             .setAutoCancel(true)

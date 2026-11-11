@@ -60,9 +60,11 @@ class MainActivity : ComponentActivity() {
         openFrom(intent)
         val repo = (application as PiDashApp).repository
         val displayPrefs = (application as PiDashApp).displayPrefs
+        val settingsPrefs = (application as PiDashApp).settingsPrefs
         setContent {
             val fontScale by displayPrefs.fontScale.collectAsState()
             val theme by displayPrefs.theme.collectAsState()
+            val codeScale by settingsPrefs.codeScale.collectAsState()
             val dark = when (theme) {
                 AppTheme.LIGHT -> false
                 AppTheme.DARK -> true
@@ -80,7 +82,10 @@ class MainActivity : ComponentActivity() {
                 density = density.density,
                 fontScale = density.fontScale * fontScale.multiplier,
             )
-            CompositionLocalProvider(LocalDensity provides adjustedDensity) {
+            CompositionLocalProvider(
+                LocalDensity provides adjustedDensity,
+                com.sam.pidash.ui.theme.LocalCodeScale provides codeScale.multiplier,
+            ) {
                 PiDashTheme(darkTheme = dark) {
                     AppNav(repo)
                 }

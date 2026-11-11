@@ -45,6 +45,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.sam.pidash.PiDashApp
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.AggregatedLiveSession
 import com.sam.pidash.domain.model.LiveOrganization
@@ -502,8 +504,9 @@ fun NewLiveSessionDialog(
     var backendId by remember { mutableStateOf(backends.firstOrNull()?.id.orEmpty()) }
     var cwd by remember(backendId) { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf("") }
-    var thinking by remember { mutableStateOf("") }
+    val settings = (LocalContext.current.applicationContext as PiDashApp).settingsPrefs
+    var model by remember { mutableStateOf(settings.defaultModel.value) }
+    var thinking by remember { mutableStateOf(settings.defaultThinking.value) }
     var roots by remember(backendId) { mutableStateOf(emptyList<String>()) }
     var candidates by remember(backendId) { mutableStateOf(emptyList<LiveRepoCandidate>()) }
     var loading by remember(backendId) { mutableStateOf(true) }

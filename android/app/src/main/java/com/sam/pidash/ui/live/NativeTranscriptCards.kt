@@ -66,6 +66,7 @@ import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.codeTextStyle
 import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
@@ -215,19 +216,19 @@ internal fun NativeStepCard(
                     precedingThinking.forEachIndexed { index, thought ->
                         Text(if (precedingThinking.size == 1) "执行前思考" else "执行前思考 ${index + 1}",
                             style = PiType.caption, color = scheme.onSurfaceVariant)
-                        Text(thought.thinking.orEmpty(), style = PiType.mono, color = scheme.onSurfaceVariant)
+                        Text(thought.thinking.orEmpty(), style = codeTextStyle(PiType.mono), color = scheme.onSurfaceVariant)
                     }
                     if (toolThinking != null) {
                         Text("思考", style = PiType.caption, color = scheme.onSurfaceVariant)
-                        Text(toolThinking, style = PiType.mono, color = scheme.onSurface)
+                        Text(toolThinking, style = codeTextStyle(PiType.mono), color = scheme.onSurface)
                     }
                     if (arguments != null) {
                         Text("参数", style = PiType.caption, color = scheme.onSurfaceVariant)
-                        Text(arguments, style = PiType.mono, color = scheme.onSurface)
+                        Text(arguments, style = codeTextStyle(PiType.mono), color = scheme.onSurface)
                     }
                     if (output.isNotEmpty()) {
                         if (arguments != null || thinkingCount > 0) Text("输出", style = PiType.caption, color = scheme.onSurfaceVariant)
-                        MarkdownBody(output, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl, style = PiType.mono)
+                        MarkdownBody(output, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl, style = codeTextStyle(PiType.mono))
                     }
                     if (showArguments) item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
                 }

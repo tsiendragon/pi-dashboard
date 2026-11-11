@@ -585,6 +585,13 @@ class LiveSessionClientTest {
             return true
         }
         override suspend fun remove(key: LiveDetailCacheKey) { removed += key }
+        override suspend fun stats(): com.sam.pidash.data.local.LiveDetailCacheStats =
+            com.sam.pidash.data.local.LiveDetailCacheStats()
+
+        override suspend fun clearAll() {
+            cached = null
+        }
+
         override suspend fun clearBackend(backendId: String) { clearedBackends += backendId }
     }
 

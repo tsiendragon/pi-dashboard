@@ -60,12 +60,17 @@ data class LiveDetailCacheLimits(
     val maxEntryBytes: Int = 1536 * 1024,
 )
 
+/** What the settings page may show about the encrypted snapshot store. Never includes content. */
+data class LiveDetailCacheStats(val bytes: Long = 0, val entries: Int = 0, val lastSavedAt: Long? = null)
+
 /** Cache operations never fall back to plaintext and never return executable UI/lease state. */
 interface LiveDetailCache {
     suspend fun load(key: LiveDetailCacheKey, now: Long = System.currentTimeMillis()): LiveCachedDetail?
     suspend fun save(key: LiveDetailCacheKey, detail: LiveDetail, now: Long = System.currentTimeMillis()): Boolean
     suspend fun remove(key: LiveDetailCacheKey)
     suspend fun clearBackend(backendId: String)
+    suspend fun stats(): LiveDetailCacheStats
+    suspend fun clearAll()
 }
 
 object NoLiveDetailCache : LiveDetailCache {
@@ -73,6 +78,8 @@ object NoLiveDetailCache : LiveDetailCache {
     override suspend fun save(key: LiveDetailCacheKey, detail: LiveDetail, now: Long): Boolean = false
     override suspend fun remove(key: LiveDetailCacheKey) = Unit
     override suspend fun clearBackend(backendId: String) = Unit
+    override suspend fun stats(): LiveDetailCacheStats = LiveDetailCacheStats()
+    override suspend fun clearAll() = Unit
 }
 
 /** Same origin derivation as the Live client: scheme + authority, no path/query/fragment. */

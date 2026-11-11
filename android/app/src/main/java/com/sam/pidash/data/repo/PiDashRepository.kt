@@ -37,13 +37,15 @@ class PiDashRepository(
     private val scope: CoroutineScope,
     liveCookies: LiveCookieStore,
     liveDetailCache: LiveDetailCache = NoLiveDetailCache,
+    /** Offline transcripts can be switched off in Settings; the cache stays on disk until cleared. */
+    cacheEnabled: () -> Boolean = { true },
 ) {
     private val clients = mutableMapOf<String, DashboardClient>()
     private val clientJobs = mutableMapOf<String, Job>()
 
     private val _backends = MutableStateFlow<List<Backend>>(emptyList())
     val backends: StateFlow<List<Backend>> = _backends
-    val live = LivePiRepository(backends, scope, liveCookies, liveDetailCache)
+    val live = LivePiRepository(backends, scope, liveCookies, liveDetailCache, cacheEnabled)
 
     private val _slotsByBackend = MutableStateFlow<Map<String, List<ChatSlot>>>(emptyMap())
     private val _connection = MutableStateFlow<Map<String, ConnectionState>>(emptyMap())

@@ -36,6 +36,7 @@ class LivePiRepository(
     private val scope: CoroutineScope,
     private val cookies: LiveCookieStore,
     private val detailCache: LiveDetailCache = NoLiveDetailCache,
+    private val cacheEnabled: () -> Boolean = { true },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val lock = Any()
@@ -122,10 +123,14 @@ class LivePiRepository(
                 jobs.remove(id)?.cancel()
                 previous.close()
                 clients.remove(id)
-                if (next == null || next.baseUrl != previous.backend.baseUrl || next.token != previous.backend.token) {
+                val configChanged = next == null || next.baseUrl != previous.backend.baseUrl ||
+                    next.token != previous.backend.token
+                if (configChanged) {
+                    // A rename keeps the paired cookie and disk snapshots; a new origin or
+                    // credential invalidates both by design.
                     runCatching { cookies.save(previous.backend, null) }
+                    clearBackend(id)
                 }
-                clearBackend(id)
             }
             list.forEach { backend ->
                 if (clients.containsKey(backend.id)) return@forEach
@@ -177,6 +182,7 @@ class LivePiRepository(
      * snapshot replaces it, so callers can never mistake it for the latest detail.
      */
     private fun loadCachedDetail(key: SessionKey) {
+        if (!cacheEnabled()) return
         scope.launch {
             val cacheKey = cacheKeyFor(key) ?: return@launch
             val cached = runCatching { detailCache.load(cacheKey, clock()) }.getOrNull() ?: return@launch
@@ -219,7 +225,7 @@ class LivePiRepository(
 
     /** Debounced so a burst of live deltas produces at most one encrypted file write. */
     private fun scheduleCacheWrite(key: SessionKey, detail: LiveDetail, delayMillis: Long = CACHE_WRITE_DEBOUNCE_MILLIS) {
-        if (detailCache === NoLiveDetailCache) return
+        if (detailCache === NoLiveDetailCache || !cacheEnabled()) return
         synchronized(lock) {
             cacheWrites.remove(key)?.cancel()
             val writeLock = cacheWriteLocks.getOrPut(key) { Mutex() }

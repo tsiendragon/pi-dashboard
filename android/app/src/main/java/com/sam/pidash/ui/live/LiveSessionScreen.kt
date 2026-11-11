@@ -60,6 +60,7 @@ import androidx.compose.ui.Modifier
 import com.sam.pidash.PiDashApp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -160,12 +161,17 @@ fun LiveSessionScreen(
     // Read-only file preview: path plus loaded text (null while fetching).
     var preview by remember(sessionKey) { mutableStateOf<Pair<String, String?>?>(null) }
     var previewError by remember(sessionKey) { mutableStateOf<String?>(null) }
-    var deliverAs by remember(sessionKey) { mutableStateOf<String?>(null) }
     var busy by remember(sessionKey) { mutableStateOf(false) }
     var notice by remember(sessionKey) { mutableStateOf<String?>(null) }
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
     val notifier = remember { (context.applicationContext as PiDashApp).notifier }
+    val settingsPrefs = remember { (context.applicationContext as PiDashApp).settingsPrefs }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // New sessions start from the Settings default; changing it here only affects this send.
+    var deliverAs by remember(sessionKey) {
+        mutableStateOf(settingsPrefs.defaultDeliver.value.ifBlank { null })
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     // Arriving in the conversation — from the list or from a notification — means the alert
     // about it has served its purpose.
@@ -875,6 +881,7 @@ fun LiveSessionScreen(
                                 if (files == sentFiles) files = emptyList()
                                 if (quotes == sentQuotes) quotes = emptyList()
                                 if (reviews == sentReviews) reviews = emptyList()
+                                if (settingsPrefs.collapseKeyboard.value) keyboard?.hide()
                             }
                         }
                     },
