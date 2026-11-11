@@ -37,10 +37,14 @@ class ExecClient(private val client: LiveSessionClient) : InteractiveCommand {
         data class Failed(val code: String, val message: String) : Event
     }
 
-    private val _events = MutableSharedFlow<Event>(replay = 0, extraBufferCapacity = 512, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    // replay keeps the first frames even though the console subscribes a moment after
+    // start(): an early prompt must not be lost (there is one client per run, so no dupes).
+    private val _events = MutableSharedFlow<Event>(replay = 64, extraBufferCapacity = 512, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     override val events: SharedFlow<Event> = _events
 
     private var socket: WebSocket? = null
+    private var finished = false
+    private var closedByUser = false
 
     override fun start(command: String, cwd: String, cols: Int, rows: Int) {
         if (socket != null) return
@@ -58,19 +62,30 @@ class ExecClient(private val client: LiveSessionClient) : InteractiveCommand {
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                val frame = runCatching { pidashJson.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
-                when (frame.string("type")) {
-                    "started" -> _events.tryEmit(Event.Started)
-                    "output" -> frame.string("data")?.let { _events.tryEmit(Event.Output(it)) }
-                    "exit" -> _events.tryEmit(Event.Exited(frame["code"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0))
-                    "error" -> _events.tryEmit(
-                        Event.Failed(frame.string("code") ?: "error", frame.string("message") ?: "命令执行失败"),
-                    )
-                }
+                val event = parseExecFrame(text) ?: return
+                if (event is Event.Exited || event is Event.Failed) finished = true
+                _events.tryEmit(event)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                _events.tryEmit(Event.Failed("connection_failed", t.message ?: "与服务器的连接中断"))
+                socket = null
+                finished = true
+                val message = when (response?.code) {
+                    404 -> "服务器还是旧版本，没有「在服务器运行」接口；请重启或升级 Dashboard"
+                    401, 403 -> "没有权限运行命令；请重新配对这台服务器"
+                    else -> t.message ?: "与服务器的连接中断"
+                }
+                _events.tryEmit(Event.Failed("connection_failed", message))
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                socket = null
+                // A silent close (network loss, proxy timeout, old server) must not leave the
+                // console claiming the command is still running.
+                if (!finished && !closedByUser) {
+                    finished = true
+                    _events.tryEmit(Event.Failed("connection_closed", "与服务器的连接已断开，命令可能已经结束"))
+                }
             }
         })
     }
@@ -89,6 +104,7 @@ class ExecClient(private val client: LiveSessionClient) : InteractiveCommand {
 
     /** Closing the socket is what stops the server-side process. */
     override fun close() {
+        closedByUser = true
         socket?.close(1000, "client closed")
         socket = null
     }
@@ -97,4 +113,17 @@ class ExecClient(private val client: LiveSessionClient) : InteractiveCommand {
         buildJsonObject { put("type", type); fill() }.toString()
 
     private fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
+}
+
+/** One server frame as an event; unknown or malformed frames are ignored, never shown as output. */
+internal fun parseExecFrame(text: String): ExecClient.Event? {
+    val frame = runCatching { pidashJson.parseToJsonElement(text).jsonObject }.getOrNull() ?: return null
+    fun string(key: String): String? = frame[key]?.jsonPrimitive?.contentOrNull
+    return when (string("type")) {
+        "started" -> ExecClient.Event.Started
+        "output" -> string("data")?.let { ExecClient.Event.Output(it) }
+        "exit" -> ExecClient.Event.Exited(frame["code"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0)
+        "error" -> ExecClient.Event.Failed(string("code") ?: "error", string("message") ?: "命令执行失败")
+        else -> null
+    }
 }

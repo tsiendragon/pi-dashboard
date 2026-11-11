@@ -38,7 +38,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.sam.pidash.data.remote.ExecClient
 import com.sam.pidash.data.remote.InteractiveCommand
-import com.sam.pidash.domain.model.terminalDisplay
+import com.sam.pidash.domain.model.TerminalTextBuffer
 import com.sam.pidash.ui.common.CopyTextAction
 import com.sam.pidash.ui.common.PiTextField
 import com.sam.pidash.ui.theme.PiType
@@ -46,8 +46,6 @@ import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Spacing
 import com.sam.pidash.ui.theme.Tints
 import kotlinx.coroutines.launch
-
-private const val EXEC_OUTPUT_LIMIT = 200_000
 
 /** Explicit, because "stopped" and "exited with a code" must not look alike. */
 private sealed interface ExecPhase {
@@ -78,6 +76,7 @@ internal fun ExecConsole(
     var command by remember(initialCommand) { mutableStateOf(initialCommand) }
     var phase by remember { mutableStateOf<ExecPhase>(ExecPhase.Idle) }
     var output by remember { mutableStateOf("") }
+    val textBuffer = remember { TerminalTextBuffer() }
     var input by remember { mutableStateOf("") }
     var hidden by remember { mutableStateOf(false) }
     var client by remember { mutableStateOf<InteractiveCommand?>(null) }
@@ -94,7 +93,9 @@ internal fun ExecConsole(
     fun run() {
         val text = command.trim()
         if (text.isEmpty() || running) return
+        textBuffer.clear()
         output = ""
+        input = ""
         phase = ExecPhase.Running
         val next = openCommand()
         client = next
@@ -103,12 +104,9 @@ internal fun ExecConsole(
             next.events.collect { event ->
                 when (event) {
                     ExecClient.Event.Started -> Unit
-                    is ExecClient.Event.Output -> {
-                        val merged = output + event.text
-                        output = if (merged.length > EXEC_OUTPUT_LIMIT) merged.takeLast(EXEC_OUTPUT_LIMIT) else merged
-                    }
-                    is ExecClient.Event.Exited -> phase = ExecPhase.Done(event.code)
-                    is ExecClient.Event.Failed -> phase = ExecPhase.Failed(event.message)
+                    is ExecClient.Event.Output -> output = textBuffer.append(event.text)
+                    is ExecClient.Event.Exited -> { input = ""; phase = ExecPhase.Done(event.code) }
+                    is ExecClient.Event.Failed -> { input = ""; phase = ExecPhase.Failed(event.message) }
                 }
             }
         }
@@ -139,32 +137,41 @@ internal fun ExecConsole(
                 HorizontalDivider(Modifier.padding(vertical = Spacing.sm), color = scheme.outline.copy(alpha = Tints.Hairline))
 
                 if (phase is ExecPhase.Idle) {
-                    Text("命令", style = PiType.action.copy(fontWeight = FontWeight.SemiBold))
-                    PiTextField(
-                        value = command,
-                        onValueChange = { command = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = "例如 python3 set-verify-credentials.py",
-                        singleLine = false,
-                        minLines = 3,
-                        maxLines = 8,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { run() }, enabled = command.isNotBlank(), shape = Radii.card) { Text("运行") }
-                        TextButton(onClick = {
-                            // A deliberate tap, never on open: reading the clipboard is the user's action.
-                            val clip = runCatching { clipboard.getText()?.text }.getOrNull().orEmpty().trim()
-                            if (clip.isNotBlank()) command = clip
-                        }) { Text("粘贴剪贴板") }
-                        CopyTextAction(command)
-                    }
-                    Text(
-                        "需要密码时把「隐藏输入」打开：字段不再回显，脚本自身也不会回显密码。",
-                        style = PiType.caption,
-                        color = scheme.onSurfaceVariant,
-                    )
-                    Row(Modifier.fillMaxWidth().padding(top = Spacing.sm), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { stop(markStopped = false); onDismiss() }) { Text("取消") }
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                        Text("命令", style = PiType.action.copy(fontWeight = FontWeight.SemiBold))
+                        PiTextField(
+                            value = command,
+                            onValueChange = { command = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = "例如 python3 set-verify-credentials.py",
+                            singleLine = false,
+                            minLines = 3,
+                            maxLines = 8,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = { run() },
+                                enabled = command.isNotBlank() && cwd.isNotBlank(),
+                                shape = Radii.card,
+                            ) { Text("运行") }
+                            TextButton(onClick = {
+                                // A deliberate tap, never on open: reading the clipboard is the user's action.
+                                val clip = runCatching { clipboard.getText()?.text }.getOrNull().orEmpty().trim()
+                                if (clip.isNotBlank()) command = clip
+                            }) { Text("粘贴剪贴板") }
+                            CopyTextAction(command)
+                        }
+                        if (cwd.isBlank()) {
+                            Text("这个会话没有上报工作目录，暂时不能运行命令。", style = PiType.caption, color = scheme.error)
+                        }
+                        Text(
+                            "需要密码时把「隐藏输入」打开：字段不再回显，脚本自身也不会回显密码。",
+                            style = PiType.caption,
+                            color = scheme.onSurfaceVariant,
+                        )
+                        Row(Modifier.fillMaxWidth().padding(top = Spacing.sm), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { stop(markStopped = false); onDismiss() }) { Text("取消") }
+                        }
                     }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
@@ -174,7 +181,7 @@ internal fun ExecConsole(
                                 ExecPhase.Running -> "运行中"
                                 is ExecPhase.Done -> "已结束（退出码 ${current.code}）"
                                 ExecPhase.Stopped -> "已中断"
-                                is ExecPhase.Failed -> "已中断"
+                                is ExecPhase.Failed -> "失败"
                                 ExecPhase.Idle -> ""
                             },
                             style = PiType.caption.copy(fontWeight = FontWeight.SemiBold),
@@ -201,7 +208,7 @@ internal fun ExecConsole(
                     ) {
                         SelectionContainer {
                             Text(
-                                terminalDisplay(output).ifBlank { if (running) "（等待输出…）" else "（没有输出）" },
+                                output.ifBlank { if (running) "（等待输出…）" else "（没有输出）" },
                                 style = PiType.mono,
                             )
                         }
@@ -242,6 +249,7 @@ internal fun ExecConsole(
                             Button(
                                 onClick = {
                                     phase = ExecPhase.Idle
+                                    textBuffer.clear()
                                     output = ""
                                 },
                                 shape = Radii.card,

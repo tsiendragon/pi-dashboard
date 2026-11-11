@@ -107,6 +107,21 @@ describe('interactive command channel', () => {
     await waitFor(() => activeExecCount('browser-cap') === 0)
   })
 
+  it('kills the whole process group, not just the shell', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pidash-exec-'))
+    dirs.push(dir)
+    const socket = connect('browser-group')
+    // The shell stays in the foreground, the sleep is its child: killing only the shell
+    // would leave the sleep running after the phone closed the page.
+    socket.emit('message', JSON.stringify({ type: 'start', command: 'echo $$; sleep 60 & echo $!; wait', cwd: dir }))
+    await waitFor(() => socket.output().trim().split('\n').length >= 2)
+    const [shellPid, childPid] = socket.output().trim().split('\n').map(Number)
+    socket.close()
+    const dead = (pid: number) => { try { process.kill(pid, 0); return false } catch { return true } }
+    await waitFor(() => dead(shellPid) && dead(childPid), 8_000)
+    expect(dead(childPid)).toBe(true)
+  })
+
   it('kills the process when the client goes away', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'pidash-exec-'))
     dirs.push(dir)

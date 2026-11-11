@@ -1,5 +1,6 @@
 package com.sam.pidash
 
+import com.sam.pidash.domain.model.TerminalTextBuffer
 import com.sam.pidash.domain.model.terminalDisplay
 import com.sam.pidash.ui.live.runnableLanguage
 import org.junit.Assert.assertEquals
@@ -26,6 +27,39 @@ class TerminalTextTest {
 
     @Test fun aPasswordPromptKeepsItsTextSoTheUserCanSeeWhatIsAsked() {
         assertEquals("Password: ", terminalDisplay("Password: \u001B[?25h"))
+    }
+
+    @Test fun anEscapeSequenceSplitAcrossTwoReadsNeverShowsItsBytes() {
+        val buffer = TerminalTextBuffer()
+        assertEquals("", buffer.append("\u001B[3"))
+        assertEquals("hi", buffer.append("2mhi"))
+        assertEquals("hi\nthere", buffer.append("\nthere"))
+    }
+
+    @Test fun anUnterminatedOscIsHeldUntilItsTerminatorArrives() {
+        val buffer = TerminalTextBuffer()
+        assertEquals("", buffer.append("\u001B]0;Title"))
+        assertEquals("", buffer.append("\u0007"))
+    }
+
+    @Test fun aRunawayOscIsDroppedInsteadOfHidingTheRestOfTheOutput() {
+        val buffer = TerminalTextBuffer()
+        assertEquals("", buffer.append("\u001B]" + "x".repeat(300)))
+        assertEquals("after", buffer.append("after"))
+    }
+
+    @Test fun theVisibleBufferIsCappedAndKeepsTheNewestOutput() {
+        val buffer = TerminalTextBuffer(limit = 5)
+        assertEquals("abcde", buffer.append("abcde"))
+        assertEquals("cdefg", buffer.append("fg"))
+        buffer.clear()
+        assertEquals("x", buffer.append("x"))
+    }
+
+    @Test fun privateModesAndBracketedPasteAreStrippedToo() {
+        assertEquals("", terminalDisplay("\u001B[>4;2m"))
+        assertEquals("", terminalDisplay("\u001B[?2004h"))
+        assertEquals("ok", terminalDisplay("\u001B[?2004lok"))
     }
 
     @Test fun onlyShellBlocksAreRunnable() {

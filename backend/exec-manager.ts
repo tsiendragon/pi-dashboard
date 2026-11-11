@@ -24,6 +24,8 @@ export const EXEC_START_TIMEOUT_MS = 10_000
 export const EXEC_IDLE_TIMEOUT_MS = 15 * 60_000
 export const EXEC_MAX_LIFETIME_MS = 60 * 60_000
 export const EXEC_MAX_PER_CLIENT = 3
+/** Stop reading from the PTY above this much unflushed socket data (the command floods output). */
+const EXEC_MAX_BUFFERED_BYTES = 4 * 1024 * 1024
 
 const activeByClient = new Map<string, number>()
 
@@ -111,18 +113,32 @@ export function handleExecConnection(ws: WebSocket, _req: IncomingMessage, ident
   let proc: pty.IPty | undefined
   let idleTimer: NodeJS.Timeout | undefined
   let lifetimeTimer: NodeJS.Timeout | undefined
+  let outputDropped = false
+
+  // forkpty makes the shell a session leader, so its PID is also the process-group id.
+  // Killing only the shell leaves `sleep`, `ssh`, `tail -f` … running as orphans: close
+  // the page and the phone looks done while the server keeps working. Signal the group,
+  // then insist.
   const stop = () => {
     if (idleTimer) clearTimeout(idleTimer)
     if (lifetimeTimer) clearTimeout(lifetimeTimer)
     idleTimer = undefined
     lifetimeTimer = undefined
-    try { proc?.kill() } catch { /* already gone */ }
+    const current = proc
     proc = undefined
+    if (!current) return
+    const pid = current.pid
+    try { process.kill(-pid, 'SIGHUP') } catch { try { current.kill('SIGHUP') } catch { /* gone */ } }
+    const force = setTimeout(() => {
+      try { process.kill(-pid, 'SIGKILL') } catch { /* group gone */ }
+      try { current.kill('SIGKILL') } catch { /* process gone */ }
+    }, 2_000)
+    force.unref?.()
   }
   const touch = () => {
     if (idleTimer) clearTimeout(idleTimer)
     idleTimer = setTimeout(() => {
-      send(ws, { type: 'error', code: 'idle_timeout', message: '命令因为长时间没有输入被结束' })
+      send(ws, { type: 'error', code: 'idle_timeout', message: '命令长时间没有输入或输出，已结束' })
       stop()
       ws.close()
     }, EXEC_IDLE_TIMEOUT_MS)
@@ -173,10 +189,19 @@ export function handleExecConnection(ws: WebSocket, _req: IncomingMessage, ident
       send(ws, { type: 'started', pid: proc.pid })
       proc.onData(data => {
         touch()
+        if (ws.bufferedAmount > EXEC_MAX_BUFFERED_BYTES) {
+          if (!outputDropped) {
+            outputDropped = true
+            send(ws, { type: 'output', data: '\n…输出太快，网络跟不上，省略了部分内容…\n' })
+          }
+          return
+        }
         send(ws, { type: 'output', data })
       })
       proc.onExit(({ exitCode, signal }) => {
         send(ws, { type: 'exit', code: exitCode, ...(signal ? { signal } : {}) })
+        // The command finished by itself: do not group-signal a PID that may be reused.
+        proc = undefined
         stop()
         ws.close()
       })
