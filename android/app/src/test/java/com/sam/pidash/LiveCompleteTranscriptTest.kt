@@ -61,7 +61,7 @@ class LiveCompleteTranscriptTest {
         thought("t5", "39 checks. Now Python test for `hint`:"),
     )
 
-    private fun fixture(dark: Boolean = false) {
+    private fun fixture(dark: Boolean = false, expandAll: Boolean = false) {
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1f)) {
                 PiDashTheme(darkTheme = dark) {
@@ -74,7 +74,9 @@ class LiveCompleteTranscriptTest {
                         rows.forEach { row ->
                             when (row) {
                                 is ActivityDetailRow.Trace -> {
-                                    var expanded by remember(row.id) { mutableStateOf(row.items.size <= 4) }
+                                    var expanded by remember(row.id) {
+                                        mutableStateOf(if (expandAll) true else row.items.size <= 4)
+                                    }
                                     DetailTraceBlock(
                                         row = row,
                                         expanded = expanded,
@@ -102,7 +104,18 @@ class LiveCompleteTranscriptTest {
         compose.onAllNodesWithText("执行记录")[0].assertExists()
         compose.onAllNodesWithText("执行记录")[1].assertExists()
         compose.onNodeWithText("Now the TS side", substring = true).assertExists()
+        // A folded block must say what ran, not only how many steps there were.
+        compose.onNodeWithText("read · /home/tsien/repos/pi-matrix/src/pi.ts", substring = true).assertExists()
+        // The failing step leads its block, so a failure is visible while folded.
+        compose.onNodeWithText("bash · npm test", substring = true).assertExists()
         compose.onRoot().captureRoboImage("src/test/screenshots/full-transcript.png")
+    }
+
+    @Test fun expandedFirstBlock() {
+        fixture(expandAll = true)
+        // The rows themselves show the commands, so the folded digest disappears.
+        compose.onNodeWithText("read · /home/tsien/repos/pi-matrix/src/pi.ts", substring = true).assertDoesNotExist()
+        compose.onRoot().captureRoboImage("src/test/screenshots/full-transcript-expanded.png")
     }
 
     @Test fun foldedDark() {

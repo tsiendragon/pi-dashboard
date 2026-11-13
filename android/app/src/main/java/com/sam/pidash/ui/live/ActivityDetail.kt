@@ -167,6 +167,15 @@ internal fun DetailTraceBlock(
         "${row.thinkingCount} 段思考".takeIf { row.thinkingCount > 0 },
     ).joinToString(" · ")
     val entries = remember(row.items) { detailTraceEntries(row.items) }
+    // Folded blocks still have to say what happened: lead with the failing step,
+    // otherwise the first one. Counts alone told the reader nothing.
+    val digest = remember(row.items) {
+        val steps = entries.map { it.item }.filter(::isDetailTool)
+        val focus = steps.firstOrNull { it.isError || it.status == "error" } ?: steps.firstOrNull()
+        focus?.let { item ->
+            listOfNotNull(item.toolName, toolArgumentPreview(item).takeIf { it.isNotBlank() }).joinToString(" · ")
+        }
+    }
 
     TraceBlock(
         title = "执行记录",
@@ -178,6 +187,7 @@ internal fun DetailTraceBlock(
         },
         expanded = expanded,
         onToggle = onToggle,
+        summary = digest,
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
             entries.forEachIndexed { index, entry ->

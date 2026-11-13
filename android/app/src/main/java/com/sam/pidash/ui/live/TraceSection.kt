@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.ui.common.ExpandHint
 import com.sam.pidash.ui.theme.PiType
@@ -50,6 +51,8 @@ internal fun TraceBlock(
     counts: String? = null,
     states: List<TraceState> = emptyList(),
     accent: Color? = null,
+    /** One-line digest of what the block did, so a folded block still answers "what ran?". */
+    summary: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -66,8 +69,8 @@ internal fun TraceBlock(
                 .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Column(Modifier.weight(1f)) {
             FlowRow(
-                modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -83,6 +86,19 @@ internal fun TraceBlock(
                 states.forEach { state ->
                     StatPill(state.text, state.tone, Modifier.align(Alignment.CenterVertically))
                 }
+            }
+            // Only while folded: once the rows are visible, repeating the first command
+            // under the title is noise.
+            if (!expanded && !summary.isNullOrBlank()) {
+                Text(
+                    summary,
+                    style = PiType.monoMicro,
+                    color = if (accent == null) scheme.onSurfaceVariant else accent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
             }
             ExpandHint(expanded)
         }
