@@ -31,11 +31,22 @@ class LiveActivitiesTest {
         assertEquals("有失败，需检查", activity.state)
         assertTrue(activity.items.any { it.isError })
     }
-    @Test fun commentaryAndThinkingDoNotMasqueradeAsFinalReplies() {
+    @Test fun aFinalAnswerThatAlsoContainsThinkingStillSettlesTheTurn() {
+        // Real Pi finals are frequently [thinking, text]; that is a reply, not an interim step.
+        val thinkingFinal = """{"type":"message","id":"a","message":{"role":"assistant","stopReason":"stop","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"the answer"}]}}"""
+        val activity = projectLiveActivities(detail(user, thinkingFinal)).single()
+        assertEquals("已回复", activity.state)
+        assertEquals(listOf("the answer"), activityReplies(activity).map { it.text })
+    }
+
+    @Test fun commentaryAndTextThatIssuesToolsDoNotMasqueradeAsFinalReplies() {
         val commentary = """{"type":"message","id":"a","message":{"role":"assistant","channel":"commentary","content":"checking"}}"""
-        val thinking = """{"type":"message","id":"a","message":{"role":"assistant","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"checking"}]}}"""
+        val progress = """{"type":"message","id":"b","message":{"role":"assistant","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"checking"},{"type":"toolCall","id":"t","name":"read","arguments":{}}]}}"""
         assertEquals("待确认", projectLiveActivities(detail(user, commentary)).single().state)
-        assertEquals("待确认", projectLiveActivities(detail(user, thinking)).single().state)
+        // Progress text that issues a tool is not the final wording of the turn.
+        val progressActivity = projectLiveActivities(detail(user, progress)).single()
+        assertNotEquals("已回复", progressActivity.state)
+        assertTrue(progressActivity.items.none { it.role == "assistant" && it.text == "checking" && !it.intermediate })
     }
     @Test fun aPartialReplyAndInterruptedToolAreUnconfirmed() {
         val update = """{"type":"message_update","data":{"message":{"role":"assistant","content":"partial"}}}"""

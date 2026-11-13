@@ -225,6 +225,11 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                 )
                 return@forEachIndexed
             }
+            val contentParts = content as? JsonArray
+            // A message that also carries thinking can still be the final answer (models
+            // return [thinking, text] constantly). Only a toolCall makes it an interim step;
+            // text-less thinking stays folded too.
+            val hasToolCallPart = contentParts?.any { (it as? JsonObject)?.str("type") == "toolCall" } == true
             if (body.isNotBlank() || thoughts != null || images.isNotEmpty()) {
                 put(
                     LiveTimelineItem(
@@ -239,7 +244,7 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                         forkable = role == "user" && entryId != null,
                         channel = channel,
                         status = if (errorMessage != null || toolFailed) "error" else if (type == "message_update") "running" else "done",
-                        intermediate = (content as? JsonArray)?.any { (it as? JsonObject)?.str("type") in setOf("thinking", "toolCall") } == true,
+                        intermediate = hasToolCallPart || text.isBlank(),
                         images = images,
                     )
                 )
