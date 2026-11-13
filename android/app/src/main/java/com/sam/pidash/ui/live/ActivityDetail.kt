@@ -158,6 +158,8 @@ internal fun DetailTraceBlock(
     onToggle: () -> Unit,
     onOpenPath: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
+    /** The focus page shows raw arguments; the full transcript keeps the same line compact. */
+    showArguments: Boolean = true,
 ) {
     val scheme = MaterialTheme.colorScheme
     val counts = listOfNotNull(
@@ -182,7 +184,7 @@ internal fun DetailTraceBlock(
                 key(entry.item.id) {
                     if (index > 0) HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
                     if (isDetailTool(entry.item)) NativeStepCard(entry.item, onOpenPath, onOpenUrl,
-                        showArguments = true, precedingThinking = entry.precedingThinking)
+                        showArguments = showArguments, precedingThinking = entry.precedingThinking)
                     else NativeMessageCard(entry.item, onOpenPath, onOpenUrl, compactAssistant = true)
                 }
             }

@@ -83,7 +83,8 @@ import com.sam.pidash.domain.model.humanUsd
 import com.sam.pidash.domain.model.shiftMonth
 import com.sam.pidash.domain.model.topModels
 import com.sam.pidash.domain.model.topSessions
-import com.sam.pidash.domain.model.groupTranscript
+import com.sam.pidash.domain.model.ActivityDetailRow
+import com.sam.pidash.domain.model.groupActivityDetail
 import com.sam.pidash.domain.model.sessionTreeLabel
 import com.sam.pidash.domain.model.sessionTreeRows
 import com.sam.pidash.domain.model.normalizeQuote
@@ -271,7 +272,11 @@ fun LiveSessionScreen(
     val background = remember(detail) { backgroundSnapshot(detail) }
     val backgroundActive = background?.tasks?.count { it.isActive() } ?: 0
     val goalState = remember(goal) { goalSummary(goal) }
-    val rows = remember(timeline) { groupTranscript(timeline) }
+    // The complete view and the detail page share one grouping: consecutive thinking and
+    // tool calls fold into a single trace block instead of alternating cards and bare rows.
+    val rows = remember(timeline) { groupActivityDetail(timeline) }
+    // Expansion lives above the list so scrolling a folded trace off screen does not forget it.
+    val traceExpansion = remember(sessionKey) { mutableStateMapOf<String, Boolean>() }
     val showingActivities = viewMode == "activity" && activities.isNotEmpty()
     val visibleCount = if (showingActivities) activities.size else rows.size
     val visibleTail = if (showingActivities) activities.lastOrNull() else rows.lastOrNull()
@@ -1019,7 +1024,10 @@ fun LiveSessionScreen(
                 if (viewMode == "activity" && activities.isNotEmpty()) LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = side, vertical = Spacing.xs),
+                    // Extra bottom space keeps the "最新" pill off the last line when pinned.
+                    contentPadding = PaddingValues(
+                        start = side, end = side, top = Spacing.xs, bottom = 40.dp,
+                    ),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
                     items(activities, key = { "activity:${it.id}" }) { activity ->
@@ -1056,29 +1064,48 @@ fun LiveSessionScreen(
                 } else LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = side, vertical = Spacing.xs),
+                    // Extra bottom space keeps the "最新" pill off the last line when pinned.
+                    contentPadding = PaddingValues(
+                        start = side, end = side, top = Spacing.xs, bottom = 40.dp,
+                    ),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
                     items(rows, key = { it.id }) { row ->
-                        NativeTimelineRow(
-                            row = row,
-                            onOpenPath = ::openPathPreview,
-                            onOpenUrl = ::openExternalUrl,
-                            compactUser = true,
-                            compactAssistant = true,
-                            enabled = !busy && !heldElsewhere && cachedSnapshot == null,
-                            onFork = { entryId -> notice = null; forkEntry = entryId; dialog = "fork" },
-                            onQuote = { item ->
-                                normalizeQuote(item.text)?.let { quoted ->
-                                    if (quotes.size >= 4) notice = "一次最多引用 4 段"
-                                    else quotes = quotes + AppQuote("q${item.id}", quoted, item.role, item.entryId)
-                                }
-                            },
-                            onAnnotate = { item ->
-                                val quoted = normalizeQuote(item.text).orEmpty()
-                                annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
-                            },
-                        )
+                        when (row) {
+                            is ActivityDetailRow.Trace -> {
+                                // Short and thinking-only traces open; long tool runs stay
+                                // folded so a full transcript reads as prose plus a few blocks.
+                                val defaultExpanded = row.items.size <= 4 || row.toolCount == 0
+                                val expanded = traceExpansion[row.id] ?: defaultExpanded
+                                DetailTraceBlock(
+                                    row = row,
+                                    expanded = expanded,
+                                    onToggle = { traceExpansion[row.id] = !expanded },
+                                    onOpenPath = ::openPathPreview,
+                                    onOpenUrl = ::openExternalUrl,
+                                    showArguments = false,
+                                )
+                            }
+                            is ActivityDetailRow.Message -> NativeTimelineRow(
+                                row = com.sam.pidash.domain.model.TranscriptRow.Single(row.item),
+                                onOpenPath = ::openPathPreview,
+                                onOpenUrl = ::openExternalUrl,
+                                compactUser = true,
+                                compactAssistant = true,
+                                enabled = !busy && !heldElsewhere && cachedSnapshot == null,
+                                onFork = { entryId -> notice = null; forkEntry = entryId; dialog = "fork" },
+                                onQuote = { item ->
+                                    normalizeQuote(item.text)?.let { quoted ->
+                                        if (quotes.size >= 4) notice = "一次最多引用 4 段"
+                                        else quotes = quotes + AppQuote("q${item.id}", quoted, item.role, item.entryId)
+                                    }
+                                },
+                                onAnnotate = { item ->
+                                    val quoted = normalizeQuote(item.text).orEmpty()
+                                    annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
+                                },
+                            )
+                        }
                     }
                 }
                 JumpToLatestPill(
