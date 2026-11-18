@@ -42,6 +42,31 @@ describe('mergeThinkingParts', () => {
 })
 
 describe('groupLiveToolEntries', () => {
+  it.each(['proof_solve', 'proof_solve_status', 'read'])('retains the %s call anchor after its result arrives', name => {
+    const call = assistant('assistant-single', [{id: 'call-single', name}])
+    const {items} = groupLiveToolEntries([call, result('call-single', name)])
+    expect(items).toHaveLength(1)
+    expect(items[0]?.type).toBe('entry')
+    if (items[0]?.type === 'entry') {
+      expect(items[0].entry).toBe(call)
+      expect(items[0].index).toBe(0)
+    }
+  })
+
+  it('retains a streamed call anchor through execution and message-end result events', () => {
+    const call = {type: 'message_end', data: {message: {
+      role: 'assistant', content: [{type: 'toolCall', id: 'live-proof', name: 'proof_solve', arguments: {claim:'T'}}],
+    }}}
+    const {items} = groupLiveToolEntries([
+      call,
+      {type:'tool_execution_end', data:{toolCallId:'live-proof', toolName:'proof_solve', result:{content:[{type:'text',text:'VERIFIED'}]}, isError:false}},
+      {type:'message_end', data:{message:{role:'toolResult', toolCallId:'live-proof', toolName:'proof_solve', content:[{type:'text',text:'VERIFIED'}]}}},
+    ])
+    const entries = items.filter(item => item.type === 'entry')
+    expect(entries.some(item => item.entry === call)).toBe(true)
+    expect(entries.filter(item => item.entry === call)).toHaveLength(1)
+  })
+
   it('keeps separate tool calls as separate timeline rows', () => {
     const { items: timeline } = groupLiveToolEntries([
       assistant('assistant-1', [{ id: 'call-1', name: 'bash' }]),

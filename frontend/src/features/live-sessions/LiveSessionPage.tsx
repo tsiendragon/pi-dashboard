@@ -595,10 +595,12 @@ export function groupLiveToolEntries(
         ...existing,
         ...item,
         key: existing.key,
-        // Keep the parent call as the render anchor; its result is already in
-        // toolStates. A result-only anchor is suppressed by TimelineEntry.
-        entry: existing.toolName === 'run_code' && existing.source === 'call' ? existing.entry : item.entry,
-        index: existing.toolName === 'run_code' && existing.source === 'call' ? existing.index : item.index,
+        // Keep every parent call as the render anchor, not only run_code.
+        // For single calls flush() emits this entry directly; replacing it with
+        // a toolResult makes TimelineEntry suppress the whole completed card.
+        // The result itself is already available through toolStates.
+        entry: existing.source === 'call' ? existing.entry : item.entry,
+        index: existing.source === 'call' ? existing.index : item.index,
         argsText: item.argsText || existing.argsText,
         detail: item.detail || existing.detail,
         source: existing.source,
@@ -1745,7 +1747,13 @@ function ToolCallCard({ name, toolCallId, argsText, timestamp, state }: { name: 
         ? 'border-accent/40 border-l-accent bg-card'
         : 'border-border bg-card'
   return (
-    <article className={`w-full max-w-full overflow-hidden rounded-lg border border-l-2 ${statusTone}`}>
+    // Same stable hooks as ChatPage's ToolCallBlock: the summary renders a
+    // friendly name, so automated/accessibility selectors need the raw tool id.
+    <article
+      className={`w-full max-w-full overflow-hidden rounded-lg border border-l-2 ${statusTone}`}
+      data-pidash-tool-name={name}
+      data-pidash-tool-status={status === 'success' ? 'ok' : status === 'error' ? 'error' : 'running'}
+    >
       <details>
         <summary className="flex min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left hover:bg-bg-hover">
           <ToolSummaryLine toolName={name} args={argsText} timestamp={result?.timestamp || timestamp} status={status} className="flex-1" />
