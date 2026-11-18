@@ -56,7 +56,10 @@ export class LarkTransport implements ImTransport {
         const action = parseCardAction(data)
         if (!action || !onCardAction) return { toast: { type: 'warning', content: '无法识别的按钮' } }
         onCardAction(action)
-        return { toast: { type: 'info', content: `已执行 ${action.command.slice(0, 40)}` } }
+        const ack = action.answer
+          ? action.answer.cancelled ? '已取消' : '已提交选择'
+          : `已执行 ${String(action.command).slice(0, 40)}`
+        return { toast: { type: 'info', content: ack } }
       },
     })
 
@@ -140,14 +143,31 @@ function extractText(message: any): string {
   }
 }
 
-/** `card.action.trigger` (callback v2) -> a command click, or undefined when it is not one of ours. */
+/**
+ * `card.action.trigger` (callback v2) -> a click we understand, or undefined.
+ *
+ * A button either carries a command (`{ cmd: '/list' }`) or an answer to a
+ * pending extension dialog (`{ ui: id, value?, cancel? }`).
+ */
 export function parseCardAction(data: any): CardAction | undefined {
   const value = data?.action?.value
-  const command = typeof value?.cmd === 'string' ? value.cmd.trim() : ''
-  if (!command.startsWith('/')) return undefined
   const chatId: string | undefined = data?.context?.open_chat_id ?? data?.open_chat_id
   const messageId: string | undefined = data?.context?.open_message_id ?? data?.open_message_id
   const userId: string | undefined = data?.operator?.open_id ?? data?.open_id
   if (!chatId || !messageId) return undefined
-  return { chatId, messageId, userId: userId || 'unknown', command, eventId: data?.event_id }
+  const base = { chatId, messageId, userId: userId || 'unknown', eventId: data?.event_id }
+
+  const command = typeof value?.cmd === 'string' ? value.cmd.trim() : ''
+  if (command.startsWith('/')) return { ...base, command }
+
+  const id = typeof value?.ui === 'string' ? value.ui : ''
+  if (!id) return undefined
+  return {
+    ...base,
+    answer: {
+      id,
+      ...(typeof value?.value === 'string' ? { value: value.value } : {}),
+      ...(value?.cancel === true ? { cancelled: true } : {}),
+    },
+  }
 }

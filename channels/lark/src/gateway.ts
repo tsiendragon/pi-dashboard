@@ -1,6 +1,7 @@
 import type { LiveSessionBrowserEvent, LiveSessionSummary } from '../../../shared/src/live-sessions.js'
 import { Catalog } from './catalog.js'
 import { CARD_TEXT_LIMIT, noticeCard, replyText, type LarkCard, type Reply } from './cards.js'
+import { dialogCard, dialogLabel, dialogMethodOf, needsTextAnswer, type DialogView } from './dialogs.js'
 import { answerCard, describeTool, endedCard, progressCard, type ProgressStep } from './progress.js'
 import { runCommand } from './commands.js'
 import type { LarkGatewayConfig } from './config.js'
@@ -22,6 +23,28 @@ const PATCH_INTERVAL_MS = 1500
 const TICK_MS = 15_000
 /** A run with no event for this long is treated as lost (missed `agent_settled`). */
 const RUN_STALE_MS = 10 * 60_000
+/** Nudge the chat once when a blocking dialog is still unanswered after this long. */
+const DIALOG_REMIND_MS = 5 * 60_000
+/** How long a settled dialog is kept, so a late click gets a clear answer. */
+const DIALOG_KEEP_MS = 10 * 60_000
+/** A text answer only counts for a dialog younger than this (a stale prompt must not eat messages). */
+const DIALOG_INPUT_TTL_MS = 30 * 60_000
+
+/** A blocking `extension_ui` request pi is waiting on, plus where we showed it. */
+interface PendingDialog {
+  id: string
+  processInstanceId: string
+  sessionFile: string
+  view: DialogView
+  /** Chat scope -> the card message id we sent there. */
+  cards: Map<string, string>
+  createdAt: number
+  state: 'open' | 'answered' | 'closed'
+  answeredWith?: string
+  reminded?: boolean
+  timer?: NodeJS.Timeout
+  expireTimer?: NodeJS.Timeout
+}
 
 /** One chat-originated agent run and the progress card that tracks it. */
 interface Run {
@@ -63,6 +86,8 @@ export class Gateway {
   private readonly seenActionIds = new Set<string>()
   /** Live runs started from a chat, by chat scope. */
   private readonly runs = new Map<string, Run>()
+  /** Blocking extension dialogs, keyed `sessionFile\u0000id`. */
+  private readonly dialogs = new Map<string, PendingDialog>()
 
   constructor(
     cfg: LarkGatewayConfig,
@@ -97,6 +122,8 @@ export class Gateway {
   async stop(): Promise<void> {
     for (const run of this.runs.values()) this.clearTimers(run)
     this.runs.clear()
+    for (const dialog of this.dialogs.values()) this.clearDialogTimers(dialog)
+    this.dialogs.clear()
     this.dashboard.close()
     await this.transport.stop()
   }
@@ -132,12 +159,12 @@ export class Gateway {
    * Send one card, falling back to `text` when the transport has no cards or the
    * server rejects this one. Throws only when the text form failed too.
    */
-  private async deliver(chatId: string, threadId: string | null, cardJson: LarkCard | undefined, text: string, anchor?: string): Promise<void> {
+  private async deliver(chatId: string, threadId: string | null, cardJson: LarkCard | undefined, text: string, anchor?: string): Promise<string | undefined> {
     if (cardJson && this.transport.sendCard) {
       try {
         const messageId = await this.transport.sendCard(chatId, threadId, cardJson, anchor)
         if (messageId) this.rememberCard(messageId, threadId)
-        return
+        return messageId
       } catch (error) {
         // Not support (stdio) is expected; a rejected card is worth a line in the log.
         if (!(error instanceof Error && error.name === 'CardsUnsupportedError')) {
@@ -146,6 +173,7 @@ export class Gateway {
       }
     }
     for (const chunk of chunkText(text)) await this.transport.sendText(chatId, threadId, chunk, anchor)
+    return undefined
   }
 
   private rememberCard(messageId: string, threadId: string | null): void {
@@ -193,15 +221,24 @@ export class Gateway {
         return
       }
       case 'live_session_snapshot': {
-        const data = frame.data as { summary?: LiveSessionSummary }
+        // The snapshot carries the session's unanswered dialogs, so a gateway that
+        // restarted (or reconnected) can put the waiting question back in the chat
+        // instead of leaving pi blocked and the chat silent.
+        const data = frame.data as { summary?: LiveSessionSummary; pendingUi?: unknown }
         if (data.summary) this.catalog.upsert(data.summary)
+        if (Array.isArray(data.pendingUi)) {
+          for (const request of data.pendingUi) await this.onDialog(data.summary, request)
+        }
         return
       }
       case 'live_session_detached': {
         const data = frame.data as { processInstanceId?: string }
         if (data.processInstanceId) {
           const gone = this.catalog.findByProcessId(data.processInstanceId)
-          if (gone?.sessionFile) await this.endRuns(gone.sessionFile, '会话已断开')
+          if (gone?.sessionFile) {
+            await this.endRuns(gone.sessionFile, '会话已断开')
+            await this.closeDialogs(gone.sessionFile)
+          }
           this.catalog.remove(data.processInstanceId)
           this.lastSequence.delete(data.processInstanceId)
         }
@@ -251,6 +288,14 @@ export class Gateway {
       }
       if (type === 'tool_execution_end') {
         this.onToolEnd(summary.sessionFile, typeof eventData.toolCallId === 'string' ? eventData.toolCallId : undefined, eventData.isError === true)
+        return
+      }
+      if (type === 'extension_ui') {
+        await this.onDialog(summary, record.event.data)
+        return
+      }
+      if (type === 'extension_ui_closed') {
+        await this.onDialogClosed(summary.sessionFile, record.event.data)
         return
       }
       if (type === 'agent_settled') {
@@ -416,9 +461,181 @@ export class Gateway {
       }
     }
     const threadId = this.cardThreads.get(action.messageId) ?? null
+    if (action.answer) {
+      console.log(`[in] dialog answer ${scopeOf(action.chatId, threadId)} ${action.userId}: ${action.answer.id}=${action.answer.cancelled ? '(cancel)' : action.answer.value}`)
+      void this.answerDialog(action.chatId, threadId, action.answer).catch(
+        error => console.error(`[in] dialog answer failed: ${errorText(error)}`),
+      )
+      return
+    }
+    if (!action.command) return
     console.log(`[in] card click ${scopeOf(action.chatId, threadId)} ${action.userId}: ${action.command}`)
     void this.handleMessage({ chatId: action.chatId, threadId, userId: action.userId, text: action.command, messageId: action.messageId }).catch(
       error => console.error(`[in] card click failed: ${errorText(error)}`),
+    )
+  }
+
+  // --- extension dialogs -----------------------------------------------------
+
+  private dialogKey(sessionFile: string, id: string): string {
+    return `${sessionFile}\u0000${id}`
+  }
+
+  /**
+   * A blocking dialog appeared (or was replayed after a reconnect). Show it in
+   * every chat bound to that session; the upstream settles on the first answer,
+   * so whichever chat (or web UI) answers first wins.
+   */
+  private async onDialog(summary: LiveSessionSummary | undefined, data: unknown): Promise<void> {
+    if (!summary?.sessionFile) return
+    const record = (data ?? {}) as { id?: unknown; method?: unknown; title?: unknown; message?: unknown; options?: unknown; placeholder?: unknown; prefill?: unknown }
+    const id = typeof record.id === 'string' ? record.id : ''
+    const method = dialogMethodOf(record.method)
+    if (!id || !method) return
+    const key = this.dialogKey(summary.sessionFile, id)
+    if (this.dialogs.has(key)) return
+
+    const view: DialogView = {
+      id,
+      method,
+      title: typeof record.title === 'string' ? record.title : '',
+      ...(typeof record.message === 'string' ? { message: record.message } : {}),
+      ...(Array.isArray(record.options) ? { options: record.options.filter((option): option is string => typeof option === 'string') } : {}),
+      ...(typeof record.placeholder === 'string' ? { placeholder: record.placeholder } : {}),
+      ...(typeof record.prefill === 'string' ? { prefill: record.prefill } : {}),
+    }
+    const dialog: PendingDialog = {
+      id,
+      processInstanceId: summary.processInstanceId,
+      sessionFile: summary.sessionFile,
+      view,
+      cards: new Map(),
+      createdAt: Date.now(),
+      state: 'open',
+    }
+    this.dialogs.set(key, dialog)
+    await this.sendDialogCards(dialog)
+
+    dialog.timer = setTimeout(() => void this.remindDialog(dialog), DIALOG_REMIND_MS)
+    dialog.timer.unref?.()
+    dialog.expireTimer = setTimeout(() => this.forgetDialog(dialog), DIALOG_KEEP_MS)
+    dialog.expireTimer.unref?.()
+  }
+
+  private async sendDialogCards(dialog: PendingDialog): Promise<void> {
+    for (const binding of this.mapping.lookupsBySession(dialog.sessionFile)) {
+      const scope = scopeOf(binding.chatId, binding.threadId)
+      if (dialog.cards.has(scope)) continue
+      const anchor = binding.threadId ? binding.replyMessageId : undefined
+      const text = `${dialog.view.title || '需要你确认'}${dialog.view.message ? `
+${dialog.view.message}` : ''}`
+      try {
+        const messageId = await this.deliver(binding.chatId, binding.threadId, dialogCard(dialog.view, 'open'), text, anchor)
+        // Record the scope even without a message id: a text answer must still be
+        // recognised when the card fell back to plain text.
+        dialog.cards.set(scope, messageId ?? '')
+        // The card id is only known when a card actually went out; without cards
+        // (stdio) the text form is still informative, and the web UI can answer.
+      } catch (error) {
+        console.warn(`[out] dialog card failed -> ${scope}: ${errorText(error)}`)
+      }
+    }
+    console.log(`[out] dialog ${dialogLabel(dialog.view)} -> ${[...dialog.cards.keys()].join(',') || '(no bound chat)'}`)
+  }
+
+  /** Answer a dialog from a card click, then fold the card into its settled state. */
+  private async answerDialog(chatId: string, threadId: string | null, answer: NonNullable<CardAction['answer']>): Promise<void> {
+    const scope = scopeOf(chatId, threadId)
+    const dialog = [...this.dialogs.values()].find(candidate => candidate.id === answer.id && candidate.cards.has(scope))
+    if (!dialog) {
+      // Expired or never shown here: say so instead of silently doing nothing.
+      await this.reply(chatId, threadId, '这个选择已经失效（可能已经在网页端或别处处理过）。')
+      return
+    }
+    if (dialog.state !== 'open') {
+      await this.reply(chatId, threadId, dialog.state === 'answered' ? `已经回答过了${dialog.answeredWith ? `：${dialog.answeredWith}` : ''}。` : '这个选择已经在其它端处理了。')
+      return
+    }
+    try {
+      const result = await this.dashboard.answerUi(dialog.processInstanceId, dialog.id, answer.cancelled ? { cancelled: true } : { value: answer.value ?? '' })
+      if (result?.accepted === false) {
+        await this.settleDialog(dialog, 'closed')
+        await this.reply(chatId, threadId, '这个选择已经在其它端处理了。')
+        return
+      }
+      await this.settleDialog(dialog, 'answered', answer.cancelled ? '（取消）' : answer.value)
+    } catch (error) {
+      console.error(`[in] answer_ui failed: ${errorText(error)}`)
+      await this.reply(chatId, threadId, `提交选择失败：${errorText(error)}`)
+    }
+  }
+
+  private async onDialogClosed(sessionFile: string, data: unknown): Promise<void> {
+    const id = typeof (data as { id?: unknown } | undefined)?.id === 'string' ? (data as { id: string }).id : ''
+    if (!id) return
+    const dialog = this.dialogs.get(this.dialogKey(sessionFile, id))
+    if (!dialog || dialog.state !== 'open') return
+    // Answered from the web UI / terminal, or cancelled upstream.
+    await this.settleDialog(dialog, 'closed')
+  }
+
+  private async closeDialogs(sessionFile: string): Promise<void> {
+    for (const dialog of [...this.dialogs.values()]) {
+      if (dialog.sessionFile === sessionFile && dialog.state === 'open') await this.settleDialog(dialog, 'closed')
+    }
+  }
+
+  /** Freeze a dialog: update every card we sent and stop its timers. */
+  private async settleDialog(dialog: PendingDialog, state: 'answered' | 'closed', answeredWith?: string): Promise<void> {
+    dialog.state = state
+    if (answeredWith !== undefined) dialog.answeredWith = answeredWith
+    this.clearDialogTimers(dialog)
+    if (!this.transport.updateCard) return
+    for (const [scope, messageId] of dialog.cards) {
+      if (!messageId) continue
+      try {
+        await this.transport.updateCard(messageId, dialogCard(dialog.view, state, dialog.answeredWith))
+      } catch (error) {
+        console.warn(`[out] dialog card update failed -> ${scope}: ${errorText(error)}`)
+      }
+    }
+  }
+
+  private async remindDialog(dialog: PendingDialog): Promise<void> {
+    if (dialog.state !== 'open' || dialog.reminded) return
+    dialog.reminded = true
+    const text = `⏳ 会话还在等你回答「${dialog.view.title || '一个确认'}」，上面的卡片点一下就能继续。`
+    for (const binding of this.mapping.lookupsBySession(dialog.sessionFile)) {
+      try {
+        await this.reply(binding.chatId, binding.threadId, text)
+      } catch (error) {
+        console.warn(`[out] dialog reminder failed: ${errorText(error)}`)
+      }
+    }
+  }
+
+  private forgetDialog(dialog: PendingDialog): void {
+    this.clearDialogTimers(dialog)
+    const key = this.dialogKey(dialog.sessionFile, dialog.id)
+    if (this.dialogs.get(key) === dialog) this.dialogs.delete(key)
+  }
+
+  private clearDialogTimers(dialog: PendingDialog): void {
+    if (dialog.timer) clearTimeout(dialog.timer)
+    if (dialog.expireTimer) clearTimeout(dialog.expireTimer)
+    dialog.timer = undefined
+    dialog.expireTimer = undefined
+  }
+
+  /** A dialog waiting for free text in this chat, if any. */
+  private textDialogFor(chatId: string, threadId: string | null): PendingDialog | undefined {
+    const scope = scopeOf(chatId, threadId)
+    return [...this.dialogs.values()].find(
+      dialog =>
+        dialog.state === 'open' &&
+        needsTextAnswer(dialog.view.method) &&
+        dialog.cards.has(scope) &&
+        Date.now() - dialog.createdAt < DIALOG_INPUT_TTL_MS,
     )
   }
 
@@ -450,6 +667,12 @@ export class Gateway {
 
   /** Send text into the bound session, answering the chat when that is impossible. */
   private async forwardInput(chatId: string, threadId: string | null, text: string): Promise<void> {
+    // pi is blocked on an `input`/`editor` dialog: this message is the answer.
+    const waiting = text.startsWith('/') ? undefined : this.textDialogFor(chatId, threadId)
+    if (waiting) {
+      await this.answerDialog(chatId, threadId, { id: waiting.id, value: text })
+      return
+    }
     const binding = this.mapping.lookup(chatId, threadId)
     if (!binding) {
       await this.reply(chatId, threadId, '尚未绑定会话。用 /list 查看，/bind <序号或名称> 绑定。')

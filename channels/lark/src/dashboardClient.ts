@@ -180,6 +180,20 @@ export class DashboardClient {
     return readResult(res.body)
   }
 
+  /**
+   * Answer a pending extension dialog (`ctx.ui.select/confirm/input/editor`).
+   * Same command the web UI sends; the extension settles on the first answer, so
+   * answering from the chat works even while a browser has the dialog open.
+   */
+  async answerUi(processInstanceId: string, id: string, answer: { value?: string; cancelled?: boolean }): Promise<{ accepted?: boolean }> {
+    const result = await this.command(processInstanceId, {
+      type: 'answer_ui',
+      id,
+      ...(answer.cancelled ? { cancelled: true } : { value: answer.value ?? '' }),
+    })
+    return (result ?? {}) as { accepted?: boolean }
+  }
+
   /** Models this session can switch to. */
   async models(processInstanceId: string): Promise<LiveSessionModelOption[]> {
     const result = await this.command(processInstanceId, { type: 'get_models' })

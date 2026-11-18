@@ -35,7 +35,9 @@ export type HeaderTemplate = 'blue' | 'wathet' | 'turquoise' | 'green' | 'yellow
 export interface ButtonSpec {
   text: string
   /** Command run when clicked, exactly as if typed into the chat. */
-  command: string
+  command?: string
+  /** Answer to a pending extension dialog; mutually exclusive with `command`. */
+  answer?: { id: string; value?: string; cancelled?: boolean }
   type?: 'default' | 'primary' | 'danger' | 'primary_filled' | 'danger_filled' | 'laser'
   /** Ask before running (destructive commands). */
   confirm?: { title: string; text: string }
@@ -69,12 +71,15 @@ export function hr(): CardElement {
 }
 
 export function button(spec: ButtonSpec): CardElement {
+  const value = spec.answer
+    ? { ui: spec.answer.id, ...(spec.answer.value !== undefined ? { value: spec.answer.value } : {}), ...(spec.answer.cancelled ? { cancel: true } : {}) }
+    : { cmd: spec.command ?? '' }
   return {
     tag: 'button',
     text: { tag: 'plain_text', content: spec.text },
     type: spec.type ?? 'default',
     size: 'small',
-    behaviors: [{ type: 'callback', value: { cmd: spec.command } }],
+    behaviors: [{ type: 'callback', value }],
     ...(spec.confirm
       ? { confirm: { title: { tag: 'plain_text', content: spec.confirm.title }, text: { tag: 'plain_text', content: spec.confirm.text } } }
       : {}),
