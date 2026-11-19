@@ -267,7 +267,6 @@ internal fun LiveModelDialog(
     var error by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
     var modelFilter by remember { mutableStateOf("all") }
-    var level by remember { mutableStateOf(summary?.thinkingLevel.orEmpty()) }
     var revision by remember { mutableIntStateOf(0) }
     LaunchedEffect(key, revision) {
         loading = true; error = null
@@ -310,6 +309,11 @@ internal fun LiveModelDialog(
                             style = PiType.subhead,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (thinking) Text(
+                            "点按档位立即切换，选择后自动关闭。",
+                            style = PiType.caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
                 if (loading || busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -322,12 +326,14 @@ internal fun LiveModelDialog(
                     if (levels.isEmpty()) Text("当前模型未返回支持的档位，请以实际模型支持情况为准。", style = PiType.subhead)
                     Column(Modifier.selectableGroup()) {
                         visibleLevels.forEach { item ->
-                            val selected = level.equals(item.id, ignoreCase = true)
+                            val selected = item.id.equals(summary?.thinkingLevel, ignoreCase = true)
                             Row(
                                 Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = Tints.Tint) else Color.Transparent)
-                                    .selectable(selected = selected, enabled = !busy, role = Role.RadioButton) { level = item.id }
+                                    .selectable(selected = selected, enabled = !busy, role = Role.RadioButton) {
+                                        if (selected) onDismiss() else onThinking(item.id)
+                                    }
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -493,11 +499,7 @@ internal fun LiveModelDialog(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(enabled = !busy, onClick = onDismiss) { Text(if (thinking) "取消" else "关闭", style = PiType.footnote) }
-                if (thinking) TextButton(
-                    enabled = !busy && level.isNotBlank() && !level.equals(summary?.thinkingLevel, ignoreCase = true),
-                    onClick = { onThinking(level.trim()) },
-                ) { Text("应用", style = PiType.footnote.copy(fontWeight = FontWeight.SemiBold)) }
+                TextButton(enabled = !busy, onClick = onDismiss) { Text("关闭", style = PiType.footnote) }
             }
         }
     }
