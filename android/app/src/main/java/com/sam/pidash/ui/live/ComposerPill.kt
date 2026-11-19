@@ -14,6 +14,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +50,9 @@ internal fun ComposerPill(
     modifier: Modifier = Modifier,
     placeholder: String = "输入消息…",
     trailing: (@Composable () -> Unit)? = null,
+    onAbort: (() -> Unit)? = null,
+    abortEnabled: Boolean = true,
+    aborting: Boolean = false,
     leading: @Composable () -> Unit = {},
 ) {
     Row(
@@ -88,21 +93,41 @@ internal fun ComposerPill(
             },
         )
         }
-        if (trailing != null) trailing()
-        else IconButton(enabled = canSend, onClick = onSend, modifier = Modifier.size(44.dp).testTag("composer-send")) {
-            Box(
-                Modifier.size(34.dp).background(
-                    if (canSend) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
-                    CircleShape,
-                ),
-                contentAlignment = Alignment.Center,
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            if (onAbort != null) IconButton(
+                enabled = abortEnabled && !aborting,
+                onClick = onAbort,
+                modifier = Modifier.size(44.dp).testTag("composer-abort"),
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send, "发送", Modifier.size(16.dp),
-                    tint = if (canSend) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Box(
+                    Modifier.size(34.dp).background(MaterialTheme.colorScheme.errorContainer, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (aborting) CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp), strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    ) else Icon(
+                        Icons.Filled.Close, "中止当前回合", Modifier.size(17.dp),
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+            if (trailing != null) trailing()
+            else IconButton(enabled = canSend, onClick = onSend, modifier = Modifier.size(44.dp).testTag("composer-send")) {
+                Box(
+                    Modifier.size(34.dp).background(
+                        if (canSend) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+                        CircleShape,
+                    ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send, "发送", Modifier.size(16.dp),
+                        tint = if (canSend) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

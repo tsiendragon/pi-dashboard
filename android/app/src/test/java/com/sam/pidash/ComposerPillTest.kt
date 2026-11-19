@@ -40,10 +40,13 @@ import org.robolectric.annotation.GraphicsMode
 class ComposerPillTest {
     @get:Rule val compose = createComposeRule()
     private var sends = 0
+    private var aborts = 0
     private var typed = ""
 
     private fun fixture(initial: String = "", canSend: Boolean = false, enabled: Boolean = true,
-                        dark: Boolean = false, scale: Float = 1f, width: Int? = null) {
+                        dark: Boolean = false, scale: Float = 1f, width: Int? = null,
+                        showAbort: Boolean = false, aborting: Boolean = false,
+                        abortEnabled: Boolean = true) {
         compose.setContent {
             var draft by remember { mutableStateOf(initial) }
             typed = draft
@@ -62,6 +65,9 @@ class ComposerPillTest {
                                 onSend = { sends++ },
                                 onFocusChange = {},
                                 maxHeight = 180.dp,
+                                onAbort = if (showAbort) ({ aborts++ }) else null,
+                                abortEnabled = abortEnabled,
+                                aborting = aborting,
                             ) {
                                 IconButton(onClick = {}, modifier = Modifier.size(44.dp).testTag("leading")) {
                                     Icon(Icons.Filled.Add, "附加内容", Modifier.size(22.dp))
@@ -106,6 +112,29 @@ class ComposerPillTest {
         fixture(initial = "草稿", enabled = false)
         compose.onNodeWithTag("composer-field").assertIsNotEnabled()
         compose.onNodeWithContentDescription("附加内容").assertIsDisplayed()
+    }
+    @Test fun abortSitsBetweenTheDraftAndSendAndFiresOnce() {
+        fixture(initial = "继续", canSend = true, showAbort = true)
+        val field = compose.onNodeWithTag("composer-field").getUnclippedBoundsInRoot()
+        val abort = compose.onNodeWithTag("composer-abort").getUnclippedBoundsInRoot()
+        val send = compose.onNodeWithTag("composer-send").getUnclippedBoundsInRoot()
+        assertTrue("abort must follow the draft", field.right <= abort.left)
+        assertTrue("send must follow abort", abort.right <= send.left)
+        compose.onNodeWithContentDescription("中止当前回合").assertIsDisplayed()
+        compose.onNodeWithTag("composer-abort").performClick()
+        compose.runOnIdle { assertEquals(1, aborts) }
+    }
+    @Test fun abortIsAbsentWhenTheSessionIsNotRunning() {
+        fixture()
+        compose.onNodeWithTag("composer-abort").assertDoesNotExist()
+    }
+    @Test fun abortIsDisabledWhileTheRequestIsInFlight() {
+        fixture(showAbort = true, aborting = true)
+        compose.onNodeWithTag("composer-abort").assertIsNotEnabled()
+    }
+    @Test fun abortIsDisabledWhileAnotherActionIsBusy() {
+        fixture(showAbort = true, abortEnabled = false)
+        compose.onNodeWithTag("composer-abort").assertIsNotEnabled()
     }
     @Test fun pillScreenshot() {
         fixture(initial = ""); compose.onRoot().captureRoboImage("src/test/screenshots/composer-pill.png")

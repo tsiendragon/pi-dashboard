@@ -42,7 +42,6 @@ import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.common.SegmentedTabs
 import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.common.rememberAttachmentBitmap
-import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.markdown.MarkdownBody
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Tints
@@ -133,6 +132,7 @@ fun LiveSessionScreen(
     val detail = details[sessionKey]
     val summary = detail?.summary ?: aggregate?.summary
     val owned = leases.containsKey(sessionKey)
+    val running = summary?.status == "running"
     val heldElsewhere = summary?.claim?.state == "claimed" && !owned
     val timeline = remember(detail) { detail?.let { projectLiveTimeline(it) }.orEmpty() }
     val scope = rememberCoroutineScope()
@@ -163,6 +163,7 @@ fun LiveSessionScreen(
     var preview by remember(sessionKey) { mutableStateOf<Pair<String, String?>?>(null) }
     var previewError by remember(sessionKey) { mutableStateOf<String?>(null) }
     var busy by remember(sessionKey) { mutableStateOf(false) }
+    var aborting by remember(sessionKey) { mutableStateOf(false) }
     var notice by remember(sessionKey) { mutableStateOf<String?>(null) }
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -692,28 +693,21 @@ fun LiveSessionScreen(
                         }
                     }
                 }
-                if (busy || owned) Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (busy) {
+                if (busy || running || owned) Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (busy || running) {
                         PulsingDot(MaterialTheme.colorScheme.primary, size = 5.dp)
                         Spacer(Modifier.size(6.dp))
                     }
                     Text(
-                        if (busy) "运行中" else "本机接管中",
+                        if (busy || running) "运行中" else "本机接管中",
                         style = PiType.action,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (running && heldElsewhere) {
+                        Spacer(Modifier.size(6.dp))
+                        Text("其他端控制中", style = PiType.action, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Spacer(Modifier.weight(1f))
-                    MetaAction(
-                        text = "中止",
-                        onClick = {
-                            perform("已请求中止") {
-                                if (live.leases.value.containsKey(sessionKey)) live.abort(sessionKey)
-                                else Result.failure(IllegalStateException("本机已不再持有控制权，未发送中止。"))
-                            }
-                        },
-                        enabled = !busy || owned,
-                        tint = MaterialTheme.colorScheme.error,
-                    )
                 }
                 // Collapse this auxiliary row while not editing; its actions remain in the + menu.
                 if (showComposerTools) Row(
@@ -892,6 +886,16 @@ fun LiveSessionScreen(
                     },
                     onFocusChange = { composerFocused = it },
                     maxHeight = composerMaxHeight,
+                    onAbort = if (running && !heldElsewhere && cachedSnapshot == null) {
+                        {
+                            perform("已请求中止") {
+                                aborting = true
+                                try { live.abort(sessionKey) } finally { aborting = false }
+                            }
+                        }
+                    } else null,
+                    abortEnabled = !busy,
+                    aborting = aborting,
                 ) {
                     Box {
                         var addMenu by remember { mutableStateOf(false) }
