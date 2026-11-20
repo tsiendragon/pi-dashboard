@@ -101,7 +101,9 @@ internal fun NativeActivityCard(
             .joinToString("\n\n")
     }
 
-    var stepsExpanded by remember(activity.id) { mutableStateOf(tools.size <= 4 || status.running) }
+    // The activity card is a summary first: execution steps start folded so a long
+    // turn stays skimmable. The header still carries step/failure/running counts.
+    var stepsExpanded by remember(activity.id) { mutableStateOf(false) }
     var thinkingExpanded by remember(activity.id) { mutableStateOf(false) }
     var promptExpanded by remember(activity.id) { mutableStateOf(false) }
     var replyExpanded by remember(activity.id) { mutableStateOf(false) }

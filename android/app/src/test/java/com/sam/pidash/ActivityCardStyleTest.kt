@@ -53,7 +53,7 @@ class ActivityCardStyleTest {
         ),
     )
 
-    private fun fixture(dark: Boolean = false, scale: Float = 1f, width: Int? = null) {
+    private fun fixture(dark: Boolean = false, scale: Float = 1f, width: Int? = null, activity: LiveActivity = activity()) {
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, scale)) {
                 PiDashTheme(darkTheme = dark) {
@@ -61,7 +61,7 @@ class ActivityCardStyleTest {
                         Column(
                             Modifier.fillMaxWidth().then(if (width != null) Modifier.width(width.dp) else Modifier)
                                 .verticalScroll(rememberScrollState()).padding(12.dp),
-                        ) { NativeActivityCard(activity(), {}) }
+                        ) { NativeActivityCard(activity, {}) }
                     }
                 }
             }
@@ -75,15 +75,23 @@ class ActivityCardStyleTest {
         compose.onNodeWithText("3 步").assertExists()
         compose.onNodeWithText("1 步失败").assertExists()
         compose.onNodeWithText("全部完成").assertDoesNotExist()
-        // Both headers use the same affordance: steps start expanded, thinking starts collapsed.
-        compose.onNodeWithText("收起").assertExists()
-        compose.onNodeWithText("展开").assertExists()
+        // Both headers start folded; the counts and failure pill still summarize the hidden steps.
+        compose.onNodeWithText("收起").assertDoesNotExist()
+        compose.onAllNodesWithText("展开").assertCountEquals(2)
     }
-    @Test fun collapsingStepsHidesEveryRecordedCall() {
+    @Test fun stepsStartCollapsedAndExpandOnDemand() {
         fixture()
+        compose.onAllNodesWithText("bash").assertCountEquals(0)
+        compose.onNodeWithText("执行步骤").performClick()
         compose.onAllNodesWithText("bash").assertCountEquals(2)
         compose.onNodeWithText("执行步骤").performClick()
         compose.onAllNodesWithText("bash").assertCountEquals(0)
+    }
+    @Test fun aRunningActivityAlsoStartsWithStepsCollapsed() {
+        fixture(activity = activity().copy(state = "running"))
+        compose.onAllNodesWithText("bash").assertCountEquals(0)
+        compose.onNodeWithText("执行步骤").performClick()
+        compose.onAllNodesWithText("bash").assertCountEquals(2)
     }
     @Test fun headerScreenshot() {
         fixture(); compose.onRoot().captureRoboImage("src/test/screenshots/activity-card.png")
