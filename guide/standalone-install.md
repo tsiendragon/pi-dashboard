@@ -237,6 +237,8 @@ sudo systemctl disable --now pi-dashboard
 sudo rm /etc/systemd/system/pi-dashboard.service && sudo systemctl daemon-reload
 ```
 
+systemd unit 默认带 `Restart=always`。服务启动后，WebUI 的 Live Pi 右侧栏和 Android Live Pi 会话菜单提供「重启 Dashboard」；它只会向 systemd 托管的进程发送优雅退出请求，不执行 sudo，也不会接受客户端传入的命令。重启会暂时断开所有网页、手机和 WebSocket 连接；手动 `./run.sh` 启动时按钮会明确提示不可用。
+
 ---
 
 ## 6. 扩展清单

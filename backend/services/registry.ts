@@ -29,9 +29,17 @@ export const SERVICES_CONFIG_PATH = join(homedir(), '.pi', 'services.json')
 export const SERVICES_LOG_DIR = join(homedir(), '.pi', 'logs', 'services')
 
 export interface ServiceProbeSpec {
-  url: string
-  /** HTTP statuses that count as healthy. Defaults to every 2xx/3xx. */
+  /** HTTP probe. Exactly one of `url` / `exec` must be set. */
+  url?: string
+  /**
+   * Command probe: argv (no shell), exit code 0 = up, anything else = down and the tail of its
+   * output becomes the error. The only way to watch a service with no HTTP surface (VPN tunnels,
+   * cron workers, CLI health checks).
+   */
+  exec?: string[]
+  /** HTTP statuses that count as healthy. Defaults to every 2xx/3xx. `url` probes only. */
   okStatus?: number[]
+  /** Budget in ms: the HTTP request's deadline, or when the exec child is killed. Defaults to 4000. */
   timeoutMs?: number
 }
 
@@ -129,10 +137,21 @@ export function validateServiceEntry(raw: unknown): string | null {
   }
   if (entry['probe'] !== undefined) {
     const probe = entry['probe'] as Record<string, unknown> | null
-    if (!probe || typeof probe !== 'object' || typeof probe['url'] !== 'string') return `probe.url is required (${entry['id']})`
-    if (!/^https?:\/\//.test(probe['url'] as string)) return `probe.url must be http(s) (${entry['id']})`
+    if (!probe || typeof probe !== 'object' || Array.isArray(probe)) return `probe must be an object (${entry['id']})`
+    const hasUrl = probe['url'] !== undefined
+    const hasExec = probe['exec'] !== undefined
+    if (hasUrl && hasExec) return `probe takes either url or exec, not both (${entry['id']})`
+    if (!hasUrl && !hasExec) return `probe.url or probe.exec is required (${entry['id']})`
+    if (hasUrl) {
+      if (typeof probe['url'] !== 'string') return `probe.url must be a string (${entry['id']})`
+      if (!/^https?:\/\//.test(probe['url'] as string)) return `probe.url must be http(s) (${entry['id']})`
+    }
+    if (hasExec && !isStringArray(probe['exec'])) return `probe.exec must be a non-empty string array (${entry['id']})`
     const ok = probe['okStatus']
-    if (ok !== undefined && (!Array.isArray(ok) || !ok.every(code => Number.isInteger(code)))) return `probe.okStatus must be numbers (${entry['id']})`
+    if (ok !== undefined) {
+      if (!hasUrl) return `probe.okStatus only applies to url probes (${entry['id']})`
+      if (!Array.isArray(ok) || !ok.every(code => Number.isInteger(code))) return `probe.okStatus must be numbers (${entry['id']})`
+    }
     if (probe['timeoutMs'] !== undefined && !Number.isInteger(probe['timeoutMs'])) return `probe.timeoutMs must be an integer (${entry['id']})`
   }
   return null
@@ -189,8 +208,10 @@ export async function probeUrl(spec: ServiceProbeSpec): Promise<ServiceStatus> {
   const started = Date.now()
   const timeoutMs = spec.timeoutMs ?? 4000
   const okStatus = spec.okStatus
+  const url = spec.url
+  if (!url) return { id: '', status: 'unknown', error: 'probe.url missing', checkedAt: nowIso() }
   try {
-    const response = await fetch(spec.url, { signal: AbortSignal.timeout(timeoutMs), redirect: 'manual' })
+    const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), redirect: 'manual' })
     void response.body?.cancel().catch(() => {})
     const latencyMs = Date.now() - started
     const healthy = okStatus ? okStatus.includes(response.status) : response.status >= 200 && response.status < 400
@@ -208,8 +229,69 @@ export async function probeUrl(spec: ServiceProbeSpec): Promise<ServiceStatus> {
   }
 }
 
+/** How much child output we keep before trimming — enough for a one-line reason, not a log dump. */
+const EXEC_OUTPUT_LIMIT = 400
+
+/**
+ * Command probe: exit 0 = up.
+ *
+ * Prefer this over grepping `systemctl is-active` for anything that can be "loaded and green" while
+ * actually broken — a oneshot unit, a VPN whose peer stopped answering. The command is what decides,
+ * so the health check can assert the real thing (a ping down the tunnel) instead of a process table.
+ *
+ * Runs as the dashboard's own uid without a shell: a probe that needs root reports a failure here
+ * rather than escalating, and argv arrays need no quoting.
+ */
+export async function probeExec(argv: string[], timeoutMs = 4000): Promise<Omit<ServiceStatus, 'id'>> {
+  const started = Date.now()
+  if (!isStringArray(argv)) return { status: 'down', error: 'exec probe needs a non-empty string array', checkedAt: nowIso() }
+  return await new Promise(resolve => {
+    let settled = false
+    let timer: NodeJS.Timeout | undefined
+    const done = (result: Omit<ServiceStatus, 'id'>) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      resolve(result)
+    }
+    let child: ReturnType<typeof spawn>
+    try {
+      const [command, ...args] = argv as [string, ...string[]]
+      child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch (error) {
+      return done({ status: 'down', latencyMs: Date.now() - started, error: error instanceof Error ? error.message : String(error), checkedAt: nowIso() })
+    }
+    let output = ''
+    const collect = (chunk: Buffer) => {
+      if (output.length < EXEC_OUTPUT_LIMIT * 4) output += chunk.toString('utf-8')
+    }
+    child.stdout?.on('data', collect)
+    child.stderr?.on('data', collect)
+    timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        /* already gone */
+      }
+      done({ status: 'down', latencyMs: Date.now() - started, error: `probe timed out after ${timeoutMs}ms`, checkedAt: nowIso() })
+    }, timeoutMs)
+    child.once('error', error => {
+      done({ status: 'down', latencyMs: Date.now() - started, error: error.message, checkedAt: nowIso() })
+    })
+    child.once('close', code => {
+      const latencyMs = Date.now() - started
+      if (code === 0) return done({ status: 'up', latencyMs, checkedAt: nowIso() })
+      // `ping` and friends explain themselves on stderr; that sentence is the useful part.
+      const detail = output.split('\n').map(line => line.trim()).filter(Boolean).slice(-3).join(' | ').slice(0, EXEC_OUTPUT_LIMIT)
+      done({ status: 'down', latencyMs, error: `exit ${code === null ? 'signal' : code}${detail ? `: ${detail}` : ''}`, checkedAt: nowIso() })
+    })
+  })
+}
+
 async function probeEntry(entry: ServiceEntry): Promise<ServiceStatus> {
   if (!entry.probe) return { id: entry.id, status: 'unknown', checkedAt: nowIso() }
+  const { exec, timeoutMs } = entry.probe
+  if (exec) return { ...(await probeExec(exec, timeoutMs)), id: entry.id }
   const status = await probeUrl(entry.probe)
   return { ...status, id: entry.id }
 }

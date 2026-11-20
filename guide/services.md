@@ -41,26 +41,55 @@
 | `env` | 否 | 只对该服务追加的环境变量（例如 `PORT`） |
 | `stopPort` | 否 | 停止时按这个端口找监听进程；不写则从 `probe.url` 推 |
 | `startTimeoutMs` | 否 | 启动后等多久算失败，默认 15000。冷启动慢的服务（Python 从共享存储 import）要调大，比如 60000 |
-| `probe` | 否 | 健康探测：`url` + 可选 `okStatus`（默认 2xx/3xx 算健康）、`timeoutMs`（默认 4000） |
+| `probe` | 否 | 健康探测，二选一：`url`（HTTP，可选 `okStatus` 默认 2xx/3xx 算健康）或 `exec`（argv 数组，退出码 0 算健康）；`timeoutMs` 默认 4000，对两者都是硬超时 |
 | `webui` | 否 | 页面地址（通常是 `127.0.0.1`） |
 | `webuiPublic` | 否 | 浏览器能直接打开的地址（网关/域名）；填了优先用它 |
 | `log` | 否 | 日志文件；不写则用 `~/.pi/logs/services/<id>.log` |
 
-没有 `probe` 的条目状态显示「不可探测」（例如纯命令行工具）。
+没有 `probe` 的条目状态显示「不可探测」（例如纯命令行工具）。没有 HTTP 接口但想盯住的服务，用 `probe.exec`，见下一节。
 
 ---
 
 ## 2. 状态怎么来的
 
-每 4 秒（页面可见时）请求一次 `GET /api/services`，后端对每条 `probe.url` 发一次 HTTP 请求，只取状态码，不读响应体。
+每 4 秒（页面可见时）请求一次 `GET /api/services`，后端对每条登记的探测跑一次：`probe.url` 发一次 HTTP 请求只取状态码不读响应体；`probe.exec` 跑一次命令只看退出码。
 
 | 显示 | 含义 |
 |---|---|
-| 在线（绿） | 状态码在 `okStatus` 内（默认 2xx/3xx） |
-| 离线（红） | 请求失败或状态码不符，卡片上给出原因 |
+| 在线（绿） | url 状态码在 `okStatus` 内（默认 2xx/3xx），或 exec 退出码 0 |
+| 离线（红） | 请求失败、状态码不符，或 exec 非 0；卡片上给出原因（exec 会带上命令输出的最后几行） |
 | 不可探测（灰） | 没配 `probe`，或该行是只读条目且没有探测地址 |
 
 **为什么不用进程存活判断**：很多服务的父进程、启动方式各不相同（前台 uvicorn、tmux、nohup），用「接口答不答话」才是用户真正关心的结果。
+
+---
+
+### 2.1 没有 HTTP 接口的服务：`probe.exec`
+
+有些东西没有 `/health` 可打，但照样要盯：VPN 隧道、cron worker、只提供 CLI 的自建工具。这类用 `probe.exec`——**退出码 0 算在线，非 0 算离线**。
+
+以 WireGuard 为例（`wg-quick@wg-pc` 这条是 oneshot 单元，进程早退出了，没有端口也没有 HTTP）：
+
+```json
+{
+  "id": "wireguard",
+  "label": "WireGuard (wg-pc)",
+  "group": "本机网络",
+  "managed": false,
+  "note": "全局隧道；手停: sudo wg-quick down wg-pc",
+  "probe": { "exec": ["ping", "-c1", "-W2", "-I", "wg-pc", "10.8.0.1"], "timeoutMs": 4000 }
+}
+```
+
+为什么是 ping 隧道对端、而不是 `systemctl is-active`：`wg-quick@` 带 `RemainAfterExit=yes`，进程退出后单元照样回 `active`，**对端掉线它也照样绿**。绑 `-I wg-pc` ping 对端隧道地址才是端到端判据，`-I` 同时排除了「从 LAN 直接绕过去」的误判。
+
+规则：
+
+- `exec` 是 **argv 数组**，和 `start`/`stop` 一样不经 shell，不需要转义；管道请写进脚本。
+- 以 **dashboard 自己的用户身份**运行。需要 root 的检查（例如 `wg show` 看握手时间）会稳定报「离线」，不要为此给 dashboard 开 sudo——换一个不依赖 root 的判据。
+- `timeoutMs` 是硬超时，到点直接 `SIGKILL` 并显示 `probe timed out`。所以命令自带的等待要比它短（上面的 `ping -W2` 对 `timeoutMs: 4000`）。
+- `okStatus` 只对 `url` 探测有意义，写在 exec 上会被清单校验拒绝（和 `url`+`exec` 同时出现、`exec: []` 一样，属于读清单时直接报错、页面显示原因）。
+- 不要为了「能点启停」把这类系统服务的 `managed` 设成 `true`：启停要 root，dashboard 无 tty 无法授权，按钮只会失败。
 
 ---
 
@@ -85,7 +114,7 @@
 cd /path/to/pi-dashboard && ./run.sh
 ```
 
-如果以后把 dashboard 交给 systemd 托管，可以再单独加一条「延迟重启」的登记项，不要直接在这里点。
+`pi-dashboard` 这一行仍保持只读，不在 Services 页直接杀掉自身。Dashboard 交给 systemd 托管后，请在 Live Pi 页面使用专用的「重启 Dashboard」按钮；它只请求当前进程优雅退出，由 unit 的 `Restart=always` 拉起新进程，不需要给 dashboard 配置 sudo。
 
 ---
 
@@ -126,4 +155,5 @@ cd /path/to/pi-dashboard && ./run.sh
 | 点启动后报「秒内没有应答」，日志也没有新内容 | 命令本身没跑起来：检查 `start` 路径、`cwd`、环境变量 |
 | 清单读取失败 | JSON 语法错或字段不合法，页面会显示具体原因；修好文件刷新即可 |
 | 某个服务状态一直是「不可探测」 | 它没配 `probe`，或探测地址写错 |
+| `exec` 探测一直是「离线」 | 把那条 argv 在终端**用 dashboard 同一个用户**手跑一遍，看退出码；典型原因是命令要 root、路径不在 `PATH` 里，或 `timeoutMs` 比命令自身的等待还短 |
 | 停止成功但端口还在 | 该进程可能被其他父进程拉起，检查 `stop` 命令是否完整 |

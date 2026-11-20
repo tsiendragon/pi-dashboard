@@ -24,6 +24,7 @@
   - [File Browser & Path Completion](#file-browser--path-completion)
   - [Workspaces](#workspaces)
   - [Package Management & Gallery](#package-management--gallery)
+  - [pi-matrix (read-only)](#pi-matrix-read-only)
   - [Pi Settings](#pi-settings)
   - [Host Sessions (tmux)](#host-sessions-tmux)
   - [Slash Commands](#slash-commands)
@@ -97,6 +98,14 @@ Host system information (CPU, memory, disk, network, process stats).
 }
 ```
 
+#### `POST /api/dashboard/restart`
+
+请求由 systemd 托管的 Dashboard 优雅退出，由 unit 的 `Restart=always` 自动拉起更新后的进程。
+需要 Live Pi 的浏览器认证 Cookie 和同源 `Origin`；手动 `./run.sh` 进程会返回 `409`，不会把服务留在离线状态。
+成功返回 `202`，调用后 WebUI、手机和当前 API/WS 连接会短暂断开。
+
+**Response:** `{ "ok": true, "restarting": true }`
+
 ---
 
 ### Services
@@ -126,7 +135,7 @@ Registry rows plus a live probe result for each. Does not require browser auth.
 }
 ```
 
-`status` is `up` (probe matched `okStatus`, default 2xx/3xx), `down` (failed or unexpected code), or `unknown` (no probe configured). `seeded: true` means the registry file was just created from built-in defaults.
+`status` is `up` (probe matched `okStatus`, default 2xx/3xx; for an `exec` probe: exit code 0), `down` (failed request, unexpected code, or non-zero exit — `error` carries the reason, including the tail of the command's output), or `unknown` (no probe configured). `seeded: true` means the registry file was just created from built-in defaults.
 
 #### `POST /api/services/:id/start` · `stop` · `restart`
 
@@ -961,6 +970,82 @@ Search npm registry for pi packages (keyword: `pi-package`).
   ]
 }
 ```
+
+---
+
+### pi-matrix (read-only)
+
+Read-only proof views for [pi-matrix](https://github.com/tsiendragon/pi-matrix). The Python kernel computes all proof
+status. The routes never append ledger events or start certificate/audit runs. The CLI may create or acquire a project
+transaction lock file; these views do not guarantee compatibility with read-only mounts.
+
+All five routes require the existing Live Pi browser authentication and use `Cache-Control: private, no-store`.
+`slot` and `path` are alternative selectors (`slot` wins). Both resolve to a canonical proof project and enforce the same
+[configured roots](config.md) (see §4.7). A slot cannot grant access to a new root. The service
+runs only its own configured or globally installed kernel, never a checkout selected by the project. A new kernel read
+has a timeout (status/log/solver 15 s, doctor 30 s, board 5 s per project); same-version status calls can share an
+in-flight read. A process-wide limit applies across all five routes.
+
+#### `GET /api/pimatrix/status`
+
+**Query:** `slot=<slotKey>` or `path=<dir>`; optional `refresh=1` to bypass the 4 s cache.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "status": {
+    "project": "pimatrix-cqc-2x3",
+    "ledger": { "events": 36, "head": "sha256:…", "chain_ok": true },
+    "review_rule": { "passes_required": 3, "families_required": 2 },
+    "targets": [{ "id": "T", "status": "open", "tier": "conjecture", "aligned": false, "statement": "…" }],
+    "claims": [],
+    "low_yield": { "flag": false, "events_since_progress": 5, "window": 12 },
+    "warnings": ["target T: statement alignment not confirmed …"]
+  },
+  "meta": { "root": "/home/you/repos/pimatrix-…", "readAt": "…", "elapsedMs": 86, "ledgerStamp": "…", "stale": false, "busy": false }
+}
+```
+
+When the kernel is busy (a long `certify`/`audit` holds the ledger transaction lock), the last cached value is returned
+with `meta.stale=true` and `meta.busy=true`; if there is no cached value the route returns **503** with
+`code: "kernel_busy"`. A saturated kernel process pool has the same behavior. If the ledger changes during a status
+read, the response is marked stale and is not stored as a fresh snapshot.
+
+#### `GET /api/pimatrix/log`
+
+**Query:** `slot` or `path`; optional `last` (1–200, default 50).
+
+Projects the ledger to `{seq, ts, type, claim?, route?, verdict?, adapter?, outcome?, model?, family?, summary, detail?}`.
+Large `findings`/`statement`/`quote` fields are already trimmed by `pimatrix log`.
+
+#### `GET /api/pimatrix/solver`
+
+**Query:** `slot` or `path`, plus `run=<solver-run-id>`.
+
+Returns a trimmed `pimatrix solve-run show` record (phase, stop reason, budget/used counters, operation count,
+remaining obligations, certificate verdict). The candidate source is intentionally omitted. An unknown run id is a 404
+(`solver_run_not_found`); a timeout or missing runtime is a 503 (`kernel_busy`/`kernel_unavailable`).
+
+#### `GET /api/pimatrix/projects`
+
+Scans `pimatrix.roots` from `~/.pi/dashboard.json` and `PIMATRIX_PROJECT_ROOTS`. If neither configures roots, falls back
+to registered `repos` and `liveSessions.repoRoots`. A root may be a proof project or a directory whose immediate children
+are proof projects. Symlinked child directories are not scanned; their real projects can be configured explicitly.
+Returns compact summaries plus `kernel` (`packageRoot`, `python`) and the scanned `roots`. `refresh=1` skips completed
+status cache entries.
+
+#### `GET /api/pimatrix/doctor`
+
+Runs `pimatrix doctor` and returns its JSON plus `kernel` and `meta` (read time, elapsed). A capability failure (missing
+Lean/mathlib/sympy) is a successful diagnostic response with `doctor.ok=false`; only a timeout or missing runtime is a
+503 (also returned when the process pool is saturated). Successful reports are cached for 60 s; `refresh=1` bypasses
+completed results. `doctor.ok` covers the Python core only — Lean/mathlib/provider-role status
+is under `doctor.capabilities`.
+
+**Errors:** `{ "ok": false, "error": "…", "code": "not_a_pimatrix_project" | "path_not_found" | "kernel_busy" | … }`.
+An unauthenticated same-origin request returns **401**; a rejected origin or a project outside the configured roots
+returns **403** (`project_not_allowed` for the project check).
 
 ---
 

@@ -133,7 +133,12 @@ export default function ToolCallBlock({ content, meta, onFileOpen, slotKey, defa
 
   // If a plugin claims this tool, render via ToolRendererSlot
   if (pluginClaimed) {
-    const toolInput = args ? (() => { try { return JSON.parse(args) } catch { return {} } })() : {}
+    const toolInput = args ? (() => {
+      try {
+        const parsed = JSON.parse(args)
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+      } catch { return {} }
+    })() : {}
     return <ToolRendererSlot toolName={toolName} toolInput={toolInput} toolResult={result} partialResult={partialResult} isRunning={isRunning} isError={isError} sessionId={slotKey || ''} />
   }
 

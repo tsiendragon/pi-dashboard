@@ -53,6 +53,9 @@
       }
     ]
   },
+  "pimatrix": {
+    "roots": ["/home/you/repos"]
+  },
   "vault": {
     "path": "/home/you/notes",
     "dirs": {

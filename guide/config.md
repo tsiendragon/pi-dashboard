@@ -135,6 +135,9 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `CLAUDE_CONFIG_DIR` | Token Cost 读取 Claude Code 额度时查找 OAuth 登录文件的目录 | `~/.claude` |
 | `PI_DASH_LIVE_SESSION_GROUPS` / `PI_DASH_LIVE_SESSION_META` / `PI_DASH_LIVE_SESSION_ORDER` | live session 分组/元数据/排序文件 | 默认 `<agent dir>/pi/live-session-*.json` |
 | `PI_TASK_JOURNAL_ROOT` | 任务日志仓库根（可选，覆盖 `tasks.journal.roots`） | 默认空：**纯配置驱动**，不探测固定路径 |
+| `PIMATRIX_PYTHON` | pi-matrix Python 内核使用的解释器；dashboard 的 `/api/pimatrix/*` 和 pi 的 `proof_*` 工具都读它 | `<pi-matrix>/verifier/.venv/bin/python` → `python3` |
+| `PIMATRIX_PACKAGE` | pi-matrix 本地 checkout 路径（未设置时从全局 Pi settings、`~/repos/pi_matrix` 探测；不读取项目 settings） | 自动探测 |
+| `PIMATRIX_PROJECT_ROOTS` | 证明项目根列表（`:` 分隔），用于 Proof 看板扫描和 API 项目访问校验 | 空：用 `pimatrix.roots`；未配置专用根时回退到 `repos` / live roots |
 | `PI_DASH_TIMING_REFRESH_MS` | 计时账本刷新间隔 | 内置默认 |
 | `PI_DASH_TOOL_APPROVAL` | 工具审批策略 | 内置默认 |
 | `PI_DASH_LIVE_START_TIMEOUT_MS` | live session 启动超时 | 内置默认 |
@@ -581,6 +584,28 @@ System 页的「Vault / 日常笔记」卡片从这里读：只统计各子目�
 启用控制前，后端必须在 `$HOME/.pi-dashboard-private/`（当前用户所有、严格 `0700`、家目录不得被组/其他用户写入）初始化 `machine-input-replay.json`；它与独占运行锁 `.lock` 均为当前用户所有的 `0600` 普通文件。文件仅保存 clientId + UUID 的 SHA-256 摘要，不保存输入文本、原始标识或凭证。每次输入在交给 Pi 之前，先写临时文件并 fsync、原子替换且 fsync 父目录；同一 ID（即使修改内容）永远视为不确定，不自动重试或清理。最多 100000 条，不淘汰；满额、文件损坏、权限/所有者不安全、符号链接或磁盘错误均拒绝新输入（启动时无法初始化则关闭出站连接）。崩溃留下的 `.lock` 需要管理员确认进程已退出并检查文件后手动处理；不要删除 replay 文件或把它暴露给 HTTP/日志。备份/迁移必须保留该文件及其权限，否则旧 ID 可能再次执行。
 
 连接接受已认证 hub 的 `list_sessions` 请求，只返回最多 50 条来自 live-session registry 的 `processInstanceId`、`sessionId`、`status`（idle/running/reconnecting），不传 cwd、pid、文件名、模型、claim 或消息。认证完成后还允许固定结构的远程会话声明、释放和短文本输入；机器侧验证目标及租约，输入超时或重复请求不自动重试，断链时尽可能释放该连接的远程租约。仅可读取选中会话最近最多 8 条已完成用户/助手纯文本的受限预览，不提供完整 transcript、工具输出、路径/图片，也不会代理 HTTP 或执行任意 Pi 命令。WSS 证书验证保持启用；连接失败会持续按最多 30 秒的有界退避重连；关闭 dashboard 会停止重连。配置文件存在时，服务启动前强制要求 `PI_DASH_HOST=127.0.0.1`，否则拒绝启动，避免工作机暴露 Dashboard 入站端口。参见 [dashboard.md](dashboard.md)。
+
+### 4.7 `pimatrix`：证明项目看板扫描范围（可选）
+
+```json
+{
+  "pimatrix": {
+    "roots": ["/home/you/repos"]
+  }
+}
+```
+
+| 字段 | 作用 |
+|---|---|
+| `roots` | Proof 看板（`/plugin/proof`）及 `/api/pimatrix/*` 项目访问范围。每个 root 可以是单个证明项目，或包含证明项目的直接父目录（只下一层，不递归）。不会扫描符号链接子目录；可显式配置其真实目标。 |
+
+`pimatrix.roots` 和 `PIMATRIX_PROJECT_ROOTS` 可合用；没有配置专用根时回退到 `repos` 和 `liveSessions.repoRoots`，`roots: []` 则关闭回退。chat slot 的 cwd 不会自动授权。请只纳入服务信任的项目目录。Proof API 使用现有 Live Pi 浏览器认证；未认证时先在 Live Pi 或终端面板完成一次认证。
+
+看板不追加 ledger 事件，也不运行 certify/audit；状态由 Python 内核计算。CLI 读操作仍可能创建或等待事务锁文件，因此不承诺支持只读挂载。内核繁忙时，如有缓存会标记过期；没有缓存则显示错误。
+
+Dashboard 不读取项目 `.pi/settings.json` 来选择 Python 内核。默认从全局 Pi settings 或 `~/repos/pi_matrix` 找 checkout 和它的 `verifier/.venv`。可以在 `dashboard.env` 用 `PIMATRIX_PACKAGE` 固定受信 checkout，或用 `PIMATRIX_PYTHON` 指定兼容的 Python（>=3.11）；显式 checkout 无效时不会回退。改完环境配置后由你重启 dashboard。
+
+pi-matrix 本身是 pi 包/扩展，不是 dashboard 插件：全局装一次可以用 `pi install /home/you/repos/pi_matrix`，也可以只在证明项目的 `.pi/settings.json` 里引用同一个绝对路径。同一个绝对路径全局和项目都写不会重复注册；引用两个不同 checkout 会重复注册 `proof_*` 工具。看板/内核与扩展也应指向同一个 checkout；`PIMATRIX_PACKAGE` 指向别处时可能出现内核与扩展版本不一致。
 
 ## 5. 为什么配置仍「分散」（统一策略）
 

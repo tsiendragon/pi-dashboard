@@ -18,6 +18,7 @@ import * as piEnv from '../pi-env.js'
 import * as memoryStore from '../memory-store.js'
 import * as memoryDrafts from '../memory-drafts.js'
 import { readMachineLoad } from '../machine-load.js'
+import { createDashboardRestartControl } from '../dashboard-restart.js'
 
 const execAsync = promisify(exec)
 const PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || join(os.homedir(), '.pi', 'agent')
@@ -29,6 +30,7 @@ function getDashboardToken(): string {
 
 export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserAuth): void {
   const { app, manager } = deps
+  const dashboardRestart = createDashboardRestartControl()
 
   app.get('/api/status', (_req: Request, res: Response) => res.json(manager.status()))
 
@@ -41,6 +43,33 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
     } catch {
       res.status(500).json({ error: 'machine_load_unavailable', message: '无法读取机器负载' })
     }
+  })
+
+  app.post('/api/dashboard/restart', (req: Request, res: Response) => {
+    if (!auth) {
+      res.status(503).json({ ok: false, error: 'auth_unavailable' })
+      return
+    }
+    requireBrowserAuth(auth)(req, res, () => {
+      if (!dashboardRestart.supported) {
+        res.status(409).json({
+          ok: false,
+          error: 'dashboard_restart_requires_systemd',
+          message: '当前 Dashboard 不是由 systemd 托管，网页按钮不会让它自动回来。',
+        })
+        return
+      }
+      if (!dashboardRestart.request()) {
+        res.status(409).json({
+          ok: false,
+          error: 'dashboard_restart_in_progress',
+          message: 'Dashboard 已经在重启队列中。',
+        })
+        return
+      }
+      res.setHeader('Cache-Control', 'no-store')
+      res.status(202).json({ ok: true, restarting: true })
+    })
   })
 
   // iOS / mobile connection info — returns token so the iOS app can be configured

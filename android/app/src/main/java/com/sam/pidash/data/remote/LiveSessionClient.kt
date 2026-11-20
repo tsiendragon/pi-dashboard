@@ -159,6 +159,12 @@ class LiveSessionClient(
         pidashJson.decodeFromJsonElement(LiveSessionTree.serializer(), get("/api/session-tree?file=$query"))
     }
 
+    /** Requests a graceful Dashboard restart; systemd brings the updated process back. */
+    suspend fun restartDashboard() = withContext(Dispatchers.IO) {
+        post("/api/dashboard/restart")
+        Unit
+    }
+
     suspend fun organization(): LiveOrganization {
         val groups = decodeGroups(get("/api/live-session-groups"))
         val order = pidashJson.decodeFromJsonElement(LiveOrder.serializer(), get("/api/live-session-order"))

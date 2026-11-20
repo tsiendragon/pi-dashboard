@@ -53,7 +53,7 @@ const QUICK_PROMPTS: { id: string; label: string; text: string; icon: LineIconNa
 
 type FeatureKind = 'btw' | 'schedule' | 'subagent' | 'commands' | 'prompts'
 const FEATURE_ICON: Record<FeatureKind, LineIconName> = { prompts: 'bolt', btw: 'bubble', schedule: 'clock', subagent: 'flow', commands: 'terminal' }
-const ACTION_ICON = { interrupt: 'stop', goal: 'target', compact: 'compress', reload: 'refresh', clear: 'trash' } as const satisfies Record<string, LineIconName>
+const ACTION_ICON = { interrupt: 'stop', goal: 'target', compact: 'compress', reload: 'refresh', clear: 'trash', dashboardRestart: 'repeat' } as const satisfies Record<string, LineIconName>
 
 function Feature({ title, icon, count, children }: { title: string; icon: FeatureKind; count?: number; children: React.ReactNode }) {
   return <details className="group relative w-full shrink-0 [&>summary::-webkit-details-marker]:hidden">
@@ -87,7 +87,7 @@ function SessionAction({ label, icon, disabled, danger, onClick, title, badge, d
   </button>
 }
 
-export default function LiveSessionFeatures({ features, busy, cwd, status, contextUsage, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, goal, goalLoaded = true, onGoalSync, onGoalPause, onGoalResume, onGoalClear, goalBusy = false, onCompact, onClear, onReload, onAbort, onSendPrompt }: {
+export default function LiveSessionFeatures({ features, busy, cwd, status, contextUsage, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, goal, goalLoaded = true, onGoalSync, onGoalPause, onGoalResume, onGoalClear, goalBusy = false, onCompact, onClear, onReload, onAbort, onSendPrompt, onRestartDashboard }: {
   features: Record<string, unknown>
   busy?: boolean
   cwd?: string
@@ -123,6 +123,8 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, conte
   onAbort: () => void
   /** Send one of the quick prompts to the session as a normal user message. */
   onSendPrompt: (text: string) => void
+  /** Restart the whole Dashboard through its systemd supervisor. */
+  onRestartDashboard?: () => Promise<void>
 }) {
   const btw = record(features.btw)
   const schedule = record(features.schedule)
@@ -183,6 +185,9 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, conte
   }, [conversation.length, btwActivity])
   const [filesOpen, setFilesOpen] = useState(false)
   const [goalOpen, setGoalOpen] = useState(false)
+  const [dashboardRestartOpen, setDashboardRestartOpen] = useState(false)
+  const [dashboardRestartBusy, setDashboardRestartBusy] = useState(false)
+  const [dashboardRestartError, setDashboardRestartError] = useState('')
   const goalProgress = goalProgressOf(goal)
   /* The goal keeps working in the background (the extension re-queues it on an
      interval), so its rail button carries the state: an active goal pulses,
@@ -204,6 +209,19 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, conte
       : goalProgress?.status === 'complete'
         ? { tone: 'ok' as const, pulse: false, hint: '目标已完成' }
         : undefined
+  const requestDashboardRestart = async () => {
+    if (!onRestartDashboard || dashboardRestartBusy) return
+    setDashboardRestartBusy(true)
+    setDashboardRestartError('')
+    try {
+      await onRestartDashboard()
+      setDashboardRestartOpen(false)
+    } catch (error) {
+      setDashboardRestartError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setDashboardRestartBusy(false)
+    }
+  }
   const goalBadge = goalProgress && goalProgress.total > 0
     ? {
       text: `${goalProgress.done}/${goalProgress.total}`,
@@ -369,6 +387,35 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, conte
           The action is recoverable — the old conversation stays in its file. */}
       {status === 'running' && <SessionAction label="中止" icon="interrupt" danger disabled={busy} onClick={onAbort} title="中止当前回合：Pi 会停下来，已完成的步骤保留（不是可恢复的暂停）" />}
       <SessionAction label="清空" icon="clear" danger disabled={busy} onClick={onClear} title={status !== 'idle' ? '点击即开始新的空会话（会等这一轮结束后自动切换；旧对话保留在文件中）' : '点击即开始新的空会话（旧对话保留在文件中）'} />
+      {onRestartDashboard && <>
+        <div className="my-1.5 h-px w-5 bg-border" />
+        <SessionAction
+          label="重启 Dashboard"
+          icon="dashboardRestart"
+          danger
+          disabled={busy || dashboardRestartBusy}
+          onClick={() => { setDashboardRestartError(''); setDashboardRestartOpen(true) }}
+          title="重启整个 Dashboard；网页和手机会短暂断开，由 systemd 自动拉起"
+        />
+      </>}
+
+    {dashboardRestartOpen && <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dashboard-restart-title"
+      onClick={() => { if (!dashboardRestartBusy) setDashboardRestartOpen(false) }}
+    >
+      <div className="w-full max-w-sm rounded-xl border border-border bg-card p-5 shadow-2xl" onClick={event => event.stopPropagation()}>
+        <h2 id="dashboard-restart-title" className="text-sm font-semibold text-text-strong">重启 Dashboard？</h2>
+        <p className="mt-2 text-body-s leading-relaxed text-muted">网页、手机和当前会话连接会暂时断开。只有由 systemd 托管且设置了 <code className="font-mono text-2xs">Restart=always</code> 时，服务才会自动回来；正在进行的操作可能被中断。</p>
+        {dashboardRestartError && <p className="mt-2 rounded-md bg-danger-subtle px-2.5 py-2 text-body-s text-danger" role="alert">重启失败：{dashboardRestartError}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" disabled={dashboardRestartBusy} className="rounded-md border border-border px-3 py-1.5 text-body-s text-muted hover:bg-bg-hover disabled:opacity-50" onClick={() => setDashboardRestartOpen(false)}>取消</button>
+          <button type="button" disabled={dashboardRestartBusy} className="rounded-md bg-danger px-3 py-1.5 text-body-s font-medium text-danger-fg hover:opacity-90 disabled:opacity-50" onClick={() => void requestDashboardRestart()}>{dashboardRestartBusy ? '正在重启…' : '确认重启'}</button>
+        </div>
+      </div>
+    </div>}
 
     {goalOpen && <GoalAnchorDialog
       goal={goal ?? null}

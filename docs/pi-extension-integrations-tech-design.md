@@ -20,7 +20,7 @@ Extension runtime
 
 The implementation does not depend on `pi-conductor`, does not rename existing tools, and does not modify Pi core.
 
-Runtime prerequisite: dashboard and the loaded extensions must use `@earendil-works/pi-coding-agent >= 0.84.2`. Workbench uses APIs and TUI components unavailable in the dashboard's former `0.80.3` host, so the dashboard dependency is pinned to `0.84.2`.
+Runtime prerequisite: dashboard and the loaded extensions must use `@earendil-works/pi-coding-agent >= 0.84.2`. Workbench uses APIs and TUI components unavailable in the dashboard's former `0.80.3` host. The dashboard dependency now follows the fork release pinned by `package.json` (currently `0.85.1-tsien.1`) so it matches the installed pi host; see `guide/pi-runtime.md` §5.
 
 RPC deployment prerequisite: the effective Pi extension graph must not contain duplicate tool/flag registrations. Pi RPC intentionally exits on any extension load error. Duplicate standalone and integrated Goal/Memory packages therefore block the whole RPC child before any bridge feature can attach; SDK mode contains those diagnostics and can continue with successfully loaded extensions.
 

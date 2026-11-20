@@ -134,8 +134,8 @@ fun LiveSessionScreen(
     val detail = details[sessionKey]
     val summary = detail?.summary ?: aggregate?.summary
     val owned = leases.containsKey(sessionKey)
-    val running = summary?.status == "running"
     val heldElsewhere = summary?.claim?.state == "claimed" && !owned
+    val sessionRunning = cachedSnapshot == null && summary?.status == "running"
     val timeline = remember(detail) { detail?.let { projectLiveTimeline(it) }.orEmpty() }
     val scope = rememberCoroutineScope()
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
@@ -266,7 +266,7 @@ fun LiveSessionScreen(
     val goalActionsEnabled = cachedSnapshot == null && summary?.status != "reconnecting"
     val activities = remember(detail) { detail?.let { projectLiveActivities(it) }.orEmpty() }
     val currentActivity = activities.lastOrNull()
-    val currentOperation = if (running && cachedSnapshot == null) {
+    val currentOperation = if (sessionRunning) {
         currentActivity?.let(::runningOperationStatus)
     } else null
     val runningTool = remember(currentActivity) {
@@ -625,6 +625,12 @@ fun LiveSessionScreen(
                                     enabled = !busy && if (id == "reload") summary?.status != "reconnecting" else !heldElsewhere,
                                     onClick = { menu = false; notice = null; dialog = id },
                                 ) }
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("重启 Dashboard…", color = MaterialTheme.colorScheme.error) },
+                                enabled = !busy,
+                                onClick = { menu = false; notice = null; dialog = "restart-dashboard" },
+                            )
                             DropdownMenuItem(text = { Text("尚未支持的 WebUI 功能") }, onClick = { menu = false; notice = null; dialog = "remaining" })
                         }
                     }
@@ -713,12 +719,12 @@ fun LiveSessionScreen(
                 }
                 val liveLine = operationText ?: when {
                     busy -> "处理中…"
-                    running -> "运行中…"
+                    sessionRunning -> "运行中…"
                     owned -> "本机接管中"
                     else -> null
                 }
                 if (liveLine != null) Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (busy || running) {
+                    if (sessionRunning || busy) {
                         PulsingDot(MaterialTheme.colorScheme.primary, size = 5.dp)
                         Spacer(Modifier.size(6.dp))
                     }
@@ -731,7 +737,7 @@ fun LiveSessionScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (running && heldElsewhere) {
+                    if (sessionRunning && heldElsewhere) {
                         Spacer(Modifier.size(6.dp))
                         Text("其他端控制中", style = PiType.action, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -913,7 +919,7 @@ fun LiveSessionScreen(
                     },
                     onFocusChange = { composerFocused = it },
                     maxHeight = composerMaxHeight,
-                    onAbort = if (running && !heldElsewhere && cachedSnapshot == null) {
+                    onAbort = if (sessionRunning && !heldElsewhere) {
                         {
                             perform("已请求中止") {
                                 aborting = true
@@ -1379,6 +1385,38 @@ fun LiveSessionScreen(
             )
             "context", "tree" -> LiveInspectionDialog(repo, sessionKey, dialog == "context", dismiss)
             "audit" -> LiveAuditDialog(live, sessionKey, dismiss)
+            "restart-dashboard" -> AlertDialog(
+                shape = Radii.sheet,
+                onDismissRequest = { dismiss() },
+                title = { Text("重启 Dashboard？", style = PiType.pageTitle) },
+                text = {
+                    Text(
+                        "网页、手机和所有会话连接会暂时断开。仅当 Dashboard 由 systemd 托管且设置了 Restart=always 时，服务才会自动回来；正在进行的操作可能被中断。",
+                        style = PiType.footnote,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !busy,
+                        onClick = {
+                            busy = true
+                            notice = null
+                            scope.launch {
+                                val result = live.restartDashboard(sessionKey.backendId)
+                                busy = false
+                                result.fold(
+                                    onSuccess = {
+                                        dialog = null
+                                        notice = "Dashboard 正在重启，连接会自动恢复"
+                                    },
+                                    onFailure = { error -> notice = "重启失败：${error.message ?: "请求未成功"}" },
+                                )
+                            }
+                        },
+                    ) { Text("确认重启", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(enabled = !busy, onClick = { dismiss() }) { Text("取消") } },
+            )
             "compact", "reload", "restart", "fork" -> {
                 val action = dialog
                 val label = when (action) { "compact" -> "压缩上下文"; "reload" -> "重载扩展"; "restart" -> "重启 Pi 进程"; else -> "从此用户消息分叉" }
