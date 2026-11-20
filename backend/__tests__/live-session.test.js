@@ -82,7 +82,7 @@ describe('LiveSession path/config policy', () => {
 
   it('defaults to no roots and fails closed for invalid config', () => {
     expect(parseLiveSessionConfig(undefined)).toMatchObject({
-      enabled: true,
+      enabled: false,
       roots: [],
       repoRoots: [],
       claimMode: 'on-first-input',

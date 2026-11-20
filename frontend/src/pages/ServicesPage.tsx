@@ -25,7 +25,7 @@ interface ServiceRow {
   note?: string
   cwd?: string
   stopPort?: number
-  probe?: { url: string; okStatus?: number[]; timeoutMs?: number }
+  probe?: { url?: string; exec?: string[]; okStatus?: number[]; timeoutMs?: number }
   webui?: string
   webuiPublic?: string
   logPath?: string

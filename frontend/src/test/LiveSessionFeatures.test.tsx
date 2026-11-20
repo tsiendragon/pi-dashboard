@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import LiveSessionFeatures from '../features/live-sessions/LiveSessionFeatures'
 
@@ -324,6 +324,19 @@ describe('LiveSessionFeatures', () => {
     const goal = screen.getByRole('button', { name: /任务锚点：已暂停/ })
     expect(goal).toHaveAttribute('data-goal-state', 'paused')
     expect(goal.querySelector('.animate-pulse')).toBeNull()
+  })
+
+  it('requires confirmation before requesting a Dashboard restart', async () => {
+    const onRestartDashboard = vi.fn().mockResolvedValue(undefined)
+    renderFeatures({ onRestartDashboard })
+
+    fireEvent.click(screen.getByRole('button', { name: /重启整个 Dashboard/ }))
+    const dialog = screen.getByRole('dialog', { name: '重启 Dashboard？' })
+    expect(within(dialog).getByText(/网页、手机和当前会话连接会暂时断开/)).toBeInTheDocument()
+    expect(onRestartDashboard).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认重启' }))
+    await waitFor(() => expect(onRestartDashboard).toHaveBeenCalledOnce())
   })
 
   it('keeps 清空 clickable while the session works', () => {

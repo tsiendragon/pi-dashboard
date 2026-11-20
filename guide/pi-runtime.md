@@ -108,6 +108,12 @@ live session 走的是另一条链：`~/.pi/dashboard.json` 的 `liveSessions.la
 - 切换 dashboard 用的 pi：改 `<agent dir>/dashboard.env` 的 `PI_SCRIPT`，重启 dashboard。
 - 切换 live session 用的 pi：改 `~/.pi/dashboard.json` 的 `launch.command`。
 
+`backend` 自己也有 npm 依赖（`SessionManager` / SDK 路径）：`package.json` 里的
+`@earendil-works/pi-coding-agent` 和它同级的 `chord`、`pi-agent-core`、`pi-ai`、`pi-telemetry`、`pi-tui`
+直接锁同一个 Release 的 tgz，**必须和宿主的 fork 版本同步升级**。上游 npm 的同号版本（如 `0.85.1`）
+缺少 fork 增补的导出（例如 `pi-ai` 的 `retryDelayMs`），混装会让 backend 在导入时直接报
+`does not provide an export named ...`。`npm install` / `npm ci` 需要能访问 GitHub Release 资产。
+
 ---
 
 ## 6. 验证

@@ -24,6 +24,7 @@ import com.sam.pidash.ui.common.MetaText
 import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.common.backendOriginLabel
 import com.sam.pidash.ui.theme.PiType
+import com.sam.pidash.ui.theme.Radii
 import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
 import kotlinx.coroutines.launch
@@ -36,7 +37,11 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
     val states by repo.live.backendStates.collectAsState()
     val chat by repo.connection.collectAsState()
     val scope = rememberCoroutineScope()
-    Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
+    val snackbarHostState = remember { SnackbarHostState() }
+    var restartTargetId by remember { mutableStateOf<String?>(null) }
+    var restartingBackendId by remember { mutableStateOf<String?>(null) }
+    var restartError by remember { mutableStateOf<String?>(null) }
+    Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snackbarHostState) }, topBar = {
         CompactPageHeader(title = "机器 / Dashboard", actions = {
             CompactHeaderAction(Icons.Default.Refresh, "刷新机器状态") { scope.launch { repo.live.refreshAll() } }
             CompactHeaderAction(Icons.Default.Settings, "管理机器", onSettings)
@@ -95,6 +100,15 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
                             ),
                             maxLines = 2,
                         )
+                        TextButton(
+                            onClick = { restartTargetId = backend.id; restartError = null },
+                            enabled = restartingBackendId == null,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (restartingBackendId == backend.id) "正在重启…" else "重启 Dashboard")
+                        }
                         when {
                             state?.needsToken == true -> MetaText(
                                 "进入此 Dashboard 后用网页的一次性配对码配对。",
@@ -107,5 +121,42 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
                 }
             }
         }
+    }
+    val restartTarget = backends.firstOrNull { it.id == restartTargetId }
+    if (restartTarget != null) {
+        AlertDialog(
+            shape = Radii.sheet,
+            onDismissRequest = { if (restartingBackendId == null) restartTargetId = null },
+            title = { Text("重启 ${restartTarget.name}？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("网页、手机和该 Dashboard 上的所有会话连接会暂时断开。仅当服务由 systemd 托管且配置了 Restart=always 时才会自动恢复。")
+                    Text("需要此机器已完成 Live 授权；正在进行的操作可能被中断。")
+                    restartError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = restartingBackendId == null,
+                    onClick = {
+                        restartingBackendId = restartTarget.id
+                        restartError = null
+                        scope.launch {
+                            repo.live.restartDashboard(restartTarget.id).fold(
+                                onSuccess = {
+                                    restartTargetId = null
+                                    snackbarHostState.showSnackbar("Dashboard 正在重启；连接会短暂断开")
+                                },
+                                onFailure = { error -> restartError = error.message ?: "重启请求失败" },
+                            )
+                            restartingBackendId = null
+                        }
+                    },
+                ) { Text(if (restartingBackendId != null) "正在请求…" else "确认重启", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(enabled = restartingBackendId == null, onClick = { restartTargetId = null }) { Text("取消") }
+            },
+        )
     }
 }

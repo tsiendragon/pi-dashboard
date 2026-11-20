@@ -3273,6 +3273,7 @@ export default function LiveSessionPage() {
                   onReload={() => { void reload().catch(() => {}) }}
                   onAbort={() => { void abort().catch(() => {}) }}
                   onSendPrompt={text => { void submit(text) }}
+                  onRestartDashboard={() => liveSessionApi.restartDashboard()}
                 />
               </div>
             </div>

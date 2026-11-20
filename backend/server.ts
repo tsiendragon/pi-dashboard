@@ -44,6 +44,7 @@ import {
   registerSubagentModelsRoutes,
   registerPiExtWriteRoutes,
   registerPiExtPackagesRoutes,
+  registerPimatrixRoutes,
   type LiveSessionRoutes,
 } from './routes/index.js'
 import { extensionBridgeRegistry } from './extension-bridge/registry.js'
@@ -1028,6 +1029,7 @@ if (!process.env.VITEST) void supervisorRuntime.boot().catch(error => console.er
 registerVoiceRoutes({ app })
 registerMemeRoutes({ app, auth: liveSessionAuth })
 registerServiceRoutes({ app, auth: liveSessionAuth })
+registerPimatrixRoutes(routeDeps, liveSessionAuth)
 registerLarkRoutes(app)
 void liveSessionAuth.start().then(() => {
   console.log(`[pty] Terminal control token: ${liveSessionAuth.tokenPath}`)

@@ -63,6 +63,9 @@ export const liveSessionApi = {
    */
   reloadAll: () => post<{ ok: true; result: LiveSessionReloadResult }>('/api/live-sessions/reload', {})
     .then(result => result.result),
+  /** Ask the systemd-supervised Dashboard process to exit gracefully; systemd starts it again. */
+  restartDashboard: () => post<{ ok: true; restarting: true }>('/api/dashboard/restart', {})
+    .then(() => undefined),
   list: () => fetch('/api/live-sessions', { credentials: 'same-origin' })
     .then(json<{ sessions: LiveSessionSummary[]; browserClientId?: string }>),
   /** Directories under `liveSessions.repoRoots` the start field may suggest by keyword. */

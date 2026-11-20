@@ -80,7 +80,7 @@ function parseLaunch(value: unknown): LivePiLaunchConfig {
 }
 
 export function parseLiveSessionConfig(value: unknown): LiveSessionConfig {
-  if (value === undefined) return { ...DEFAULT_LIVE_SESSION_CONFIG, roots: [...DEFAULT_LIVE_SESSION_CONFIG.roots], repoRoots: [...DEFAULT_LIVE_SESSION_CONFIG.repoRoots] }
+  if (value === undefined) return { ...DEFAULT_LIVE_SESSION_CONFIG, enabled: false, roots: [...DEFAULT_LIVE_SESSION_CONFIG.roots], repoRoots: [...DEFAULT_LIVE_SESSION_CONFIG.repoRoots] }
   const input = record(value)
   if (!input) return { ...DEFAULT_LIVE_SESSION_CONFIG, enabled: false, roots: [], repoRoots: [] }
   const enabled = input.enabled === undefined ? true : input.enabled === true

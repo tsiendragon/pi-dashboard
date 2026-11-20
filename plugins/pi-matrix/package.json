@@ -1,0 +1,35 @@
+{
+  "name": "pi-matrix-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "pi-dashboard-plugin": {
+    "id": "pi-matrix",
+    "name": "Pi Matrix",
+    "description": "Read-only proof board, ledger status and rich renderers for the pi-matrix proof_* tools",
+    "client": "src/client.tsx",
+    "claims": [
+      { "slot": "tool-renderer", "componentName": "ProofStatusRenderer", "toolName": "proof_status", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofClaimRenderer", "toolName": "proof_claim", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofSubmitRenderer", "toolName": "proof_submit", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofProveRenderer", "toolName": "proof_prove", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofReviewRenderer", "toolName": "proof_review", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofCertifyRenderer", "toolName": "proof_certify", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofAuditRenderer", "toolName": "proof_audit", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofSolveRenderer", "toolName": "proof_solve", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofSolveStatusRenderer", "toolName": "proof_solve_status", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofLeanRenderer", "toolName": "proof_lean_check", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofLeanRenderer", "toolName": "proof_lean_search", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofSearchRenderer", "toolName": "proof_counterexample_search", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofSearchRenderer", "toolName": "proof_sos_search", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofCiteRenderer", "toolName": "proof_cite", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofCiteCheckRenderer", "toolName": "proof_cite_check", "priority": 40 },
+      { "slot": "tool-renderer", "componentName": "ProofAttemptRenderer", "toolName": "proof_attempt", "priority": 40 },
+      { "slot": "system-message-renderer", "componentName": "PimatrixStatusMessage", "customType": "pimatrix-status", "priority": 40 },
+      { "slot": "system-message-renderer", "componentName": "PimatrixCheckMessage", "customType": "pimatrix-check", "priority": 40 },
+      { "slot": "status-bar", "componentName": "ProofStatusBar", "priority": 40 },
+      { "slot": "sidebar-panel", "componentName": "ProofSidebarPanel", "priority": 40 },
+      { "slot": "command-route", "componentName": "ProofOverviewPage", "command": "proof", "priority": 40 },
+      { "slot": "settings-section", "componentName": "ProofSettings", "tab": "extensions", "priority": 40 }
+    ]
+  }
+}

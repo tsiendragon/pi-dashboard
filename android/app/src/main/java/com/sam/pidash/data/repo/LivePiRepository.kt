@@ -785,6 +785,11 @@ class LivePiRepository(
         _leases.update { it - key }; reconcile(key.backendId)
         response["result"]?.jsonObject?.get("processInstanceId")?.jsonPrimitive?.contentOrNull?.let { SessionKey(key.backendId, it) }
     } }
+
+    /** Restarts the whole Dashboard process through its systemd supervisor. */
+    suspend fun restartDashboard(backendId: String): Result<Unit> = result {
+        client(backendId).restartDashboard()
+    }
     suspend fun fork(key: SessionKey, entryId: String): Result<SessionKey?> = mutation(key) {
         require(entryId.isNotBlank()) { "缺少真实会话条目 ID" }
         val response = client(key.backendId).post(client(key.backendId).path(key.slotKey) + "/fork", buildJsonObject { put("entryId", entryId) })

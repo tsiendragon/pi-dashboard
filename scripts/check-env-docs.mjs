@@ -31,6 +31,10 @@ const IGNORE = new Set([
   "TAILSCALE_IP",
   "PI_RUNTIME",
   "PI_PKG_PATH",
+  // pi-matrix 在启动内核时自行前插 verifier/src；继承值不是用户配置面。
+  "PYTHONPATH",
+  // Jira CLI 从桌面会话继承的 keyring 总线，不是 dashboard 的配置项。
+  "DBUS_SESSION_BUS_ADDRESS",
 ]);
 
 const ENV_RE = /process\.env(?:\.([A-Za-z_][A-Za-z0-9_]*)|\[\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s*\])/g;
