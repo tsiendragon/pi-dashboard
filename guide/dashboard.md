@@ -454,6 +454,8 @@ Android 5.56（build 87）同时显示当前会话的 Schedule：有排程时显
 
 Android 5.57（build 88）在 Live Pi 输入框加入 Qwen 实时语音输入。首次点击会申请麦克风权限；录音以 16 kHz 单声道 PCM 流经 Dashboard 的 `/api/asr/realtime` 到 DashScope，默认自动识别中英混杂，不强制指定语言。识别中的文字显示为输入框提示，完成的段落追加到草稿，不会覆盖已有文字；点停止后才进入「整理文字」状态，发送按钮在语音结束前保持禁用。音频只在内存中停留，停止、切后台或离开会话时释放，不写入会话记录或本机缓存。只有服务端 `/api/asr/config` 报告可用（已配置 `DASHSCOPE_API_KEY`）时才显示麦克风按钮；没有后端或扩展改动，旧服务不显示该按钮，覆盖安装即可。
 
+Android 5.57（build 88）的 Live Pi 活动视图中，展开「执行步骤」并点击一行即可查看命令、参数、状态和输出；可分别复制，无需切换到完整记录。
+
 ### Android GitHub 发布（每个新可安装版本）
 
 下载入口：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)。仓库为公开仓库，APK、校验值和更新说明均可公开下载；访问服务器仍需既有入口授权与 Live 登录令牌。

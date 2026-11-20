@@ -1,5 +1,9 @@
 package com.sam.pidash
 
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertEquals
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -87,6 +91,23 @@ class ActivityCardStyleTest {
         compose.onNodeWithText("执行步骤").performClick()
         compose.onAllNodesWithText("bash").assertCountEquals(0)
     }
+    @Test fun commandOpensDetailsAndCopiesCommandAndOutputSeparately() {
+        fixture()
+        val command = "npm test"
+        val clipboard = ApplicationProvider.getApplicationContext<Context>()
+            .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        compose.onNodeWithText("执行步骤").performClick()
+        compose.onNodeWithText(command).performClick()
+        compose.onNodeWithText("执行状态：失败").assertIsDisplayed()
+        compose.onNodeWithText("1 failed").assertIsDisplayed()
+        compose.onNodeWithText("复制命令").performClick()
+        compose.runOnIdle { assertEquals(command, clipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
+        compose.onNodeWithText("复制输出").performClick()
+        compose.runOnIdle { assertEquals("1 failed", clipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
+        compose.onNodeWithText("关闭").performClick()
+        compose.onNodeWithText("执行状态：失败").assertDoesNotExist()
+    }
+
     @Test fun aRunningActivityAlsoStartsWithStepsCollapsed() {
         fixture(activity = activity().copy(state = "running"))
         compose.onAllNodesWithText("bash").assertCountEquals(0)

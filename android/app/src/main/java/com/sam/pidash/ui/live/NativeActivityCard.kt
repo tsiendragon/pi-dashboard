@@ -104,6 +104,10 @@ internal fun NativeActivityCard(
     // The activity card is a summary first: execution steps start folded so a long
     // turn stays skimmable. The header still carries step/failure/running counts.
     var stepsExpanded by remember(activity.id) { mutableStateOf(false) }
+    var selectedStepId by remember(activity.id) { mutableStateOf<String?>(null) }
+    tools.firstOrNull { it.id == selectedStepId }?.let { step ->
+        ExecutionStepDialog(step, onDismiss = { selectedStepId = null })
+    }
     var thinkingExpanded by remember(activity.id) { mutableStateOf(false) }
     var promptExpanded by remember(activity.id) { mutableStateOf(false) }
     var replyExpanded by remember(activity.id) { mutableStateOf(false) }
@@ -213,7 +217,8 @@ internal fun NativeActivityCard(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             tools.forEach { step ->
-                                NativeStepCard(item = step, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl)
+                                NativeStepCard(item = step, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl,
+                                    onOpenDetails = { selectedStepId = step.id })
                             }
                         }
                     }

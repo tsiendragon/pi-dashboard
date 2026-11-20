@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
@@ -90,12 +91,14 @@ private val isToolItem = { item: LiveTimelineItem ->
     item.role == "tool" || item.role == "toolResult" || item.toolCallId != null
 }
 
+internal fun toolArgumentsObject(raw: String) = raw.takeIf { it.trimStart().startsWith("{") }?.let {
+    runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull()
+}
+
 /** `cd /repo && npm test` — one readable line instead of raw JSON. */
 internal fun toolArgumentPreview(item: LiveTimelineItem): String {
     val raw = item.toolArgs?.trim().orEmpty()
-    val parsed = raw.takeIf { it.startsWith("{") }?.let {
-        runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull()
-    }
+    val parsed = toolArgumentsObject(raw)
     val primary = listOf("command", "path", "file_path", "filePath", "pattern", "url", "prompt", "description")
         .firstNotNullOfOrNull { key -> (parsed?.get(key) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } }
     val text = primary ?: parsed?.entries?.joinToString(" ") { (key, value) ->
@@ -105,7 +108,7 @@ internal fun toolArgumentPreview(item: LiveTimelineItem): String {
     return text.replace('\n', ' ').trim().let { if (it.length > DETAIL_CHARS) it.take(DETAIL_CHARS) + "…" else it }
 }
 
-private fun toolOutput(item: LiveTimelineItem): String =
+internal fun toolOutput(item: LiveTimelineItem): String =
     item.text.trim().takeIf { it.isNotEmpty() && it != "已完成" && it != "执行中…" }.orEmpty()
 
 private fun isRunCode(item: LiveTimelineItem) =
@@ -119,6 +122,7 @@ internal fun NativeStepCard(
     onOpenUrl: (String) -> Unit,
     showArguments: Boolean = false,
     precedingThinking: List<LiveTimelineItem> = emptyList(),
+    onOpenDetails: (() -> Unit)? = null,
 ) {
     var open by remember(item.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
@@ -137,8 +141,12 @@ internal fun NativeStepCard(
     Column(Modifier.fillMaxWidth().animateContentSize()) {
         Row(
             Modifier.fillMaxWidth()
-                .then(if (expandable) Modifier.clickable { open = !open } else Modifier)
-                .then(if (showArguments && expandable) Modifier.heightIn(min = 48.dp) else Modifier)
+                .then(when {
+                    onOpenDetails != null -> Modifier.clickable(onClickLabel = "查看步骤详情", onClick = onOpenDetails)
+                    expandable -> Modifier.clickable { open = !open }
+                    else -> Modifier
+                })
+                .then(if (onOpenDetails != null || (showArguments && expandable)) Modifier.heightIn(min = 48.dp) else Modifier)
                 .padding(vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -186,7 +194,12 @@ internal fun NativeStepCard(
                 style = PiType.caption, color = scheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = Spacing.sm),
             )
-            if (expandable) Icon(
+            if (onOpenDetails != null) Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = Spacing.xs).size(16.dp),
+            ) else if (expandable) Icon(
                 imageVector = if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                 contentDescription = if (showArguments || hasCopyableArgs) { if (open) "收起记录" else "展开记录" }
                     else { if (open) "收起输出" else "展开输出" },
@@ -467,7 +480,7 @@ internal fun NativeMessageCard(
 }
 
 @Composable
-private fun AttachmentImage(data: String, index: Int) {
+internal fun AttachmentImage(data: String, index: Int) {
     val bitmap = rememberAttachmentBitmap(data)
     var open by remember(data) { mutableStateOf(false) }
     Box(
