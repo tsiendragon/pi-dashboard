@@ -2,6 +2,7 @@ package com.sam.pidash.ui.live
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -13,14 +14,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.sam.pidash.data.remote.LiveScheduleSummary
 import com.sam.pidash.data.remote.activeBackgroundTasks
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
 import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.theme.PiType
+import java.text.DateFormat
+import java.util.Date
 
-internal data class LiveWorkState(val isLive: Boolean, val agentRunning: Boolean, val backgroundCount: Int?) {
-    val isWorking: Boolean get() = agentRunning || (backgroundCount ?: 0) > 0
+internal data class LiveWorkState(
+    val isLive: Boolean,
+    val agentRunning: Boolean,
+    val backgroundCount: Int?,
+    val schedule: LiveScheduleSummary?,
+    val needsInput: Boolean,
+) {
+    val isExecuting: Boolean get() = agentRunning || (backgroundCount ?: 0) > 0
+    val isWorking: Boolean get() = isExecuting || schedule != null
+    val scheduleHint: String get() = if (needsInput) "有待处理的请求" else "无需额外输入"
     val agentLabel: String get() = when {
         !isLive -> "工作状态待同步"
         agentRunning -> "主 Agent 工作中"
@@ -34,31 +46,54 @@ internal data class LiveWorkState(val isLive: Boolean, val agentRunning: Boolean
     }
 }
 
-internal fun liveWorkState(agentStatus: String?, live: Boolean, background: LiveBackgroundSnapshot?): LiveWorkState {
+internal fun liveWorkState(
+    agentStatus: String?,
+    live: Boolean,
+    background: LiveBackgroundSnapshot?,
+    schedule: LiveScheduleSummary? = null,
+    needsInput: Boolean = false,
+): LiveWorkState {
     val fresh = live && (agentStatus == "running" || agentStatus == "idle")
-    return LiveWorkState(fresh, fresh && agentStatus == "running", background?.takeIf { fresh }?.activeBackgroundTasks()?.size)
+    return LiveWorkState(
+        isLive = fresh,
+        agentRunning = fresh && agentStatus == "running",
+        backgroundCount = background?.takeIf { fresh }?.activeBackgroundTasks()?.size,
+        schedule = schedule?.takeIf { fresh },
+        needsInput = needsInput && fresh,
+    )
 }
 
 @Composable
 internal fun LiveWorkStatusBar(state: LiveWorkState, canOpenBackground: Boolean, onOpenBackground: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 32.dp).padding(start = 16.dp, end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (state.isWorking) PulsingDot(colors.primary, size = 6.dp)
-        else StatusDot(colors.outline, size = 6.dp)
-        Text(state.agentLabel, Modifier.weight(1f), style = PiType.caption, color = colors.onSurfaceVariant)
-        if (state.isLive || canOpenBackground) {
-            val action = if (canOpenBackground) {
-                Modifier.clickable(role = Role.Button, onClickLabel = "查看后台命令", onClick = onOpenBackground)
-            } else Modifier
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 32.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (state.isExecuting) PulsingDot(colors.primary, size = 6.dp)
+            else StatusDot(if (state.isWorking) colors.primary else colors.outline, size = 6.dp)
+            Text(state.agentLabel, Modifier.weight(1f), style = PiType.caption, color = colors.onSurfaceVariant)
+            if (state.isLive || canOpenBackground) {
+                val action = if (canOpenBackground) {
+                    Modifier.clickable(role = Role.Button, onClickLabel = "查看后台命令", onClick = onOpenBackground)
+                } else Modifier
+                Text(
+                    state.backgroundLabel,
+                    modifier = action.padding(horizontal = 8.dp, vertical = 8.dp),
+                    style = PiType.caption,
+                    color = if (canOpenBackground) colors.primary else colors.onSurfaceVariant,
+                )
+            }
+        }
+        state.schedule?.let { schedule ->
+            val next = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(schedule.nextRunAt))
             Text(
-                state.backgroundLabel,
-                modifier = action.padding(horizontal = 8.dp, vertical = 8.dp),
+                "${schedule.count} 个定时任务等候触发 · 下次 $next · ${state.scheduleHint}",
+                modifier = Modifier.padding(start = 14.dp, end = 8.dp, bottom = 8.dp),
                 style = PiType.caption,
-                color = if (canOpenBackground) colors.primary else colors.onSurfaceVariant,
+                color = colors.onSurfaceVariant,
             )
         }
     }

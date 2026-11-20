@@ -1,5 +1,6 @@
 package com.sam.pidash.ui.live
 
+import com.sam.pidash.data.remote.LiveScheduleSummary
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
 import com.sam.pidash.domain.model.LiveBackgroundTask
 import org.junit.Assert.assertEquals
@@ -31,6 +32,18 @@ class LiveWorkStatusBarTest {
         val unknown = liveWorkState("running", true, null)
         assertTrue(unknown.isWorking)
         assertEquals("后台状态未知", unknown.backgroundLabel)
+    }
+
+    @Test fun scheduledWorkWaitsAutomaticallyWithoutPretendingToExecute() {
+        val schedule = LiveScheduleSummary(2, 12_345)
+        val state = liveWorkState("idle", true, LiveBackgroundSnapshot(), schedule)
+        assertTrue(state.isWorking)
+        assertFalse(state.isExecuting)
+        assertEquals(schedule, state.schedule)
+        assertEquals("无需额外输入", state.scheduleHint)
+        assertEquals("有待处理的请求", liveWorkState("idle", true, null, schedule, needsInput = true).scheduleHint)
+        assertNull(liveWorkState("reconnecting", true, null, schedule).schedule)
+        assertNull(liveWorkState("idle", false, null, schedule).schedule)
     }
 
     @Test fun cachedAndReconnectingSessionsDoNotShowOldCommandsAsRunning() {

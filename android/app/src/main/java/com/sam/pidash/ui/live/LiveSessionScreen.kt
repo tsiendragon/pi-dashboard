@@ -71,6 +71,7 @@ import com.sam.pidash.domain.model.AppReviewItem
 import com.sam.pidash.domain.model.composeOutgoing
 import com.sam.pidash.data.remote.backgroundSnapshot
 import com.sam.pidash.data.remote.activeBackgroundTasks
+import com.sam.pidash.data.remote.scheduleSummary
 import com.sam.pidash.data.remote.liveGoalAnchor
 import com.sam.pidash.domain.model.LiveSessionTree
 import com.sam.pidash.domain.model.goalSummary
@@ -288,10 +289,13 @@ fun LiveSessionScreen(
     val nearLatestThreshold = with(LocalDensity.current) { 96.dp.roundToPx() }
     var openActivityId by remember(sessionKey) { mutableStateOf<String?>(null) }
     val background = remember(detail) { backgroundSnapshot(detail) }
+    val schedules = remember(detail) { scheduleSummary(detail) }
     val workState = liveWorkState(
         agentStatus = summary?.status,
         live = cachedSnapshot == null && backendStates[sessionKey.backendId]?.connected == true,
         background = background,
+        schedule = schedules,
+        needsInput = detail?.pendingUi?.any { it.id !in answered } == true,
     )
     val goalState = remember(goal) { goalSummary(goal) }
     // The complete view and the detail page share one grouping: consecutive thinking and

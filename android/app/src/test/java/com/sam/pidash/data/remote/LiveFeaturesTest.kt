@@ -30,6 +30,16 @@ class LiveFeaturesTest {
         assertEquals(0, snapshot.tasks.single().exitCode)
     }
 
+    @Test fun scheduleUsesEarliestValidTimeAndClearsWhenLatestListIsEmpty() {
+        val active = event("schedule", """{"tasks":[{"id":"later","nextRunAt":9000},{"id":"sooner","nextRunAt":2000},{"id":"bad","nextRunAt":"invalid"}]}""")
+        val rescheduled = event("schedule", """{"tasks":[{"id":"later","nextRunAt":9000},{"id":"sooner","nextRunAt":8000}]}""")
+        val cleared = event("schedule", """{"tasks":[]}""")
+        assertEquals(LiveScheduleSummary(2, 2000), scheduleSummary(detail(active)))
+        assertEquals(LiveScheduleSummary(2, 8000), scheduleSummary(detail(active, rescheduled)))
+        assertNull(scheduleSummary(detail(active, cleared)))
+        assertNull(scheduleSummary(null))
+    }
+
     @Test fun otherFeaturesAndMissingSnapshotsAreIgnored() {
         assertNull(backgroundSnapshot(detail(event("btw", """{"revision":1}"""))))
         assertNull(backgroundSnapshot(detail("""{"type":"message","id":"m"}""")))

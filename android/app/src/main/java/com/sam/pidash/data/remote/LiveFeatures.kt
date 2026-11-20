@@ -3,11 +3,13 @@ package com.sam.pidash.data.remote
 import com.sam.pidash.domain.model.LiveDetail
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
 import com.sam.pidash.domain.model.LiveBackgroundTask
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 
 /**
  * Extension feature snapshots arrive as `live_feature_snapshot` events whose
@@ -19,18 +21,30 @@ import kotlinx.serialization.json.jsonObject
  */
 private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
-fun backgroundSnapshot(detail: LiveDetail?): LiveBackgroundSnapshot? {
-    if (detail == null) return null
-    var latest: JsonObject? = null
-    detail.entries.forEach { raw ->
-        val entry = raw as? JsonObject ?: return@forEach
-        if (entry.str("type") != "live_feature_snapshot") return@forEach
-        val data = entry["data"] as? JsonObject ?: return@forEach
-        if (data.str("feature") != "background-commands") return@forEach
-        latest = (data["snapshot"] as? JsonObject) ?: return@forEach
+private fun featureSnapshot(detail: LiveDetail?, feature: String): JsonObject? {
+    return detail?.entries?.asReversed()?.firstNotNullOfOrNull { raw ->
+        val entry = raw as? JsonObject ?: return@firstNotNullOfOrNull null
+        if (entry.str("type") != "live_feature_snapshot") return@firstNotNullOfOrNull null
+        val data = entry["data"] as? JsonObject ?: return@firstNotNullOfOrNull null
+        data.takeIf { it.str("feature") == feature }?.get("snapshot") as? JsonObject
     }
-    val snapshot = latest ?: return null
-    return runCatching { pidashJson.decodeFromJsonElement(LiveBackgroundSnapshot.serializer(), snapshot) }.getOrNull()
+}
+
+fun backgroundSnapshot(detail: LiveDetail?): LiveBackgroundSnapshot? =
+    featureSnapshot(detail, "background-commands")?.let(::decodeBackgroundSnapshot)
+
+internal data class LiveScheduleSummary(val count: Int, val nextRunAt: Long)
+
+/** The extension includes only armed schedules; cancellation or a one-shot firing removes it. */
+internal fun scheduleSummary(detail: LiveDetail?): LiveScheduleSummary? {
+    val tasks = featureSnapshot(detail, "schedule")?.get("tasks") as? JsonArray ?: return null
+    val dueTimes = tasks.mapNotNull { raw ->
+        val task = raw as? JsonObject ?: return@mapNotNull null
+        if (task.str("id").isNullOrBlank()) return@mapNotNull null
+        (task["nextRunAt"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 }
+    }
+    val next = dueTimes.minOrNull() ?: return null
+    return LiveScheduleSummary(dueTimes.size, next)
 }
 
 /** Kept next to the projection so the parsing contract is testable alone. */

@@ -437,6 +437,8 @@ Android 5.11（build 42）在机器列表顶部提供「新建会话」，Live P
 
 Android 5.55（build 86）在 Live Pi 会话页顶部独立显示主 Agent 和后台命令状态。点击后台状态查看任务记录、退出结果和输出尾部。断线或读本机缓存时，旧记录不算实时运行状态；如果尚未收到会话的后台命令快照，App 会显示「后台状态未知」。已有快照支持的环境只需覆盖安装新版 App，无需重启 Dashboard。
 
+Android 5.56（build 87）同时显示当前会话的 Schedule：有排程时显示数量和下次触发时间，等待触发不等同正在执行。没有待处理的输入或审批时会提示「无需额外输入」；此提示只使用当前在线会话的排程快照。
+
 ### Android GitHub 发布（每个新可安装版本）
 
 下载入口：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)。仓库为公开仓库，APK、校验值和更新说明均可公开下载；访问服务器仍需既有入口授权与 Live 登录令牌。
