@@ -134,6 +134,10 @@ class LiveSessionClient(
     /** Cheap host CPU/memory sample for the machine list; read-only and unauthenticated like /api/system. */
     suspend fun machineLoad(): MachineLoad = pidashJson.decodeFromJsonElement(
         MachineLoad.serializer(), get("/api/system/load"))
+
+    /** Whether this server has a DashScope key for voice input; the key itself never leaves it. */
+    suspend fun asrConfig(): AsrConfig = pidashJson.decodeFromJsonElement(
+        AsrConfig.serializer(), get("/api/asr/config"))
     suspend fun detail(id: String): LiveDetail = pidashJson.decodeFromJsonElement(LiveDetail.serializer(), get(path(id)))
     suspend fun meta(): Map<String, LiveMeta> = pidashJson.decodeFromJsonElement(
         MapSerializer(String.serializer(), LiveMeta.serializer()), get("/api/live-session-meta")["meta"] ?: buildJsonObject {})
@@ -231,6 +235,9 @@ class LiveSessionClient(
     }
 
     fun openSocket(listener: WebSocketListener): WebSocket = openSocketAt("/api/live-sessions/ws", listener)
+
+    /** The server bridges this stream to DashScope; the app sends only PCM audio frames. */
+    fun openAsrSocket(listener: WebSocketListener): WebSocket = openSocketAt("/api/asr/realtime", listener)
 
     /** Same auth (Bearer + Live cookie) on any dashboard WebSocket path. */
     fun openSocketAt(path: String, listener: WebSocketListener): WebSocket {

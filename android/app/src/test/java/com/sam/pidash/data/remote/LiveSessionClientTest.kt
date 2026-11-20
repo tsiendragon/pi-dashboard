@@ -338,6 +338,21 @@ class LiveSessionClientTest {
         assertTrue(repo.leases.value.isEmpty())
     }
 
+    @Test fun asrConfigReadsAvailabilityAndModelWithoutClaiming() = runBlocking {
+        cookies.save(backend, cookie)
+        handler = {
+            reply(it, """{"available":true,"defaultModel":"qwen3-asr-flash-realtime","maxAudioBytes":10485760,"languages":[]}""")
+        }
+        val config = client.asrConfig()
+        assertTrue(config.available)
+        assertEquals("qwen3-asr-flash-realtime", config.defaultModel)
+        assertEquals(10_485_760L, config.maxAudioBytes)
+        assertEquals("GET", calls.single().method)
+        assertEquals("/api/asr/config", calls.single().path)
+        assertEquals(backend.baseUrl, calls.single().origin)
+        assertTrue(calls.none { it.path.contains("/claim") })
+    }
+
     @Test fun machineLoadIsReadOnlyAndKeepsTheLastReadingOnFailure() = runBlocking {
         val repo = repository()
         handler = { reply(it, """{"cpuCount":8,"cpuPercent":23.4,"load1":1.2,"load5":1.0,"load15":0.8,"memoryTotalBytes":34359738368,"memoryUsedBytes":17179869184,"memoryAvailableBytes":17179869184,"memoryUsedPercent":50.0,"sampledAt":123}""") }

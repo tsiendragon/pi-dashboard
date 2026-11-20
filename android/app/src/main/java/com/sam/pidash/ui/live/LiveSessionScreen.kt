@@ -1,5 +1,7 @@
 package com.sam.pidash.ui.live
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -38,6 +40,10 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sam.pidash.ui.common.SegmentedTabs
 import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.common.rememberAttachmentBitmap
@@ -49,6 +55,7 @@ import com.sam.pidash.ui.theme.Motion
 import com.sam.pidash.ui.theme.Spacing
 import com.sam.pidash.data.remote.FileAttachments
 import com.sam.pidash.data.remote.ImageAttachments
+import com.sam.pidash.data.voice.VoiceInputController
 import com.sam.pidash.domain.model.LiveImage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -93,6 +100,8 @@ import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.operationLabel
 import com.sam.pidash.domain.model.runningOperationStatus
 import com.sam.pidash.domain.model.SessionKey
+import com.sam.pidash.domain.model.VoiceInputPhase
+import com.sam.pidash.domain.model.appendVoiceTranscript
 import com.sam.pidash.ui.theme.Radii
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
@@ -172,6 +181,47 @@ fun LiveSessionScreen(
     val notifier = remember { (context.applicationContext as PiDashApp).notifier }
     val settingsPrefs = remember { (context.applicationContext as PiDashApp).settingsPrefs }
     val keyboard = LocalSoftwareKeyboardController.current
+    // Voice text is appended on the main thread by the controller; audio itself never
+    // leaves this controller's memory except as PCM frames on the ASR WebSocket.
+    val voice = remember(sessionKey) {
+        VoiceInputController(
+            openSocket = { listener -> live.openAsrSocket(sessionKey.backendId, listener) },
+            onTranscript = { text -> draft = appendVoiceTranscript(draft, text) },
+        )
+    }
+    val voiceState by voice.state.collectAsState()
+    var asrAvailable by remember(sessionKey.backendId) { mutableStateOf(false) }
+    LaunchedEffect(sessionKey.backendId) {
+        asrAvailable = live.asrConfig(sessionKey.backendId).getOrNull()?.available == true
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) voice.start()
+        else notice = "未授予麦克风权限，无法使用语音输入"
+    }
+    fun startVoice() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            voice.start()
+        } else {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, voice) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) voice.cancel()
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            voice.close()
+        }
+    }
+    LaunchedEffect(voiceState.error) {
+        val error = voiceState.error ?: return@LaunchedEffect
+        voice.clearError()
+        notice = error
+    }
     // New sessions start from the Settings default; changing it here only affects this send.
     var deliverAs by remember(sessionKey) {
         mutableStateOf(settingsPrefs.defaultDeliver.value.ifBlank { null })
@@ -899,7 +949,17 @@ fun LiveSessionScreen(
                     style = PiType.caption,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                val onVoiceAction: (() -> Unit)? = if (asrAvailable) {
+                    {
+                        if (voiceState.phase == VoiceInputPhase.Idle) startVoice()
+                        else {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            voice.toggle()
+                        }
+                    }
+                } else null
                 val canSend = !busy && cachedSnapshot == null && summary != null &&
+                    voiceState.phase == VoiceInputPhase.Idle &&
                     (draft.isNotBlank() || attachments.isNotEmpty() || files.isNotEmpty() ||
                         quotes.isNotEmpty() || reviews.isNotEmpty()) &&
                     ImageAttachments.validate(attachments) == null
@@ -941,6 +1001,10 @@ fun LiveSessionScreen(
                     } else null,
                     abortEnabled = !busy,
                     aborting = aborting,
+                    voicePhase = voiceState.phase,
+                    voiceInterim = voiceState.interim,
+                    onVoice = onVoiceAction,
+                    voiceEnabled = voiceState.phase != VoiceInputPhase.Transcribing,
                 ) {
                     Box {
                         var addMenu by remember { mutableStateOf(false) }

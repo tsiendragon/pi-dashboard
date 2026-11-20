@@ -1,5 +1,6 @@
 package com.sam.pidash.ui.live
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -24,11 +25,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.sam.pidash.domain.model.VoiceInputPhase
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Spacing
 import com.sam.pidash.ui.theme.Tints
@@ -53,8 +63,24 @@ internal fun ComposerPill(
     onAbort: (() -> Unit)? = null,
     abortEnabled: Boolean = true,
     aborting: Boolean = false,
+    voicePhase: VoiceInputPhase = VoiceInputPhase.Idle,
+    voiceInterim: String = "",
+    onVoice: (() -> Unit)? = null,
+    voiceEnabled: Boolean = true,
     leading: @Composable () -> Unit = {},
 ) {
+    val voicePlaceholder = when (voicePhase) {
+        VoiceInputPhase.Connecting -> "正在连接语音识别…"
+        VoiceInputPhase.Listening -> voiceInterim.ifBlank { "正在听，请说话…" }
+        VoiceInputPhase.Transcribing -> "正在整理语音文字…"
+        VoiceInputPhase.Idle -> placeholder
+    }
+    val voiceDescription = when (voicePhase) {
+        VoiceInputPhase.Idle -> "开始语音输入"
+        VoiceInputPhase.Connecting -> "正在连接语音识别，点击取消"
+        VoiceInputPhase.Listening -> "停止录音并识别"
+        VoiceInputPhase.Transcribing -> "正在整理语音文字"
+    }
     Row(
         modifier.fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(24.dp))
@@ -84,7 +110,7 @@ internal fun ComposerPill(
             decorationBox = { innerTextField ->
                 Box(Modifier.fillMaxWidth()) {
                     if (draft.isEmpty()) Text(
-                        placeholder, style = PiType.userMessage,
+                        voicePlaceholder, style = PiType.userMessage,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
@@ -94,6 +120,26 @@ internal fun ComposerPill(
         )
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            if (onVoice != null) IconButton(
+                enabled = voiceEnabled && voicePhase != VoiceInputPhase.Transcribing,
+                onClick = onVoice,
+                modifier = Modifier.size(44.dp).testTag("composer-voice")
+                    .semantics { contentDescription = voiceDescription },
+            ) {
+                when (voicePhase) {
+                    VoiceInputPhase.Connecting, VoiceInputPhase.Transcribing -> CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp), strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    VoiceInputPhase.Listening -> Box(
+                        Modifier.size(34.dp).background(MaterialTheme.colorScheme.errorContainer, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(Modifier.size(9.dp).background(MaterialTheme.colorScheme.error, RoundedCornerShape(2.dp)))
+                    }
+                    VoiceInputPhase.Idle -> MicGlyph(MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             if (onAbort != null) IconButton(
                 enabled = abortEnabled && !aborting,
                 onClick = onAbort,
@@ -130,5 +176,44 @@ internal fun ComposerPill(
                 }
             }
         }
+    }
+}
+
+/** Material's core icon set has no microphone; this keeps the dependency list unchanged. */
+@Composable
+private fun MicGlyph(tint: Color) {
+    Canvas(Modifier.size(18.dp)) {
+        val width = size.width
+        val height = size.height
+        val stroke = Stroke(width = width * 0.085f, cap = StrokeCap.Round)
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(width * 0.36f, height * 0.08f),
+            size = Size(width * 0.28f, height * 0.47f),
+            cornerRadius = CornerRadius(width * 0.14f, height * 0.14f),
+        )
+        drawArc(
+            color = tint,
+            startAngle = 0f,
+            sweepAngle = 180f,
+            useCenter = false,
+            topLeft = Offset(width * 0.22f, height * 0.24f),
+            size = Size(width * 0.56f, height * 0.46f),
+            style = stroke,
+        )
+        drawLine(
+            color = tint,
+            start = Offset(width * 0.5f, height * 0.70f),
+            end = Offset(width * 0.5f, height * 0.84f),
+            strokeWidth = stroke.width,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = tint,
+            start = Offset(width * 0.35f, height * 0.86f),
+            end = Offset(width * 0.65f, height * 0.86f),
+            strokeWidth = stroke.width,
+            cap = StrokeCap.Round,
+        )
     }
 }

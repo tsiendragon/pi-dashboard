@@ -517,6 +517,13 @@ class LivePiRepository(
             runCatching { client(key.backendId).release(key.slotKey, lease.leaseId) }
         } }
     }
+    /** Voice input availability for one backend; a missing key is a normal false, not a page error. */
+    suspend fun asrConfig(backendId: String): Result<AsrConfig> = result { client(backendId).asrConfig() }
+
+    /** Audio/text frames for one voice utterance; the caller owns the socket lifetime. */
+    fun openAsrSocket(backendId: String, listener: WebSocketListener): WebSocket =
+        client(backendId).openAsrSocket(listener)
+
     /**
      * Read host pressure from every configured Dashboard in parallel. This is
      * intentionally independent of Live authorization and leases: a machine that

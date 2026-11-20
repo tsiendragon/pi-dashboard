@@ -162,7 +162,7 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `MEME_OUTPUT_DIR` | 表情包工坊的生成图片与历史索引保存目录；支持 `~/` 前缀，不存在时自动创建 | `~/.pi/dashboard/memes` |
 | `PI_BEDROCK_PROFILE` / `AWS_PROFILE` | Bedrock profile（未设 `AWS_PROFILE` 时回退） | 无 |
 
-> 语音输入使用 `DASHSCOPE_API_KEY` 和上述 DashScope 端点：浏览器通过同源 WebSocket 将 16 kHz 音频流交给 dashboard 后端，再调用 `qwen3-asr-flash-realtime`；录音停止后接收最终文本。它不需要新增环境变量。批量识别接口 `/api/asr/transcribe` 仍保留给非实时调用方。
+> 语音输入使用 `DASHSCOPE_API_KEY` 和上述 DashScope 端点：Web 与 Android 客户端都通过同源 WebSocket 将 16 kHz 音频流交给 dashboard 后端，再调用 `qwen3-asr-flash-realtime`；录音停止后接收最终文本。它不需要新增环境变量。Android 只在服务端 `/api/asr/config` 返回可用时显示麦克风按钮，音频不写入会话或缓存。批量识别接口 `/api/asr/transcribe` 仍保留给非实时调用方。
 
 > Token Cost 的额度卡片可选读取本机 Codex / Claude Code 账户：Codex CLI 需可从 dashboard 进程的 `PATH` 启动；Claude Code 使用 `${CLAUDE_CONFIG_DIR:-~/.claude}/.credentials.json` 中的 OAuth 凭证。凭证只在后端读取，不会返回给浏览器。该查询只显示账户接口实际提供的百分比与重置时间；Claude Code 目前只支持 OAuth 订阅用量，API key、Bedrock/Vertex、仅 keychain 存储等情况可能没有数据。没有对应 CLI 登录时页面会显示未提供，不影响 Token Cost 原有统计。
 >

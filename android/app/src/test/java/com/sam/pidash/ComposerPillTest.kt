@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.sam.pidash.domain.model.VoiceInputPhase
 import com.sam.pidash.ui.live.ComposerPill
 import com.sam.pidash.ui.theme.PiDashTheme
 import org.junit.Assert.assertEquals
@@ -42,12 +43,15 @@ class ComposerPillTest {
     @get:Rule val compose = createComposeRule()
     private var sends = 0
     private var aborts = 0
+    private var voiceClicks = 0
     private var typed = ""
 
     private fun fixture(initial: String = "", canSend: Boolean = false, enabled: Boolean = true,
                         dark: Boolean = false, scale: Float = 1f, width: Int? = null,
                         showAbort: Boolean = false, aborting: Boolean = false,
-                        abortEnabled: Boolean = true) {
+                        abortEnabled: Boolean = true, showVoice: Boolean = false,
+                        voicePhase: VoiceInputPhase = VoiceInputPhase.Idle,
+                        voiceInterim: String = "") {
         compose.setContent {
             var draft by remember { mutableStateOf(initial) }
             typed = draft
@@ -69,6 +73,9 @@ class ComposerPillTest {
                                 onAbort = if (showAbort) ({ aborts++ }) else null,
                                 abortEnabled = abortEnabled,
                                 aborting = aborting,
+                                voicePhase = voicePhase,
+                                voiceInterim = voiceInterim,
+                                onVoice = if (showVoice) ({ voiceClicks++ }) else null,
                             ) {
                                 IconButton(onClick = {}, modifier = Modifier.size(44.dp).testTag("leading")) {
                                     Icon(Icons.Filled.Add, "附加内容", Modifier.size(22.dp))
@@ -137,6 +144,42 @@ class ComposerPillTest {
         fixture(showAbort = true, abortEnabled = false)
         compose.onNodeWithTag("composer-abort").assertIsNotEnabled()
     }
+    @Test fun voiceSitsBeforeSendAndFiresOnce() {
+        fixture(initial = "", showVoice = true)
+        val field = compose.onNodeWithTag("composer-field").getUnclippedBoundsInRoot()
+        val voice = compose.onNodeWithTag("composer-voice").getUnclippedBoundsInRoot()
+        val send = compose.onNodeWithTag("composer-send").getUnclippedBoundsInRoot()
+        assertTrue("voice must follow the draft", field.right <= voice.left)
+        assertTrue("send must follow voice", voice.right <= send.left)
+        compose.onNodeWithContentDescription("开始语音输入").assertIsDisplayed()
+        compose.onNodeWithTag("composer-voice").performClick()
+        compose.runOnIdle { assertEquals(1, voiceClicks) }
+    }
+
+    @Test fun listeningShowsTheStopActionAndProvisionalWords() {
+        fixture(initial = "", showVoice = true, voicePhase = VoiceInputPhase.Listening, voiceInterim = "帮我 check")
+        compose.onNodeWithContentDescription("停止录音并识别").assertIsDisplayed()
+        compose.onNodeWithText("帮我 check").assertIsDisplayed()
+        compose.onNodeWithTag("composer-voice").performClick()
+        compose.runOnIdle { assertEquals(1, voiceClicks) }
+    }
+
+    @Test fun transcribingDisablesTheVoiceAction() {
+        fixture(initial = "", showVoice = true, voicePhase = VoiceInputPhase.Transcribing)
+        compose.onNodeWithContentDescription("正在整理语音文字").assertIsDisplayed()
+        compose.onNodeWithTag("composer-voice").assertIsNotEnabled()
+    }
+
+    @Test fun voicePillScreenshot() {
+        fixture(initial = "", showVoice = true)
+        compose.onRoot().captureRoboImage("src/test/screenshots/composer-pill-voice.png")
+    }
+
+    @Test fun voiceListeningPillScreenshot() {
+        fixture(initial = "", showVoice = true, voicePhase = VoiceInputPhase.Listening, voiceInterim = "帮我 check 这个 API")
+        compose.onRoot().captureRoboImage("src/test/screenshots/composer-pill-voice-listening.png")
+    }
+
     @Test fun pillScreenshot() {
         fixture(initial = ""); compose.onRoot().captureRoboImage("src/test/screenshots/composer-pill.png")
     }
