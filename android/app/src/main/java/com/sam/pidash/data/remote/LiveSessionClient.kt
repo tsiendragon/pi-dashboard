@@ -131,6 +131,9 @@ class LiveSessionClient(
         return pidashJson.decodeFromJsonElement(ListSerializer(LiveSummary.serializer()),
             obj["sessions"] ?: throw IOException("缺少 Live 会话列表"))
     }
+    /** Cheap host CPU/memory sample for the machine list; read-only and unauthenticated like /api/system. */
+    suspend fun machineLoad(): MachineLoad = pidashJson.decodeFromJsonElement(
+        MachineLoad.serializer(), get("/api/system/load"))
     suspend fun detail(id: String): LiveDetail = pidashJson.decodeFromJsonElement(LiveDetail.serializer(), get(path(id)))
     suspend fun meta(): Map<String, LiveMeta> = pidashJson.decodeFromJsonElement(
         MapSerializer(String.serializer(), LiveMeta.serializer()), get("/api/live-session-meta")["meta"] ?: buildJsonObject {})

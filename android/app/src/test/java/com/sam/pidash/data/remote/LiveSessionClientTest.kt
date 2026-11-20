@@ -338,6 +338,29 @@ class LiveSessionClientTest {
         assertTrue(repo.leases.value.isEmpty())
     }
 
+    @Test fun machineLoadIsReadOnlyAndKeepsTheLastReadingOnFailure() = runBlocking {
+        val repo = repository()
+        handler = { reply(it, """{"cpuCount":8,"cpuPercent":23.4,"load1":1.2,"load5":1.0,"load15":0.8,"memoryTotalBytes":34359738368,"memoryUsedBytes":17179869184,"memoryAvailableBytes":17179869184,"memoryUsedPercent":50.0,"sampledAt":123}""") }
+        calls.clear()
+        repo.refreshMachineLoads()
+        val loaded = repo.machineLoads.value[backend.id]
+        assertNotNull(loaded)
+        assertEquals(8, loaded?.load?.cpuCount)
+        assertEquals(23.4, loaded?.load?.cpuPercent ?: -1.0, 0.0)
+        assertEquals(50.0, loaded?.load?.memoryUsedPercent ?: -1.0, 0.0)
+        assertNull(loaded?.error)
+        assertEquals(listOf("/api/system/load"), calls.map { it.path })
+        assertEquals(listOf("GET"), calls.map { it.method })
+        assertTrue(repo.leases.value.isEmpty())
+
+        handler = { reply(it, """{"error":"unavailable"}""", 500) }
+        repo.refreshMachineLoads()
+        val failed = repo.machineLoads.value[backend.id]
+        assertNotNull(failed?.load)
+        assertNotNull(failed?.error)
+        assertEquals(8, failed?.load?.cpuCount)
+    }
+
     @Test fun modelAndThinkingSwitchesAreSharedEvenWhenAnotherClientHoldsControl() = runBlocking {
         val repo = repository()
         val key = SessionKey(backend.id, process)

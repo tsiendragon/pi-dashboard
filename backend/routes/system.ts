@@ -17,6 +17,7 @@ import { requireBrowserAuth } from './require-browser-auth.js'
 import * as piEnv from '../pi-env.js'
 import * as memoryStore from '../memory-store.js'
 import * as memoryDrafts from '../memory-drafts.js'
+import { readMachineLoad } from '../machine-load.js'
 
 const execAsync = promisify(exec)
 const PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || join(os.homedir(), '.pi', 'agent')
@@ -30,6 +31,17 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
   const { app, manager } = deps
 
   app.get('/api/status', (_req: Request, res: Response) => res.json(manager.status()))
+
+  // Lightweight host load for the machine list. Deliberately separate from
+  // `/api/system`, which also shells out for disk/process details.
+  app.get('/api/system/load', async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store')
+    try {
+      res.json(await readMachineLoad())
+    } catch {
+      res.status(500).json({ error: 'machine_load_unavailable', message: '无法读取机器负载' })
+    }
+  })
 
   // iOS / mobile connection info — returns token so the iOS app can be configured
   app.get('/api/connection-info', (req: Request, res: Response) => {

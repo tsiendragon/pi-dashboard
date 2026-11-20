@@ -10,11 +10,13 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.ConnectionState
+import com.sam.pidash.domain.model.MachineLoadState
 import com.sam.pidash.ui.common.CompactHeaderAction
 import com.sam.pidash.ui.common.CompactPageHeader
 import com.sam.pidash.ui.common.PrimaryCreateAction
@@ -26,7 +28,10 @@ import com.sam.pidash.ui.common.backendOriginLabel
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,11 +39,23 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
     val backends by repo.backends.collectAsState()
     val sessions by repo.live.sessions.collectAsState()
     val states by repo.live.backendStates.collectAsState()
+    val loads by repo.live.machineLoads.collectAsState()
     val chat by repo.connection.collectAsState()
     val scope = rememberCoroutineScope()
+    // Keep the host metrics current while the list is on screen. One cheap sample
+    // per machine every 20s; leaving the screen cancels the loop.
+    LaunchedEffect(backends.map { it.id }) {
+        while (isActive) {
+            repo.live.refreshMachineLoads()
+            delay(20_000)
+        }
+    }
     Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
         CompactPageHeader(title = "机器 / Dashboard", actions = {
-            CompactHeaderAction(Icons.Default.Refresh, "刷新机器状态") { scope.launch { repo.live.refreshAll() } }
+            CompactHeaderAction(Icons.Default.Refresh, "刷新机器状态与负载") {
+                scope.launch { repo.live.refreshAll() }
+                scope.launch { repo.live.refreshMachineLoads() }
+            }
             CompactHeaderAction(Icons.Default.Settings, "管理机器", onSettings)
         })
     }, floatingActionButton = {
@@ -95,6 +112,7 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
                             ),
                             maxLines = 2,
                         )
+                        MachineLoadSummary(loads[backend.id])
                         when {
                             state?.needsToken == true -> MetaText(
                                 "进入此 Dashboard 后用网页的一次性配对码配对。",
@@ -109,3 +127,98 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
         }
     }
 }
+
+@Composable
+private fun MachineLoadSummary(state: MachineLoadState?) {
+    val load = state?.load
+    if (load == null) {
+        if (state?.error != null) {
+            MetaText("机器负载不可用：${loadErrorHint(state.error)}", tint = MaterialTheme.colorScheme.error, maxLines = 2)
+        } else {
+            MetaText("正在读取机器负载…")
+        }
+        return
+    }
+    val cpuHot = (load.cpuPercent ?: 0.0) >= 90.0
+    val memoryHot = (load.memoryUsedPercent ?: 0.0) >= 85.0
+    val loadHot = load.load1 != null && load.cpuCount > 0 && load.load1 / load.cpuCount >= 1.5
+    val normal = MaterialTheme.colorScheme.primary
+    val hot = MaterialTheme.colorScheme.error
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+    ) {
+        LoadMeter(
+            label = "CPU",
+            value = formatPercent(load.cpuPercent),
+            fraction = load.cpuPercent?.let { (it / 100.0).toFloat() },
+            tone = if (cpuHot) hot else normal,
+            modifier = Modifier.weight(1f),
+        )
+        LoadMeter(
+            label = "内存",
+            value = formatPercent(load.memoryUsedPercent),
+            fraction = load.memoryUsedPercent?.let { (it / 100.0).toFloat() },
+            tone = if (memoryHot) hot else normal,
+            modifier = Modifier.weight(1f),
+        )
+    }
+    load.load1?.let {
+        Text(
+            "负载 ${formatLoad(it)}" + if (load.cpuCount > 0) " · ${load.cpuCount} 核" else "",
+            style = PiType.caption,
+            color = if (loadHot) hot else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+    if (load.memoryTotalBytes > 0) {
+        Text(
+            "内存 ${formatGb(load.memoryUsedBytes)} / ${formatGb(load.memoryTotalBytes)} GB",
+            style = PiType.micro,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+    if (state.error != null) {
+        MetaText("负载刷新失败，仍是上次读数：${loadErrorHint(state.error)}", tint = hot, maxLines = 2)
+    } else when {
+        memoryHot -> MetaText("内存接近上限，建议先清理或暂停不用的会话", tint = hot, maxLines = 2)
+        cpuHot -> MetaText("CPU 接近满载，建议减少并发会话", tint = hot, maxLines = 2)
+        loadHot -> MetaText("系统负载偏高，建议减少并发会话", tint = hot, maxLines = 2)
+    }
+}
+
+@Composable
+private fun LoadMeter(label: String, value: String, fraction: Float?, tone: Color, modifier: Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = PiType.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.weight(1f))
+            Text(value, style = PiType.action, color = tone, maxLines = 1)
+        }
+        if (fraction != null) {
+            LinearProgressIndicator(
+                progress = { fraction.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(3.dp),
+                color = tone,
+                trackColor = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline),
+            )
+        }
+    }
+}
+
+private fun formatPercent(value: Double?): String {
+    if (value == null || !value.isFinite()) return "—"
+    return if (value < 10) String.format(Locale.US, "%.1f%%", value)
+    else String.format(Locale.US, "%.0f%%", value)
+}
+
+private fun formatLoad(value: Double): String =
+    String.format(Locale.US, "%.1f", value)
+
+private fun formatGb(bytes: Long): String =
+    String.format(Locale.US, "%.1f", bytes / 1073741824.0)
+
+private fun loadErrorHint(error: String): String =
+    if (error.contains("接口") || error.contains("JSON")) "此 Dashboard 版本可能过旧，请更新服务器"
+    else error

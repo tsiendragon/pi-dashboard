@@ -56,11 +56,14 @@ class LivePiRepository(
     private val rows = MutableStateFlow<Map<String, List<LiveSummary>>>(emptyMap())
     private val metadata = MutableStateFlow<Map<String, Map<String, LiveMeta>>>(emptyMap())
     private val _states = MutableStateFlow<Map<String, LiveBackendState>>(emptyMap())
+    private val _machineLoads = MutableStateFlow<Map<String, MachineLoadState>>(emptyMap())
     private val _details = MutableStateFlow<Map<SessionKey, LiveDetail>>(emptyMap())
     private val _cacheSources = MutableStateFlow<Map<SessionKey, LiveDetailCacheSource>>(emptyMap())
     private val _leases = MutableStateFlow<Map<SessionKey, LiveLease>>(emptyMap())
     private val _errors = MutableStateFlow<Map<SessionKey, String>>(emptyMap())
     val backendStates: StateFlow<Map<String, LiveBackendState>> = _states
+    /** Host pressure per backend, refreshed by the machine list; never claims a session. */
+    val machineLoads: StateFlow<Map<String, MachineLoadState>> = _machineLoads
     val details: StateFlow<Map<SessionKey, LiveDetail>> = _details
     /**
      * Keys present here show an offline snapshot loaded from disk, not the server's
@@ -153,6 +156,7 @@ class LivePiRepository(
         _leases.update { it.filterKeys { key -> key.backendId != id } }
         _errors.update { it.filterKeys { key -> key.backendId != id } }
         _states.update { it - id }
+        _machineLoads.update { it - id }
         mutationLocks.keys.removeAll { it.backendId == id }
         clearBackendCache(id)
     }
@@ -513,6 +517,55 @@ class LivePiRepository(
             runCatching { client(key.backendId).release(key.slotKey, lease.leaseId) }
         } }
     }
+    /**
+     * Read host pressure from every configured Dashboard in parallel. This is
+     * intentionally independent of Live authorization and leases: a machine that
+     * needs a token can still tell the phone whether it has memory/CPU headroom.
+     */
+    suspend fun refreshMachineLoads() = coroutineScope {
+        var targets = backends.value.mapNotNull { backend ->
+            val api = synchronized(lock) { clients[backend.id] } ?: return@mapNotNull null
+            backend.id to api
+        }
+        // The repository creates clients from the saved backend list asynchronously;
+        // a screen opened during startup should not wait a whole poll interval.
+        if (targets.size < backends.value.size) {
+            delay(250)
+            targets = backends.value.mapNotNull { backend ->
+                val api = synchronized(lock) { clients[backend.id] } ?: return@mapNotNull null
+                backend.id to api
+            }
+        }
+        if (targets.isEmpty()) {
+            _machineLoads.update { it.filterKeys { id -> backends.value.any { b -> b.id == id } } }
+            return@coroutineScope
+        }
+        _machineLoads.update { current ->
+            targets.fold(current) { map, (id, _) ->
+                map + (id to (map[id] ?: MachineLoadState()).copy(loading = true, error = null))
+            }
+        }
+        targets.map { (id, api) ->
+            async {
+                val result = runCatching { api.machineLoad() }
+                _machineLoads.update { current ->
+                    val previous = current[id]
+                    current + (id to result.fold(
+                        onSuccess = { MachineLoadState(load = it, loading = false) },
+                        onFailure = { error ->
+                            MachineLoadState(
+                                load = previous?.load,
+                                loading = false,
+                                error = error.message ?: "无法读取机器负载",
+                            )
+                        },
+                    ))
+                }
+            }
+        }.awaitAll()
+        _machineLoads.update { it.filterKeys { id -> backends.value.any { b -> b.id == id } } }
+    }
+
     suspend fun refreshAll() = coroutineScope {
         synchronized(lock) { clients.keys.toList() }.map { id -> launch {
             try { if (client(id).authorized) refreshBackend(id) }
