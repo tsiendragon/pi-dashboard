@@ -2855,6 +2855,24 @@ export default function LiveSessionPage() {
     await liveSessionApi.command(activeId, { type: 'input', text: GOAL_SYNC_REQUEST, channel: 'web' })
     setCommandNotice('已请求 agent 对照原始需求核对任务锚点的工作项状态')
   })
+  /**
+   * Goal pause/resume/clear are extension commands, so they ride the same shared
+   * input channel as `/effort`; no lease is needed. The command waits for the current
+   * turn to end before mutating, which is why the notice says "请求" rather than
+   * claiming the state already changed.
+   */
+  const setGoalPaused = (paused: boolean) => perform(async () => {
+    if (!activeId) return
+    await liveSessionApi.command(activeId, { type: 'input', text: paused ? '/goal pause' : '/goal resume', channel: 'web' })
+    setCommandNotice(paused ? '已请求暂停目标；当前回合结束后生效' : '已请求恢复目标；当前回合结束后生效')
+  })
+  const clearGoal = () => perform(async () => {
+    if (!activeId) return
+    // The dialog already asked for explicit confirmation, so skip the extension's
+    // own interactive prompt.
+    await liveSessionApi.command(activeId, { type: 'input', text: '/goal clear --yes', channel: 'web' })
+    setCommandNotice('已请求清理目标；当前回合结束后生效')
+  })
   const clearSession = () => perform(async () => {
     if (!activeId) return
     // `/clear` is a REGISTERED extension command (`session-aliases.ts`: wait for idle,
@@ -3267,6 +3285,9 @@ export default function LiveSessionPage() {
                   goalLoaded={detail !== undefined}
                   goalBusy={busy}
                   onGoalSync={() => { void syncGoalChecklist().catch(() => {}) }}
+                  onGoalPause={() => { void setGoalPaused(true).catch(() => {}) }}
+                  onGoalResume={() => { void setGoalPaused(false).catch(() => {}) }}
+                  onGoalClear={() => { void clearGoal().catch(() => {}) }}
                   compacting={compactingNow}
                   onCompact={() => { void compact().catch(() => {}) }}
                   onClear={handleClear}

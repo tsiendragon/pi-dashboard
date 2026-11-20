@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   goalProgressOf,
   goalStaleness,
@@ -141,12 +141,18 @@ export interface GoalAnchorDialogProps {
   onClose: () => void
   /** Live sessions: ask the agent to refresh the checklist. */
   onSync?: () => void
+  /** Live sessions: pause / resume automatic goal continuation. */
+  onPause?: () => void
+  onResumeGoal?: () => void
+  /** Live sessions: remove the current goal after an explicit confirmation. */
+  onClearGoal?: () => void
   /** Ended sessions: continue the work in a new session rooted at the same cwd. */
   onResume?: () => void
 }
 
-export default function GoalAnchorDialog({ goal, loaded = true, mode = 'live', partial = false, busy = false, onClose, onSync, onResume }: GoalAnchorDialogProps) {
+export default function GoalAnchorDialog({ goal, loaded = true, mode = 'live', partial = false, busy = false, onClose, onSync, onPause, onResumeGoal, onClearGoal, onResume }: GoalAnchorDialogProps) {
   const dialogRef = useRef<HTMLElement | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   useEffect(() => {
     dialogRef.current?.focus()
@@ -327,13 +333,32 @@ export default function GoalAnchorDialog({ goal, loaded = true, mode = 'live', p
         </div>
 
         {goal && (
-          <footer className="flex items-center gap-3 border-t border-border bg-bg-elevated px-4 py-2 text-2xs text-muted">
+          <footer className="flex flex-wrap items-center gap-3 border-t border-border bg-bg-elevated px-4 py-2 text-2xs text-muted">
             <span className="min-w-0 truncate">{`更新于 ${updatedLabel(goal)}`}</span>
             <span className="ml-auto flex shrink-0 gap-2">
               {mode === 'live'
                 ? onSync && <button type="button" disabled={busy} onClick={onSync} className="rounded border border-border bg-card px-2.5 py-1 text-2xs text-text hover:border-accent hover:text-accent disabled:opacity-50">让 agent 同步清单</button>
                 : onResume && <button type="button" onClick={onResume} className="rounded border border-border bg-card px-2.5 py-1 text-2xs text-text hover:border-accent hover:text-accent">在新会话里继续</button>}
             </span>
+            {mode === 'live' && (onPause || onResumeGoal || onClearGoal) && !confirmClear && (
+              <div className="flex w-full flex-wrap items-center gap-2 border-t border-border pt-2">
+                <span className="text-2xs text-muted">目标操作</span>
+                {onPause && <button type="button" disabled={busy} onClick={() => { onPause(); onClose() }} className="rounded border border-border bg-card px-2.5 py-1 text-2xs text-text hover:border-accent hover:text-accent disabled:opacity-50">暂停目标</button>}
+                {onResumeGoal && <button type="button" disabled={busy} onClick={() => { onResumeGoal(); onClose() }} className="rounded border border-border bg-card px-2.5 py-1 text-2xs text-text hover:border-accent hover:text-accent disabled:opacity-50">恢复目标</button>}
+                {onClearGoal && <button type="button" disabled={busy} onClick={() => setConfirmClear(true)} className="rounded border border-border bg-card px-2.5 py-1 text-2xs text-text hover:border-accent hover:text-accent disabled:opacity-50">清理目标</button>}
+                <span className="text-2xs text-muted">在当前回合结束后生效</span>
+              </div>
+            )}
+            {confirmClear && (
+              <div role="alertdialog" aria-label="清理目标确认" className="w-full rounded border border-danger bg-danger-subtle px-3 py-2 text-2xs text-danger">
+                <div className="font-bold">清理当前目标？</div>
+                <p className="mt-1 text-text">当前目标、工作项和阻塞项会从这条会话中移除；历史对话不会被删除。此操作不能撤销。</p>
+                <div className="mt-2 flex justify-end gap-2">
+                  <button type="button" disabled={busy} onClick={() => setConfirmClear(false)} className="rounded border border-border bg-card px-2.5 py-1 text-2xs text-text hover:border-accent hover:text-accent disabled:opacity-50">取消</button>
+                  <button type="button" disabled={busy} onClick={() => { setConfirmClear(false); onClearGoal?.(); onClose() }} className="rounded border border-danger bg-danger px-2.5 py-1 text-2xs text-danger-fg hover:opacity-90 disabled:opacity-50">确认清理</button>
+                </div>
+              </div>
+            )}
           </footer>
         )}
       </section>

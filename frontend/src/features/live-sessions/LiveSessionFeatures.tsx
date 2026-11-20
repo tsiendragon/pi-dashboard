@@ -87,7 +87,7 @@ function SessionAction({ label, icon, disabled, danger, onClick, title, badge, d
   </button>
 }
 
-export default function LiveSessionFeatures({ features, busy, cwd, status, contextUsage, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, goal, goalLoaded = true, onGoalSync, goalBusy = false, onCompact, onClear, onReload, onAbort, onSendPrompt }: {
+export default function LiveSessionFeatures({ features, busy, cwd, status, contextUsage, compacting = false, onFileOpen, onOpenBtw, onCloseBtw, onBtwSubmit, onBtwAbort, onBtwRefreshParent, onOpenWorkflow, goal, goalLoaded = true, onGoalSync, onGoalPause, onGoalResume, onGoalClear, goalBusy = false, onCompact, onClear, onReload, onAbort, onSendPrompt }: {
   features: Record<string, unknown>
   busy?: boolean
   cwd?: string
@@ -109,6 +109,11 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, conte
   goalLoaded?: boolean
   /** Ask the agent to refresh the checklist (live sessions only). */
   onGoalSync?: () => void
+  /** Pause or resume automatic continuation; the command waits for idle. */
+  onGoalPause?: () => void
+  onGoalResume?: () => void
+  /** Remove the current goal after the dialog's confirmation. */
+  onGoalClear?: () => void
   goalBusy?: boolean
   /** True while a requested compaction has not landed on disk yet. */
   compacting?: boolean
@@ -369,9 +374,12 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, conte
       goal={goal ?? null}
       loaded={goalLoaded}
       mode="live"
-      busy={goalBusy}
+      busy={goalBusy || status === 'reconnecting'}
       onClose={() => setGoalOpen(false)}
       {...(onGoalSync ? { onSync: onGoalSync } : {})}
+      {...(goal?.status === 'active' && onGoalPause ? { onPause: onGoalPause } : {})}
+      {...(goal?.status === 'paused' && onGoalResume ? { onResumeGoal: onGoalResume } : {})}
+      {...(goal && onGoalClear ? { onClearGoal: onGoalClear } : {})}
     />}
   </aside>
 }

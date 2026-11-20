@@ -80,6 +80,40 @@ describe('GoalAnchorDialog', () => {
     expect(dialog.textContent).toContain('验收标准没有单条勾选状态')
   })
 
+  it('pauses an active goal and resumes a paused one without asking for confirmation', () => {
+    const pause = vi.fn()
+    const close = vi.fn()
+    const { unmount } = render(<GoalAnchorDialog goal={anchor()} onClose={close} onPause={pause} />)
+    fireEvent.click(within(screen.getByRole('dialog', { name: '任务锚点' })).getByRole('button', { name: '暂停目标' }))
+    expect(pause).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
+    unmount()
+
+    const resume = vi.fn()
+    render(<GoalAnchorDialog goal={anchor({ status: 'paused' })} onClose={vi.fn()} onResumeGoal={resume} />)
+    fireEvent.click(within(screen.getByRole('dialog', { name: '任务锚点' })).getByRole('button', { name: '恢复目标' }))
+    expect(resume).toHaveBeenCalledOnce()
+  })
+
+  it('asks for explicit confirmation before clearing a goal', () => {
+    const clear = vi.fn()
+    const close = vi.fn()
+    render(<GoalAnchorDialog goal={anchor()} onClose={close} onClearGoal={clear} />)
+    const dialog = screen.getByRole('dialog', { name: '任务锚点' })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '清理目标' }))
+    const confirm = screen.getByRole('alertdialog', { name: '清理目标确认' })
+    expect(clear).not.toHaveBeenCalled()
+    fireEvent.click(within(confirm).getByRole('button', { name: '取消' }))
+    expect(clear).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog', { name: '清理目标确认' })).not.toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '清理目标' }))
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: '清理目标确认' })).getByRole('button', { name: '确认清理' }))
+    expect(clear).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
+  })
+
   it('shows a loading state instead of the empty state before the timeline arrives', () => {
     render(<GoalAnchorDialog goal={null} loaded={false} onClose={vi.fn()} />)
 

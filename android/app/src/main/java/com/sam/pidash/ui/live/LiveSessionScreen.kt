@@ -261,6 +261,7 @@ fun LiveSessionScreen(
         queued = live.queue(sessionKey).getOrNull()
     }
     val goal = remember(detail) { detail?.let { liveGoalAnchor(it) } }
+    val goalActionsEnabled = cachedSnapshot == null && summary?.status != "reconnecting"
     val activities = remember(detail) { detail?.let { projectLiveActivities(it) }.orEmpty() }
     // Default is the activity view: a phone reads replies, not the whole transcript.
     var viewMode by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("activity") }
@@ -1234,7 +1235,7 @@ fun LiveSessionScreen(
                 AlertDialog(shape = Radii.sheet,
                     onDismissRequest = { showGoal = false },
                     title = { Text("目标", style = PiType.pageTitle) },
-                    text = { Text("这个会话还没有目标记录。目标由 Agent 用 /goal 命令维护，本页只读。") },
+                    text = { Text("这个会话还没有目标记录。设置或修改目标仍由 Agent 用 /goal 命令完成。") },
                     confirmButton = {
                         TextButton(onClick = { showGoal = false; draft = "/goal " }) { Text("用 /goal 设置") }
                     },
@@ -1243,8 +1244,18 @@ fun LiveSessionScreen(
             } else {
                 LiveGoalDialog(
                     goal = current,
+                    busy = busy,
                     onDismiss = { showGoal = false },
                     onEditWithCommand = { showGoal = false; draft = "/goal " },
+                    onPause = if (goalActionsEnabled) {
+                        { showGoal = false; perform("已请求暂停目标") { live.send(sessionKey, "/goal pause") } }
+                    } else null,
+                    onResume = if (goalActionsEnabled) {
+                        { showGoal = false; perform("已请求恢复目标") { live.send(sessionKey, "/goal resume") } }
+                    } else null,
+                    onClear = if (goalActionsEnabled) {
+                        { showGoal = false; perform("已请求清理目标") { live.send(sessionKey, "/goal clear --yes") } }
+                    } else null,
                 )
             }
         }

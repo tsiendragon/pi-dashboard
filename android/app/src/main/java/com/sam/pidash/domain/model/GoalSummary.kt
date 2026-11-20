@@ -3,8 +3,8 @@ package com.sam.pidash.domain.model
 /**
  * The goal anchor as the WebUI presents it (`shared/src/goal-anchor.ts` +
  * `GoalAnchorDialog.tsx`): the same status labels, the same work-item glyphs and
- * the same two staleness reasons. The App only renders it; editing stays with the
- * agent's `/goal` command, so nothing here writes.
+ * the same two staleness reasons. The App renders it and sends the extension's
+ * shared `/goal pause|resume|clear` commands; structural edits stay with the agent.
  */
 
 /** Absence of goal updates for this many messages means the anchor may be stale. */

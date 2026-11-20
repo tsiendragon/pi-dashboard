@@ -326,6 +326,25 @@ describe('LiveSessionFeatures', () => {
     expect(goal.querySelector('.animate-pulse')).toBeNull()
   })
 
+  it('sends a pause request from the active goal dialog', async () => {
+    const { handlers } = renderFeatures({
+      status: 'running',
+      onGoalPause: vi.fn(),
+      goal: {
+        objective: '暂停自动推进',
+        status: 'active',
+        progress: {}, blockers: [], acceptanceCriteria: [], constraints: [], workItems: [], sourceDocs: [],
+        updatedAt: Date.now(), messagesSinceUpdate: 0,
+      },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /任务锚点：进行中/ }))
+    const dialog = await screen.findByRole('dialog', { name: '任务锚点' })
+    expect(within(dialog).queryByRole('button', { name: '恢复目标' })).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: '暂停目标' }))
+    expect(handlers.onGoalPause).toHaveBeenCalledOnce()
+  })
+
   it('keeps 清空 clickable while the session works', () => {
     // The old `status !== 'idle'` gate made the confirm press vanish silently: the
     // button was disabled, so the click never reached the handler, while the banner
