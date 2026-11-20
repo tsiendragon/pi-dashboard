@@ -38,6 +38,7 @@ internal fun BackgroundCommandsDialog(
     snapshot: LiveBackgroundSnapshot,
     selected: String?,
     busy: Boolean,
+    stale: Boolean,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
     onMoveToBackground: (LiveBackgroundTask) -> Unit,
@@ -51,7 +52,7 @@ internal fun BackgroundCommandsDialog(
             Column {
                 Text("后台命令", style = PiType.callout)
                 Text(
-                    "$active 个运行中 · 共 ${tasks.size} 个",
+                    if (stale) "上次同步 · 共 ${tasks.size} 条记录" else "$active 个运行中 · 共 ${tasks.size} 个",
                     style = PiType.action,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

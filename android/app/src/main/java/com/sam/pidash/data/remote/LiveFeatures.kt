@@ -40,6 +40,9 @@ internal fun decodeBackgroundSnapshot(element: JsonElement): LiveBackgroundSnaps
 
 internal fun LiveBackgroundTask.isActive(): Boolean = status == "running" || status == "starting"
 
+internal fun LiveBackgroundSnapshot.activeBackgroundTasks(): List<LiveBackgroundTask> =
+    tasks.filter { it.mode != "foreground" && it.isActive() }
+
 /** A foreground call is the only one the dashboard may hand to the background. */
 internal fun LiveBackgroundTask.canMoveToBackground(): Boolean =
     mode == "foreground" && isActive() && !toolCallId.isNullOrBlank()

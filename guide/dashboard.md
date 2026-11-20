@@ -435,6 +435,8 @@ Android 5.11（build 42）在机器列表顶部提供「新建会话」，Live P
 
 新建 Live Pi 时，空工作目录下会直接展示最多 3 个快捷目录；「搜索全部目录」可按项目名或完整路径关键词筛选（忽略大小写，多个关键词同时匹配）。建议来自当前服务器现有的 `/api/live-sessions/repo-candidates` 与 `/api/live-sessions/start-options`，项目优先、同路径去重；换服务器清空目录和搜索状态。没有建议/加载失败时仍可手动输入绝对路径。搜索只过滤已返回的候选，不是全盘目录扫描，选中建议也不代表已获得启动权限：服务端仍校验 `liveSessions.roots`。项目建议来源及 `liveSessions.repoRoots` 配置见 [config.md](config.md)；如果这些接口已可用，仅安装新版 App 即生效，无需重启服务。更改服务器配置时，由用户执行 `./run.sh`（或自己的启动方式）加载，agent 不代为重启。
 
+Android 5.55（build 86）在 Live Pi 会话页顶部独立显示主 Agent 和后台命令状态。点击后台状态查看任务记录、退出结果和输出尾部。断线或读本机缓存时，旧记录不算实时运行状态；如果尚未收到会话的后台命令快照，App 会显示「后台状态未知」。已有快照支持的环境只需覆盖安装新版 App，无需重启 Dashboard。
+
 ### Android GitHub 发布（每个新可安装版本）
 
 下载入口：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)。仓库为公开仓库，APK、校验值和更新说明均可公开下载；访问服务器仍需既有入口授权与 Live 登录令牌。

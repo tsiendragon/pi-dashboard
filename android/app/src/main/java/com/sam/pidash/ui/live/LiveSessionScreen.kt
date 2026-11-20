@@ -38,7 +38,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.common.SegmentedTabs
 import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.common.rememberAttachmentBitmap
@@ -71,7 +70,7 @@ import com.sam.pidash.domain.model.AppQuote
 import com.sam.pidash.domain.model.AppReviewItem
 import com.sam.pidash.domain.model.composeOutgoing
 import com.sam.pidash.data.remote.backgroundSnapshot
-import com.sam.pidash.data.remote.isActive
+import com.sam.pidash.data.remote.activeBackgroundTasks
 import com.sam.pidash.data.remote.liveGoalAnchor
 import com.sam.pidash.domain.model.LiveSessionTree
 import com.sam.pidash.domain.model.goalSummary
@@ -289,7 +288,11 @@ fun LiveSessionScreen(
     val nearLatestThreshold = with(LocalDensity.current) { 96.dp.roundToPx() }
     var openActivityId by remember(sessionKey) { mutableStateOf<String?>(null) }
     val background = remember(detail) { backgroundSnapshot(detail) }
-    val backgroundActive = background?.tasks?.count { it.isActive() } ?: 0
+    val workState = liveWorkState(
+        agentStatus = summary?.status,
+        live = cachedSnapshot == null && backendStates[sessionKey.backendId]?.connected == true,
+        background = background,
+    )
     val goalState = remember(goal) { goalSummary(goal) }
     // The complete view and the detail page share one grouping: consecutive thinking and
     // tool calls fold into a single trace block instead of alternating cards and bare rows.
@@ -491,9 +494,6 @@ fun LiveSessionScreen(
                                 )
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                val running = cachedSnapshot == null && summary?.status == "running"
-                                if (running) PulsingDot(MaterialTheme.colorScheme.primary, size = 6.dp, contentDescription = "运行中")
-                                else StatusDot(MaterialTheme.colorScheme.outline, size = 6.dp)
                                 Text(
                                     listOfNotNull(projectName, summary?.model?.id).joinToString(" · "),
                                     maxLines = 1,
@@ -579,11 +579,15 @@ fun LiveSessionScreen(
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        if (backgroundActive > 0) "后台命令（$backgroundActive 运行中）…" else "后台命令…"
+                                        workState.backgroundCount?.takeIf { it > 0 }?.let { "后台命令（$it 个运行中）…" } ?: "后台命令…"
                                     )
                                 },
                                 enabled = background != null,
-                                onClick = { menu = false; notice = null; showBackground = true },
+                                onClick = {
+                                    menu = false; notice = null
+                                    backgroundSelected = background?.activeBackgroundTasks()?.lastOrNull()?.taskId
+                                    showBackground = true
+                                },
                             )
                             DropdownMenuItem(
                                 text = { Text(if (goal == null) "目标（未设置）…" else "目标（${goalState?.statusLabel ?: "已设置"}）…") },
@@ -636,6 +640,10 @@ fun LiveSessionScreen(
                     }
                 }
                 }
+                LiveWorkStatusBar(workState, canOpenBackground = background != null, onOpenBackground = {
+                    backgroundSelected = background?.activeBackgroundTasks()?.lastOrNull()?.taskId
+                    showBackground = true
+                })
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
             }
         },
@@ -1251,7 +1259,8 @@ fun LiveSessionScreen(
             BackgroundCommandsDialog(
                 snapshot = background,
                 selected = backgroundSelected,
-                busy = busy,
+                busy = busy || !workState.isLive,
+                stale = !workState.isLive,
                 onSelect = { backgroundSelected = it },
                 onDismiss = { showBackground = false },
                 onMoveToBackground = { task ->
