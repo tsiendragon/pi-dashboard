@@ -79,6 +79,7 @@ import com.sam.pidash.domain.model.composeOutgoing
 import com.sam.pidash.data.remote.backgroundSnapshot
 import com.sam.pidash.data.remote.activeBackgroundTasks
 import com.sam.pidash.data.remote.scheduleSummary
+import com.sam.pidash.data.remote.proofJobs
 import com.sam.pidash.data.remote.liveGoalAnchor
 import com.sam.pidash.domain.model.LiveSessionTree
 import com.sam.pidash.domain.model.goalSummary
@@ -169,6 +170,7 @@ fun LiveSessionScreen(
     var usageBusy by remember(sessionKey) { mutableStateOf(false) }
     var showGoal by remember(sessionKey) { mutableStateOf(false) }
     var showBackground by remember(sessionKey) { mutableStateOf(false) }
+    var showProofJobs by remember(sessionKey) { mutableStateOf(false) }
     var backgroundSelected by remember(sessionKey) { mutableStateOf<String?>(null) }
     // Read-only file preview: path plus loaded text (null while fetching).
     var preview by remember(sessionKey) { mutableStateOf<Pair<String, String?>?>(null) }
@@ -340,12 +342,14 @@ fun LiveSessionScreen(
     var openActivityId by remember(sessionKey) { mutableStateOf<String?>(null) }
     val background = remember(detail) { backgroundSnapshot(detail) }
     val schedules = remember(detail) { scheduleSummary(detail) }
+    val proofJobList = remember(detail) { proofJobs(detail) }
     val workState = liveWorkState(
         agentStatus = summary?.status,
         live = cachedSnapshot == null && backendStates[sessionKey.backendId]?.connected == true,
         background = background,
         schedule = schedules,
         needsInput = detail?.pendingUi?.any { it.id !in answered } == true,
+        proofJobs = proofJobList,
     )
     val goalState = remember(goal) { goalSummary(goal) }
     // The complete view and the detail page share one grouping: consecutive thinking and
@@ -697,7 +701,7 @@ fun LiveSessionScreen(
                 LiveWorkStatusBar(workState, canOpenBackground = background != null, onOpenBackground = {
                     backgroundSelected = background?.activeBackgroundTasks()?.lastOrNull()?.taskId
                     showBackground = true
-                })
+                }, onOpenProofJobs = { showProofJobs = true })
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
             }
         },
@@ -1337,6 +1341,9 @@ fun LiveSessionScreen(
                     else perform("已请求转入后台") { live.backgroundToolCall(sessionKey, toolCallId) }
                 },
             )
+        }
+        if (showProofJobs && proofJobList != null) {
+            ProofJobsDialog(proofJobList, stale = !workState.isLive, onDismiss = { showProofJobs = false })
         }
         if (showGoal) {
             val current = goal

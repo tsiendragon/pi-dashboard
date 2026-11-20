@@ -186,6 +186,14 @@ xml/html、css/markdown；`text`/`log` 等纯文本块保持不着色，未知�
 （`feature_command` + `background`），它和网页一样需要租约，因此会先取控制权；**不支持取消**——
 Live 协议只放行 `background`，取消请在网页端或扩展里做。
 
+**证明任务（只读，PiMatrix）**：PiMatrix 发布的 `live_feature_snapshot`（feature 为 `proof-jobs`，取最新一次快照）
+结构为 `{tasks:[{id,label,state,createdAt?,startedAt?,finishedAt?,collected?}]}`，`state` 取 `queued/running/finished/failed/cancelled`，
+时间为毫秒时间戳，`collected` 可省略（省略时不显示「已取回」）。后端与 Live 桥按 feature 名原样转发、不做额外校验，无需新配置。
+网页 Live Pi 右侧栏在会话发布过该 feature 后才出现「Proof jobs」按钮，角标为排队+运行中数量；Android 会话页顶部
+工作状态下多一行「证明任务 N 个运行中 · M 个排队 · 共 K 个」，点开为只读列表（状态、标签、id、排队/运行/总用时）。
+两端都**不发任何命令**：结果在会话内用 `proof_jobs` 取回。无效条目（缺 id、重复 id）丢弃，未知状态显示为「未知」。
+iOS App 以 WebView 加载网页，随网页端一起生效。网页端需用户执行 `./run.sh` 构建前端后生效；Android 随下一个发布版本生效。
+
 **目标（只读）**（3.6 起）：会话菜单「目标…」展示 `goal-state` 锚点：objective、状态
 （进行中/已暂停/已完成/未标注）、工作项进度条与逐项 `✓/◐/!/⏸/○`、阻塞项（种类·归属·原因）、
 最近进展，以及两种过期提示——「已完成但仍有未完成项」与「超过 300 条消息未更新」（阈值同

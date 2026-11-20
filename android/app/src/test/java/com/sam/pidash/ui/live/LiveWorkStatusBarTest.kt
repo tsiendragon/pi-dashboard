@@ -1,5 +1,7 @@
 package com.sam.pidash.ui.live
 
+import com.sam.pidash.data.remote.LiveProofJob
+import com.sam.pidash.data.remote.LiveProofJobs
 import com.sam.pidash.data.remote.LiveScheduleSummary
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
 import com.sam.pidash.domain.model.LiveBackgroundTask
@@ -54,5 +56,24 @@ class LiveWorkStatusBarTest {
             assertEquals("工作状态待同步", state.agentLabel)
             assertEquals("后台记录", state.backgroundLabel)
         }
+    }
+
+    @Test fun proofJobsKeepAnIdleAgentWorkingAndStayHiddenWhenStale() {
+        val jobs = LiveProofJobs(listOf(
+            LiveProofJob("pj-1", "Lemma 1", "running", startedAt = 1_000),
+            LiveProofJob("pj-2", "Lemma 2", "queued"),
+            LiveProofJob("pj-3", "Lemma 3", "finished"),
+        ))
+        val state = liveWorkState("idle", true, LiveBackgroundSnapshot(), proofJobs = jobs)
+        assertTrue(state.isExecuting)
+        assertEquals("证明任务 1 个运行中 · 1 个排队 · 共 3 个", state.proofJobsLabel)
+        val settled = liveWorkState("idle", true, LiveBackgroundSnapshot(), proofJobs = LiveProofJobs(listOf(jobs.jobs[2])))
+        assertFalse(settled.isWorking)
+        assertEquals("证明任务 无运行中 · 共 1 个", settled.proofJobsLabel)
+        assertNull(liveWorkState("idle", true, null, proofJobs = LiveProofJobs(emptyList())).proofJobsLabel)
+        assertNull(liveWorkState("reconnecting", true, null, proofJobs = jobs).proofJobsLabel)
+        assertEquals("已运行 1m 30s", proofJobTiming(jobs.jobs[0], now = 91_000))
+        assertEquals("等待空位", proofJobTiming(jobs.jobs[1], now = 0))
+        assertEquals("", proofJobTiming(jobs.jobs[2], now = 0))
     }
 }

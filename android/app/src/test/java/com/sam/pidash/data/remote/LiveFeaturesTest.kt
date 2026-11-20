@@ -67,4 +67,28 @@ class LiveFeaturesTest {
         assertEquals(60, task.elapsedSeconds(now = 999_999))
         assertEquals(5, task.copy(endedAt = null, startedAt = 0).elapsedSeconds(now = 5_000))
     }
+
+    @Test fun proofJobsAreValidatedAndOrderedLiveFirst() {
+        assertNull(proofJobs(detail()))
+        assertNull(proofJobs(detail(event("proof-jobs", """{"tasks":"nope"}"""))))
+        val stale = event("proof-jobs", """{"tasks":[{"id":"pj-old","label":"Old","state":"running"}]}""")
+        val latest = event("proof-jobs", """{"tasks":[
+            {"id":"pj-done","label":"Lemma 2","state":"finished","createdAt":1000,"startedAt":2000,"finishedAt":62000},
+            {"id":"pj-q","label":"Lemma 3","state":"queued","createdAt":5000},
+            {"id":"pj-run","label":"Lemma 1","state":"running","startedAt":3000,"collected":true},
+            {"id":"pj-odd","state":"cancelling","startedAt":"yesterday"},
+            {"id":"pj-run","label":"duplicate","state":"failed"},
+            {"label":"no id","state":"running"}
+        ]}""")
+        val jobs = proofJobs(detail(stale, latest))!!
+        assertEquals(listOf("pj-run", "pj-q", "pj-done", "pj-odd"), jobs.jobs.map { it.id })
+        assertEquals(1, jobs.running)
+        assertEquals(1, jobs.queued)
+        assertEquals("unknown", jobs.jobs[3].state)
+        assertEquals("pj-odd", jobs.jobs[3].label)
+        assertNull(jobs.jobs[3].startedAt)
+        assertEquals(true, jobs.jobs[0].collected)
+        assertNull(jobs.jobs[2].collected)
+        assertEquals(62_000L, jobs.jobs[2].finishedAt)
+    }
 }

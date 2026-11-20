@@ -50,10 +50,13 @@
 | `auth.json` | pi（provider 凭证） | 是（或用环境变量） | ❌（`/login` 或 `dashboard.env`） |
 | `models.json` / `models-store.json` | pi（模型清单、自建模型） | 是（自动维护） | ❌ |
 | `AGENTS.md` / `DefaultSystemPrompt.md` | pi（系统提示） | 否 | ❌ |
+| `APPEND_SYSTEM.md` | pi（追加系统提示，不替换默认提示） | 否 | ❌ |
 | `keybindings.json` / `trust.json` | pi | 否 | ❌ |
 | `sessions/`、`skills/`、`bin/`、`local/` | pi | 混合 | ❌ |
 | `extensions.config.json` | 同步器（声明装载清单） | 是（standalone 安装用它） | ⚠️ 间接（`/api/pi/packages/*` 落到 settings.json） |
 | `dashboard.env` | dashboard + 它派生的所有 pi | 部分 | ❌（但**唯一**环境入口） |
+
+想让模型在工具执行前先发一两句可见的开工说明，可在本机 `<agent dir>/APPEND_SYSTEM.md` 追加提示。现有 Pi 会话空闲后执行 `/reload`，新会话会在启动时读取；不用重启 Dashboard。提示词仅引导模型，不强制工具执行顺序。
 
 ### ② 扩展（每个扩展一份 JSON，在 `<agent dir>/`）
 

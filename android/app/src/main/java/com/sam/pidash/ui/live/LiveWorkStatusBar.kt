@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.sam.pidash.data.remote.LiveProofJobs
 import com.sam.pidash.data.remote.LiveScheduleSummary
 import com.sam.pidash.data.remote.activeBackgroundTasks
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
@@ -29,9 +30,19 @@ internal data class LiveWorkState(
     val backgroundCount: Int?,
     val schedule: LiveScheduleSummary?,
     val needsInput: Boolean,
+    val proofJobs: LiveProofJobs? = null,
 ) {
-    val isExecuting: Boolean get() = agentRunning || (backgroundCount ?: 0) > 0
-    val isWorking: Boolean get() = isExecuting || schedule != null
+    val isExecuting: Boolean get() = agentRunning || (backgroundCount ?: 0) > 0 || (proofJobs?.running ?: 0) > 0
+    val isWorking: Boolean get() = isExecuting || schedule != null || (proofJobs?.active ?: 0) > 0
+    /** Shown only once the session has published proof jobs; settled-only lists stay quiet. */
+    val proofJobsLabel: String? get() = proofJobs?.takeIf { it.jobs.isNotEmpty() }?.let { jobs ->
+        val parts = buildList {
+            if (jobs.running > 0) add("${jobs.running} 个运行中")
+            if (jobs.queued > 0) add("${jobs.queued} 个排队")
+            if (isEmpty()) add("无运行中")
+        }
+        "证明任务 ${parts.joinToString(" · ")} · 共 ${jobs.jobs.size} 个"
+    }
     val scheduleHint: String get() = if (needsInput) "有待处理的请求" else "无需额外输入"
     val agentLabel: String get() = when {
         !isLive -> "工作状态待同步"
@@ -52,6 +63,7 @@ internal fun liveWorkState(
     background: LiveBackgroundSnapshot?,
     schedule: LiveScheduleSummary? = null,
     needsInput: Boolean = false,
+    proofJobs: LiveProofJobs? = null,
 ): LiveWorkState {
     val fresh = live && (agentStatus == "running" || agentStatus == "idle")
     return LiveWorkState(
@@ -60,11 +72,17 @@ internal fun liveWorkState(
         backgroundCount = background?.takeIf { fresh }?.activeBackgroundTasks()?.size,
         schedule = schedule?.takeIf { fresh },
         needsInput = needsInput && fresh,
+        proofJobs = proofJobs?.takeIf { fresh },
     )
 }
 
 @Composable
-internal fun LiveWorkStatusBar(state: LiveWorkState, canOpenBackground: Boolean, onOpenBackground: () -> Unit) {
+internal fun LiveWorkStatusBar(
+    state: LiveWorkState,
+    canOpenBackground: Boolean,
+    onOpenBackground: () -> Unit,
+    onOpenProofJobs: () -> Unit = {},
+) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp)) {
         Row(
@@ -94,6 +112,16 @@ internal fun LiveWorkStatusBar(state: LiveWorkState, canOpenBackground: Boolean,
                 modifier = Modifier.padding(start = 14.dp, end = 8.dp, bottom = 8.dp),
                 style = PiType.caption,
                 color = colors.onSurfaceVariant,
+            )
+        }
+        state.proofJobsLabel?.let { label ->
+            Text(
+                label,
+                modifier = Modifier
+                    .clickable(role = Role.Button, onClickLabel = "查看证明任务", onClick = onOpenProofJobs)
+                    .padding(start = 14.dp, end = 8.dp, top = 2.dp, bottom = 8.dp),
+                style = PiType.caption,
+                color = colors.primary,
             )
         }
     }

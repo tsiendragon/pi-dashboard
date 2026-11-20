@@ -9,6 +9,7 @@ import FileBrowser from '../../components/FileBrowser'
 import LineIcon, { type LineIconName } from '../../components/LineIcon'
 import { SupervisorNotificationsSidebarButton } from '../supervisor/SupervisorAgentProvider'
 import { isCollapsedByDefault, projectStatus, projectSubagentSnapshot, stableTaskId, textValue } from './subagentProjection'
+import { PROOF_JOBS_FEATURE, PROOF_JOB_STATE_LABEL, projectProofJobs, proofJobTiming, type ProofJobState } from './proofJobs'
 
 type RecordValue = Record<string, unknown>
 
@@ -33,12 +34,23 @@ const BTW_STATUS_LABEL: Record<string, string> = {
 /** Side-chat transcript roles, in the same words the terminal panel uses. */
 const BTW_ROLE_LABEL: Record<string, string> = { user: '你', assistant: 'BTW', notice: '提示' }
 
-const FEATURE_LABEL: Record<'btw' | 'schedule' | 'subagent' | 'commands' | 'prompts', string> = {
+const FEATURE_LABEL: Record<FeatureKind, string> = {
   btw: 'BTW',
   commands: '命令',
   schedule: '调度',
   subagent: '代理',
   prompts: '快捷',
+  proofJobs: '证明任务',
+}
+
+/** Read-only state colours for PiMatrix proof jobs. */
+const PROOF_JOB_STATE_CLASS: Record<ProofJobState, string> = {
+  queued: 'text-warn',
+  running: 'text-accent',
+  finished: 'text-ok',
+  failed: 'text-danger',
+  cancelled: 'text-muted',
+  unknown: 'text-muted',
 }
 
 /** One-tap quick prompts: long, frequently typed instructions sent to the session. */
@@ -51,8 +63,8 @@ const QUICK_PROMPTS: { id: string; label: string; text: string; icon: LineIconNa
   { id: 'report', label: '日报/周报素材', text: '汇总我最近在这个项目做了什么：完成了什么、卡在哪、下一步计划，用能直接贴进汇报的格式。', icon: 'edit', tone: 'text-ok' },
 ]
 
-type FeatureKind = 'btw' | 'schedule' | 'subagent' | 'commands' | 'prompts'
-const FEATURE_ICON: Record<FeatureKind, LineIconName> = { prompts: 'bolt', btw: 'bubble', schedule: 'clock', subagent: 'flow', commands: 'terminal' }
+type FeatureKind = 'btw' | 'schedule' | 'subagent' | 'commands' | 'prompts' | 'proofJobs'
+const FEATURE_ICON: Record<FeatureKind, LineIconName> = { prompts: 'bolt', btw: 'bubble', schedule: 'clock', subagent: 'flow', commands: 'terminal', proofJobs: 'checkCircle' }
 const ACTION_ICON = { interrupt: 'stop', goal: 'target', compact: 'compress', reload: 'refresh', clear: 'trash', dashboardRestart: 'repeat' } as const satisfies Record<string, LineIconName>
 
 function Feature({ title, icon, count, children }: { title: string; icon: FeatureKind; count?: number; children: React.ReactNode }) {
@@ -130,6 +142,7 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, conte
   const schedule = record(features.schedule)
   const background = record(features['background-commands'])
   const subagent = record(features['subagent-workflow'])
+  const proofJobs = projectProofJobs(features[PROOF_JOBS_FEATURE])
   const projectedSubagents = projectSubagentSnapshot({ conversations: subagent?.conversations, workflows: subagent?.workflows }, 'live-session')
   const conversations = projectedSubagents.topLevelConversations
   const workflows = projectedSubagents.workflows
@@ -370,6 +383,23 @@ export default function LiveSessionFeatures({ features, busy, cwd, status, conte
         </div>)}
       </div>}
     </Feature>
+
+    {proofJobs && <Feature title="Proof jobs" icon="proofJobs" count={proofJobs.active}>
+      {proofJobs.jobs.length === 0 ? <div className="text-xs text-muted">当前 session 没有证明任务。</div> : <div className="space-y-2">
+        {proofJobs.jobs.map(job => {
+          const timing = proofJobTiming(job, Date.now())
+          return <div key={job.id} data-proof-job-state={job.state} className={`rounded border p-2 ${job.state === 'failed' ? 'border-danger bg-danger-subtle' : 'border-border bg-card'}`}>
+            <div className="flex items-center gap-2 text-xs">
+              <span className={`shrink-0 ${PROOF_JOB_STATE_CLASS[job.state]}`}>{PROOF_JOB_STATE_LABEL[job.state]}</span>
+              <strong className="min-w-0 flex-1 truncate" title={job.label}>{job.label}</strong>
+              {job.collected === true && <span className="shrink-0 text-2xs text-muted">已取回</span>}
+            </div>
+            <div className="mt-1 truncate font-mono text-2xs text-muted">{job.id}{timing ? ` · ${timing}` : ''}</div>
+          </div>
+        })}
+      </div>}
+      <div className="mt-2 text-2xs text-muted">只读：结果在会话内用 proof_jobs 取回。</div>
+    </Feature>}
 
     <Feature title="Subagent / Workflow" icon="subagent" count={conversations.length + workflows.length}>
       {conversations.length + workflows.length === 0 ? <div className="text-xs text-muted">当前没有 Subagent 或 Workflow 记录。</div> : <div className="space-y-2">

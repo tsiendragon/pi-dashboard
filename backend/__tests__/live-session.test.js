@@ -252,6 +252,23 @@ describe('LiveSessionRegistry', () => {
     expect(registry.list()[0].lastActivityAt).toBeGreaterThan(2)
   })
 
+  it('relays the read-only proof-jobs feature and keeps only its latest snapshot', () => {
+    const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
+    cleanups.push(() => registry.stop())
+    const transport = { send() {} }
+    registry.connect(hello(), '/tmp/root/task', transport)
+    registry.applySnapshot({ type: 'snapshot', processInstanceId: 'process-a', revision: 1, sequence: 0, summary: summary(), entries: [] }, transport, '/tmp/root/task')
+
+    const jobs = tasks => ({ type: 'live_feature_snapshot', data: { feature: 'proof-jobs', snapshot: { tasks } } })
+    registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 1, event: jobs([{ id: 'pj-1', label: 'Lemma', state: 'queued', createdAt: 1 }]) }, transport)
+    registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 2, event: { type: 'live_feature_snapshot', data: { feature: 'schedule', snapshot: { tasks: [] } } } }, transport)
+    registry.applyEvent({ type: 'event', processInstanceId: 'process-a', sequence: 3, event: jobs([{ id: 'pj-1', label: 'Lemma', state: 'running', createdAt: 1, startedAt: 2 }]) }, transport)
+
+    const snapshots = registry.get('process-a').entries.filter(entry => entry.type === 'live_feature_snapshot')
+    expect(snapshots.map(entry => entry.data.feature)).toEqual(['proof-jobs', 'schedule'])
+    expect(snapshots[0].data.snapshot.tasks).toEqual([{ id: 'pj-1', label: 'Lemma', state: 'running', createdAt: 1, startedAt: 2 }])
+  })
+
   it('mirrors unanswered extension dialogs into the session detail', async () => {
     const registry = new LiveSessionRegistry({ commandTimeoutMs: 1_000 })
     cleanups.push(() => registry.stop())
