@@ -338,6 +338,29 @@ class LiveSessionClientTest {
         assertTrue(repo.leases.value.isEmpty())
     }
 
+    @Test fun modelAndThinkingSwitchesAreSharedEvenWhenAnotherClientHoldsControl() = runBlocking {
+        val repo = repository()
+        val key = SessionKey(backend.id, process)
+        repo.focus(key)
+        assertTrue(repo.refresh(key).isSuccess)
+        assertEquals("other-client-lease", repo.details.value[key]?.summary?.claim?.leaseId)
+        handler = {
+            if (it.requestURI.path.endsWith("/commands")) reply(it, """{"ok":true,"result":{}}""")
+            else reply(it, detail)
+        }
+        calls.clear()
+        // The WebUI sends both through its shared command path; the phone must match.
+        assertTrue(repo.setModel(key, "anthropic", "claude-sonnet").isSuccess)
+        assertTrue(repo.setThinking(key, "high").isSuccess)
+        val bodies = calls.filter { it.path.endsWith("/commands") }.map { it.body }
+        assertEquals(2, bodies.size)
+        assertTrue(bodies[0].contains("\"type\":\"set_model\""))
+        assertTrue(bodies[1].contains("\"type\":\"input\"") && bodies[1].contains("/effort high"))
+        assertTrue(bodies.none { it.contains("leaseId") })
+        assertTrue(calls.none { it.path.endsWith("/claim") || it.path.endsWith("/renew") })
+        assertTrue(repo.leases.value.isEmpty())
+    }
+
     @Test fun abortStillRequiresAnExplicitLease() = runBlocking {
         val repo = repository()
         val key = SessionKey(backend.id, process)

@@ -310,7 +310,7 @@ internal fun LiveModelDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         if (thinking) Text(
-                            "点按档位立即切换，选择后自动关闭。",
+                            "点按档位立即切换，不会抢占控制权；选择后自动关闭。",
                             style = PiType.caption,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

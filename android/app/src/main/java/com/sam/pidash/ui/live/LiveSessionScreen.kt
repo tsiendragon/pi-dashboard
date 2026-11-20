@@ -1320,11 +1320,14 @@ fun LiveSessionScreen(
                 }
             }
             "model", "thinking" -> LiveModelDialog(repo, sessionKey, summary, dialog == "thinking", busy, notice, dismiss,
+                // Model and thinking switches ride the shared command whitelist, exactly like
+                // the WebUI. They must not require a lease, otherwise a phone that is merely
+                // watching a session owned by another client can never change either.
                 onModel = { option -> perform("模型已更新", close = true) {
-                    ensureLease().fold(onSuccess = { live.setModel(sessionKey, option.provider, option.id) }, onFailure = { Result.failure(it) })
+                    live.setModel(sessionKey, option.provider, option.id)
                 } },
                 onThinking = { level -> perform("已请求切换思考等级", close = true) {
-                    ensureLease().fold(onSuccess = { live.setThinking(sessionKey, level) }, onFailure = { Result.failure(it) })
+                    live.setThinking(sessionKey, level)
                 } },
             )
             "new-session" -> NewLiveSessionDialog(
