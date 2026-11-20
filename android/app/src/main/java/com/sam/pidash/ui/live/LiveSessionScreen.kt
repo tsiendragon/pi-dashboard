@@ -90,6 +90,8 @@ import com.sam.pidash.domain.model.normalizeQuote
 import com.sam.pidash.domain.model.selectionLabel
 import com.sam.pidash.data.repo.PiDashRepository
 import com.sam.pidash.domain.model.LiveTimelineItem
+import com.sam.pidash.domain.model.operationLabel
+import com.sam.pidash.domain.model.runningOperationStatus
 import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.ui.theme.Radii
 import kotlinx.coroutines.launch
@@ -263,6 +265,21 @@ fun LiveSessionScreen(
     val goal = remember(detail) { detail?.let { liveGoalAnchor(it) } }
     val goalActionsEnabled = cachedSnapshot == null && summary?.status != "reconnecting"
     val activities = remember(detail) { detail?.let { projectLiveActivities(it) }.orEmpty() }
+    val currentActivity = activities.lastOrNull()
+    val currentOperation = if (running && cachedSnapshot == null) {
+        currentActivity?.let(::runningOperationStatus)
+    } else null
+    val runningTool = remember(currentActivity) {
+        currentActivity?.items?.lastOrNull {
+            (it.role == "tool" || it.toolCallId != null) && it.status == "running"
+        }
+    }
+    val operationDetail = remember(runningTool?.id, runningTool?.toolArgs) {
+        runningTool?.let(::toolArgumentPreview)?.takeIf { it.isNotBlank() }
+    }
+    val operationText = remember(currentOperation, operationDetail) {
+        currentOperation?.let { operationLabel(it, operationDetail) }
+    }
     // Default is the activity view: a phone reads replies, not the whole transcript.
     var viewMode by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("activity") }
     // Each session and view starts at its own latest item, not a restored list offset.
@@ -694,21 +711,30 @@ fun LiveSessionScreen(
                         }
                     }
                 }
-                if (busy || running || owned) Row(verticalAlignment = Alignment.CenterVertically) {
+                val liveLine = operationText ?: when {
+                    busy -> "处理中…"
+                    running -> "运行中…"
+                    owned -> "本机接管中"
+                    else -> null
+                }
+                if (liveLine != null) Row(verticalAlignment = Alignment.CenterVertically) {
                     if (busy || running) {
                         PulsingDot(MaterialTheme.colorScheme.primary, size = 5.dp)
                         Spacer(Modifier.size(6.dp))
                     }
                     Text(
-                        if (busy || running) "运行中" else "本机接管中",
+                        liveLine,
+                        modifier = Modifier.weight(1f),
                         style = PiType.action,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (operationText != null) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     if (running && heldElsewhere) {
                         Spacer(Modifier.size(6.dp))
                         Text("其他端控制中", style = PiType.action, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Spacer(Modifier.weight(1f))
                 }
                 // Collapse this auxiliary row while not editing; its actions remain in the + menu.
                 if (showComposerTools) Row(

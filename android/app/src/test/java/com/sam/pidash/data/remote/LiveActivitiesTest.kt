@@ -191,6 +191,35 @@ class ActivityStatusTest {
         assertEquals("回复中", status("工作中", item("a", "assistant", "正在回答")).label)
     }
 
+    @Test fun currentOperationFollowsALaterRunningToolPastAnEarlierFailure() {
+        val activity = com.sam.pidash.domain.model.LiveActivity(
+            "a", "p", "工作中",
+            listOf(
+                item("t1", "tool", status = "done", toolName = "bash", error = true),
+                item("t2", "tool", status = "running", toolName = "grep"),
+            ),
+        )
+        val operation = com.sam.pidash.domain.model.runningOperationStatus(activity)
+        assertNotNull(operation)
+        assertEquals(com.sam.pidash.domain.model.ActivityPhase.SEARCH, operation?.phase)
+        assertEquals("正在搜索：src", com.sam.pidash.domain.model.operationLabel(operation!!, "src"))
+        assertEquals("正在思考…", com.sam.pidash.domain.model.operationLabel(status("工作中", item("u", "user", "问题"))))
+        assertEquals("正在回复…", com.sam.pidash.domain.model.operationLabel(
+            com.sam.pidash.domain.model.ActivityStatus(
+                com.sam.pidash.domain.model.ActivityPhase.REPLYING, "回复中",
+            ),
+        ))
+        assertEquals("正在执行命令：npm test", com.sam.pidash.domain.model.operationLabel(
+            com.sam.pidash.domain.model.ActivityStatus(
+                com.sam.pidash.domain.model.ActivityPhase.COMMAND, "执行命令", "bash",
+            ),
+            "npm test",
+        ))
+        assertNull(com.sam.pidash.domain.model.runningOperationStatus(
+            com.sam.pidash.domain.model.LiveActivity("a", "p", "已回复", listOf(item("a", "assistant", "答案"))),
+        ))
+    }
+
     @Test fun finishedAndFailedAreDistinct() {
         val done = status("已回复", item("a", "assistant", "答案"))
         assertEquals(com.sam.pidash.domain.model.ActivityPhase.DONE, done.phase)

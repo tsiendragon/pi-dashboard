@@ -33,6 +33,34 @@ internal fun phaseForTool(tool: String?): ActivityStatus = when {
     else -> ActivityStatus(ActivityPhase.TOOL, "调用 $tool", tool)
 }
 
+/**
+ * The operation to put above the composer while a turn is running.
+ *
+ * Unlike [activityStatus], a failure earlier in the turn must not hide a later
+ * running tool: the phone line answers "what is the agent doing now", not "how
+ * did this turn end up". Returns null when the activity has no live operation.
+ */
+fun runningOperationStatus(activity: LiveActivity): ActivityStatus? {
+    val items = activity.items
+    items.lastOrNull { (it.role == "tool" || it.toolCallId != null) && it.status == "running" }?.let {
+        return phaseForTool(it.toolName)
+    }
+    if (activity.state != "工作中") return null
+    val hasText = items.any { it.role == "assistant" && it.text.isNotBlank() && !it.isError }
+    return if (hasText) ActivityStatus(ActivityPhase.REPLYING, "回复中")
+    else ActivityStatus(ActivityPhase.THINKING, "思考中")
+}
+
+/** Human one-liner for the composer status row. */
+fun operationLabel(status: ActivityStatus, detail: String? = null): String = when (status.phase) {
+    ActivityPhase.THINKING -> "正在思考…"
+    ActivityPhase.REPLYING -> "正在回复…"
+    else -> {
+        val suffix = detail?.trim()?.takeIf { it.isNotEmpty() }?.let { "：$it" }.orEmpty()
+        "正在${status.label}$suffix"
+    }
+}
+
 fun activityStatus(activity: LiveActivity): ActivityStatus {
     val items = activity.items
     if (items.any { it.isError }) return ActivityStatus(ActivityPhase.FAILED, "失败")
