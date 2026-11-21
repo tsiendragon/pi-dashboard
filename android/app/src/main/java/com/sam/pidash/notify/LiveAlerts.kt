@@ -40,6 +40,16 @@ fun approvalActions(alert: LiveAlert): List<LiveAlertAction> =
         emptyList()
     }
 
+/**
+ * The one action that opens the conversation when the shade cannot answer in place.
+ * Confirm requests already have 允许/拒绝; everything else gets an explicit way in.
+ */
+fun openConversationAction(alert: LiveAlert): LiveAlertAction? = when {
+    alert.request?.method == "confirm" -> null
+    alert.kind == LiveAlertKind.COMPLETED -> LiveAlertAction("查看回复", "open")
+    else -> LiveAlertAction("打开会话", "open")
+}
+
 fun findLiveAlert(
     backendId: String,
     processInstanceId: String,
@@ -66,7 +76,7 @@ fun findLiveAlert(
             backendId = backendId,
             sessionKey = processInstanceId,
             title = "已完成：$title",
-            text = "这一轮回复结束，可以回来看结果",
+            text = "这一轮回复结束，点按查看回复",
         )
     }
     return null

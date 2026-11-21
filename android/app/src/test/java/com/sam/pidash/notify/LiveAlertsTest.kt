@@ -39,6 +39,15 @@ class LiveAlertsTest {
         assertEquals("ui-2", alert?.request?.id)
     }
 
+    @Test fun completionHasAnExplicitViewReplyActionAndOtherRequestsOpenTheSession() {
+        val completed = findLiveAlert("b1", "p1", summary(status = "running"), summary(status = "idle"), emptyList(), emptyList(), "会话")!!
+        assertTrue(completed.text.contains("查看回复"))
+        assertEquals("查看回复", openConversationAction(completed)?.label)
+        val sudo = findLiveAlert("b1", "p1", summary(), summary(), emptyList(), listOf(request(method = "sudo")), "会话")!!
+        assertEquals("打开会话", openConversationAction(sudo)?.label)
+        assertNull(openConversationAction(LiveAlert(LiveAlertKind.NEEDS_INPUT, "b", "p", "t", "x", request())))
+    }
+
     @Test fun onlyConfirmCanBeAnsweredFromTheShade() {
         assertEquals(listOf("允许", "拒绝"), approvalActions(LiveAlert(LiveAlertKind.NEEDS_INPUT, "b", "p", "t", "x", request())).map { it.label })
         assertEquals(listOf("true", "false"), approvalActions(LiveAlert(LiveAlertKind.NEEDS_INPUT, "b", "p", "t", "x", request())).map { it.value })

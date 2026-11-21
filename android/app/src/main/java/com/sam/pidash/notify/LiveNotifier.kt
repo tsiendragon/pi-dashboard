@@ -56,7 +56,10 @@ class LiveNotifier(private val context: Context) {
             context,
             alert.sessionKey.hashCode(),
             Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                // SINGLE_TOP makes an already-running task deliver onNewIntent instead of
+                // building a second Compose host and losing the pending deep link.
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra(MainActivity.EXTRA_BACKEND_ID, alert.backendId)
                 putExtra(MainActivity.EXTRA_SLOT_KEY, alert.sessionKey)
             },
@@ -79,6 +82,15 @@ class LiveNotifier(private val context: Context) {
                     Icon.createWithResource(context, R.drawable.ic_stat_live),
                     action.label,
                     answerIntent(alert, action.value),
+                ).build(),
+            )
+        }
+        openConversationAction(alert)?.let { action ->
+            builder.addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(context, R.drawable.ic_stat_live),
+                    action.label,
+                    open,
                 ).build(),
             )
         }

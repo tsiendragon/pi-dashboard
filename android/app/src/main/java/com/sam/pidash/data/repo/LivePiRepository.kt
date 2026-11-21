@@ -52,6 +52,13 @@ class LivePiRepository(
     private val _organization = MutableStateFlow<Map<String, LiveOrganization>>(emptyMap())
     val organization: StateFlow<Map<String, LiveOrganization>> = _organization
     @Volatile private var foreground = false
+    /**
+     * While the UI is in the background, keep the live socket open only while a turn is
+     * running or a request is pending. This is what lets the notification watcher see
+     * "running -> idle" and post a completion alert; idle sockets are closed immediately.
+     */
+    @Volatile private var backgroundWatch = false
+    private var backgroundStopJob: Job? = null
     @Volatile private var focused: SessionKey? = null
     private val rows = MutableStateFlow<Map<String, List<LiveSummary>>>(emptyMap())
     private val metadata = MutableStateFlow<Map<String, Map<String, LiveMeta>>>(emptyMap())
@@ -280,7 +287,9 @@ class LivePiRepository(
 
     fun close() {
         foreground = false
+        backgroundWatch = false
         synchronized(lock) {
+            backgroundStopJob?.cancel(); backgroundStopJob = null
             jobs.values.forEach { it.cancel() }; jobs.clear()
             cacheWrites.values.forEach { it.cancel() }; cacheWrites.clear()
             clients.values.forEach { it.close() }; clients.clear()
@@ -291,19 +300,61 @@ class LivePiRepository(
     fun setForeground(value: Boolean) {
         foreground = value
         synchronized(lock) {
-            if (value) clients.keys.forEach(::startLoop)
-            else {
-                jobs.values.forEach { it.cancel() }; jobs.clear()
+            if (value) {
+                backgroundWatch = false
+                backgroundStopJob?.cancel(); backgroundStopJob = null
+                clients.keys.forEach(::startLoop)
+            } else {
                 releaseOwned()
-                _states.update { states -> states.mapValues { (_, old) -> old.copy(connected = false) } }
+                // A backgrounded app must still be able to notice that its current turn
+                // finished; otherwise the completion notification can never be posted.
+                backgroundWatch = hasActiveLiveWork()
+                if (backgroundWatch) scheduleBackgroundStopLocked()
+                else stopLoopsLocked()
             }
         }
     }
+
+    /**
+     * Called by the alert watcher after it has inspected a snapshot. The short delay
+     * gives the notifier time to post before the socket is closed.
+     */
+    fun stopBackgroundWatchIfIdle() {
+        synchronized(lock) {
+            backgroundStopJob = null
+            if (foreground || !backgroundWatch || hasActiveLiveWork()) return
+            backgroundWatch = false
+            stopLoopsLocked()
+        }
+    }
+
+    private fun hasActiveLiveWork(): Boolean {
+        val details = _details.value.values
+        return shouldKeepLiveWatch(
+            summaries = rows.value.values.flatten() + details.map { it.summary },
+            pending = details.flatMap { it.pendingUi },
+        )
+    }
+
+    private fun scheduleBackgroundStopLocked() {
+        if (foreground || !backgroundWatch || backgroundStopJob?.isActive == true) return
+        backgroundStopJob = scope.launch {
+            delay(3_000)
+            stopBackgroundWatchIfIdle()
+        }
+    }
+
+    private fun stopLoopsLocked() {
+        jobs.values.forEach { it.cancel() }
+        jobs.clear()
+        _states.update { states -> states.mapValues { (_, old) -> old.copy(connected = false) } }
+    }
+
     private fun startLoop(id: String) {
         if (jobs[id]?.isActive == true) return
         jobs[id] = scope.launch {
             var backoff = 1000L
-            while (isActive && foreground) {
+            while (isActive && (foreground || backgroundWatch)) {
                 val api = client(id)
                 if (!api.authorized) {
                     rows.update { it - id }
@@ -403,6 +454,7 @@ class LivePiRepository(
                 removeCachedSession(key)
             }
         }
+        if (!foreground && backgroundWatch) scheduleBackgroundStopLocked()
     }
     private fun updateSummary(id: String, summary: LiveSummary) {
         val key = SessionKey(id, summary.processInstanceId)
@@ -445,6 +497,7 @@ class LivePiRepository(
             current == null || (cachedSession != null && current.sessionId != cachedSession)
         }.forEach(::removeCachedSession)
         _states.update { it + (id to LiveBackendState(connected = true)) }
+        if (!foreground && backgroundWatch) scheduleBackgroundStopLocked()
         _leases.value.filterKeys { it.backendId == id }.forEach { (key, lease) ->
             val live = list.find { it.processInstanceId == key.slotKey }
             if (live == null || live.claim.state != "claimed" || live.claim.leaseId != lease.leaseId) _leases.update { it - key }
