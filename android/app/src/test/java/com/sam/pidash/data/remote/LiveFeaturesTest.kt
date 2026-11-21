@@ -68,6 +68,53 @@ class LiveFeaturesTest {
         assertEquals(5, task.copy(endedAt = null, startedAt = 0).elapsedSeconds(now = 5_000))
     }
 
+    @Test fun subagentWorkUsesWebStatusPrecedenceAndDoesNotCountWorkflowChildrenTwice() {
+        val snapshot = event("subagent-workflow", """{
+            "conversations":{"running":99,"items":[
+                {"id":"a","status":"idle","activeRunId":"r"},
+                {"id":"b","status":"running","latestRunStatus":"queued"},
+                {"id":"c","status":"running","stalled":true},
+                {"id":"d","status":"running","workflowId":"w"},
+                {"id":"e","status":"running","parentWorkflowId":"w"},
+                {"id":"f","status":"running","workflowTaskId":"t"},
+                null, "bad", {"status":true}, {"status":"new-state"}
+            ]},
+            "workflows":{"active":99,"items":[
+                {"id":"w","status":"running","stages":[{"tasks":[{"status":"running"}]}]},
+                {"id":"q","status":"queued"}, {"id":"p","status":"paused"}, {"id":"z","status":"completed"}
+            ]}
+        }""")
+        val work = subagentWork(detail(snapshot, event("background-commands", """{"tasks":[]}""")))!!
+        assertEquals(LiveWorkCounts(1, 1), work.subagents)
+        assertEquals(LiveWorkCounts(1, 1), work.workflows)
+    }
+
+    @Test fun subagentWorkUsesLatestSnapshotIncludingAnExplicitClear() {
+        val running = event("subagent-workflow", """{"workflows":{"items":[{"id":"w","status":"running"}]}}""")
+        val settled = event("subagent-workflow", """{"workflows":{"items":[{"id":"w","status":"completed"}]}}""")
+        val empty = event("subagent-workflow", """{"conversations":{"items":[]},"workflows":{"items":[]}}""")
+        val clear = """{"type":"live_feature_snapshot","data":{"feature":"subagent-workflow"}}"""
+        assertNull(subagentWork(detail(event("background-commands", """{"tasks":[]}"""))))
+        assertEquals(1, subagentWork(detail(running))?.active)
+        assertEquals(0, subagentWork(detail(running, settled))?.active)
+        assertEquals(0, subagentWork(detail(running, empty))?.active)
+        assertNull(subagentWork(detail(running, clear)))
+        assertNull(subagentWork(detail(running, event("subagent-workflow", "null"))))
+        assertNull(subagentWork(detail(running, event("subagent-workflow", """{"workflows":{"items":true}}"""))))
+    }
+
+    @Test fun subagentWorkUpdatesFromTheExistingLiveEventReducer() {
+        fun update(sequence: Int, status: String) = Json.parseToJsonElement("""{
+            "type":"event","processInstanceId":"p","sequence":$sequence,
+            "event":${event("subagent-workflow", """{"workflows":{"items":[{"id":"w","status":"$status"}]}}""")}
+        }""") as kotlinx.serialization.json.JsonObject
+        val running = reduceLiveEvent(detail(), update(1, "running"))!!
+        val done = reduceLiveEvent(running, update(2, "completed"))!!
+        assertEquals(1, subagentWork(running)?.running)
+        assertEquals(0, subagentWork(done)?.active)
+        assertEquals(1, done.entries.size)
+    }
+
     @Test fun proofJobsAreValidatedAndOrderedLiveFirst() {
         assertNull(proofJobs(detail()))
         assertNull(proofJobs(detail(event("proof-jobs", """{"tasks":"nope"}"""))))

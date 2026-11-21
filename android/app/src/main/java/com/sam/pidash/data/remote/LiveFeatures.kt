@@ -17,18 +17,20 @@ import kotlinx.serialization.json.longOrNull
  * `data` is `{feature, snapshot}` (see `pi-tsien-live-session`).
  *
  * Projected here: the background-command panel (a foreground bash call can be
- * handed to the background), armed schedules, and read-only PiMatrix proof jobs.
+ * handed to the background), armed schedules, subagent/workflow activity, and PiMatrix proof jobs.
  * Nothing here issues commands — that stays in the repository under an explicit lease.
  */
 private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
-private fun featureSnapshot(detail: LiveDetail?, feature: String): JsonObject? {
-    return detail?.entries?.asReversed()?.firstNotNullOfOrNull { raw ->
+internal fun featureSnapshot(detail: LiveDetail?, feature: String): JsonObject? {
+    val latest = detail?.entries?.asReversed()?.firstNotNullOfOrNull { raw ->
         val entry = raw as? JsonObject ?: return@firstNotNullOfOrNull null
         if (entry.str("type") != "live_feature_snapshot") return@firstNotNullOfOrNull null
         val data = entry["data"] as? JsonObject ?: return@firstNotNullOfOrNull null
-        data.takeIf { it.str("feature") == feature }?.get("snapshot") as? JsonObject
+        data.takeIf { it.str("feature") == feature }
     }
+    // A clear event may omit the snapshot; never revive an older one.
+    return latest?.get("snapshot") as? JsonObject
 }
 
 fun backgroundSnapshot(detail: LiveDetail?): LiveBackgroundSnapshot? =

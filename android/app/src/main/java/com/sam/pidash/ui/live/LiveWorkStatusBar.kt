@@ -16,6 +16,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.LiveProofJobs
 import com.sam.pidash.data.remote.LiveScheduleSummary
+import com.sam.pidash.data.remote.LiveSubagentWork
+import com.sam.pidash.data.remote.LiveWorkCounts
 import com.sam.pidash.data.remote.activeBackgroundTasks
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
 import com.sam.pidash.ui.common.PulsingDot
@@ -31,9 +33,24 @@ internal data class LiveWorkState(
     val schedule: LiveScheduleSummary?,
     val needsInput: Boolean,
     val proofJobs: LiveProofJobs? = null,
+    val subagentWork: LiveSubagentWork? = null,
 ) {
-    val isExecuting: Boolean get() = agentRunning || (backgroundCount ?: 0) > 0 || (proofJobs?.running ?: 0) > 0
-    val isWorking: Boolean get() = isExecuting || schedule != null || (proofJobs?.active ?: 0) > 0
+    val isExecuting: Boolean get() = agentRunning || (backgroundCount ?: 0) > 0 ||
+        (proofJobs?.running ?: 0) > 0 || (subagentWork?.running ?: 0) > 0
+    val isWorking: Boolean get() = isExecuting || schedule != null ||
+        (proofJobs?.active ?: 0) > 0 || (subagentWork?.active ?: 0) > 0
+    val subagentWorkLabel: String? get() {
+        val work = subagentWork?.takeIf { it.active > 0 } ?: return null
+        val parts = buildList {
+            fun addCounts(name: String, counts: LiveWorkCounts) {
+                if (counts.running > 0) add("$name ${counts.running} 个运行中")
+                if (counts.queued > 0) add("$name ${counts.queued} 个排队")
+            }
+            addCounts("子 Agent", work.subagents)
+            addCounts("工作流", work.workflows)
+        }
+        return "后台（非 Bash）：${parts.joinToString(" · ")}"
+    }
     /** Shown only once the session has published proof jobs; settled-only lists stay quiet. */
     val proofJobsLabel: String? get() = proofJobs?.takeIf { it.jobs.isNotEmpty() }?.let { jobs ->
         val parts = buildList {
@@ -64,6 +81,7 @@ internal fun liveWorkState(
     schedule: LiveScheduleSummary? = null,
     needsInput: Boolean = false,
     proofJobs: LiveProofJobs? = null,
+    subagentWork: LiveSubagentWork? = null,
 ): LiveWorkState {
     val fresh = live && (agentStatus == "running" || agentStatus == "idle")
     return LiveWorkState(
@@ -73,6 +91,7 @@ internal fun liveWorkState(
         schedule = schedule?.takeIf { fresh },
         needsInput = needsInput && fresh,
         proofJobs = proofJobs?.takeIf { fresh },
+        subagentWork = subagentWork?.takeIf { fresh },
     )
 }
 
@@ -104,6 +123,14 @@ internal fun LiveWorkStatusBar(
                     color = if (canOpenBackground) colors.primary else colors.onSurfaceVariant,
                 )
             }
+        }
+        state.subagentWorkLabel?.let { label ->
+            Text(
+                label,
+                modifier = Modifier.padding(start = 14.dp, end = 8.dp, bottom = 8.dp),
+                style = PiType.caption,
+                color = colors.onSurfaceVariant,
+            )
         }
         state.schedule?.let { schedule ->
             val next = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(schedule.nextRunAt))

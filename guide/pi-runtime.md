@@ -100,6 +100,8 @@ npm install -g @earendil-works/pi-coding-agent
 live session 走的是另一条链：`~/.pi/dashboard.json` 的 `liveSessions.launch.command`
 （可指向你自己的包装脚本，例如一个先 unset 部分变量再 exec pi 的脚本），默认直接用 PATH 上的 `pi`。
 
+若 `run_code` 报 `Node.js is not compiled with TypeScript support`，或 Code Mode 启动时提示沙箱探测失败，先检查该会话实际使用的 Node，而不只看终端里的 `node -v`。安装版 Pi 若已有使用配套 Node 的启动入口，请用该入口恢复原会话：Dashboard 管理的空闲会话可在详情里重启，保留原会话记录。`/reload` 只重载扩展，不能更换当前进程的 Node；其他会话不必重启。
+
 ---
 
 ## 5. 升级 / 切换版本

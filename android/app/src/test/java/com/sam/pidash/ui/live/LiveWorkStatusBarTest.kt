@@ -3,6 +3,8 @@ package com.sam.pidash.ui.live
 import com.sam.pidash.data.remote.LiveProofJob
 import com.sam.pidash.data.remote.LiveProofJobs
 import com.sam.pidash.data.remote.LiveScheduleSummary
+import com.sam.pidash.data.remote.LiveSubagentWork
+import com.sam.pidash.data.remote.LiveWorkCounts
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
 import com.sam.pidash.domain.model.LiveBackgroundTask
 import org.junit.Assert.assertEquals
@@ -55,6 +57,36 @@ class LiveWorkStatusBarTest {
             assertNull(state.backgroundCount)
             assertEquals("工作状态待同步", state.agentLabel)
             assertEquals("后台记录", state.backgroundLabel)
+        }
+    }
+
+    @Test fun subagentWorkDoesNotChangeBashCountsOrTheIdleAgentLabel() {
+        val work = LiveSubagentWork(LiveWorkCounts(1, 0), LiveWorkCounts(0, 2))
+        val noBash = liveWorkState("idle", true, LiveBackgroundSnapshot(), subagentWork = work)
+        assertTrue(noBash.isExecuting)
+        assertFalse(noBash.agentRunning)
+        assertEquals("主 Agent 空闲", noBash.agentLabel)
+        assertEquals("无后台命令运行", noBash.backgroundLabel)
+        assertEquals("后台（非 Bash）：子 Agent 1 个运行中 · 工作流 2 个排队", noBash.subagentWorkLabel)
+        val bash = liveWorkState("idle", true, LiveBackgroundSnapshot(tasks = listOf(task)), subagentWork = work)
+        assertEquals(1, bash.backgroundCount)
+        assertEquals(noBash.subagentWorkLabel, bash.subagentWorkLabel)
+    }
+
+    @Test fun queuedSubagentWorkIsNotExecutingAndStaleOrSettledWorkIsHidden() {
+        val idle = LiveWorkCounts(0, 0)
+        val work = LiveSubagentWork(idle, LiveWorkCounts(0, 1))
+        val queued = liveWorkState("idle", true, null, subagentWork = work)
+        assertTrue(queued.isWorking)
+        assertFalse(queued.isExecuting)
+        assertEquals("后台（非 Bash）：工作流 1 个排队", queued.subagentWorkLabel)
+        listOf(
+            liveWorkState("idle", true, null, subagentWork = LiveSubagentWork(idle, idle)),
+            liveWorkState("idle", false, null, subagentWork = work),
+            liveWorkState("reconnecting", true, null, subagentWork = work),
+        ).forEach {
+            assertFalse(it.isWorking)
+            assertNull(it.subagentWorkLabel)
         }
     }
 
