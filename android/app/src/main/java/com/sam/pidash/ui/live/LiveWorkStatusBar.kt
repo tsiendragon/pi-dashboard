@@ -2,6 +2,8 @@ package com.sam.pidash.ui.live
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +18,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.LiveProofJobs
 import com.sam.pidash.data.remote.LiveScheduleSummary
+import com.sam.pidash.data.remote.LiveSubagentWorkflow
 import com.sam.pidash.data.remote.activeBackgroundTasks
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
 import com.sam.pidash.ui.common.PulsingDot
@@ -31,9 +34,14 @@ internal data class LiveWorkState(
     val schedule: LiveScheduleSummary?,
     val needsInput: Boolean,
     val proofJobs: LiveProofJobs? = null,
+    val subagentWorkflow: LiveSubagentWorkflow? = null,
 ) {
-    val isExecuting: Boolean get() = agentRunning || (backgroundCount ?: 0) > 0 || (proofJobs?.running ?: 0) > 0
-    val isWorking: Boolean get() = isExecuting || schedule != null || (proofJobs?.active ?: 0) > 0
+    val isExecuting: Boolean get() = agentRunning || (backgroundCount ?: 0) > 0 ||
+        (proofJobs?.running ?: 0) > 0 || (subagentWorkflow?.isExecuting ?: false)
+    val isWorking: Boolean get() = isExecuting || schedule != null || (proofJobs?.active ?: 0) > 0 ||
+        (subagentWorkflow?.isWorking ?: false)
+    val hasAttention: Boolean get() = subagentWorkflow?.hasAttention == true
+    val subagentWorkflowLabel: String? get() = subagentWorkflow?.summaryLabel
     /** Shown only once the session has published proof jobs; settled-only lists stay quiet. */
     val proofJobsLabel: String? get() = proofJobs?.takeIf { it.jobs.isNotEmpty() }?.let { jobs ->
         val parts = buildList {
@@ -64,6 +72,7 @@ internal fun liveWorkState(
     schedule: LiveScheduleSummary? = null,
     needsInput: Boolean = false,
     proofJobs: LiveProofJobs? = null,
+    subagentWorkflow: LiveSubagentWorkflow? = null,
 ): LiveWorkState {
     val fresh = live && (agentStatus == "running" || agentStatus == "idle")
     return LiveWorkState(
@@ -73,15 +82,18 @@ internal fun liveWorkState(
         schedule = schedule?.takeIf { fresh },
         needsInput = needsInput && fresh,
         proofJobs = proofJobs?.takeIf { fresh },
+        subagentWorkflow = subagentWorkflow?.takeIf { fresh },
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun LiveWorkStatusBar(
     state: LiveWorkState,
     canOpenBackground: Boolean,
     onOpenBackground: () -> Unit,
     onOpenProofJobs: () -> Unit = {},
+    onOpenSubagentWorkflow: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp)) {
@@ -91,7 +103,14 @@ internal fun LiveWorkStatusBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (state.isExecuting) PulsingDot(colors.primary, size = 6.dp)
-            else StatusDot(if (state.isWorking) colors.primary else colors.outline, size = 6.dp)
+            else StatusDot(
+                when {
+                    state.hasAttention -> colors.error
+                    state.isWorking -> colors.primary
+                    else -> colors.outline
+                },
+                size = 6.dp,
+            )
             Text(state.agentLabel, Modifier.weight(1f), style = PiType.caption, color = colors.onSurfaceVariant)
             if (state.isLive || canOpenBackground) {
                 val action = if (canOpenBackground) {
@@ -103,6 +122,29 @@ internal fun LiveWorkStatusBar(
                     style = PiType.caption,
                     color = if (canOpenBackground) colors.primary else colors.onSurfaceVariant,
                 )
+            }
+        }
+        state.subagentWorkflow?.summaryParts?.takeIf { it.isNotEmpty() }?.let { parts ->
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = "查看子 Agent 和工作流",
+                        onClick = onOpenSubagentWorkflow,
+                    )
+                    .padding(start = 14.dp, end = 8.dp, top = 2.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                parts.forEach { part ->
+                    Text(
+                        part.text,
+                        style = PiType.caption,
+                        color = if (part.attention) colors.error else colors.primary,
+                        maxLines = 1,
+                    )
+                }
             }
         }
         state.schedule?.let { schedule ->

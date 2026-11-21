@@ -68,6 +68,67 @@ class LiveFeaturesTest {
         assertEquals(5, task.copy(endedAt = null, startedAt = 0).elapsedSeconds(now = 5_000))
     }
 
+    @Test fun subagentWorkflowSeparatesTopLevelAgentsAndWorkflowChildren() {
+        val snapshot = event("subagent-workflow", """{
+            "revision":4,
+            "conversations":{
+                "total":4,"running":2,"needsAttention":1,"completed":1,
+                "items":[
+                    {"id":"top","label":"检查 API","status":"running","activeRunId":"run-1"},
+                    {"id":"blocked","label":"等待批准","status":"running","needsAttention":true},
+                    {"id":"child","label":"阶段任务","status":"running","workflowId":"wf-1"},
+                    {"id":"done","label":"已完成","status":"completed"}
+                ]
+            },
+            "workflows":{
+                "total":2,"active":1,"failed":0,
+                "items":[
+                    {"id":"wf-1","label":"发布流程","status":"running","currentStage":1,
+                     "stages":[
+                        {"id":"s1","status":"completed","tasks":[{"id":"t1","status":"completed"}]},
+                        {"id":"s2","status":"running","tasks":[{"id":"t2","status":"running"}]}
+                     ]},
+                    {"id":"wf-2","label":"旧流程","status":"completed","stages":[]}
+                ]
+            }
+        }""")
+        val work = subagentWorkflow(detail(snapshot))!!
+        assertEquals(3, work.agentsTotal)
+        assertEquals(1, work.agentsRunning)
+        assertEquals(1, work.agentsAttention)
+        assertEquals(2, work.workflowsTotal)
+        assertEquals(1, work.workflowsActive)
+        assertTrue(work.isExecuting)
+        assertEquals("1 个子 Agent 运行中 · 1 个子 Agent 待处理 · 1 个工作流进行中", work.summaryLabel)
+        // Workflow child conversations must not be counted as another top-level subagent.
+        assertFalse(work.agents.any { it.id == "child" })
+        val workflow = work.workflows.first { it.id == "wf-1" }
+        assertEquals("阶段 2/2 · 任务 1/2 完成", workflow.progressLabel)
+        assertEquals("需处理", liveWorkStatusLabel("blocked"))
+    }
+
+    @Test fun subagentWorkflowFallsBackToCountsWhenItemsAreAbsent() {
+        val snapshot = event("subagent-workflow", """{
+            "conversations":{"total":2,"running":1,"needsAttention":0},
+            "workflows":{"total":3,"active":2,"failed":1}
+        }""")
+        val work = subagentWorkflow(detail(snapshot))!!
+        assertEquals(2, work.agentsTotal)
+        assertEquals(1, work.agentsRunning)
+        assertEquals(3, work.workflowsTotal)
+        assertEquals(2, work.workflowsActive)
+        assertEquals(1, work.workflowsFailed)
+        assertEquals("1 个子 Agent 运行中 · 2 个工作流进行中 · 1 个工作流失败", work.summaryLabel)
+        assertTrue(work.hasAttention)
+    }
+
+    @Test fun subagentWorkflowNeedsAPublishedFeatureObject() {
+        assertNull(subagentWorkflow(null))
+        assertNull(subagentWorkflow(detail()))
+        assertNull(subagentWorkflow(detail(event("btw", """{"revision":1}"""))))
+        assertNull(subagentWorkflow(detail(event("subagent-workflow", """{"conversations":[]}"""))))
+    }
+
     @Test fun proofJobsAreValidatedAndOrderedLiveFirst() {
         assertNull(proofJobs(detail()))
         assertNull(proofJobs(detail(event("proof-jobs", """{"tasks":"nope"}"""))))

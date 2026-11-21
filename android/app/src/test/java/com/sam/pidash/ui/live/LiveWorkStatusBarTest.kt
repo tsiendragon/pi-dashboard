@@ -3,6 +3,9 @@ package com.sam.pidash.ui.live
 import com.sam.pidash.data.remote.LiveProofJob
 import com.sam.pidash.data.remote.LiveProofJobs
 import com.sam.pidash.data.remote.LiveScheduleSummary
+import com.sam.pidash.data.remote.LiveSubagentRecord
+import com.sam.pidash.data.remote.LiveSubagentWorkflow
+import com.sam.pidash.data.remote.LiveWorkflowRecord
 import com.sam.pidash.domain.model.LiveBackgroundSnapshot
 import com.sam.pidash.domain.model.LiveBackgroundTask
 import org.junit.Assert.assertEquals
@@ -48,6 +51,37 @@ class LiveWorkStatusBarTest {
         assertNull(liveWorkState("idle", false, null, schedule).schedule)
     }
 
+    @Test fun idleAgentStillShowsRunningSubagentsAndWorkflows() {
+        val work = LiveSubagentWorkflow(
+            agents = listOf(LiveSubagentRecord("top", "检查 API", "running")),
+            workflows = listOf(LiveWorkflowRecord("wf", "发布流程", "running", currentStage = 0, stageCount = 2, taskTotal = 2, taskDone = 1)),
+            agentsTotal = 1,
+            agentsRunning = 1,
+            workflowsTotal = 1,
+            workflowsActive = 1,
+        )
+        val state = liveWorkState("idle", true, LiveBackgroundSnapshot(), subagentWorkflow = work)
+        assertFalse(state.agentRunning)
+        assertTrue(state.isExecuting)
+        assertEquals("主 Agent 空闲", state.agentLabel)
+        assertEquals("1 个子 Agent 运行中 · 1 个工作流进行中", state.subagentWorkflowLabel)
+        assertEquals("阶段 1/2 · 任务 1/2 完成", work.workflows.single().progressLabel)
+    }
+
+    @Test fun blockedSubagentIsAttentionWithoutPretendingTheMainAgentIsRunning() {
+        val work = LiveSubagentWorkflow(
+            agents = listOf(LiveSubagentRecord("blocked", "等待批准", "blocked", needsAttention = true)),
+            agentsTotal = 1,
+            agentsAttention = 1,
+        )
+        val state = liveWorkState("idle", true, LiveBackgroundSnapshot(), subagentWorkflow = work)
+        assertFalse(state.isExecuting)
+        assertTrue(state.isWorking)
+        assertTrue(state.hasAttention)
+        assertEquals("1 个子 Agent 待处理", state.subagentWorkflowLabel)
+        assertEquals("1 个子 Agent 待处理", work.summaryLabel)
+    }
+
     @Test fun cachedAndReconnectingSessionsDoNotShowOldCommandsAsRunning() {
         val previous = LiveBackgroundSnapshot(tasks = listOf(task))
         listOf(liveWorkState("running", false, previous), liveWorkState("reconnecting", true, previous)).forEach { state ->
@@ -55,6 +89,15 @@ class LiveWorkStatusBarTest {
             assertNull(state.backgroundCount)
             assertEquals("工作状态待同步", state.agentLabel)
             assertEquals("后台记录", state.backgroundLabel)
+        }
+    }
+
+    @Test fun cachedOrReconnectingSessionsDoNotShowStaleWorkbenchStatus() {
+        val work = LiveSubagentWorkflow(agentsRunning = 1, workflowsActive = 1)
+        listOf(liveWorkState("running", false, null, subagentWorkflow = work),
+            liveWorkState("reconnecting", true, null, subagentWorkflow = work)).forEach { state ->
+            assertFalse(state.isWorking)
+            assertNull(state.subagentWorkflowLabel)
         }
     }
 
