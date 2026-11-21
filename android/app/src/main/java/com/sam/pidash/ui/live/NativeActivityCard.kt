@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -78,6 +80,18 @@ internal fun activityThinkingLines(items: List<LiveTimelineItem>): List<Activity
         else listOfNotNull(item.thinking?.takeIf { it.isNotBlank() })
         blocks.mapIndexed { index, text -> ActivityThinkingLine("${item.id}:$index", text) }
     }
+
+/** Zebra bands aid scanning; failure/running states win over the neutral stripe. */
+private fun stepRowTint(index: Int, item: LiveTimelineItem, scheme: ColorScheme): Color = when {
+    // Status tints are stronger than a neutral stripe but still leave the text readable.
+    item.isError || item.status == "error" -> scheme.error.copy(alpha = Tints.TintSoft)
+    item.status == "running" -> scheme.primary.copy(alpha = Tints.TintSoft)
+    index % 2 == 1 -> scheme.surface.copy(alpha = Tints.Block)
+    else -> Color.Transparent
+}
+
+private fun thinkingRowTint(index: Int, scheme: ColorScheme): Color =
+    if (index % 2 == 1) scheme.surface.copy(alpha = Tints.Block) else Color.Transparent
 
 /**
  * WebUI-style Activity Card for mobile:
@@ -233,16 +247,20 @@ internal fun NativeActivityCard(
                                 .heightIn(max = 480.dp)
                                 .verticalScroll(rememberScrollState())
                                 .testTag("activity-steps-window")
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                                .padding(horizontal = 10.dp),
                         ) {
-                            tools.forEach { step ->
-                                NativeStepCard(
-                                    item = step,
-                                    onOpenPath = onOpenPath,
-                                    onOpenUrl = onOpenUrl,
-                                    onOpenDetail = { stepDetail = it },
-                                )
+                            tools.forEachIndexed { index, step ->
+                                Box(
+                                    Modifier.fillMaxWidth()
+                                        .background(stepRowTint(index, step, scheme)),
+                                ) {
+                                    NativeStepCard(
+                                        item = step,
+                                        onOpenPath = onOpenPath,
+                                        onOpenUrl = onOpenUrl,
+                                        onOpenDetail = { stepDetail = it },
+                                    )
+                                }
                             }
                         }
                     }
@@ -262,15 +280,15 @@ internal fun NativeActivityCard(
                                 .heightIn(max = 480.dp)
                                 .verticalScroll(rememberScrollState())
                                 .testTag("activity-thinking-window")
-                                .padding(horizontal = 6.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                                .padding(horizontal = 6.dp),
                         ) {
-                            thinkingLines.forEach { line ->
+                            thinkingLines.forEachIndexed { index, line ->
                                 val hidden = line.text.isBlank()
                                 val summary = line.text.trim().replace(Regex("\\s+"), " ")
                                 Row(
                                     Modifier.fillMaxWidth()
-                                        .heightIn(min = 48.dp)
+                                        .background(thinkingRowTint(index, scheme))
+                                        .heightIn(min = if (hidden) 32.dp else 48.dp)
                                         .then(if (hidden) Modifier.semantics {
                                             contentDescription = "模型未显示思考内容"
                                         } else Modifier.clickable { thinkingDetail = line.text })

@@ -67,7 +67,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.externalUrlAllowed
@@ -1575,7 +1574,10 @@ fun LiveSessionScreen(
                                 Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
                                     Text(
                                         content.ifBlank { "（空文件）" },
-                                        style = PiType.subhead.copy(fontFamily = FontFamily.Monospace),
+                                        style = PiType.subhead.copy(
+                                            fontFamily = PiType.codeFamily,
+                                            fontFeatureSettings = PiType.codeFeatureSettings,
+                                        ),
                                     )
                                 }
                             }
@@ -1631,7 +1633,10 @@ fun LiveSessionScreen(
             }
             SelectionContainer {
                 Text(item.text.ifBlank { if (item.thinking.isNullOrBlank()) "（等待内容…）" else "（思考中）" },
-                    style = if (tool) PiType.subhead.copy(fontFamily = FontFamily.Monospace) else PiType.callout)
+                    style = if (tool) PiType.subhead.copy(
+                        fontFamily = PiType.codeFamily,
+                        fontFeatureSettings = PiType.codeFeatureSettings,
+                    ) else PiType.callout)
             }
             if (item.role == "user" && item.forkable && !item.entryId.isNullOrBlank()) {
                 TextButton(enabled = enabled, onClick = { onFork(item.entryId) }) { Text("从此消息分叉…") }

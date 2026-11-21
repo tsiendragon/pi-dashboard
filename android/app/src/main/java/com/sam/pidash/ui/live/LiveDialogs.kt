@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -445,7 +444,7 @@ internal fun LiveModelDialog(
                                             }
                                             Text(
                                                 "${option.provider}/${option.id}",
-                                                style = PiType.action.copy(fontFamily = FontFamily.Monospace),
+                                                style = PiType.action.copy(fontFamily = PiType.codeFamily),
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
@@ -474,7 +473,7 @@ internal fun LiveModelDialog(
                                                             Text(
                                                                 "📦 $ctxLabel 上下文",
                                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                                                                style = PiType.action.copy(fontFamily = FontFamily.Monospace),
+                                                                style = PiType.action.copy(fontFamily = PiType.codeFamily),
                                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                             )
                                                         }
@@ -526,7 +525,7 @@ internal fun LiveInspectionDialog(repo: PiDashRepository, key: SessionKey, conte
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                content?.let { SelectionContainer { Text(it, style = PiType.subhead.copy(fontFamily = FontFamily.Monospace)) } }
+                content?.let { SelectionContainer { Text(it, style = PiType.subhead.copy(fontFamily = PiType.codeFamily)) } }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },

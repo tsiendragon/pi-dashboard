@@ -32,8 +32,9 @@ class ThemeTypographyTest {
         }
     }
     @Test fun codeKeepsItsOwnMonospacedFamily() {
-        assertEquals(FontFamily.Monospace, PiType.mono.fontFamily)
-        assertEquals(FontFamily.Monospace, PiType.monoMicro.fontFamily)
+        assertEquals(PiType.codeFamily, PiType.mono.fontFamily)
+        assertEquals(PiType.codeFamily, PiType.monoMicro.fontFamily)
+        assertEquals("'liga' 0, 'clig' 0, 'calt' 0", PiType.mono.fontFeatureSettings)
         assertEquals(14.sp, PiType.userMessage.fontSize)
         assertEquals(15.sp, PiType.body.fontSize)
     }

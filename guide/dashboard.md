@@ -453,6 +453,8 @@ Android 5.58（build 89）在 Live Pi 顶部工作状态中显示 PiMatrix 证�
 
 Android 5.59（build 90）在 Live Pi 会话菜单和会话列表操作表中加入「清空会话（保留旧记录）」。它发送扩展注册的 `/clear`，切换到新的空会话；旧对话文件保留，不关闭 Pi 进程，也不删除服务器记录。只有摘要的 `capabilities` 含 `session_clear` 时菜单项才可用；扩展未加载或版本过旧时禁用，避免把 `/clear` 当普通提示词发给模型。会话正在执行时会等这一轮结束后再切换。活动视图中的执行步骤和思考过程改为固定高度（约 10 行）的内部滚动窗口：步骤点击后在弹窗查看完整命令、其他参数和输出，思考按片段一行一条，点击查看完整内容。模型隐藏推理正文但保留空 thinking 块时，每个空块显示一个 🤔；没有 thinking 事件则不补。完整记录页仍保持原有内联展开。只改 Android App，服务器已有 `session_clear` 能力时覆盖安装即可；旧扩展需更新并 `/reload`，不需要重启 Dashboard。
 
+Android 5.60（build 91）把代码字体统一为随 App 打包的 JetBrains Mono Regular，避免不同厂商系统 `monospace` 的差异，并关闭编程连字；中文仍由系统字体回退。执行步骤和思考窗口缩短行距、去掉额外垂直内边距，固定高度不变但能看到约 10 行；步骤和思考行使用交替底色，失败/运行中使用状态底色，空思考的 🤔 行更矮。字体使用 SIL Open Font License，许可证随 App 打包。仅改 Android App，覆盖安装即可。
+
 ### Android GitHub 发布（每个新可安装版本）
 
 下载入口：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)。仓库为公开仓库，APK、校验值和更新说明均可公开下载；访问服务器仍需既有入口授权与 Live 登录令牌。

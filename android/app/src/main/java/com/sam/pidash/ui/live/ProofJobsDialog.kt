@@ -13,7 +13,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.LiveProofJob
 import com.sam.pidash.data.remote.LiveProofJobs
@@ -90,7 +89,7 @@ internal fun ProofJobsDialog(jobs: LiveProofJobs, stale: Boolean, onDismiss: () 
                         Text(
                             if (timing.isEmpty()) job.id else "${job.id} · $timing",
                             style = PiType.caption,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = PiType.codeFamily,
                             color = colors.onSurfaceVariant,
                             maxLines = 1,
                         )

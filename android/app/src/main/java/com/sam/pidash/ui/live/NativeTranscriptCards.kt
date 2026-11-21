@@ -149,7 +149,7 @@ internal fun NativeStepCard(
                     if (detailMode) onOpenDetail?.invoke(item) else open = !open
                 } else Modifier)
                 .then(if (detailMode || (showArguments && expandable)) Modifier.heightIn(min = 48.dp) else Modifier)
-                .padding(vertical = 3.dp),
+                .then(if (detailMode) Modifier else Modifier.padding(vertical = 3.dp)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (active) {

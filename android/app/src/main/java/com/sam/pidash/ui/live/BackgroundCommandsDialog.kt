@@ -18,7 +18,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.sam.pidash.data.remote.canMoveToBackground
 import com.sam.pidash.data.remote.elapsedSeconds
@@ -94,7 +93,10 @@ internal fun BackgroundCommandsDialog(
                 )
                 if (task.command.isNotBlank()) Text(
                     task.command,
-                    style = PiType.subhead.copy(fontFamily = FontFamily.Monospace),
+                    style = PiType.subhead.copy(
+                        fontFamily = PiType.codeFamily,
+                        fontFeatureSettings = PiType.codeFeatureSettings,
+                    ),
                     maxLines = 3,
                 )
                 val outcome = listOfNotNull(
@@ -125,7 +127,10 @@ internal fun BackgroundCommandsDialog(
                 ) {
                     Text(
                         task.outputTail.ifBlank { "（还没有输出）" },
-                        style = PiType.subhead.copy(fontFamily = FontFamily.Monospace),
+                        style = PiType.subhead.copy(
+                        fontFamily = PiType.codeFamily,
+                        fontFeatureSettings = PiType.codeFeatureSettings,
+                    ),
                     )
                 }
                 Text(

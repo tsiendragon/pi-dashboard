@@ -3,10 +3,12 @@ package com.sam.pidash.ui.theme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sam.pidash.R
 
 /**
  * Tokens following Apple's iOS visual language, kept minimal.
@@ -91,6 +93,10 @@ val ProseMaxWidth = 680.dp
 
 /** Shared type scale for readable content and compact application chrome. */
 object PiType {
+    /** One bundled code face keeps shell glyphs consistent across OEM font choices. */
+    val codeFamily = FontFamily(Font(R.font.jetbrains_mono_regular, FontWeight.Normal))
+    const val codeFeatureSettings = "'liga' 0, 'clig' 0, 'calt' 0"
+
     private val prose = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Normal, letterSpacing = 0.sp)
     val largeTitle = prose.copy(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
     val title = prose.copy(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
@@ -105,8 +111,14 @@ object PiType {
     // Page/dialog chrome follows the main Live session header, not Material's 24 sp default.
     val pageTitle = callout.copy(fontWeight = FontWeight.SemiBold)
     val rowTitle = callout.copy(fontWeight = FontWeight.Medium)
-    val mono = TextStyle(fontSize = 13.sp, lineHeight = 20.sp, fontFamily = FontFamily.Monospace)
-    val monoMicro = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontFamily = FontFamily.Monospace)
+    val mono = TextStyle(
+        fontSize = 13.sp, lineHeight = 20.sp,
+        fontFamily = codeFamily, fontFeatureSettings = codeFeatureSettings,
+    )
+    val monoMicro = TextStyle(
+        fontSize = 12.sp, lineHeight = 17.sp,
+        fontFamily = codeFamily, fontFeatureSettings = codeFeatureSettings,
+    )
 
     // Backwards-compatible aliases used across screens while they migrate.
     val bodyCompact = callout

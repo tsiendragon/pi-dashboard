@@ -154,6 +154,12 @@ class ActivityCardStyleTest {
         compose.onRoot().captureRoboImage("src/test/screenshots/activity-card-long-steps.png")
     }
 
+    @Test fun thinkingWindowScreenshot() {
+        fixture()
+        compose.onNodeWithText("思考过程").performClick()
+        compose.onRoot().captureRoboImage("src/test/screenshots/activity-card-thinking.png")
+    }
+
     @Test fun hiddenThinkingScreenshot() {
         val hidden = LiveActivity(
             "hidden", "本轮", "done",
@@ -166,6 +172,12 @@ class ActivityCardStyleTest {
         fixture(activity = hidden)
         compose.onNodeWithText("思考过程").performClick()
         compose.onRoot().captureRoboImage("src/test/screenshots/activity-card-hidden-thinking.png")
+    }
+
+    @Test fun expandedStepsDarkScreenshot() {
+        fixture(dark = true)
+        compose.onNodeWithText("执行步骤").performClick()
+        compose.onRoot().captureRoboImage("src/test/screenshots/activity-card-expanded-dark.png")
     }
 
     @Test fun headerScreenshot() {

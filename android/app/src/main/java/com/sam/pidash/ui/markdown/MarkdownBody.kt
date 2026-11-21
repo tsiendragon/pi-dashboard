@@ -44,7 +44,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -146,7 +145,7 @@ private fun CodeBlock(block: MdBlock.Code) {
         DisableSelection {
             Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text((block.language ?: "code").lowercase(),
-                    style = PiType.action.copy(fontFamily = FontFamily.Monospace),
+                    style = PiType.action.copy(fontFamily = PiType.codeFamily),
                     color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 val runner = LocalServerCommandRunner.current
                 if (runner != null && runnableLanguage(block.language)) {
@@ -265,7 +264,11 @@ private fun buildInline(
                     appendTappable(node.value, taps, linkColor, pathColor)
                 }
                 is MdInline.Code -> {
-                    pushStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBackground))
+                    pushStyle(SpanStyle(
+                        fontFamily = PiType.codeFamily,
+                        fontFeatureSettings = PiType.codeFeatureSettings,
+                        background = codeBackground,
+                    ))
                     append(" "); append(node.value); append(" ")
                     pop()
                 }
