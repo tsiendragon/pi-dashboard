@@ -35,7 +35,8 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
   app.get('/api/status', (_req: Request, res: Response) => res.json(manager.status()))
 
   // Lightweight host load for the machine list. Deliberately separate from
-  // `/api/system`, which also shells out for disk/process details.
+  // `/api/system`, which also shells out for disk/process details. The optional
+  // NVIDIA probe has its own timeout and missing GPU data is returned as null.
   app.get('/api/system/load', async (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store')
     try {

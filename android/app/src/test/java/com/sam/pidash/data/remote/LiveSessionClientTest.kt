@@ -355,7 +355,7 @@ class LiveSessionClientTest {
 
     @Test fun machineLoadIsReadOnlyAndKeepsTheLastReadingOnFailure() = runBlocking {
         val repo = repository()
-        handler = { reply(it, """{"cpuCount":8,"cpuPercent":23.4,"load1":1.2,"load5":1.0,"load15":0.8,"memoryTotalBytes":34359738368,"memoryUsedBytes":17179869184,"memoryAvailableBytes":17179869184,"memoryUsedPercent":50.0,"sampledAt":123}""") }
+        handler = { reply(it, """{"cpuCount":8,"cpuPercent":23.4,"load1":1.2,"load5":1.0,"load15":0.8,"memoryTotalBytes":34359738368,"memoryUsedBytes":17179869184,"memoryAvailableBytes":17179869184,"memoryUsedPercent":50.0,"gpu":{"count":1,"name":"AMD GPU","utilizationPercent":37.5,"memoryUsedBytes":2147483648,"memoryTotalBytes":8589934592,"memoryUsedPercent":25.0},"disk":{"totalBytes":536870912000,"usedBytes":268435456000,"availableBytes":268435456000,"usedPercent":50.0},"sampledAt":123}""") }
         calls.clear()
         repo.refreshMachineLoads()
         val loaded = repo.machineLoads.value[backend.id]
@@ -363,6 +363,9 @@ class LiveSessionClientTest {
         assertEquals(8, loaded?.load?.cpuCount)
         assertEquals(23.4, loaded?.load?.cpuPercent ?: -1.0, 0.0)
         assertEquals(50.0, loaded?.load?.memoryUsedPercent ?: -1.0, 0.0)
+        assertEquals(37.5, loaded?.load?.gpu?.utilizationPercent ?: -1.0, 0.0)
+        assertEquals(25.0, loaded?.load?.gpu?.memoryUsedPercent ?: -1.0, 0.0)
+        assertEquals(50.0, loaded?.load?.disk?.usedPercent ?: -1.0, 0.0)
         assertNull(loaded?.error)
         assertEquals(listOf("/api/system/load"), calls.map { it.path })
         assertEquals(listOf("GET"), calls.map { it.method })

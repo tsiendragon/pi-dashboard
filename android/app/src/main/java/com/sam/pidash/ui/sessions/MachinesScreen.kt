@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -180,7 +181,7 @@ fun MachinesScreen(repo: PiDashRepository, onOpen: (String) -> Unit, onSettings:
 }
 
 @Composable
-private fun MachineLoadSummary(state: MachineLoadState?) {
+internal fun MachineLoadSummary(state: MachineLoadState?) {
     val load = state?.load
     if (load == null) {
         if (state?.error != null) {
@@ -190,57 +191,135 @@ private fun MachineLoadSummary(state: MachineLoadState?) {
         }
         return
     }
+    val gpu = load.gpu
+    val disk = load.disk
     val cpuHot = (load.cpuPercent ?: 0.0) >= 90.0
     val memoryHot = (load.memoryUsedPercent ?: 0.0) >= 85.0
+    val gpuMemoryHot = (gpu?.memoryUsedPercent ?: 0.0) >= 90.0
+    val gpuUtilHot = (gpu?.utilizationPercent ?: 0.0) >= 90.0
+    val gpuHot = gpuMemoryHot || gpuUtilHot
+    val diskHot = (disk?.usedPercent ?: 0.0) >= 90.0
     val loadHot = load.load1 != null && load.cpuCount > 0 && load.load1 / load.cpuCount >= 1.5
     val normal = MaterialTheme.colorScheme.primary
     val hot = MaterialTheme.colorScheme.error
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-    ) {
-        LoadMeter(
-            label = "CPU",
-            value = formatPercent(load.cpuPercent),
-            fraction = load.cpuPercent?.let { (it / 100.0).toFloat() },
-            tone = if (cpuHot) hot else normal,
-            modifier = Modifier.weight(1f),
-        )
-        LoadMeter(
-            label = "内存",
-            value = formatPercent(load.memoryUsedPercent),
-            fraction = load.memoryUsedPercent?.let { (it / 100.0).toFloat() },
-            tone = if (memoryHot) hot else normal,
-            modifier = Modifier.weight(1f),
-        )
-    }
-    load.load1?.let {
-        Text(
-            "负载 ${formatLoad(it)}" + if (load.cpuCount > 0) " · ${load.cpuCount} 核" else "",
-            style = PiType.caption,
-            color = if (loadHot) hot else MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-        )
-    }
-    if (load.memoryTotalBytes > 0) {
-        Text(
-            "内存 ${formatGb(load.memoryUsedBytes)} / ${formatGb(load.memoryTotalBytes)} GB",
-            style = PiType.micro,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-        )
-    }
-    if (state.error != null) {
-        MetaText("负载刷新失败，仍是上次读数：${loadErrorHint(state.error)}", tint = hot, maxLines = 2)
-    } else when {
-        memoryHot -> MetaText("内存接近上限，建议先清理或暂停不用的会话", tint = hot, maxLines = 2)
-        cpuHot -> MetaText("CPU 接近满载，建议减少并发会话", tint = hot, maxLines = 2)
-        loadHot -> MetaText("系统负载偏高，建议减少并发会话", tint = hot, maxLines = 2)
+    val showGpu = gpu != null && (gpu.utilizationPercent != null || gpu.memoryUsedPercent != null)
+    val showDisk = disk != null && (disk.usedPercent != null || disk.totalBytes > 0)
+    val gpuPercent = gpu?.utilizationPercent ?: gpu?.memoryUsedPercent
+    val gpuTotal = gpu?.memoryTotalBytes ?: 0
+    val gpuUsed = gpu?.memoryUsedBytes?.let(::formatGb) ?: "—"
+    val cpuMetric = LoadMetric(
+        label = "CPU",
+        value = formatPercent(load.cpuPercent),
+        fraction = load.cpuPercent?.let { (it / 100.0).toFloat() },
+        tone = if (cpuHot) hot else normal,
+    )
+    val memoryMetric = LoadMetric(
+        label = "内存",
+        value = formatPercent(load.memoryUsedPercent),
+        fraction = load.memoryUsedPercent?.let { (it / 100.0).toFloat() },
+        tone = if (memoryHot) hot else normal,
+        detail = if (load.memoryTotalBytes > 0) formatCapacity(load.memoryUsedBytes, load.memoryTotalBytes) else null,
+    )
+    val gpuMetric = if (showGpu) LoadMetric(
+        label = if (gpu?.utilizationPercent != null) {
+            if (gpu.count > 1) "GPU ×${gpu.count}" else "GPU"
+        } else "显存",
+        value = formatPercent(gpuPercent),
+        fraction = gpuPercent?.let { (it / 100.0).toFloat() },
+        tone = if (gpuHot) hot else normal,
+        detail = if (gpuTotal > 0) {
+            val prefix = if (gpu?.utilizationPercent != null) "显存 " else ""
+            "$prefix$gpuUsed / ${formatGb(gpuTotal)}\u00A0GB"
+        } else null,
+    ) else null
+    val diskMetric = if (showDisk) LoadMetric(
+        label = "磁盘",
+        value = formatPercent(disk?.usedPercent),
+        fraction = disk?.usedPercent?.let { (it / 100.0).toFloat() },
+        tone = if (diskHot) hot else normal,
+        detail = disk?.takeIf { it.totalBytes > 0 }?.let {
+            "已用 ${formatGb(it.usedBytes)} / ${formatGb(it.totalBytes)}\u00A0GB"
+        },
+    ) else null
+    // Null slots keep disk in the right column when a machine has no GPU.
+    val slots = listOf(cpuMetric, memoryMetric, gpuMetric, diskMetric)
+    val metrics = slots.filterNotNull()
+    // At accessibility sizes, two half-width columns turn short values into tall
+    // wrapped blocks. Use one full-width meter per row instead.
+    val stacked = LocalDensity.current.fontScale >= 1.5f
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+        if (stacked) {
+            metrics.forEach { metric ->
+                LoadMeter(
+                    label = metric.label,
+                    value = metric.value,
+                    fraction = metric.fraction,
+                    tone = metric.tone,
+                    detail = metric.detail,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            slots.chunked(2).forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                ) {
+                    row.forEach { metric ->
+                        if (metric != null) {
+                            LoadMeter(
+                                label = metric.label,
+                                value = metric.value,
+                                fraction = metric.fraction,
+                                tone = metric.tone,
+                                detail = metric.detail,
+                                modifier = Modifier.weight(1f),
+                            )
+                        } else {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+        load.load1?.let {
+            Text(
+                "负载 ${formatLoad(it)}" + if (load.cpuCount > 0) " · ${load.cpuCount} 核" else "",
+                style = PiType.caption,
+                color = if (loadHot) hot else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        if (state.error != null) {
+            MetaText("负载刷新失败，仍是上次读数：${loadErrorHint(state.error)}", tint = hot, maxLines = 2)
+        } else when {
+            diskHot -> MetaText("磁盘空间接近上限，建议清理旧会话或缓存", tint = hot, maxLines = 2)
+            memoryHot -> MetaText("内存接近上限，建议先清理或暂停不用的会话", tint = hot, maxLines = 2)
+            gpuMemoryHot -> MetaText("显存接近上限，建议减少 GPU 任务", tint = hot, maxLines = 2)
+            gpuUtilHot -> MetaText("GPU 接近满载，建议减少并发任务", tint = hot, maxLines = 2)
+            cpuHot -> MetaText("CPU 接近满载，建议减少并发会话", tint = hot, maxLines = 2)
+            loadHot -> MetaText("系统负载偏高，建议减少并发会话", tint = hot, maxLines = 2)
+        }
     }
 }
 
+private data class LoadMetric(
+    val label: String,
+    val value: String,
+    val fraction: Float?,
+    val tone: Color,
+    val detail: String? = null,
+)
+
 @Composable
-private fun LoadMeter(label: String, value: String, fraction: Float?, tone: Color, modifier: Modifier) {
+private fun LoadMeter(
+    label: String,
+    value: String,
+    fraction: Float?,
+    tone: Color,
+    modifier: Modifier,
+    detail: String? = null,
+) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = PiType.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -253,6 +332,16 @@ private fun LoadMeter(label: String, value: String, fraction: Float?, tone: Colo
                 modifier = Modifier.fillMaxWidth().height(3.dp),
                 color = tone,
                 trackColor = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline),
+                gapSize = 0.dp,
+                drawStopIndicator = {},
+            )
+        }
+        detail?.let {
+            Text(
+                it,
+                style = PiType.micro,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
             )
         }
     }
@@ -269,6 +358,10 @@ private fun formatLoad(value: Double): String =
 
 private fun formatGb(bytes: Long): String =
     String.format(Locale.US, "%.1f", bytes / 1073741824.0)
+
+/** Keep the unit with the number when a large font wraps a narrow meter. */
+private fun formatCapacity(used: Long, total: Long): String =
+    "${formatGb(used)} / ${formatGb(total)}\u00A0GB"
 
 private fun loadErrorHint(error: String): String =
     if (error.contains("接口") || error.contains("JSON")) "此 Dashboard 版本可能过旧，请更新服务器"
