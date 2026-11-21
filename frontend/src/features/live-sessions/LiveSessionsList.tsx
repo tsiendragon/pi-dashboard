@@ -482,9 +482,14 @@ function SessionRow(p: RowProps) {
               const goal = p.session.goal
               const status = goal.status
               const statusLabel = status === 'active' ? '进行中' : status === 'paused' ? '已暂停' : status === 'complete' ? '已完成' : undefined
-              const label = goal.total > 0 ? `${goal.done}/${goal.total}` : statusLabel
+              const milestoneLabel = goal.milestonesTotal
+                ? `M${goal.milestonesDone ?? 0}/${goal.milestonesTotal}`
+                : undefined
+              const label = milestoneLabel ?? (goal.total > 0 ? `${goal.done}/${goal.total}` : statusLabel)
               if (!label) return null
-              const complete = goal.total > 0 ? goal.done === goal.total && !goal.stale : status === 'complete'
+              const complete = goal.milestonesTotal
+                ? (goal.milestonesDone ?? 0) === goal.milestonesTotal && !goal.stale
+                : goal.total > 0 ? goal.done === goal.total && !goal.stale : status === 'complete'
               const working = status === 'active' && !goal.stale
               const paused = status === 'paused'
               const tone = goal.stale || goal.needsUser > 0 || paused
@@ -493,6 +498,8 @@ function SessionRow(p: RowProps) {
               const hint = [
                 statusLabel ? `任务锚点：${statusLabel}` : `任务锚点：${goal.done}/${goal.total} 完成`,
                 statusLabel && goal.total > 0 ? `${goal.done}/${goal.total} 完成` : '',
+                goal.milestonesTotal ? `里程碑 ${goal.milestonesDone ?? 0}/${goal.milestonesTotal}` : '',
+                goal.actionsTotal ? `当前里程碑下一步 ${goal.actionsDone ?? 0}/${goal.actionsTotal}` : '',
                 working ? '会话会按间隔自动继续推进' : '',
                 goal.needsUser > 0 ? `${goal.needsUser} 项需要你处理` : '',
                 goal.stale ? '清单可能过期' : '',

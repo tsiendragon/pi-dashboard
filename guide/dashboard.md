@@ -186,6 +186,8 @@ xml/html、css/markdown；`text`/`log` 等纯文本块保持不着色，未知�
 （`feature_command` + `background`），它和网页一样需要租约，因此会先取控制权；**不支持取消**——
 Live 协议只放行 `background`，取消请在网页端或扩展里做。
 
+**子 Agent 与工作流（Android，只读）**：工作状态栏从 `subagent-workflow` 快照分别显示子 Agent 和工作流的运行／排队数量，与 Bash 和证明任务分开；终态不计入活动数量。需安装包含该改动的 APK。
+
 **证明任务（只读，PiMatrix）**：PiMatrix 发布的 `live_feature_snapshot`（feature 为 `proof-jobs`，取最新一次快照）
 结构为 `{tasks:[{id,label,state,createdAt?,startedAt?,finishedAt?,collected?}]}`，`state` 取 `queued/running/finished/failed/cancelled`，
 时间为毫秒时间戳，`collected` 可省略（省略时不显示「已取回」）。后端与 Live 桥按 feature 名原样转发、不做额外校验，无需新配置。
@@ -195,10 +197,13 @@ Live 协议只放行 `background`，取消请在网页端或扩展里做。
 iOS App 以 WebView 加载网页，随网页端一起生效。网页端需用户执行 `./run.sh` 构建前端后生效；Android 随下一个发布版本生效。
 
 **目标（只读）**（3.6 起）：会话菜单「目标…」展示 `goal-state` 锚点：objective、状态
-（进行中/已暂停/已完成/未标注）、工作项进度条与逐项 `✓/◐/!/⏸/○`、阻塞项（种类·归属·原因）、
-最近进展，以及两种过期提示——「已完成但仍有未完成项」与「超过 300 条消息未更新」（阈值同
-`shared/src/goal-anchor.ts` 的 `GOAL_STALE_MESSAGE_THRESHOLD`）。**App 只读**：要改目标用「用 /goal 修改」
-把 `/goal ` 填进输入框，由 Agent 自己执行；不会伪造或本地改写目标。
+（进行中/已暂停/已完成/未标注）、工作项进度、阻塞项（种类·归属·原因）、最近进展，以及两种过期提示——
+「已完成但仍有未完成项」与「超过 300 条消息未更新」（阈值同 `shared/src/goal-anchor.ts` 的
+`GOAL_STALE_MESSAGE_THRESHOLD`）。带计划的目标按三层展示：长期目标与完成标准、里程碑（`horizon: mid`，
+当前项高亮并显示 `doneWhen`）、当前里程碑下的短期动作（`horizon: short`，显示证据路径）；旧目标没有计划时
+仍按平铺清单展示。会话行 badge 对带计划目标显示 `M1/2`（里程碑进度），无计划目标继续显示 `1/3`。
+**App 只读**：要改目标用「用 /goal 修改」把 `/goal ` 填进输入框，由 Agent 自己执行；不会伪造或本地改写目标。
+Android 当前仍把 `workItems` 按平铺清单展示（会同时列出里程碑和动作），分层视图待下一版接入。
 
 **用量统计**（3.5 起）：会话菜单「用量统计…」调用只读 `GET /api/usage?month=YYYY-MM`（账本按机器聚合，
 不是按会话），显示当月 tokens、USD、缓存命中率、记录数，以及按模型/按会话的 top 5；`◀ ▶` 切换月份，

@@ -80,6 +80,43 @@ describe('GoalAnchorDialog', () => {
     expect(dialog.textContent).toContain('验收标准没有单条勾选状态')
   })
 
+  it('renders a hierarchical goal as milestones with nested short actions', () => {
+    render(
+      <GoalAnchorDialog
+        goal={anchor({
+          objective: '证明定理 T',
+          acceptanceCriteria: ['proofs/t.lean 被 Lean 接受，状态为 proved'],
+          workItems: [
+            {
+              id: 'm1', title: 'Evidence closed', horizon: 'mid', state: 'done',
+              doneWhen: ['evidence matrix has no gaps'], dependsOn: [], evidence: ['reports/evidence.md'],
+            },
+            {
+              id: 'm2', title: 'Independent review', horizon: 'mid', state: 'in_progress',
+              doneWhen: ['two reviews have no P0/P1'], dependsOn: ['m1'],
+            },
+            {
+              id: 's2', title: 'Commission two reviews', horizon: 'short', parentId: 'm2',
+              state: 'in_progress', dependsOn: [], evidence: ['reports/review.md'],
+            },
+          ],
+        })}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: '任务锚点' })
+    expect(dialog.textContent).toContain('里程碑 1/2')
+    expect(dialog.textContent).toContain('下一步 0/1')
+    expect(within(dialog).getByText('目标（长期）')).toBeInTheDocument()
+    expect(within(dialog).getByText('完成标准')).toBeInTheDocument()
+    expect(within(dialog).getByText('Independent review')).toBeInTheDocument()
+    expect(within(dialog).getByText('Commission two reviews')).toBeInTheDocument()
+    expect(within(dialog).getByText('当前')).toBeInTheDocument()
+    expect(dialog.textContent).toContain('完成条件：two reviews have no P0/P1')
+    expect(dialog.textContent).toContain('证据：reports/review.md')
+  })
+
   it('pauses an active goal and resumes a paused one without asking for confirmation', () => {
     const pause = vi.fn()
     const close = vi.fn()
@@ -129,12 +166,14 @@ describe('LiveSessionsList goal badge', () => {
       sessions={[
         session('a', { goal: { done: 2, total: 5, needsUser: 1, status: 'active', stale: false } }),
         session('b', { goal: { done: 0, total: 4, needsUser: 0, status: 'complete', stale: true } }),
+        session('d', { goal: { done: 1, total: 4, needsUser: 0, status: 'active', stale: false, milestonesDone: 1, milestonesTotal: 3 } }),
         session('c'),
       ]}
       onSelect={vi.fn()}
     />)
 
     expect(screen.getByText('2/5')).toBeInTheDocument()
+    expect(screen.getByText('M1/3')).toBeInTheDocument()
     expect(screen.getByText('需核对')).toBeInTheDocument()
     // A session with no goal draws no badge at all.
     expect(screen.queryByText('—')).not.toBeInTheDocument()

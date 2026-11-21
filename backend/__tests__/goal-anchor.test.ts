@@ -102,6 +102,26 @@ describe('goalProgressOf / goalStaleness', () => {
     expect(goalProgressOf(null)).toBeNull()
   })
 
+  it('counts milestone and current-action progress for hierarchical goals', () => {
+    const progress = goalProgressOf({
+      ...base,
+      status: 'active',
+      workItems: [
+        { id: 'm1', title: 'M1', horizon: 'mid', state: 'done', dependsOn: [] },
+        { id: 'm2', title: 'M2', horizon: 'mid', state: 'todo', dependsOn: ['m1'] },
+        { id: 's2', title: 'S2', horizon: 'short', parentId: 'm2', state: 'todo', dependsOn: [] },
+      ],
+      blockers: [],
+    })
+
+    expect(progress).toMatchObject({
+      milestonesDone: 1,
+      milestonesTotal: 2,
+      actionsDone: 0,
+      actionsTotal: 1,
+    })
+  })
+
   it('flags a finished goal whose checklist was never ticked', () => {
     const anchor = {
       ...base,
