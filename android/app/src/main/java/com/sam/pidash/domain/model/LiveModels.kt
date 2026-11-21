@@ -29,6 +29,8 @@ data class LiveSummary(
 ) {
     val title: String get() = sessionName?.takeIf { it.isNotBlank() } ?: "Pi $pid"
     val canShutdown: Boolean get() = mode == "tui" && status != "reconnecting" && "session_shutdown" in capabilities
+    /** `/clear` is an extension command; never send it as plain text without this capability. */
+    val canClear: Boolean get() = mode == "tui" && status != "reconnecting" && "session_clear" in capabilities
 }
 
 @Serializable
@@ -239,6 +241,12 @@ data class LiveTimelineItem(
     val text: String,
     val timestamp: Long = 0,
     val thinking: String? = null,
+    /**
+     * Every thinking block in record order, including empty blocks whose provider
+     * intentionally hides the reasoning (for example encrypted GPT reasoning).
+     * An empty block still means a thinking step happened; the UI shows an icon for it.
+     */
+    val thinkingBlocks: List<String> = emptyList(),
     val toolName: String? = null,
     val isError: Boolean = false,
     val entryId: String? = null,

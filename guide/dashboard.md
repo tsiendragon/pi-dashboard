@@ -451,6 +451,8 @@ Android 5.57（build 88）在 Live Pi 输入框加入 Qwen 实时语音输入。
 
 Android 5.58（build 89）在 Live Pi 顶部工作状态中显示 PiMatrix 证明任务：有运行中或排队任务时显示数量和总数，点开为只读列表（状态、标签、id、排队/运行/总用时）。它只消费会话发布的 `proof-jobs` 快照，不发送命令；结果仍在会话内用 `proof_jobs` 取回。只有运行时已更新到提供该快照的 `pi-matrix` / `pi-tsien-extension` 才会出现，断线或缓存视图不把旧快照当作实时状态。仅改 Android App，覆盖安装即可；旧运行时不会显示。
 
+Android 5.59（build 90）在 Live Pi 会话菜单和会话列表操作表中加入「清空会话（保留旧记录）」。它发送扩展注册的 `/clear`，切换到新的空会话；旧对话文件保留，不关闭 Pi 进程，也不删除服务器记录。只有摘要的 `capabilities` 含 `session_clear` 时菜单项才可用；扩展未加载或版本过旧时禁用，避免把 `/clear` 当普通提示词发给模型。会话正在执行时会等这一轮结束后再切换。活动视图中的执行步骤和思考过程改为固定高度（约 10 行）的内部滚动窗口：步骤点击后在弹窗查看完整命令、其他参数和输出，思考按片段一行一条，点击查看完整内容。模型隐藏推理正文但保留空 thinking 块时，每个空块显示一个 🤔；没有 thinking 事件则不补。完整记录页仍保持原有内联展开。只改 Android App，服务器已有 `session_clear` 能力时覆盖安装即可；旧扩展需更新并 `/reload`，不需要重启 Dashboard。
+
 ### Android GitHub 发布（每个新可安装版本）
 
 下载入口：[GitHub Releases](https://github.com/tsiendragon/pi-dashboard/releases)。仓库为公开仓库，APK、校验值和更新说明均可公开下载；访问服务器仍需既有入口授权与 Live 登录令牌。

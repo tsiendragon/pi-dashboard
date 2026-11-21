@@ -780,6 +780,21 @@ class LivePiRepository(
         buildJsonObject { put("type", "shutdown") }
     }.also { if (it.isSuccess) _leases.update { map -> map - key } }
 
+    /**
+     * `/clear` is a registered extension command, not Pi's built-in editor command.
+     * Only send it when the bridge advertises `session_clear`; otherwise the model
+     * would receive a literal `/clear` prompt and that turn would clear nothing.
+     */
+    suspend fun clearSession(key: SessionKey): Result<Unit> = shared(key) {
+        val summary = _details.value[key]?.summary ?: sessions.value.firstOrNull { it.key == key }?.summary
+        require(summary?.canClear == true) { "此会话没有可用的清空命令，请先重载扩展并检查配置" }
+        buildJsonObject {
+            put("type", "input")
+            put("text", "/clear")
+            put("channel", "mobile")
+        }
+    }
+
     suspend fun patchMeta(key: SessionKey, tags: List<String>? = null, pinned: Boolean? = null, emoji: String? = null, color: String? = null): Result<Unit> = mutation(key) {
         client(key.backendId).patchMeta(key.slotKey, tags, pinned, emoji, color); reconcile(key.backendId)
     }

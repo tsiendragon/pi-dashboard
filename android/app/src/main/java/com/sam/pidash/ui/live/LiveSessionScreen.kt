@@ -610,6 +610,22 @@ fun LiveSessionScreen(
                             DropdownMenuItem(text = { Text("新建 Live Pi 会话…") }, enabled = !busy, onClick = {
                                 menu = false; dialog = "new-session"
                             })
+                            val canClear = summary?.canClear == true
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (canClear) "清空会话（保留旧记录）" else "清空会话（扩展不支持）",
+                                    )
+                                },
+                                enabled = !busy && cachedSnapshot == null && canClear,
+                                onClick = {
+                                    menu = false; notice = null
+                                    perform(
+                                        if (summary?.status == "idle") "已请求清空；新会话就绪后会自动切换"
+                                        else "已请求清空；当前回合结束后会自动切换"
+                                    ) { live.clearSession(sessionKey) }
+                                },
+                            )
                             DropdownMenuItem(text = { Text("关闭会话…", color = MaterialTheme.colorScheme.error) },
                                 enabled = !busy && cachedSnapshot == null && summary?.canShutdown == true,
                                 onClick = { menu = false; dialog = "shutdown" })

@@ -181,6 +181,7 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
             toolArgs = item.toolArgs ?: previous.toolArgs,
             toolName = item.toolName ?: previous.toolName,
             thinking = item.thinking ?: previous.thinking,
+            thinkingBlocks = if (item.thinkingBlocks.isNotEmpty()) item.thinkingBlocks else previous.thinkingBlocks,
             images = if (item.images.isEmpty()) previous.images else item.images,
             forkable = item.forkable || previous.forkable,
         )
@@ -194,9 +195,16 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
             val role = message.str("role") ?: return@forEachIndexed
             val content = message["content"]
             val text = textParts(content)
-            val thoughts = (content as? JsonArray)?.mapNotNull { part ->
-                (part as? JsonObject)?.takeIf { it.str("type") == "thinking" }?.str("thinking")
-            }?.joinToString("\n")?.takeIf { it.isNotBlank() }
+            // Keep empty blocks: an empty `thinking` part is not "no thinking", it is a
+            // provider that deliberately hides the reasoning. The activity UI renders it
+            // as one icon instead of dropping the step or opening an empty panel.
+            val thinkingBlocks = (content as? JsonArray)?.mapNotNull { part ->
+                val block = part as? JsonObject ?: return@mapNotNull null
+                if (block.str("type") != "thinking") return@mapNotNull null
+                block.str("thinking").orEmpty()
+            }.orEmpty()
+            val thoughts = thinkingBlocks.filter { it.isNotBlank() }
+                .joinToString("\n\n").takeIf { it.isNotBlank() }
             val errorMessage = message.str("errorMessage")?.takeIf { it.isNotBlank() }
                 ?: if (message.str("stopReason") == "error") "模型请求失败，服务端未提供详细原因。" else null
             val toolFailed = (message["isError"] as? JsonPrimitive)?.booleanOrNull == true
@@ -230,7 +238,7 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
             // return [thinking, text] constantly). Only a toolCall makes it an interim step;
             // text-less thinking stays folded too.
             val hasToolCallPart = contentParts?.any { (it as? JsonObject)?.str("type") == "toolCall" } == true
-            if (body.isNotBlank() || thoughts != null || images.isNotEmpty()) {
+            if (body.isNotBlank() || thinkingBlocks.isNotEmpty() || images.isNotEmpty()) {
                 put(
                     LiveTimelineItem(
                         id = entryId ?: "message-${entry.str("sequence") ?: index}-$role",
@@ -238,6 +246,7 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                         text = preview(body),
                         timestamp = at,
                         thinking = thoughts?.let(::preview),
+                        thinkingBlocks = thinkingBlocks.map(::preview),
                         toolName = message.str("toolName"),
                         isError = toolFailed || errorMessage != null,
                         entryId = entryId,

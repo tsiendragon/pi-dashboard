@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
@@ -119,8 +120,15 @@ internal fun NativeStepCard(
     onOpenUrl: (String) -> Unit,
     showArguments: Boolean = false,
     precedingThinking: List<LiveTimelineItem> = emptyList(),
+    /**
+     * Activity view passes this to keep the card compact: a tap opens the full
+     * command/output in a dialog instead of expanding an unbounded inline block.
+     * The full-record page leaves it null and keeps its existing inline expansion.
+     */
+    onOpenDetail: ((LiveTimelineItem) -> Unit)? = null,
 ) {
     var open by remember(item.id) { mutableStateOf(false) }
+    val detailMode = onOpenDetail != null
     val scheme = MaterialTheme.colorScheme
     val name = if (isRunCode(item)) "Run Code" else item.toolName ?: "工具"
     val detail = toolArgumentPreview(item)
@@ -132,13 +140,15 @@ internal fun NativeStepCard(
     val thinkingText = (precedingThinking.mapNotNull { it.thinking } + listOfNotNull(toolThinking)).joinToString("\n\n")
     val thinkingCount = precedingThinking.size + if (toolThinking != null) 1 else 0
     val hasCopyableArgs = !item.toolArgs.isNullOrBlank()
-    val expandable = output.isNotEmpty() || hasCopyableArgs || thinkingCount > 0 || (showArguments && item.images.isNotEmpty())
+    val expandable = detailMode || output.isNotEmpty() || hasCopyableArgs || thinkingCount > 0 || (showArguments && item.images.isNotEmpty())
     val active = item.isError || item.status == "error" || item.status == "running"
     Column(Modifier.fillMaxWidth().animateContentSize()) {
         Row(
             Modifier.fillMaxWidth()
-                .then(if (expandable) Modifier.clickable { open = !open } else Modifier)
-                .then(if (showArguments && expandable) Modifier.heightIn(min = 48.dp) else Modifier)
+                .then(if (expandable) Modifier.clickable {
+                    if (detailMode) onOpenDetail?.invoke(item) else open = !open
+                } else Modifier)
+                .then(if (detailMode || (showArguments && expandable)) Modifier.heightIn(min = 48.dp) else Modifier)
                 .padding(vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -187,14 +197,16 @@ internal fun NativeStepCard(
                 modifier = Modifier.padding(start = Spacing.sm),
             )
             if (expandable) Icon(
-                imageVector = if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                contentDescription = if (showArguments || hasCopyableArgs) { if (open) "收起记录" else "展开记录" }
+                imageVector = if (detailMode) Icons.AutoMirrored.Filled.KeyboardArrowRight
+                    else if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (detailMode) "查看步骤详情"
+                    else if (showArguments || hasCopyableArgs) { if (open) "收起记录" else "展开记录" }
                     else { if (open) "收起输出" else "展开输出" },
                 tint = scheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = Spacing.xs).size(16.dp),
             )
         }
-        Collapsible(visible = open && expandable) {
+        Collapsible(visible = !detailMode && open && expandable) {
             SelectionContainer {
                 Column(
                     Modifier.fillMaxWidth()

@@ -22,6 +22,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.List
@@ -295,6 +296,20 @@ fun LiveSessionsPanel(repo: PiDashRepository, backendId: String, onOpen: (Sessio
                                         repo.live.reload(row.key).fold(
                                             onSuccess = { notice = "已重载扩展：${row.summary.title}" },
                                             onFailure = { notice = "重载扩展失败：${it.message}" },
+                                        )
+                                        actionBusyKey = null
+                                    }
+                                },
+                                onClear = {
+                                    actionBusyKey = row.key; notice = null
+                                    scope.launch {
+                                        repo.live.clearSession(row.key).fold(
+                                            onSuccess = {
+                                                notice = if (row.summary.status == "idle")
+                                                    "已请求清空「${row.summary.title}」；新会话就绪后会自动切换"
+                                                else "已请求清空「${row.summary.title}」；当前回合结束后会自动切换"
+                                            },
+                                            onFailure = { notice = "清空失败：${it.message ?: "请刷新后重试"}" },
                                         )
                                         actionBusyKey = null
                                     }
@@ -636,6 +651,7 @@ private fun SessionRow(
     onTogglePin: () -> Unit,
     onReload: () -> Unit,
     onRestart: () -> Unit,
+    onClear: () -> Unit,
     onShutdown: () -> Unit,
     onEditAppearance: () -> Unit,
     onGroup: () -> Unit,
@@ -747,6 +763,7 @@ private fun SessionRow(
                 onGroup = onGroup,
                 onPin = onTogglePin,
                 onMoveTop = onMoveTop,
+                onClear = onClear,
                 onShutdown = onShutdown,
             )
         }
@@ -771,6 +788,7 @@ private fun SessionActionsSheet(
     onGroup: () -> Unit,
     onPin: () -> Unit,
     onMoveTop: () -> Unit,
+    onClear: () -> Unit,
     onShutdown: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -809,6 +827,11 @@ private fun SessionActionsSheet(
                 enabled = !busy,
             ) { onDismiss(); onPin() }
         }
+        SheetAction(
+            Icons.Filled.Clear,
+            if (row.summary.canClear) "清空会话（保留旧记录）" else "清空会话（扩展不支持）",
+            enabled = !busy && row.summary.canClear,
+        ) { onDismiss(); onClear() }
         HorizontalDivider(Modifier.padding(vertical = Spacing.xs), color = scheme.outline.copy(alpha = Tints.Hairline))
         SheetAction(
             Icons.Filled.Close,

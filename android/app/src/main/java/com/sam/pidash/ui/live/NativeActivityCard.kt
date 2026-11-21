@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -33,6 +35,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,6 +48,7 @@ import com.sam.pidash.domain.model.ActivityStatus
 import com.sam.pidash.domain.model.FollowUpKind
 import com.sam.pidash.domain.model.wholeActivityText
 import com.sam.pidash.domain.model.LiveActivity
+import com.sam.pidash.domain.model.LiveTimelineItem
 import com.sam.pidash.domain.model.activityStatus
 import com.sam.pidash.domain.model.followUpSummary
 import com.sam.pidash.domain.model.quoteOrCommentKind
@@ -61,6 +67,17 @@ import com.sam.pidash.ui.theme.Spacing
 
 private const val CARD_REPLY_LINES = 16
 private const val CARD_REPLY_CHARS = 1400
+
+/** One line in the thinking window; a blank text is a provider-hidden thinking step. */
+internal data class ActivityThinkingLine(val id: String, val text: String)
+
+/** Keep block order and duplicates, but do not invent a row when no thinking block exists. */
+internal fun activityThinkingLines(items: List<LiveTimelineItem>): List<ActivityThinkingLine> =
+    items.flatMap { item ->
+        val blocks = if (item.thinkingBlocks.isNotEmpty()) item.thinkingBlocks
+        else listOfNotNull(item.thinking?.takeIf { it.isNotBlank() })
+        blocks.mapIndexed { index, text -> ActivityThinkingLine("${item.id}:$index", text) }
+    }
 
 /**
  * WebUI-style Activity Card for mobile:
@@ -95,10 +112,9 @@ internal fun NativeActivityCard(
                 (it.intermediate || it.channel == "commentary")
         }
     }
-    val thinkingText = remember(activity.items) {
-        activity.items.mapNotNull { it.thinking?.trim()?.takeIf { t -> t.isNotEmpty() } }
-            .distinct()
-            .joinToString("\n\n")
+    val thinkingLines = remember(activity.items) { activityThinkingLines(activity.items) }
+    val thinkingText = remember(thinkingLines) {
+        thinkingLines.map { it.text.trim() }.filter { it.isNotEmpty() }.joinToString("\n\n")
     }
 
     // The activity card is a summary first: execution steps start folded so a long
@@ -107,6 +123,8 @@ internal fun NativeActivityCard(
     var thinkingExpanded by remember(activity.id) { mutableStateOf(false) }
     var promptExpanded by remember(activity.id) { mutableStateOf(false) }
     var replyExpanded by remember(activity.id) { mutableStateOf(false) }
+    var stepDetail by remember(activity.id) { mutableStateOf<LiveTimelineItem?>(null) }
+    var thinkingDetail by remember(activity.id) { mutableStateOf<String?>(null) }
 
     val accent = when {
         status.failed -> scheme.error
@@ -208,31 +226,77 @@ internal fun NativeActivityCard(
                         expanded = stepsExpanded,
                         onToggle = { stepsExpanded = !stepsExpanded },
                     ) {
+                        // A fixed window, not an ever-growing card: long turns stay
+                        // skimmable and the full command moves to a dialog on tap.
                         Column(
-                            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                            Modifier.fillMaxWidth()
+                                .heightIn(max = 480.dp)
+                                .verticalScroll(rememberScrollState())
+                                .testTag("activity-steps-window")
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             tools.forEach { step ->
-                                NativeStepCard(item = step, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl)
+                                NativeStepCard(
+                                    item = step,
+                                    onOpenPath = onOpenPath,
+                                    onOpenUrl = onOpenUrl,
+                                    onOpenDetail = { stepDetail = it },
+                                )
                             }
                         }
                     }
                 }
 
-                if (thinkingText.isNotBlank()) {
+                if (thinkingLines.isNotEmpty()) {
                     TraceBlock(
                         title = "思考过程",
+                        counts = "${thinkingLines.size} 段",
                         accent = scheme.primary,
+                        summary = if (thinkingText.isBlank()) "🤔" else null,
                         expanded = thinkingExpanded,
                         onToggle = { thinkingExpanded = !thinkingExpanded },
                     ) {
-                        SelectionContainer {
-                            Text(
-                                thinkingText,
-                                modifier = Modifier.padding(10.dp),
-                                style = PiType.monoMicro,
-                                color = scheme.onSurfaceVariant,
-                            )
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .heightIn(max = 480.dp)
+                                .verticalScroll(rememberScrollState())
+                                .testTag("activity-thinking-window")
+                                .padding(horizontal = 6.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            thinkingLines.forEach { line ->
+                                val hidden = line.text.isBlank()
+                                val summary = line.text.trim().replace(Regex("\\s+"), " ")
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .then(if (hidden) Modifier.semantics {
+                                            contentDescription = "模型未显示思考内容"
+                                        } else Modifier.clickable { thinkingDetail = line.text })
+                                        .padding(horizontal = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (hidden) {
+                                        Text("🤔", style = PiType.subhead)
+                                    } else {
+                                        Text(
+                                            summary,
+                                            style = PiType.footnote,
+                                            color = scheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                            contentDescription = null,
+                                            tint = scheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -307,7 +371,7 @@ internal fun NativeActivityCard(
                             if (prompt.isNotBlank()) DropdownMenuItem(text = { Text("复制请求") },
                                 onClick = { copyMenuOpen = false; copy(firstUser?.text.orEmpty()) })
                             if (thinkingText.isNotBlank()) DropdownMenuItem(text = { Text("复制思考") },
-                                onClick = { copyMenuOpen = false; copy(activity.items.mapNotNull { it.thinking?.takeIf { text -> text.isNotBlank() } }.joinToString("\n\n")) })
+                                onClick = { copyMenuOpen = false; copy(thinkingLines.map { it.text }.filter { it.isNotBlank() }.joinToString("\n\n")) })
                             if (progressNotes.isNotEmpty()) DropdownMenuItem(text = { Text("复制进度") },
                                 onClick = { copyMenuOpen = false; copy(progressNotes.joinToString("\n\n") { it.text }) })
                         }
@@ -324,6 +388,12 @@ internal fun NativeActivityCard(
                 }
             }
         }
+    }
+    stepDetail?.let { step ->
+        StepDetailDialog(step, onDismiss = { stepDetail = null })
+    }
+    thinkingDetail?.let { thought ->
+        ThinkingDetailDialog(thought, onDismiss = { thinkingDetail = null })
     }
 }
 

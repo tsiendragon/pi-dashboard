@@ -39,6 +39,17 @@ class LiveProtocolTest {
         assertEquals(1, items[1].images.size)
         assertEquals("", items[1].text)
     }
+    @Test fun hiddenThinkingBlocksStayAsThinkingSteps() {
+        val items = projectLiveTimeline(detail(
+            """{"type":"message","id":"a","message":{"role":"assistant","content":[
+                 {"type":"thinking","thinking":"","thinkingSignature":"encrypted"},
+                 {"type":"toolCall","id":"t","name":"bash","arguments":{"command":"pwd"}}]}}""",
+        ))
+        assertEquals(2, items.size)
+        assertEquals(listOf(""), items[0].thinkingBlocks)
+        assertNull(items[0].thinking)
+        assertEquals("bash", items[1].toolName)
+    }
     @Test fun streamingReplacesPartialsAndFinal() {
         var state = reduce(detail(), 1, "message_start")
         state = reduce(state, 2, "message_update", """{"message":{"role":"assistant","content":"a"}}""")

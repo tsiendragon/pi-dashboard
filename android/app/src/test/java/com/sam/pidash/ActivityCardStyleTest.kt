@@ -93,6 +93,81 @@ class ActivityCardStyleTest {
         compose.onNodeWithText("执行步骤").performClick()
         compose.onAllNodesWithText("bash").assertCountEquals(2)
     }
+
+    @Test fun aStepOpensItsFullCommandInADialog() {
+        fixture()
+        compose.onNodeWithText("执行步骤").performClick()
+        compose.onAllNodesWithText("bash")[0].performClick()
+        compose.onNodeWithText("步骤详情").assertExists()
+        // One copy in the collapsed row, one in the dialog's full command section.
+        compose.onAllNodesWithText("rg -n sudo_exec src", substring = true).assertCountEquals(2)
+    }
+
+    @Test fun longStepListStaysInAFixedWindow() {
+        val manySteps = LiveActivity(
+            "many", "本轮", "done",
+            listOf(msg("u", "继续", "user")) + (1..14).map { n ->
+                step("s$n", "bash", """{"command":"echo step $n"}""", "step $n")
+            },
+        )
+        fixture(activity = manySteps)
+        compose.onNodeWithText("执行步骤").performClick()
+        compose.onNodeWithTag("activity-steps-window").assertHeightIsEqualTo(480.dp)
+    }
+
+    @Test fun aThinkingLineOpensFullThinkingDialog() {
+        fixture()
+        compose.onNodeWithText("思考过程").performClick()
+        compose.onAllNodesWithText("先读扩展源码，确认 sudo 参数结构。")[0].performClick()
+        compose.onNodeWithText("思考详情").assertExists()
+        compose.onAllNodesWithText("先读扩展源码，确认 sudo 参数结构。").assertCountEquals(2)
+    }
+
+    @Test fun hiddenThinkingRendersOneEmojiPerBlock() {
+        val hidden = LiveActivity(
+            "hidden", "本轮", "done",
+            listOf(
+                msg("u", "继续", "user"),
+                msg("t", "").copy(thinkingBlocks = listOf("", "")),
+                msg("a", "完成"),
+            ),
+        )
+        fixture(activity = hidden)
+        compose.onNodeWithText("思考过程").performClick()
+        compose.onAllNodesWithText("🤔").assertCountEquals(2)
+    }
+    @Test fun expandedStepsScreenshot() {
+        fixture()
+        compose.onNodeWithText("执行步骤").performClick()
+        compose.onRoot().captureRoboImage("src/test/screenshots/activity-card-expanded.png")
+    }
+
+    @Test fun longStepsWindowScreenshot() {
+        val manySteps = LiveActivity(
+            "many", "本轮", "done",
+            listOf(msg("u", "继续", "user")) + (1..14).map { n ->
+                step("s$n", "bash", """{"command":"echo step $n"}""", "step $n")
+            },
+        )
+        fixture(activity = manySteps)
+        compose.onNodeWithText("执行步骤").performClick()
+        compose.onRoot().captureRoboImage("src/test/screenshots/activity-card-long-steps.png")
+    }
+
+    @Test fun hiddenThinkingScreenshot() {
+        val hidden = LiveActivity(
+            "hidden", "本轮", "done",
+            listOf(
+                msg("u", "继续", "user"),
+                msg("t", "").copy(thinkingBlocks = listOf("", "")),
+                msg("a", "完成"),
+            ),
+        )
+        fixture(activity = hidden)
+        compose.onNodeWithText("思考过程").performClick()
+        compose.onRoot().captureRoboImage("src/test/screenshots/activity-card-hidden-thinking.png")
+    }
+
     @Test fun headerScreenshot() {
         fixture(); compose.onRoot().captureRoboImage("src/test/screenshots/activity-card.png")
     }
