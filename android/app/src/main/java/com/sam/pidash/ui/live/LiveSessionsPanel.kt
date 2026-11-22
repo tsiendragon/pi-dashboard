@@ -9,6 +9,7 @@ import com.sam.pidash.ui.common.MetaLine
 import com.sam.pidash.ui.common.MetaAction
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.common.PulsingDot
+import com.sam.pidash.ui.common.rememberCopyText
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import com.sam.pidash.ui.theme.PiType
@@ -24,6 +25,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
@@ -792,6 +794,8 @@ private fun SessionActionsSheet(
     onShutdown: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val copyText = rememberCopyText()
+    val sessionPath = row.summary.canonicalCwd?.takeIf { it.isNotBlank() } ?: row.summary.cwd
     Column(Modifier.fillMaxWidth().padding(bottom = Spacing.lg)) {
         Column(Modifier.padding(horizontal = Spacing.lg)) {
             Text(
@@ -814,6 +818,9 @@ private fun SessionActionsSheet(
         SheetAction(Icons.Filled.PlayArrow, "重启 Pi 进程", enabled = !busy && !reconnecting) { onDismiss(); onRestart() }
         HorizontalDivider(Modifier.padding(vertical = Spacing.xs), color = scheme.outline.copy(alpha = Tints.Hairline))
         SheetAction(Icons.Filled.Edit, "改名 / 装扮", enabled = !busy) { onDismiss(); onRename() }
+        SheetAction(Icons.Filled.Share, "复制会话路径", enabled = sessionPath.isNotBlank()) {
+            onDismiss(); copyText(sessionPath)
+        }
         SheetAction(Icons.AutoMirrored.Filled.List, "移动到分组", enabled = groupEnabled && !busy) { onDismiss(); onGroup() }
         if (sortingMode) {
             SheetAction(

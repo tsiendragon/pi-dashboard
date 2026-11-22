@@ -457,6 +457,8 @@ Android 5.58（build 89）在 Live Pi 顶部工作状态中显示 PiMatrix 证�
 
 Android 5.59（build 90）在 Live Pi 会话菜单和会话列表操作表中加入「清空会话（保留旧记录）」。它发送扩展注册的 `/clear`，切换到新的空会话；旧对话文件保留，不关闭 Pi 进程，也不删除服务器记录。只有摘要的 `capabilities` 含 `session_clear` 时菜单项才可用；扩展未加载或版本过旧时禁用，避免把 `/clear` 当普通提示词发给模型。会话正在执行时会等这一轮结束后再切换。活动视图中的执行步骤和思考过程改为固定高度（约 10 行）的内部滚动窗口：步骤点击后在弹窗查看完整命令、其他参数和输出，思考按片段一行一条，点击查看完整内容。模型隐藏推理正文但保留空 thinking 块时，每个空块显示一个 🤔；没有 thinking 事件则不补。完整记录页仍保持原有内联展开。只改 Android App，服务器已有 `session_clear` 能力时覆盖安装即可；旧扩展需更新并 `/reload`，不需要重启 Dashboard。
 
+Android 5.65（build 96）在会话详情右上角菜单加入“复制会话路径”，在会话列表长按会话的底部操作表也加入同一项；优先复制服务器给出的规范路径（canonical cwd），没有时退回 `cwd`。复制只写系统剪贴板并显示“已复制”，不读取剪贴板、不落盘、不需要控制权。仅改 Android App，覆盖安装即可。
+
 Android 5.64（build 95）为子 Agent / 工作流和后台命令补了“旧会话兜底”：当运行中的扩展没有发布 `subagent-workflow` / `background-commands` 快照时，App 从会话里的 `subagent_start`、`subagent_results`、`subagent_workflow` 和 `background_command_*` 工具结果重建活动状态，因此老会话不必先重载扩展也能看到正在执行的工作。已发布的快照仍然优先，避免把历史工具结果当成实时状态；兜底只显示工具明确报告的状态。会话菜单新增“子 Agent / 工作流…”入口，即使当前没有运行中的任务也能打开只读记录；扩展完全没有提供数据时会显示“扩展未提供”。状态行仍只在当前会话顶部显示，不会出现在会话列表。仅改 Android App，覆盖安装即可；扩展更新后仍建议 `/reload`。
 
 Android 5.63（build 94）在 Live 顶部工作状态补上 Workbench 的子 Agent / 工作流：读取扩展发布的 `subagent-workflow` 快照，显示运行中、待处理、失败或暂停的数量。主 Agent 空闲但仍有子任务时，状态行仍会呼吸并明确写出，不再看起来像完全空闲；点击这一行打开只读明细，包含普通子 Agent、Workflow 阶段/任务进度和状态。Workflow 子会话不会重复算进普通子 Agent 数量。只读，不在手机启动、重试、暂停或审批；没有该快照的旧扩展不显示这一行。仅改 Android App，覆盖安装即可；旧扩展需更新并 `/reload`，不需要重启 Dashboard。

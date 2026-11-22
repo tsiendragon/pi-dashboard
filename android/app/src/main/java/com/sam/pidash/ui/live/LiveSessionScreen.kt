@@ -45,6 +45,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sam.pidash.ui.common.SegmentedTabs
+import com.sam.pidash.ui.common.rememberCopyText
 import com.sam.pidash.ui.common.PulsingDot
 import com.sam.pidash.ui.common.rememberAttachmentBitmap
 import com.sam.pidash.ui.markdown.MarkdownBody
@@ -355,6 +356,10 @@ fun LiveSessionScreen(
         subagentWorkflow = subagentWorkList,
     )
     val goalState = remember(goal) { goalSummary(goal) }
+    val sessionPath = remember(summary?.canonicalCwd, summary?.cwd) {
+        summary?.canonicalCwd?.takeIf { it.isNotBlank() } ?: summary?.cwd.orEmpty()
+    }
+    val copyText = rememberCopyText()
     // The complete view and the detail page share one grouping: consecutive thinking and
     // tool calls fold into a single trace block instead of alternating cards and bare rows.
     val rows = remember(timeline) { groupActivityDetail(timeline) }
@@ -635,6 +640,11 @@ fun LiveSessionScreen(
                             DropdownMenuItem(text = { Text("刷新") }, enabled = !busy && !pulling, onClick = {
                                 menu = false; perform("已刷新", allowCached = true) { live.refresh(sessionKey) }
                             })
+                            DropdownMenuItem(
+                                text = { Text("复制会话路径") },
+                                enabled = sessionPath.isNotBlank(),
+                                onClick = { menu = false; copyText(sessionPath) },
+                            )
                             listOf("meta" to "改名 / 表情 / 颜色 / 标签", "model" to "选择模型", "thinking" to "思考强度",
                                 "tree" to "会话树（只读）").forEach { (id, label) ->
                                 DropdownMenuItem(text = { Text(label) }, enabled = !busy, onClick = { menu = false; notice = null; dialog = id })
