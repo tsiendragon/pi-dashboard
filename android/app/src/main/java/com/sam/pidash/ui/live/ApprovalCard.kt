@@ -30,11 +30,10 @@ import com.sam.pidash.ui.theme.Spacing
 import com.sam.pidash.ui.theme.Tints
 
 /**
- * The in-conversation approval card.
+ * Persistent in-conversation status for a pending extension UI request.
  *
- * Replaces the old auto-popup: an agent that stops to ask no longer steals the screen or
- * the keyboard, but the request stays visible right above the composer until it is
- * answered. Sudo still opens the secure dialog — a password never gets typed into a card.
+ * The foreground screen also opens the request dialog automatically; this card remains above
+ * the composer as a visible fallback. Sudo still uses the secure dialog — never a password card.
  */
 @Composable
 internal fun ApprovalCard(

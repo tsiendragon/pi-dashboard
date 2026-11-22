@@ -26,6 +26,14 @@ export interface GoalWorkItem {
   title: string
   state?: GoalWorkItemState
   description?: string
+  /** Mid-term milestone or short-term action. Absent on legacy flat checklists. */
+  horizon?: 'mid' | 'short'
+  /** A short action belongs to this milestone id. */
+  parentId?: string
+  /** Observable checks that make a milestone done. */
+  doneWhen?: string[]
+  /** Artifacts/commands that satisfy an action or milestone. */
+  evidence?: string[]
   dependsOn: string[]
 }
 
@@ -50,12 +58,65 @@ export interface GoalAnchor {
   messagesSinceUpdate: number
 }
 
+/** A milestone and the short-term actions nested under it. */
+export interface GoalMilestoneGroup {
+  milestone: GoalWorkItem
+  actions: GoalWorkItem[]
+  current: boolean
+}
+
+export interface GoalWorkPlan {
+  milestones: GoalMilestoneGroup[]
+  /** Short actions without a parent milestone; kept visible instead of hiding them. */
+  ungrouped: GoalWorkItem[]
+  /** The single milestone whose actions may run now. */
+  currentId?: string
+}
+
+/**
+ * Group a hierarchical goal into milestones and their actions.
+ *
+ * Returns `null` for legacy flat goals so callers can keep the old checklist.
+ * The "current" milestone mirrors the extension: first unfinished milestone
+ * whose dependencies are done or deferred.
+ */
+export function goalWorkPlan(anchor: GoalAnchor | null | undefined): GoalWorkPlan | null {
+  if (!anchor) return null
+  const milestones = anchor.workItems.filter(item => item.horizon === 'mid')
+  if (milestones.length === 0) return null
+  const actions = anchor.workItems.filter(item => item.horizon === 'short')
+  const byId = new Map(milestones.map(item => [item.id, item]))
+  const current = milestones.find(item =>
+    item.state !== 'done' &&
+    item.state !== 'deferred' &&
+    item.dependsOn.every(id => {
+      const parent = byId.get(id)
+      return parent?.state === 'done' || parent?.state === 'deferred'
+    }),
+  )
+  return {
+    milestones: milestones.map(milestone => ({
+      milestone,
+      actions: actions.filter(action => action.parentId === milestone.id),
+      current: milestone.id === current?.id,
+    })),
+    ungrouped: actions.filter(action => !action.parentId || !byId.has(action.parentId)),
+    ...(current ? { currentId: current.id } : {}),
+  }
+}
+
 /** Derived counts a session row or dialog can show without re-reading entries. */
 export interface GoalProgress {
   done: number
   total: number
   /** Open blockers whose disposition is `needs_user`. */
   needsUser: number
+  /** Present for hierarchical goals: mid-term milestones completed. */
+  milestonesDone?: number
+  milestonesTotal?: number
+  /** Short-term actions under the current milestone (or all actions when no current). */
+  actionsDone?: number
+  actionsTotal?: number
   status?: GoalStatus
   /** True when the checklist is probably out of date; see `goalStaleness`. */
   stale: boolean
@@ -79,11 +140,35 @@ export function goalProgressOf(anchor: GoalAnchor | null | undefined): GoalProgr
   if (!anchor) return null
   const total = anchor.workItems.length
   const done = anchor.workItems.filter(item => item.state === 'done').length
+  const milestones = anchor.workItems.filter(item => item.horizon === 'mid')
+  const actions = anchor.workItems.filter(item => item.horizon === 'short')
+  const byId = new Map(milestones.map(item => [item.id, item]))
+  const current = milestones.find(item =>
+    item.state !== 'done' &&
+    item.state !== 'deferred' &&
+    item.dependsOn.every(id => {
+      const parent = byId.get(id)
+      return parent?.state === 'done' || parent?.state === 'deferred'
+    }),
+  )
+  const currentActions = current ? actions.filter(action => action.parentId === current.id) : actions
   const needsUser = anchor.blockers.filter(blocker => blocker.disposition === 'needs_user').length
   return {
     done,
     total,
     needsUser,
+    ...(milestones.length > 0
+      ? {
+          milestonesDone: milestones.filter(item => item.state === 'done').length,
+          milestonesTotal: milestones.length,
+          ...(current && currentActions.length > 0
+            ? {
+                actionsDone: currentActions.filter(item => item.state === 'done').length,
+                actionsTotal: currentActions.length,
+              }
+            : {}),
+        }
+      : {}),
     ...(anchor.status ? { status: anchor.status } : {}),
     stale: goalStaleness(anchor) !== null,
   }
@@ -201,11 +286,20 @@ export function goalAnchorFromEntries(entries: readonly unknown[]): GoalAnchor |
     const id = text(item.id) ?? title
     const state = workItemState(item.state)
     const description = text(item.description)
+    const horizonValue = item.horizon
+    const horizon: GoalWorkItem['horizon'] = horizonValue === 'mid' || horizonValue === 'short' ? horizonValue : undefined
+    const parentId = text(item.parentId)
+    const doneWhen = textList(item.doneWhen)
+    const evidence = textList(item.evidence)
     return [{
       id,
       title,
       ...(state ? { state } : {}),
       ...(description ? { description } : {}),
+      ...(horizon ? { horizon } : {}),
+      ...(parentId ? { parentId } : {}),
+      ...(doneWhen.length > 0 ? { doneWhen } : {}),
+      ...(evidence.length > 0 ? { evidence } : {}),
       dependsOn: textList(item.dependsOn),
     }]
   })

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { uiAnswered } from '../../store/liveSessionsSlice'
 import type { LiveSessionSummary, LiveSessionUiRequest } from '@shared/live-sessions'
@@ -12,33 +11,25 @@ import { hasConfirmationMarker } from '../supervisor/pendingConfirmation'
  * extension projects from `pi.on("extension_ui")`, and answers them through the
  * `answer_ui` live-session command → `pi.respondExtensionUi`. First answer wins
  * (no lease): any open web client, or the TUI itself, settles the request; the
- * L1 `extension_ui_closed` event removes it here once answered elsewhere.
+ * L1 `extension_ui_closed` event removes it here once answered elsewhere. Plain
+ * confirmations are shown here too, including for the currently open session.
  */
 export default function LiveSessionExtensionUiModal({ processInstanceId }: { processInstanceId?: string } = {}) {
   const pendingUi = useAppSelector(state => state.liveSessions.pendingUi)
   const sessions = useAppSelector(state => state.liveSessions.sessions)
-  const location = useLocation()
-  // The open conversation answers plain confirmations in its own card; this corner stack must
-  // not show the same request twice, but keep every other session's prompt reachable.
-  const openSessionId = useMemo(() => {
-    const match = /^\/live-sessions\/([^/?#]+)/.exec(location.pathname)
-    return match ? decodeURIComponent(match[1]) : undefined
-  }, [location.pathname])
   const scoped = useMemo(() => {
     const buckets = processInstanceId ? [[processInstanceId, pendingUi[processInstanceId]] as const] : Object.entries(pendingUi)
     return buckets.flatMap(([sessionId, bucket]) =>
-      // Requests that name their target object are carried by the task page and the sidebar badge.
-      // Only the ones with nowhere to live stay in this modal, which is now a small fallback card.
+      // Targeted confirmations are carried by their task page/sidebar. Every other outstanding
+      // request, including one from the currently open conversation, must stay visible in the app.
       Object.values(bucket ?? {})
         .filter(request => !hasConfirmationMarker(request))
-        .filter(request => !(request.method === 'confirm' && sessionId === openSessionId))
         .map(request => ({ sessionId, request })),
     )
-  }, [pendingUi, processInstanceId, openSessionId])
+  }, [pendingUi, processInstanceId])
   if (scoped.length === 0) return null
   return (
-    // A corner stack, not a screen-covering modal: these are requests with no page of their own, and
-    // the task page / sidebar badge already carry everything that names a target object.
+    // Keep the app usable while prominently surfacing every unhandled request.
     <div className="fixed bottom-4 right-4 z-50 flex w-[min(92vw,24rem)] flex-col gap-2">
       {scoped.map(({ sessionId, request }) => (
         <UiDialog

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   goalProgressOf,
   goalStaleness,
+  goalWorkPlan,
   GOAL_STALE_MESSAGE_THRESHOLD,
   type GoalAnchor,
   type GoalBlocker,
@@ -162,6 +163,11 @@ export default function GoalAnchorDialog({ goal, loaded = true, mode = 'live', p
   }, [onClose])
 
   const progress = goalProgressOf(goal)
+  const plan = goalWorkPlan(goal)
+  const msDone = plan?.milestones.filter(group => group.milestone.state === 'done').length ?? 0
+  const msTotal = plan?.milestones.length ?? 0
+  const currentActions = plan?.milestones.find(group => group.current)?.actions ?? []
+  const actionsDone = currentActions.filter(action => action.state === 'done').length
   const staleness = goalStaleness(goal)
   const staleText = staleness === 'complete_with_open_items'
     ? `目标已标记「${goal?.status ? GOAL_STATUS_LABEL[goal.status] : '已完成'}」，但 ${(progress?.total ?? 0) - (progress?.done ?? 0)} 个工作项还没勾选 —— 这份清单可能过期。`
@@ -189,8 +195,13 @@ export default function GoalAnchorDialog({ goal, loaded = true, mode = 'live', p
         <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
           <h2 id="goal-anchor-dialog-title" className="text-sm font-semibold">任务锚点</h2>
           {goal?.status && <Chip tone={goal.status === 'complete' ? 'ok' : 'accent'}>{`目标：${GOAL_STATUS_LABEL[goal.status]}`}</Chip>}
-          {progress && progress.total > 0 && (
-            <Chip tone={progress.done === progress.total ? 'ok' : 'accent'}>{`${progress.done}/${progress.total} 完成`}</Chip>
+          {plan
+            ? <Chip tone={msDone === msTotal ? 'ok' : 'accent'}>{`里程碑 ${msDone}/${msTotal}`}</Chip>
+            : progress && progress.total > 0 && (
+              <Chip tone={progress.done === progress.total ? 'ok' : 'accent'}>{`${progress.done}/${progress.total} 完成`}</Chip>
+            )}
+          {plan && currentActions.length > 0 && (
+            <Chip tone={actionsDone === currentActions.length ? 'ok' : undefined}>{`下一步 ${actionsDone}/${currentActions.length}`}</Chip>
           )}
           {progress && progress.needsUser > 0 && <Chip tone="warn">{`${progress.needsUser} 项需要你处理`}</Chip>}
           {mode === 'snapshot' && <Chip>只读快照</Chip>}
@@ -236,12 +247,85 @@ export default function GoalAnchorDialog({ goal, loaded = true, mode = 'live', p
                   </div>
                 )}
 
-                <Section title="目标">
+                <Section title={plan ? '目标（长期）' : '目标'}>
                   <p className="whitespace-pre-wrap break-words text-body-s text-text">{goal.objective}</p>
                   <p className="mt-1 text-2xs text-muted">原文保留，不做摘要、不改写。</p>
                 </Section>
 
-                {progress && progress.total > 0 && (
+                {plan ? (
+                  <>
+                    <Section title="完成标准">
+                      {goal.acceptanceCriteria.length === 0
+                        ? <p className="text-2xs text-muted">还没有写完成标准；补一条可验证的终态。</p>
+                        : <ul className="list-disc space-y-1 pl-5 text-2xs text-muted-strong">
+                            {goal.acceptanceCriteria.map((criterion, index) => <li key={`${index}-${criterion}`}>{criterion}</li>)}
+                          </ul>}
+                    </Section>
+
+                    <Section title={`里程碑（${msDone}/${msTotal}）`}>
+                      <ol className="space-y-2">
+                        {plan.milestones.map(({ milestone, actions, current }) => {
+                          const state = milestone.state ?? 'todo'
+                          return (
+                            <li
+                              key={milestone.id}
+                              className={`rounded border px-3 py-2 ${current ? 'border-accent bg-accent-subtle/20' : 'border-border bg-card'}`}
+                            >
+                              <div className="flex flex-wrap items-start gap-2">
+                                <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full text-2xs font-bold ${WORK_ITEM_CLASS[state]}`} aria-hidden="true">{WORK_ITEM_GLYPH[state]}</span>
+                                <div className="min-w-0 flex-1">
+                                  <div className={`text-meta font-medium ${state === 'done' ? 'text-muted line-through' : 'text-text'}`}>{milestone.title}</div>
+                                  {(milestone.doneWhen?.length ?? 0) > 0 && (
+                                    <div className="mt-0.5 text-2xs text-muted">{`完成条件：${milestone.doneWhen?.join('；')}`}</div>
+                                  )}
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <Chip>{`中期 ${milestone.id}`}</Chip>
+                                  {current && <Chip tone="accent">当前</Chip>}
+                                  <Chip tone={state === 'done' ? 'ok' : undefined}>{WORK_ITEM_LABEL[state]}</Chip>
+                                </div>
+                              </div>
+
+                              <div className="mt-2 space-y-1 border-l border-border pl-3">
+                                {actions.length === 0
+                                  ? <p className="text-2xs text-muted">还没有下一步动作；让 agent 先补一个可执行动作。</p>
+                                  : actions.map(action => {
+                                      const actionState = action.state ?? 'todo'
+                                      return (
+                                        <div key={action.id} className="flex flex-wrap items-start gap-2 rounded bg-bg-hover/40 px-2 py-1.5">
+                                          <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full text-2xs font-bold ${WORK_ITEM_CLASS[actionState]}`} aria-hidden="true">{WORK_ITEM_GLYPH[actionState]}</span>
+                                          <div className="min-w-0 flex-1">
+                                            <div className={`text-2xs ${actionState === 'done' ? 'text-muted line-through' : 'text-text'}`}>{action.title}</div>
+                                            {(action.evidence?.length ?? 0) > 0 && (
+                                              <div className="mt-0.5 break-all text-2xs text-muted">{`证据：${action.evidence?.join('；')}`}</div>
+                                            )}
+                                          </div>
+                                          <Chip>短期</Chip>
+                                          <Chip tone={actionState === 'done' ? 'ok' : undefined}>{WORK_ITEM_LABEL[actionState]}</Chip>
+                                        </div>
+                                      )
+                                    })}
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ol>
+                      {plan.ungrouped.length > 0 && (
+                        <div className="mt-2 rounded border border-dashed border-border px-3 py-2">
+                          <div className="text-2xs font-medium text-muted">{`未挂到里程碑的短期动作（${plan.ungrouped.length}）`}</div>
+                          <ul className="mt-1 space-y-1">
+                            {plan.ungrouped.map(action => (
+                              <li key={action.id} className="flex items-start gap-2 text-2xs text-text">
+                                <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full text-2xs font-bold ${WORK_ITEM_CLASS[action.state ?? 'todo']}`} aria-hidden="true">{WORK_ITEM_GLYPH[action.state ?? 'todo']}</span>
+                                <span className="min-w-0 break-words">{action.title}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </Section>
+                  </>
+                ) : progress && progress.total > 0 && (
                   <Section title={`工作项（${progress.done}/${progress.total} 完成）`}>
                     <ul className="space-y-1.5">
                       {goal.workItems.map(item => {
@@ -295,16 +379,20 @@ export default function GoalAnchorDialog({ goal, loaded = true, mode = 'live', p
                 </Section>
 
                 <details className="rounded border border-border px-3 py-2">
-                  <summary className="cursor-pointer text-2xs font-medium">更多详情（验收标准 / 约束 / 来源文档）</summary>
+                  <summary className="cursor-pointer text-2xs font-medium">
+                    {plan ? '更多详情（约束 / 来源文档）' : '更多详情（验收标准 / 约束 / 来源文档）'}
+                  </summary>
                   <div className="mt-3 space-y-4">
-                    <Section title="验收标准">
-                      {goal.acceptanceCriteria.length === 0
-                        ? <p className="text-2xs text-muted">暂无验收标准</p>
-                        : <ol className="list-decimal space-y-1 pl-5 text-2xs text-muted-strong">
-                          {goal.acceptanceCriteria.map((criterion, index) => <li key={`${index}-${criterion}`}>{criterion}</li>)}
-                        </ol>}
-                      <p className="mt-1 text-2xs text-muted">验收标准没有单条勾选状态，这里只读展示，不伪造完成度。</p>
-                    </Section>
+                    {!plan && (
+                      <Section title="验收标准">
+                        {goal.acceptanceCriteria.length === 0
+                          ? <p className="text-2xs text-muted">暂无验收标准</p>
+                          : <ol className="list-decimal space-y-1 pl-5 text-2xs text-muted-strong">
+                            {goal.acceptanceCriteria.map((criterion, index) => <li key={`${index}-${criterion}`}>{criterion}</li>)}
+                          </ol>}
+                        <p className="mt-1 text-2xs text-muted">验收标准没有单条勾选状态，这里只读展示，不伪造完成度。</p>
+                      </Section>
+                    )}
                     <Section title="约束">
                       {goal.constraints.length === 0
                         ? <p className="text-2xs text-muted">暂无约束</p>

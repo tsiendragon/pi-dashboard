@@ -19,23 +19,31 @@ import java.time.Instant
  * `data` is `{feature, snapshot}` (see `pi-tsien-live-session`).
  *
  * Projected here: the background-command panel (a foreground bash call can be
- * handed to the background), armed schedules, and read-only PiMatrix proof jobs.
+ * handed to the background), armed schedules, subagent/workflow activity, and PiMatrix proof jobs.
  * Nothing here issues commands — that stays in the repository under an explicit lease.
  */
 private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
-private fun featureSnapshot(detail: LiveDetail?, feature: String): JsonObject? {
+internal fun featureSnapshotEntry(detail: LiveDetail?, feature: String): JsonObject? {
     return detail?.entries?.asReversed()?.firstNotNullOfOrNull { raw ->
         val entry = raw as? JsonObject ?: return@firstNotNullOfOrNull null
         if (entry.str("type") != "live_feature_snapshot") return@firstNotNullOfOrNull null
         val data = entry["data"] as? JsonObject ?: return@firstNotNullOfOrNull null
-        data.takeIf { it.str("feature") == feature }?.get("snapshot") as? JsonObject
+        data.takeIf { it.str("feature") == feature }
     }
 }
 
+internal fun featureSnapshot(detail: LiveDetail?, feature: String): JsonObject? {
+    // A clear event may omit the snapshot; never revive an older one.
+    return featureSnapshotEntry(detail, feature)?.get("snapshot") as? JsonObject
+}
+
 fun backgroundSnapshot(detail: LiveDetail?): LiveBackgroundSnapshot? {
-    featureSnapshot(detail, "background-commands")?.let { snapshot ->
-        decodeBackgroundSnapshot(snapshot)?.let { return it }
+    val entry = featureSnapshotEntry(detail, "background-commands")
+    if (entry != null) {
+        // The latest event is authoritative, including an explicit clear.
+        val snapshot = entry["snapshot"] as? JsonObject ?: return null
+        return decodeBackgroundSnapshot(snapshot)
     }
     // Older sessions (or a session started before a reload) may have no feature
     // snapshot even though the transcript already contains its tool results.
@@ -548,12 +556,12 @@ private fun fallbackSubagentWorkflow(detail: LiveDetail?): LiveSubagentWorkflow?
 }
 
 internal fun subagentWorkflow(detail: LiveDetail?): LiveSubagentWorkflow? {
-    val projected = featureSnapshot(detail, "subagent-workflow")?.let(::decodeSubagentWorkflow)
-    if (projected != null && (projected.agents.isNotEmpty() || projected.workflows.isNotEmpty() ||
-            projected.agentsRunning > 0 || projected.workflowsActive > 0 ||
-            projected.workflowsFailed > 0 || projected.workflowsPaused > 0)) return projected
-    // A session created before the live feature was available still has the tool
-    // results. Use them only when the feature is absent or empty; a published
-    // feature stays authoritative for completed/retained records.
-    return fallbackSubagentWorkflow(detail) ?: projected
+    val entry = featureSnapshotEntry(detail, "subagent-workflow")
+    if (entry != null) {
+        // A published snapshot (including an explicit clear) is authoritative;
+        // transcript fallback is only for sessions that never had the feature.
+        val snapshot = entry["snapshot"] as? JsonObject ?: return null
+        return decodeSubagentWorkflow(snapshot)
+    }
+    return fallbackSubagentWorkflow(detail)
 }

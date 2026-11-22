@@ -213,9 +213,19 @@ fun LiveSessionScreen(
         }
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var screenResumed by remember(lifecycle) {
+        mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
     DisposableEffect(lifecycle, voice) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) voice.cancel()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> screenResumed = true
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    screenResumed = false
+                    if (event == Lifecycle.Event.ON_STOP) voice.cancel()
+                }
+                else -> Unit
+            }
         }
         lifecycle.addObserver(observer)
         onDispose {
@@ -336,8 +346,19 @@ fun LiveSessionScreen(
     var dialog by remember(sessionKey) { mutableStateOf<String?>(null) }
     var forkEntry by remember(sessionKey) { mutableStateOf<String?>(null) }
     var answered by remember(sessionKey) { mutableStateOf(emptySet<String>()) }
-    // The request the user chose to open in a dialog; nothing opens itself.
     var openedRequest by remember(sessionKey) { mutableStateOf<com.sam.pidash.domain.model.LiveUiRequest?>(null) }
+    val pendingUiRequests = detail?.pendingUi?.filter { it.id !in answered }.orEmpty()
+    val oldestPendingUiRequest = pendingUiRequests.firstOrNull()
+    LaunchedEffect(sessionKey, oldestPendingUiRequest?.id, cachedSnapshot, screenResumed) {
+        if (!screenResumed) return@LaunchedEffect
+        if (cachedSnapshot != null) {
+            openedRequest = null
+            return@LaunchedEffect
+        }
+        val next = nextRequestToAutoOpen(detail?.pendingUi.orEmpty(), answered, openedRequest?.id)
+        if (next != null) openedRequest = next
+        else if (pendingUiRequests.isEmpty()) openedRequest = null
+    }
     var approvalBusy by remember(sessionKey) { mutableStateOf(false) }
     var approvalError by remember(sessionKey) { mutableStateOf<String?>(null) }
     // Non-null while the interactive command console is open; "" means "ask for a command".
@@ -1015,16 +1036,15 @@ fun LiveSessionScreen(
                     onOpen = { queueError = null; queueSheet = true },
                     modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
                 )
-                // A pending request is answered here, in place: the agent is blocked, so the
-                // card sits where the user is already looking instead of covering the screen.
-                val pendingRequests = detail?.pendingUi?.filter { it.id !in answered }.orEmpty()
-                val oldest = pendingRequests.firstOrNull()
+                // Keep the persistent card under the composer as a fallback; the foreground
+                // request itself is also opened above so a blocked conversation cannot hide it.
+                val oldest = pendingUiRequests.firstOrNull()
                 if (oldest != null && cachedSnapshot == null) {
                     ApprovalCard(
                         method = oldest.method,
                         title = oldest.title,
                         message = oldest.message,
-                        pendingCount = pendingRequests.size,
+                        pendingCount = pendingUiRequests.size,
                         busy = approvalBusy,
                         error = approvalError,
                         onAllow = {

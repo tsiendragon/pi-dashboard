@@ -24,8 +24,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The approval card replaces the old auto-popup: the agent's question stays visible above
- * the composer until it is answered, and only a confirm can be settled in place.
+ * The card remains a persistent fallback above the composer; LiveSessionScreen also
+ * auto-opens a foreground dialog for each unanswered request.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

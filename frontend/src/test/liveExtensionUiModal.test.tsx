@@ -24,9 +24,9 @@ function state(): RootState {
 }
 
 describe('extension UI corner stack', () => {
-  it('leaves confirmations of the open conversation to its in-place card', () => {
+  it('surfaces confirmations from the open conversation instead of relying on an inline card', () => {
     renderWithProviders(<LiveSessionExtensionUiModal />, { store: createTestStore(state()), route: '/live-sessions/p1' })
-    expect(screen.queryByText('打开会话里的确认')).not.toBeInTheDocument()
+    expect(screen.getByText('打开会话里的确认')).toBeInTheDocument()
     // Another session's prompt must stay reachable from wherever the user is.
     expect(screen.getByText('另一个会话的确认')).toBeInTheDocument()
   })

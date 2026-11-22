@@ -100,6 +100,13 @@ internal fun StepDetailDialog(
         subtitle = listOfNotNull(name, status).joinToString(" · "),
         onDismiss = onDismiss,
     ) {
+        if (status != null) {
+            Text(
+                "执行状态：$status",
+                style = PiType.footnote,
+                color = if (item.isError || item.status == "error") scheme.error else scheme.onSurfaceVariant,
+            )
+        }
         if (description != null) DetailSection("说明", description, code = false)
         if (command != null) DetailSection("命令", command) else if (rawArgs.isNotBlank()) {
             DetailSection("参数", rawArgs)
@@ -113,6 +120,7 @@ internal fun StepDetailDialog(
             Modifier.fillMaxWidth().padding(top = Spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
         ) {
+            if (command != null) CopyTextAction(command, "复制命令")
             if (rawArgs.isNotBlank()) CopyTextAction(rawArgs, "复制参数")
             if (output.isNotBlank()) CopyTextAction(output, "复制输出")
         }

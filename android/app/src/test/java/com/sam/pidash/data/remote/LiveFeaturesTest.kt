@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -171,14 +172,24 @@ class LiveFeaturesTest {
         assertNull(settled.summaryLabel)
     }
 
-    @Test fun emptyFeatureSnapshotFallsBackButPublishedRecordsStayAuthoritative() {
+    @Test fun anExplicitClearDoesNotReviveTranscriptFallback() {
         val active = """{"type":"message_end","data":{"message":{"role":"toolResult","toolName":"subagent_start","details":{"status":"running","workId":"work-live"}}}}"""
+        assertTrue(subagentWorkflow(detail(active))!!.isExecuting)
         val empty = event("subagent-workflow", """{"conversations":{"items":[]},"workflows":{"items":[]}}""")
-        assertTrue(subagentWorkflow(detail(empty, active))!!.isExecuting)
+        assertFalse(subagentWorkflow(detail(empty, active))!!.isExecuting)
+        val clear = """{"type":"live_feature_snapshot","data":{"feature":"subagent-workflow"}}"""
+        assertNull(subagentWorkflow(detail(active, clear)))
         val retained = event("subagent-workflow", """{"conversations":{"items":[{"id":"work-live","label":"已结束","status":"completed"}]},"workflows":{"items":[]}}""")
         val work = subagentWorkflow(detail(retained, active))!!
         assertEquals("completed", work.agents.single().status)
         assertFalse(work.isExecuting)
+    }
+
+    @Test fun anExplicitBackgroundClearDoesNotReviveTranscriptFallback() {
+        val start = """{"type":"message_end","data":{"message":{"role":"toolResult","toolName":"background_command_start","details":{"taskId":"bash-abcd","status":"running","mode":"background"}}}}"""
+        assertNotNull(backgroundSnapshot(detail(start)))
+        val clear = """{"type":"live_feature_snapshot","data":{"feature":"background-commands"}}"""
+        assertNull(backgroundSnapshot(detail(start, clear)))
     }
 
     @Test fun proofJobsAreValidatedAndOrderedLiveFirst() {
