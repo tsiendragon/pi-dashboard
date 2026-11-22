@@ -90,6 +90,16 @@ class LiveSessionClientTest {
         assertTrue(calls.all { it.path.startsWith("/api/live-sessions") })
     }
 
+    @Test fun wordUploadSendsBase64AndReturnsTheHostPath() = runBlocking {
+        handler = { reply(it, """{"ok":true,"paths":["/tmp/pi-dashboard-uploads/1-report.docx"]}""") }
+        val paths = client.uploadFiles(listOf(FileAttachments.UploadRequest("report.docx", "UEsDBAo=", 5)))
+        assertEquals(listOf("/tmp/pi-dashboard-uploads/1-report.docx"), paths)
+        assertEquals("POST", calls.single().method)
+        assertEquals("/api/upload-files", calls.single().path)
+        assertTrue(calls.single().body.contains("report.docx"))
+        assertTrue(calls.single().body.contains("UEsDBAo="))
+    }
+
     @Test fun organizationAndGroupEditsUseExistingProtectedEndpointsWithoutClaiming() = runBlocking {
         cookies.save(backend, cookie)
         handler = { if (it.requestURI.path == "/api/live-session-order") reply(it, """{"order":["session-fixture"],"sectionOrder":["work"]}""")

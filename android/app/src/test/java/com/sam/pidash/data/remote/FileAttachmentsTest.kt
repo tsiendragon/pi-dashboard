@@ -8,7 +8,7 @@ import org.junit.Test
 
 class FileAttachmentsTest {
     @Test fun acceptsTheRequestedTextTypesAndPdf() {
-        listOf("notes.md", "data.json", "app.py", "ci.yaml", "ci.yml", "a.txt", "nginx.conf", "rows.csv", "a.pdf")
+        listOf("notes.md", "data.json", "app.py", "ci.yaml", "ci.yml", "a.txt", "nginx.conf", "rows.csv", "a.pdf", "report.docx")
             .forEach { assertTrue(it, FileAttachments.isSupported(it)) }
         listOf("run.exe", "lib.so", "photo.png", "archive.zip", "noextension")
             .forEach { assertFalse(it, FileAttachments.isSupported(it)) }
@@ -45,6 +45,20 @@ class FileAttachmentsTest {
         assertTrue(text.startsWith("文件：rows.csv（12 B）\n```csv\na,b\n1,2\n```"))
         assertTrue(text.contains("已截断"))
         assertTrue(text.contains("```log"))
+    }
+
+    @Test fun wordDocumentsAreUploadedRatherThanDecodedAsText() {
+        assertTrue(FileAttachments.isWordFile("report.DOCX"))
+        assertTrue(FileAttachments.isWordFile("legacy.doc"))
+        assertTrue(FileAttachments.isWordFile("memo", "application/msword"))
+        assertFalse(FileAttachments.isWordFile("report.pdf"))
+        assertFalse(FileAttachments.isTextFile("report.docx"))
+        val prefix = FileAttachments.uploadedPrefix(
+            listOf(FileAttachments.UploadedFile("report.docx", "/tmp/pi-dashboard-uploads/1-report.docx", 2_048)),
+        )
+        assertTrue(prefix.contains("report.docx"))
+        assertTrue(prefix.contains("2.0 KB"))
+        assertTrue(prefix.contains("/tmp/pi-dashboard-uploads/1-report.docx"))
     }
 
     @Test fun emptyPrefixKeepsTheMessageUntouched() {

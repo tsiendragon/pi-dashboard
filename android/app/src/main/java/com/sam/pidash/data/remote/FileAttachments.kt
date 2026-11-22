@@ -28,10 +28,20 @@ object FileAttachments {
     const val MAX_FILE_BYTES = 32 * 1024
     const val MAX_TOTAL_BYTES = 96 * 1024
     const val MAX_PDF_PAGES = 4
+    /** Word files are uploaded whole to the Dashboard host instead of inlined. */
+    const val MAX_UPLOAD_BYTES = 10 * 1024 * 1024
     private const val PDF_RENDER_WIDTH = 1240
     private const val PDF_JPEG_QUALITY = 80
 
     /** Text types worth inlining; anything else is refused rather than guessed. */
+    val WORD_EXTENSIONS = setOf("doc", "docx", "docm", "dotx")
+    val WORD_MIMES = setOf(
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-word.document.macroenabled.12",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+    )
+
     val TEXT_EXTENSIONS = setOf(
         "md", "markdown", "mdx", "json", "jsonl", "yaml", "yml", "toml", "ini", "conf", "cfg", "env",
         "csv", "tsv", "txt", "log", "py", "sh", "bash", "zsh", "ts", "tsx", "js", "jsx", "sql",
@@ -45,7 +55,10 @@ object FileAttachments {
 
     fun isPdf(name: String): Boolean = extensionOf(name) == "pdf"
 
-    fun isSupported(name: String): Boolean = isTextFile(name) || isPdf(name)
+    fun isWordFile(name: String, mime: String? = null): Boolean =
+        extensionOf(name) in WORD_EXTENSIONS || mime?.lowercase() in WORD_MIMES
+
+    fun isSupported(name: String): Boolean = isTextFile(name) || isPdf(name) || isWordFile(name)
 
     /**
      * The file picker also lists photos, so accept them by mime type or by name and hand
@@ -62,6 +75,10 @@ object FileAttachments {
         val sizeBytes: Int,
         val truncated: Boolean,
     )
+
+    /** A whole Word document sent to the dashboard host; the prompt carries only its path. */
+    data class UploadRequest(val name: String, val data: String, val sizeBytes: Int)
+    data class UploadedFile(val name: String, val path: String, val sizeBytes: Int)
 
     /** Decode UTF-8 text; a NUL byte means binary and is refused, never mangled. */
     fun decodeText(bytes: ByteArray): String? {
@@ -90,11 +107,46 @@ object FileAttachments {
      * One fenced block per file, headed by name and size so the agent knows what
      * it is reading. Truncation is stated instead of silently cutting the file.
      */
+    /** Path references for files uploaded to the host; pi reads the real file there. */
+    fun uploadedPrefix(files: List<UploadedFile>): String = files.joinToString("\n\n") { file ->
+        "文件：${file.name}（${humanSize(file.sizeBytes)}，已上传到 Dashboard）\n路径：${file.path}"
+    }
+
     fun prefix(files: List<TextAttachment>): String = files.joinToString("\n\n") { file ->
         val fence = "```"
         val language = extensionOf(file.name)
         val note = if (file.truncated) "，已截断：只发送前 ${MAX_FILE_BYTES / 1024} KB" else ""
         "文件：${file.name}（${humanSize(file.sizeBytes)}$note）\n$fence$language\n${file.text.trimEnd()}\n$fence"
+    }
+
+    /**
+     * Read a Word document for server upload. The bytes stay local until the
+     * explicit upload request; no filename/path is inferred from the display name.
+     */
+    suspend fun readForUpload(context: Context, uri: Uri): Result<UploadRequest> = withContext(Dispatchers.IO) {
+        runCatching {
+            val name = displayName(context, uri)
+            if (!isWordFile(name, runCatching { context.contentResolver.getType(uri) }.getOrNull())) {
+                throw IllegalArgumentException("不是 Word 文档：$name")
+            }
+            val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(16 * 1024)
+                var total = 0
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > MAX_UPLOAD_BYTES) throw IllegalArgumentException(
+                        "$name 超过 ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB，无法上传"
+                    )
+                    output.write(buffer, 0, read)
+                }
+                output.toByteArray()
+            } ?: throw IllegalArgumentException("无法读取 $name")
+            if (bytes.isEmpty()) throw IllegalArgumentException("$name 是空文件")
+            UploadRequest(name, Base64.getEncoder().encodeToString(bytes), bytes.size)
+        }
     }
 
     suspend fun readText(context: Context, uri: Uri): Result<TextAttachment> = withContext(Dispatchers.IO) {

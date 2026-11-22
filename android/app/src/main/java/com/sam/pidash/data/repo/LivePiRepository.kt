@@ -703,6 +703,9 @@ class LivePiRepository(
     }
     /** Read-only preview of a file the transcript already references. */
     suspend fun readFile(id: String, path: String): Result<String> = result { client(id).readTextFile(path) }
+    /** Upload phone-side Word documents to the host; the prompt then references their paths. */
+    suspend fun uploadFiles(id: String, files: List<FileAttachments.UploadRequest>): Result<List<String>> =
+        result { client(id).uploadFiles(files) }
     suspend fun candidates(id: String): Result<List<LiveRepoCandidate>> = result { client(id).candidates() }
     suspend fun startOptions(id: String): Result<LiveStartOptions> = result { client(id).startOptions() }
     suspend fun start(id: String, cwd: String, title: String = "", model: String = "", thinkingLevel: String = ""): Result<SessionKey?> {

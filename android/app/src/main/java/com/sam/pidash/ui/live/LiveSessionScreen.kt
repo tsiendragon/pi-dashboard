@@ -159,6 +159,8 @@ fun LiveSessionScreen(
     // Quotes and annotations reuse the WebUI's message shapes, so the agent sees
     // the same blockquote/comment round from either client.
     var files by remember(sessionKey) { mutableStateOf(emptyList<FileAttachments.TextAttachment>()) }
+    var uploadedFiles by remember(sessionKey) { mutableStateOf(emptyList<FileAttachments.UploadedFile>()) }
+    var uploadingFile by remember(sessionKey) { mutableStateOf(false) }
     var quotes by remember(sessionKey) { mutableStateOf(emptyList<AppQuote>()) }
     var reviews by remember(sessionKey) { mutableStateOf(emptyList<AppReviewItem>()) }
     var annotating by remember(sessionKey) { mutableStateOf<AppReviewItem?>(null) }
@@ -250,12 +252,18 @@ fun LiveSessionScreen(
         }
     }
     // Phone files are not on the agent's machine, so text is inlined and PDFs become
-    // image parts — both shapes the Live protocol already accepts.
+    // image parts — both shapes the Live protocol already accepts. Word is uploaded
+    // whole to the host, then the prompt carries the returned path.
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) {
             notice = null
             scope.launch {
-                uris.take(FileAttachments.MAX_FILES).forEach { uri ->
+                val remaining = (FileAttachments.MAX_FILES - files.size - uploadedFiles.size).coerceAtLeast(0)
+                if (remaining == 0) {
+                    notice = "最多附加 ${FileAttachments.MAX_FILES} 个文本/Word 文件"
+                    return@launch
+                }
+                uris.take(remaining).forEach { uri ->
                     val name = FileAttachments.displayName(context, uri)
                     val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
                     when {
@@ -281,6 +289,35 @@ fun LiveSessionScreen(
                             },
                             onFailure = { error -> notice = error.message ?: "无法读取 PDF" },
                         )
+                        FileAttachments.isWordFile(name, mime) -> {
+                            uploadingFile = true
+                            try {
+                                FileAttachments.readForUpload(context, uri).fold(
+                                    onSuccess = { request ->
+                                        repo.live.uploadFiles(sessionKey.backendId, listOf(request)).fold(
+                                            onSuccess = { paths ->
+                                                val path = paths.firstOrNull()
+                                                if (path.isNullOrBlank()) {
+                                                    notice = "Word 上传失败：服务器未返回路径"
+                                                } else {
+                                                    val merged = uploadedFiles + FileAttachments.UploadedFile(name, path, request.sizeBytes)
+                                                    if (files.size + merged.size > FileAttachments.MAX_FILES) {
+                                                        notice = "最多附加 ${FileAttachments.MAX_FILES} 个文本/Word 文件"
+                                                    } else {
+                                                        uploadedFiles = merged
+                                                        notice = "已上传 Word：$name"
+                                                    }
+                                                }
+                                            },
+                                            onFailure = { error -> notice = "Word 上传失败：${error.message ?: "请检查服务器"}" },
+                                        )
+                                    },
+                                    onFailure = { error -> notice = error.message ?: "无法读取 Word" },
+                                )
+                            } finally {
+                                uploadingFile = false
+                            }
+                        }
                         FileAttachments.isTextFile(name) -> FileAttachments.readText(context, uri).fold(
                             onSuccess = { file ->
                                 val merged = files + file
@@ -289,7 +326,7 @@ fun LiveSessionScreen(
                             },
                             onFailure = { error -> notice = error.message ?: "无法读取文件" },
                         )
-                        else -> notice = "不支持：$name${mime?.let { "（$it）" } ?: ""}。支持图片、PDF 与文本文件。"
+                        else -> notice = "不支持：$name${mime?.let { "（$it）" } ?: ""}。支持图片、PDF、文本文件和 Word 文档。"
                     }
                 }
             }
@@ -811,6 +848,33 @@ fun LiveSessionScreen(
                         }
                     }
                 }
+                if (uploadingFile) Text(
+                    "Word 文件上传中…",
+                    modifier = Modifier.fillMaxWidth().padding(start = Spacing.md, bottom = 2.dp),
+                    style = PiType.caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (uploadedFiles.isNotEmpty()) Row(
+                    Modifier.fillMaxWidth().padding(bottom = 4.dp).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    uploadedFiles.forEach { file ->
+                        Row(
+                            Modifier.background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
+                                .padding(start = 6.dp, end = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${file.name} · ${FileAttachments.humanSize(file.sizeBytes)} · 已上传",
+                                style = PiType.micro,
+                                maxLines = 1,
+                            )
+                            IconButton(onClick = { uploadedFiles = uploadedFiles - file }, modifier = Modifier.size(22.dp)) {
+                                Icon(Icons.Filled.Close, "移除 ${file.name}", Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
                 if (attachments.isNotEmpty()) Row(
                     Modifier.fillMaxWidth().padding(bottom = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1007,10 +1071,10 @@ fun LiveSessionScreen(
                         }
                     }
                 } else null
-                val canSend = !busy && cachedSnapshot == null && summary != null &&
+                val canSend = !busy && !uploadingFile && cachedSnapshot == null && summary != null &&
                     voiceState.phase == VoiceInputPhase.Idle &&
                     (draft.isNotBlank() || attachments.isNotEmpty() || files.isNotEmpty() ||
-                        quotes.isNotEmpty() || reviews.isNotEmpty()) &&
+                        uploadedFiles.isNotEmpty() || quotes.isNotEmpty() || reviews.isNotEmpty()) &&
                     ImageAttachments.validate(attachments) == null
                 ComposerPill(
                     draft = draft,
@@ -1024,7 +1088,12 @@ fun LiveSessionScreen(
                         val sentQuotes = quotes
                         val sentReviews = reviews
                         val sentFiles = files
-                        val text = composeOutgoing(typed, sentQuotes, sentReviews, FileAttachments.prefix(sentFiles))
+                        val sentUploaded = uploadedFiles
+                        val filePrefix = listOf(
+                            FileAttachments.prefix(sentFiles),
+                            FileAttachments.uploadedPrefix(sentUploaded),
+                        ).filter { it.isNotBlank() }.joinToString("\n\n")
+                        val text = composeOutgoing(typed, sentQuotes, sentReviews, filePrefix)
                         perform("已发送") {
                             live.send(sessionKey, text, deliverAs, images).onSuccess {
                                 queueRevision++
@@ -1032,6 +1101,7 @@ fun LiveSessionScreen(
                                 if (draft == typed) draft = ""
                                 if (attachments == images) attachments = emptyList()
                                 if (files == sentFiles) files = emptyList()
+                                if (uploadedFiles == sentUploaded) uploadedFiles = emptyList()
                                 if (quotes == sentQuotes) quotes = emptyList()
                                 if (reviews == sentReviews) reviews = emptyList()
                                 if (settingsPrefs.collapseKeyboard.value) keyboard?.hide()
@@ -1094,8 +1164,8 @@ fun LiveSessionScreen(
                                 onClick = { addMenu = false; picker.launch("image/*") },
                             )
                             DropdownMenuItem(
-                                text = { Text("图片 / 文本 / PDF 文件") },
-                                enabled = files.size < FileAttachments.MAX_FILES,
+                                text = { Text("图片 / 文本 / PDF / Word 文件") },
+                                enabled = !uploadingFile && files.size + uploadedFiles.size < FileAttachments.MAX_FILES,
                                 onClick = { addMenu = false; filePicker.launch(arrayOf("*/*")) },
                             )
                             HorizontalDivider()

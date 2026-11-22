@@ -107,6 +107,27 @@ class LiveSessionClient(
     suspend fun get(path: String): JsonObject = withContext(Dispatchers.IO) {
         execute(request(path)).jsonObject
     }
+
+    /** Upload whole documents to the Dashboard host; the returned paths go into the prompt. */
+    suspend fun uploadFiles(files: List<FileAttachments.UploadRequest>): List<String> = withContext(Dispatchers.IO) {
+        require(files.isNotEmpty()) { "没有待上传的文件" }
+        val body = buildJsonObject {
+            putJsonArray("files") {
+                files.forEach { file ->
+                    add(buildJsonObject {
+                        put("name", file.name)
+                        put("data", file.data)
+                    })
+                }
+            }
+        }
+        val result = post("/api/upload-files", body)
+        val paths = (result["paths"] as? JsonArray).orEmpty().mapNotNull { element ->
+            (element as? JsonPrimitive)?.contentOrNull?.takeIf { it.startsWith("/") }
+        }
+        if (paths.size != files.size) throw IOException("服务器未返回全部上传路径")
+        paths
+    }
     suspend fun post(path: String, body: JsonElement = buildJsonObject {}): JsonObject = withContext(Dispatchers.IO) {
         execute(request(path, "POST", body)).jsonObject
     }
