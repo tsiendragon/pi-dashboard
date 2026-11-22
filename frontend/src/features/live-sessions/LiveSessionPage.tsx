@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import type { BtwFeatureCommand, LiveSessionDetail, LiveSessionImage, LiveSessionModelOption, LiveSessionSummary, LiveSessionUiRequest } from '@shared/live-sessions'
+import type { BtwFeatureCommand, LiveSessionDetail, LiveSessionImage, LiveSessionModelOption, LiveSessionSummary } from '@shared/live-sessions'
 import MarkdownRenderer from '../../components/MarkdownRenderer'
 import MaterialIcon from '../../components/MaterialIcon'
 import DocumentPreviewModal from '../../components/DocumentPreviewModal'
@@ -29,7 +29,6 @@ import {
   selectLiveSession,
   setLiveSessionError,
   dismissSessionNotifications,
-  uiAnswered,
 } from '../../store/liveSessionsSlice'
 import { liveSessionApi, LiveSessionApiError } from './api'
 import LiveSessionComposer from './LiveSessionComposer'
@@ -74,10 +73,9 @@ import { displayWorktreePath } from '../../utils/displayPath'
 import { copyText } from '../../utils/clipboard'
 import LiveSessionsList from './LiveSessionsList'
 import ContextInspector from './ContextInspector'
-import LiveQueueBar, { LiveApprovalCard } from './LiveApprovalQueue'
+import LiveQueueBar from './LiveApprovalQueue'
 import LiveAuditDialog from './LiveAuditDialog'
 import { PendingDeliveryBar, pendingDeliveries, pendingDeliveryLabel, pendingDeliveryOf, pendingDeliveryTitle, queuedDeliveryFor } from './pendingDelivery'
-import { hasConfirmationMarker } from '../supervisor/pendingConfirmation'
 import { forkLiveSessionAtStep } from './forkPlacement'
 import { useLiveSessionsRefresh } from './LiveSessionsRuntime'
 
@@ -2230,13 +2228,6 @@ export default function LiveSessionPage() {
   // normal prompt, so only offer the action when the bridge advertises support.
   const treeCapable = activeId ? state.sessions[activeId]?.capabilities?.includes('session_tree') === true : false
   const notifications = activeId ? state.notifications[activeId] ?? [] : []
-  // Only plain yes/no requests become the in-conversation card. Sudo and free-text prompts
-  // keep their dialog: a password must never be typed into a card, and text needs an editor.
-  const confirmRequests = useMemo(() => {
-    if (!activeId) return []
-    return Object.values(state.pendingUi[activeId] ?? {})
-      .filter(request => request.method === 'confirm' && !hasConfirmationMarker(request))
-  }, [activeId, state.pendingUi])
   const features = useMemo(() => collectLiveFeatures(detail?.entries || []), [detail?.entries])
   const toolStates = useMemo(() => collectToolStates(detail?.entries || []), [detail?.entries])
   // `detail.goal` is the server-cached anchor: it still resolves after a long
@@ -2977,13 +2968,6 @@ export default function LiveSessionPage() {
     setCommandNotice('已把前台命令转入后台，进程继续运行')
   })
 
-  /** Answers a confirm from the card; the request only disappears once the bridge accepted it. */
-  const answerConfirm = async (request: LiveSessionUiRequest, allow: boolean): Promise<void> => {
-    if (!activeId) return
-    await liveSessionApi.command(activeId, { type: 'answer_ui', id: request.id, value: allow ? 'true' : 'false' })
-    dispatch(uiAnswered({ processInstanceId: activeId, id: request.id }))
-  }
-
   const submit = (text: string, deliverAs?: 'steer' | 'followUp', images?: LiveSessionImage[]) => perform(async () => {
     if (!activeId) return
     const processInstanceId = activeId
@@ -3229,7 +3213,6 @@ export default function LiveSessionPage() {
                   onQueue={liveSessionApi.queue}
                   onWithdraw={liveSessionApi.cancelQueuedItem}
                 />}
-                <LiveApprovalCard requests={confirmRequests} onAnswer={answerConfirm} />
                 {/* The bridge queue is authoritative: once it is visible, this bar only
                     reports messages that are still being sent, so nothing is counted twice. */}
                 <PendingDeliveryBar
