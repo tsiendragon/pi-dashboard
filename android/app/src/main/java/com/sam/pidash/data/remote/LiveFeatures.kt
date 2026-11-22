@@ -12,6 +12,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
+import java.time.Instant
 
 /**
  * Extension feature snapshots arrive as `live_feature_snapshot` events whose
@@ -32,8 +33,14 @@ private fun featureSnapshot(detail: LiveDetail?, feature: String): JsonObject? {
     }
 }
 
-fun backgroundSnapshot(detail: LiveDetail?): LiveBackgroundSnapshot? =
-    featureSnapshot(detail, "background-commands")?.let(::decodeBackgroundSnapshot)
+fun backgroundSnapshot(detail: LiveDetail?): LiveBackgroundSnapshot? {
+    featureSnapshot(detail, "background-commands")?.let { snapshot ->
+        decodeBackgroundSnapshot(snapshot)?.let { return it }
+    }
+    // Older sessions (or a session started before a reload) may have no feature
+    // snapshot even though the transcript already contains its tool results.
+    return fallbackBackgroundSnapshot(detail)
+}
 
 internal data class LiveScheduleSummary(val count: Int, val nextRunAt: Long)
 
@@ -104,6 +111,130 @@ internal fun decodeProofJobs(snapshot: JsonObject): LiveProofJobs? {
 internal fun decodeBackgroundSnapshot(element: JsonElement): LiveBackgroundSnapshot? = runCatching {
     pidashJson.decodeFromJsonElement(LiveBackgroundSnapshot.serializer(), element.jsonObject)
 }.getOrNull()
+
+private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
+
+private fun liveEntryMessage(raw: JsonElement): JsonObject? {
+    val entry = raw as? JsonObject ?: return null
+    return when (entry.str("type")) {
+        "message" -> entry.obj("message")
+        "message_end" -> entry.obj("data")?.obj("message")
+        else -> null
+    }
+}
+
+private fun messageText(message: JsonObject): String {
+    val content = message["content"] as? JsonArray ?: return ""
+    return content.mapNotNull { raw ->
+        val part = raw as? JsonObject ?: return@mapNotNull null
+        if (part.str("type") == "text") part.str("text") else null
+    }.joinToString("\n")
+}
+
+private fun toolArguments(value: JsonElement?): JsonObject? = when (value) {
+    is JsonObject -> value
+    is JsonPrimitive -> runCatching {
+        pidashJson.parseToJsonElement(value.content) as? JsonObject
+    }.getOrNull()
+    else -> null
+}
+
+private fun toolCallLabels(entries: List<JsonElement>): Map<String, String> {
+    val labels = mutableMapOf<String, String>()
+    entries.forEach { raw ->
+        val message = liveEntryMessage(raw) ?: return@forEach
+        if (message.str("role") != "assistant") return@forEach
+        val content = message["content"] as? JsonArray ?: return@forEach
+        content.forEach { rawPart ->
+            val part = rawPart as? JsonObject ?: return@forEach
+            if (part.str("type") != "toolCall") return@forEach
+            val id = part.str("id") ?: return@forEach
+            val arguments = toolArguments(part["arguments"]) ?: return@forEach
+            val label = arguments.str("label")?.trim()?.takeIf { it.isNotEmpty() }
+                ?: arguments.str("name")?.trim()?.takeIf { it.isNotEmpty() }
+                ?: arguments.str("task")?.trim()?.takeIf { it.isNotEmpty() }?.take(80)
+            if (label != null) labels[id] = label
+        }
+    }
+    return labels
+}
+
+private fun workLabelsInText(text: String): Map<String, String> {
+    val labels = mutableMapOf<String, String>()
+    text.lineSequence().forEach { line ->
+        val parts = line.trim().split(" · ")
+        if (parts.size < 4 || !parts[0].startsWith("work_")) return@forEach
+        val label = parts.drop(3).joinToString(" · ").trim()
+        if (label.isNotEmpty()) labels[parts[0]] = label
+    }
+    return labels
+}
+
+private fun entryTime(raw: JsonElement): Long? {
+    val entry = raw as? JsonObject ?: return null
+    fun read(value: JsonElement?): Long? {
+        val primitive = value as? JsonPrimitive ?: return null
+        return primitive.longOrNull ?: runCatching { Instant.parse(primitive.content).toEpochMilli() }.getOrNull()
+    }
+    return read(entry["timestamp"])
+        ?: read(entry.obj("data")?.get("timestamp"))
+        ?: read(liveEntryMessage(raw)?.get("timestamp"))
+}
+
+/** Rebuild the background panel from tool results when the extension did not publish it. */
+private fun fallbackBackgroundSnapshot(detail: LiveDetail?): LiveBackgroundSnapshot? {
+    val tasks = linkedMapOf<String, LiveBackgroundTask>()
+    detail?.entries?.forEach { raw ->
+        val message = liveEntryMessage(raw)
+        val custom = raw as? JsonObject
+        if (message == null) {
+            if (custom?.str("type") == "custom_message" &&
+                custom.str("customType") == "background-command-completion") {
+                val values = custom["details"] as? JsonObject ?: return@forEach
+                val id = values.str("taskId")?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEach
+                val previous = tasks[id]
+                tasks[id] = LiveBackgroundTask(
+                    taskId = id,
+                    title = values.str("title") ?: previous?.title.orEmpty(),
+                    status = values.str("state")?.trim()?.takeIf { it.isNotEmpty() } ?: previous?.status ?: "exited",
+                    command = previous?.command.orEmpty(),
+                    cwd = previous?.cwd.orEmpty(),
+                    mode = previous?.mode ?: "background",
+                    startedAt = previous?.startedAt ?: 0,
+                    endedAt = previous?.endedAt ?: entryTime(raw),
+                    exitCode = (values["exitCode"] as? JsonPrimitive)?.intOrNull ?: previous?.exitCode,
+                    exitReason = values.str("exitReason") ?: previous?.exitReason,
+                    outputBytes = previous?.outputBytes ?: 0,
+                )
+            }
+            return@forEach
+        }
+        if (message.str("role") != "toolResult") return@forEach
+        val toolName = message.str("toolName") ?: return@forEach
+        if (!toolName.startsWith("background_command_")) return@forEach
+        val values = message["details"] as? JsonObject ?: return@forEach
+        val id = values.str("taskId")?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEach
+        val previous = tasks[id]
+        val status = values.str("status")?.trim()?.takeIf { it.isNotEmpty() } ?: previous?.status ?: "unknown"
+        tasks[id] = LiveBackgroundTask(
+            taskId = id,
+            title = values.str("title") ?: previous?.title.orEmpty(),
+            status = status,
+            command = values.str("command") ?: previous?.command.orEmpty(),
+            cwd = values.str("cwd") ?: previous?.cwd.orEmpty(),
+            mode = values.str("mode") ?: previous?.mode ?: "background",
+            toolCallId = previous?.toolCallId,
+            pid = (values["pid"] as? JsonPrimitive)?.intOrNull ?: previous?.pid,
+            startedAt = previous?.startedAt?.takeIf { it > 0 } ?: entryTime(raw) ?: 0,
+            endedAt = (values["endedAt"] as? JsonPrimitive)?.longOrNull ?: previous?.endedAt,
+            exitCode = (values["exitCode"] as? JsonPrimitive)?.intOrNull ?: previous?.exitCode,
+            exitReason = values.str("exitReason") ?: previous?.exitReason,
+            outputBytes = (values["outputBytes"] as? JsonPrimitive)?.longOrNull ?: previous?.outputBytes ?: 0,
+        )
+    }
+    if (tasks.isEmpty()) return null
+    return LiveBackgroundSnapshot(tasks = tasks.values.toList())
+}
 
 internal fun LiveBackgroundTask.isActive(): Boolean = status == "running" || status == "starting"
 
@@ -193,6 +324,8 @@ internal data class LiveSubagentWorkflow(
     val isExecuting: Boolean get() = agentsRunning > 0 || workflowsActive > 0
     val hasAttention: Boolean get() = agentsAttention > 0 || workflowsFailed > 0 || workflowsPaused > 0
     val isWorking: Boolean get() = isExecuting || hasAttention
+    val activeCount: Int get() = agentsRunning + workflowsActive
+    val hasRecords: Boolean get() = agents.isNotEmpty() || workflows.isNotEmpty()
 
     /** Only active/attention work belongs in the status bar. */
     val summaryParts: List<LiveWorkStatusPart>
@@ -291,5 +424,136 @@ internal fun decodeSubagentWorkflow(snapshot: JsonObject): LiveSubagentWorkflow?
     )
 }
 
-internal fun subagentWorkflow(detail: LiveDetail?): LiveSubagentWorkflow? =
-    featureSnapshot(detail, "subagent-workflow")?.let(::decodeSubagentWorkflow)
+private fun fallbackSubagentWorkflow(detail: LiveDetail?): LiveSubagentWorkflow? {
+    val entries = detail?.entries ?: return null
+    val callLabels = toolCallLabels(entries)
+    val agents = linkedMapOf<String, LiveSubagentRecord>()
+    val workflows = linkedMapOf<String, LiveWorkflowRecord>()
+    val workflowByWorkId = mutableMapOf<String, String>()
+
+    fun agent(id: String, label: String?, status: String?, workflowId: String? = null) {
+        val previous = agents[id]
+        agents[id] = LiveSubagentRecord(
+            id = id,
+            label = label?.trim()?.takeIf { it.isNotEmpty() } ?: previous?.label ?: id,
+            status = status?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: previous?.status ?: "unknown",
+            needsAttention = previous?.needsAttention == true,
+            stalled = previous?.stalled == true,
+            workflowId = workflowId ?: previous?.workflowId,
+        )
+    }
+
+    fun workflow(id: String, label: String?, status: String?, details: JsonObject? = null) {
+        val previous = workflows[id]
+        val stages = details?.get("stages") as? JsonArray
+        val tasks = stages.orEmpty().mapNotNull { it as? JsonObject }
+            .flatMap { stage -> (stage["tasks"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject } }
+        val currentStage = stages?.let { list ->
+            list.indexOfFirst { raw ->
+                val stage = raw as? JsonObject
+                val stageStatus = stage?.str("status")?.trim()?.lowercase().orEmpty()
+                stageStatus !in LIVE_WORK_COMPLETED_STATUSES
+            }.takeIf { it >= 0 } ?: (list.size - 1).takeIf { list.isNotEmpty() }
+        }
+        workflows[id] = LiveWorkflowRecord(
+            id = id,
+            label = label?.trim()?.takeIf { it.isNotEmpty() } ?: previous?.label ?: id,
+            status = status?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: previous?.status ?: "unknown",
+            currentStage = currentStage ?: previous?.currentStage,
+            stageCount = stages?.size ?: previous?.stageCount ?: 0,
+            taskTotal = tasks.size.takeIf { it > 0 } ?: previous?.taskTotal ?: 0,
+            taskDone = tasks.count { it.str("status")?.trim()?.lowercase() in LIVE_WORK_COMPLETED_STATUSES }
+                .takeIf { tasks.isNotEmpty() } ?: previous?.taskDone ?: 0,
+            taskFailed = tasks.count { it.str("status")?.trim()?.lowercase() in LIVE_WORK_ATTENTION_STATUSES }
+                .takeIf { tasks.isNotEmpty() } ?: previous?.taskFailed ?: 0,
+        )
+    }
+
+    fun job(id: String, kind: String?, label: String?, status: String?) {
+        val workflowId = workflowByWorkId[id]
+        if (kind == "workflow" || workflowId != null) {
+            val resolved = workflowId ?: id
+            workflowByWorkId[id] = resolved
+            workflow(resolved, label, status)
+        } else {
+            agent(id, label, status)
+        }
+    }
+
+    entries.forEach { raw ->
+        val entry = raw as? JsonObject ?: return@forEach
+        if (entry.str("type") == "custom_message") {
+            if (entry.str("customType") == "subagent-workbench-completion") {
+                val details = entry["details"] as? JsonObject
+                val id = details?.str("workId")?.trim()?.takeIf { it.isNotEmpty() }
+                if (id != null) job(id, details.str("kind"), null, details.str("status"))
+            }
+            return@forEach
+        }
+        val message = liveEntryMessage(raw) ?: return@forEach
+        if (message.str("role") != "toolResult") return@forEach
+        val toolName = message.str("toolName") ?: return@forEach
+        if (!toolName.startsWith("subagent_")) return@forEach
+        val details = message["details"] as? JsonObject ?: return@forEach
+        val textLabels = workLabelsInText(messageText(message))
+        val callLabel = message.str("toolCallId")?.let(callLabels::get)
+        when (toolName) {
+            "subagent_start" -> {
+                val id = details.str("workId")?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEach
+                agent(id, details.str("label") ?: callLabel ?: textLabels[id], details.str("status"))
+            }
+            "subagent_workflow" -> {
+                val workId = details.str("workId")?.trim()?.takeIf { it.isNotEmpty() }
+                val workflowId = details.str("workflowId")?.trim()?.takeIf { it.isNotEmpty() } ?: workId
+                if (workflowId != null) {
+                    if (workId != null) workflowByWorkId[workId] = workflowId
+                    workflow(workflowId, details.str("label") ?: callLabel, details.str("status"), details)
+                }
+            }
+            "subagent_results" -> {
+                for (key in listOf("pending", "completed")) {
+                    val items = details[key] as? JsonArray ?: continue
+                    for (rawItem in items) {
+                        val item = rawItem as? JsonObject ?: continue
+                        val id = item.str("workId")?.trim()?.takeIf { it.isNotEmpty() } ?: continue
+                        job(id, item.str("kind"), textLabels[id], item.str("status"))
+                    }
+                }
+            }
+            "subagent_cancel" -> {
+                val id = details.str("workId")?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEach
+                job(id, details.str("kind"), null, details.str("status") ?: "cancelled")
+            }
+            "subagent_workflow_control" -> {
+                val id = details.str("workId")?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEach
+                job(id, "workflow", null, details.str("status"))
+            }
+        }
+    }
+
+    val agentList = agents.values.toList()
+    val workflowList = workflows.values.toList()
+    if (agentList.isEmpty() && workflowList.isEmpty()) return null
+    return LiveSubagentWorkflow(
+        agents = agentList,
+        workflows = workflowList,
+        agentsTotal = agentList.size,
+        agentsRunning = agentList.count { it.isActive },
+        agentsAttention = agentList.count { it.hasAttention },
+        workflowsTotal = workflowList.size,
+        workflowsActive = workflowList.count { it.isActive },
+        workflowsFailed = workflowList.count { it.hasFailed },
+        workflowsPaused = workflowList.count { it.isPaused },
+    )
+}
+
+internal fun subagentWorkflow(detail: LiveDetail?): LiveSubagentWorkflow? {
+    val projected = featureSnapshot(detail, "subagent-workflow")?.let(::decodeSubagentWorkflow)
+    if (projected != null && (projected.agents.isNotEmpty() || projected.workflows.isNotEmpty() ||
+            projected.agentsRunning > 0 || projected.workflowsActive > 0 ||
+            projected.workflowsFailed > 0 || projected.workflowsPaused > 0)) return projected
+    // A session created before the live feature was available still has the tool
+    // results. Use them only when the feature is absent or empty; a published
+    // feature stays authoritative for completed/retained records.
+    return fallbackSubagentWorkflow(detail) ?: projected
+}

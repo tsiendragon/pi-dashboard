@@ -129,6 +129,58 @@ class LiveFeaturesTest {
         assertNull(subagentWorkflow(detail(event("subagent-workflow", """{"conversations":[]}"""))))
     }
 
+
+    @Test fun backgroundCommandsFallBackToToolResultsWhenTheFeatureIsMissing() {
+        val start = """{"type":"message_end","data":{"message":{"role":"toolResult","toolName":"background_command_start","timestamp":"2026-11-01T10:00:00Z","details":{"taskId":"bash-abcd","title":"dev server","status":"running","mode":"background"}}}}"""
+        val snapshot = backgroundSnapshot(detail(start))!!
+        assertEquals(listOf("bash-abcd"), snapshot.activeBackgroundTasks().map { it.taskId })
+        assertEquals("dev server", snapshot.tasks.single().title)
+        assertTrue(snapshot.tasks.single().startedAt > 0)
+        val finished = """{"type":"message_end","data":{"message":{"role":"toolResult","toolName":"background_command_status","details":{"taskId":"bash-abcd","title":"dev server","status":"exited","mode":"background","exitCode":0}}}}"""
+        assertTrue(backgroundSnapshot(detail(start, finished))!!.activeBackgroundTasks().isEmpty())
+    }
+
+    @Test fun subagentWorkflowFallsBackToTranscriptWithoutAFeatureSnapshot() {
+        val call = """{"type":"message_end","data":{"message":{"role":"assistant","content":[{"type":"toolCall","id":"call-1","name":"subagent_start","arguments":{"label":"核对登录流程","task":"review"}}]}}}"""
+        val start = """{"type":"message_end","data":{"message":{"role":"toolResult","toolCallId":"call-1","toolName":"subagent_start","details":{"status":"queued","background":true,"workId":"work-a"},"content":[{"type":"text","text":"Subagent accepted in background (work-a)."}]}}}"""
+        val running = """{"type":"message_end","data":{"message":{"role":"toolResult","toolName":"subagent_results","details":{"status":"completed","mode":"status","pending":[{"workId":"work-a","kind":"agent","status":"running"}],"completed":[]},"content":[{"type":"text","text":"work-a · agent · running · 核对登录流程"}]}}}"""
+        val work = subagentWorkflow(detail(call, start, running))!!
+        assertEquals(1, work.agentsRunning)
+        assertTrue(work.isExecuting)
+        assertEquals("核对登录流程", work.agents.single().label)
+        assertEquals("1 个子 Agent 运行中", work.summaryLabel)
+
+        val done = """{"type":"message_end","data":{"message":{"role":"toolResult","toolName":"subagent_results","details":{"status":"completed","mode":"status","pending":[],"completed":[{"workId":"work-a","kind":"agent","status":"completed"}]},"content":[{"type":"text","text":"work-a · agent · completed · 核对登录流程"}]}}}"""
+        val settled = subagentWorkflow(detail(call, start, running, done))!!
+        assertFalse(settled.isExecuting)
+        assertNull(settled.summaryLabel)
+        assertEquals("completed", settled.agents.single().status)
+    }
+
+    @Test fun workflowFallbackTracksBackgroundWorkflowUntilItSettles() {
+        val call = """{"type":"message_end","data":{"message":{"role":"assistant","content":[{"type":"toolCall","id":"call-w","name":"subagent_workflow","arguments":{"label":"发布检查"}}]}}}"""
+        val start = """{"type":"message_end","data":{"message":{"role":"toolResult","toolCallId":"call-w","toolName":"subagent_workflow","details":{"status":"queued","background":true,"workId":"work-w","workflowId":"wf-1"},"content":[{"type":"text","text":"Workflow accepted in background (work-w)."}]}}}"""
+        val running = subagentWorkflow(detail(call, start))!!
+        assertEquals(1, running.workflowsActive)
+        assertEquals("发布检查", running.workflows.single().label)
+        assertEquals("1 个工作流进行中", running.summaryLabel)
+
+        val done = """{"type":"message_end","data":{"message":{"role":"toolResult","toolName":"subagent_results","details":{"status":"completed","mode":"status","pending":[],"completed":[{"workId":"work-w","kind":"workflow","status":"completed"}]},"content":[{"type":"text","text":"work-w · workflow · completed · 发布检查"}]}}}"""
+        val settled = subagentWorkflow(detail(call, start, done))!!
+        assertFalse(settled.isExecuting)
+        assertNull(settled.summaryLabel)
+    }
+
+    @Test fun emptyFeatureSnapshotFallsBackButPublishedRecordsStayAuthoritative() {
+        val active = """{"type":"message_end","data":{"message":{"role":"toolResult","toolName":"subagent_start","details":{"status":"running","workId":"work-live"}}}}"""
+        val empty = event("subagent-workflow", """{"conversations":{"items":[]},"workflows":{"items":[]}}""")
+        assertTrue(subagentWorkflow(detail(empty, active))!!.isExecuting)
+        val retained = event("subagent-workflow", """{"conversations":{"items":[{"id":"work-live","label":"已结束","status":"completed"}]},"workflows":{"items":[]}}""")
+        val work = subagentWorkflow(detail(retained, active))!!
+        assertEquals("completed", work.agents.single().status)
+        assertFalse(work.isExecuting)
+    }
+
     @Test fun proofJobsAreValidatedAndOrderedLiveFirst() {
         assertNull(proofJobs(detail()))
         assertNull(proofJobs(detail(event("proof-jobs", """{"tasks":"nope"}"""))))

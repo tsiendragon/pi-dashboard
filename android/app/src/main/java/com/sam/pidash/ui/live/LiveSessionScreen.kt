@@ -667,6 +667,20 @@ fun LiveSessionScreen(
                                 },
                             )
                             DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        when {
+                                            subagentWorkList == null -> "子 Agent / 工作流（扩展未提供）…"
+                                            subagentWorkList.activeCount > 0 -> "子 Agent / 工作流（${subagentWorkList.activeCount} 项进行中）…"
+                                            subagentWorkList.hasRecords -> "子 Agent / 工作流（只读记录）…"
+                                            else -> "子 Agent / 工作流（暂无记录）…"
+                                        }
+                                    )
+                                },
+                                enabled = subagentWorkList != null,
+                                onClick = { menu = false; notice = null; showSubagentWorkflow = true },
+                            )
+                            DropdownMenuItem(
                                 text = { Text(if (goal == null) "目标（未设置）…" else "目标（${goalState?.statusLabel ?: "已设置"}）…") },
                                 onClick = { menu = false; notice = null; showGoal = true },
                             )
