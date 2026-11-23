@@ -2,7 +2,10 @@ package com.sam.pidash.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -11,6 +14,8 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -110,6 +115,13 @@ internal val PiTypography = Typography(
     labelSmall = PiType.caption,
 )
 
+/** Selection must stay legible on the paper-white page instead of disappearing into it. */
+internal fun piTextSelectionColors(colorScheme: ColorScheme): TextSelectionColors =
+    TextSelectionColors(
+        handleColor = colorScheme.primary,
+        backgroundColor = colorScheme.primary.copy(alpha = Tints.Block),
+    )
+
 @Composable
 fun PiDashTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -124,5 +136,12 @@ fun PiDashTheme(
         darkTheme -> DarkColors
         else -> LightColors
     }
-    MaterialTheme(colorScheme = colorScheme, typography = PiTypography, shapes = PiShapes, content = content)
+    val selectionColors = remember(colorScheme.primary) { piTextSelectionColors(colorScheme) }
+    MaterialTheme(colorScheme = colorScheme, typography = PiTypography, shapes = PiShapes) {
+        // MaterialTheme supplies its own 40% default; pin the app token so a theme change
+        // cannot silently make selected prose indistinguishable from its background.
+        CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
+            content()
+        }
+    }
 }

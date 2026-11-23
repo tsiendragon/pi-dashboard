@@ -1,9 +1,12 @@
 package com.sam.pidash
 
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.PiTypography
+import com.sam.pidash.ui.theme.piTextSelectionColors
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -31,6 +34,14 @@ class ThemeTypographyTest {
             assertEquals(FontFamily.SansSerif, it.fontFamily)
         }
     }
+    @Test fun selectionUsesTheAccentWithAVisibleWash() {
+        val accent = Color(0xFF007AFF)
+        val colors = piTextSelectionColors(lightColorScheme(primary = accent))
+        assertEquals(accent, colors.handleColor)
+        assertEquals(accent, colors.backgroundColor.copy(alpha = 1f))
+        assertEquals(0.45f, colors.backgroundColor.alpha, 0.01f)
+    }
+
     @Test fun codeKeepsItsOwnMonospacedFamily() {
         assertEquals(PiType.codeFamily, PiType.mono.fontFamily)
         assertEquals(PiType.codeFamily, PiType.monoMicro.fontFamily)
