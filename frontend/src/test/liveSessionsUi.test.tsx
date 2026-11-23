@@ -29,6 +29,13 @@ describe('Live Session UI', () => {
     expect(onSelect).toHaveBeenCalledWith('b')
   })
 
+  it('shows the repository remote URL on a session row', () => {
+    const withGit = { ...session('git', 303, '~/repos/app'), git: { branch: 'main', remoteUrl: 'https://github.com/acme/app.git' } }
+    render(<LiveSessionsList sessions={[withGit]} onSelect={() => {}} />)
+    expect(screen.getByText('https://github.com/acme/app.git')).toBeInTheDocument()
+    expect(screen.getByTitle('仓库远程：https://github.com/acme/app.git')).toBeInTheDocument()
+  })
+
   it('preserves the prompt draft when sending fails', async () => {
     const onSubmit = vi.fn().mockRejectedValue(new Error('offline'))
     render(<LiveSessionComposer status="idle" owned={false} claimedByAnother={false} onSubmit={onSubmit} />)

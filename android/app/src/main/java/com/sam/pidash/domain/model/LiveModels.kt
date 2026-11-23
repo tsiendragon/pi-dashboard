@@ -26,6 +26,7 @@ data class LiveSummary(
     val eventSequence: Long = 0,
     val capabilities: List<String> = emptyList(),
     val contextUsage: LiveContextUsage? = null,
+    val git: LiveGitInfo? = null,
 ) {
     val title: String get() = sessionName?.takeIf { it.isNotBlank() } ?: "Pi $pid"
     val canShutdown: Boolean get() = mode == "tui" && status != "reconnecting" && "session_shutdown" in capabilities
@@ -33,6 +34,13 @@ data class LiveSummary(
     val canClear: Boolean get() = mode == "tui" && status != "reconnecting" && "session_clear" in capabilities
 }
 
+@Serializable
+data class LiveGitInfo(
+    val root: String? = null,
+    val branch: String? = null,
+    /** Server-scrubbed remote URL; absent for non-git directories or repos without a remote. */
+    val remoteUrl: String? = null,
+)
 @Serializable
 data class LiveModel(val provider: String, val id: String)
 @Serializable

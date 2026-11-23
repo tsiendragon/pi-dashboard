@@ -200,6 +200,8 @@ export interface LiveSessionSummary {
   git?: {
     root?: string
     branch?: string
+    /** `origin` (or the first configured remote), with URL credentials removed. */
+    remoteUrl?: string
   }
   /**
    * Checklist state of this session's goal anchor, derived from its own entries.

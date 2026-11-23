@@ -91,6 +91,14 @@ class LiveProtocolTest {
         assertEquals("high", state.summary.thinkingLevel)
         assertEquals("New name", state.summary.title)
     }
+    @Test fun summaryKeepsTheServerScrubbedGitRemote() {
+        val summary = pidashJson.decodeFromString<LiveSummary>(
+            """{"processInstanceId":"p","sessionId":"s","cwd":"/work","canonicalCwd":"/work","git":{"root":"/work","branch":"main","remoteUrl":"https://github.com/acme/app.git"}}"""
+        )
+        assertEquals("https://github.com/acme/app.git", summary.git?.remoteUrl)
+        assertEquals("main", summary.git?.branch)
+    }
+
     @Test fun toolProgressUsesOneStableCardAndRetainsArguments() {
         var state = reduce(detail(), 1, "tool_execution_start", """{"toolCallId":"t1","toolName":"read","args":{"path":"fixture"}}""")
         state = reduce(state, 2, "tool_execution_update", """{"toolCallId":"t1","toolName":"read","partialResult":{"content":[{"type":"text","text":"partial"}]}}""")

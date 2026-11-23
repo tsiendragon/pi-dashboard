@@ -256,6 +256,8 @@ function SessionRow(p: RowProps) {
   const extra = p.tags.length - chips.length
   const cwd = p.session.canonicalCwd || p.session.cwd
   const branch = p.session.git?.branch
+  // Server-side resolver scrubs credentials; the row still shows the useful remote form.
+  const remoteUrl = p.session.git?.remoteUrl || ''
 
   const groupItems: RowMenuAction[] = p.groups.map(g => (g.id === p.groupId
     ? { label: `⇤ 移出「${g.name}」`, onClick: () => p.onLeaveGroup(g.id) }
@@ -301,6 +303,16 @@ function SessionRow(p: RowProps) {
       { label: '移动到分组', submenu: groupItems } as RowMenuItem,
     ] : []),
     { separator: true },
+    ...(remoteUrl ? [
+      { separator: true } as RowMenuItem,
+      { info: {
+          label: '仓库远程 URL',
+          value: remoteUrl,
+          actionLabel: '⧉ 复制远程 URL',
+          onAction: () => { void navigator.clipboard?.writeText(remoteUrl).catch(() => {}) },
+          title: remoteUrl,
+      } } as RowMenuItem,
+    ] : []),
     { label: '⧉ 复制 Session ID', shortLabel: '⧉ 复制 ID', hint: `${shortSessionId(p.session.sessionId)} · pid ${p.session.pid}`, inlineHint: true, onClick: p.onCopySessionId },
   ]
 
@@ -322,7 +334,7 @@ function SessionRow(p: RowProps) {
         data-live-row={p.session.sessionId}
         data-live-block={p.blockId}
         data-session-color={p.appearance?.color || undefined}
-        title={`${p.title}\n${cwd}${branch ? ` · ${branch}` : ''}`}
+        title={`${p.title}\n${cwd}${branch ? ` · ${branch}` : ''}${remoteUrl ? `\n${remoteUrl}` : ''}`}
         onMouseDown={e => e.preventDefault()}
         onPointerDown={p.onDragStart}
         onClick={p.onSelect}
@@ -331,7 +343,7 @@ function SessionRow(p: RowProps) {
       >
         {p.appearance?.color && <span aria-hidden="true" className="pointer-events-none absolute inset-y-1 left-0 w-[3px] rounded-r" style={{ backgroundColor: p.appearance.color }} />}
         {p.active && <span aria-hidden="true" className="pointer-events-none absolute inset-y-1.5 left-0 w-[3px] rounded-r bg-accent" />}
-        {/* status gutter — the running glyph spans both text lines so the swing
+        {/* status gutter — the running glyph spans the text lines so the swing
             has room; every other status is a quiet dot or a spinner */}
         <span
           className={`flex shrink-0 justify-center ${dotKind === 'running' ? '-ml-1 w-[30px] items-start' : 'h-[18px] w-3 items-center'}`}
@@ -519,6 +531,12 @@ function SessionRow(p: RowProps) {
             {extra > 0 && <span className="shrink-0 rounded-full bg-bg-hover px-1 text-2xs font-semibold leading-[14px] text-muted-strong" title={p.tags.join(', ')}>+{extra}</span>}
             {p.groupName && <span className="shrink-0 truncate rounded-full bg-ok-subtle px-1.5 text-2xs leading-[14px] text-ok" title={`任务分组：${p.groupName}`}>{p.groupName}</span>}
           </div>
+          {remoteUrl && (
+            <div className="mt-0.5 flex min-w-0 items-center gap-1 text-2xs leading-[14px] text-muted-strong" title={`仓库远程：${remoteUrl}`}>
+              <LineIcon name="globe" className="h-3 w-3 shrink-0" />
+              <span className="min-w-0 truncate font-mono">{remoteUrl}</span>
+            </div>
+          )}
         </div>
       </div>
       {p.dropAfter && <div aria-hidden className="pointer-events-none -mt-px h-[2px] rounded-full bg-accent" />}

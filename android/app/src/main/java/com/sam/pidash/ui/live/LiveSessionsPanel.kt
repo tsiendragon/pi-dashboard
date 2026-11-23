@@ -633,8 +633,8 @@ fun NewLiveSessionDialog(
 
 /**
  * One row inside a grouped card: order number, emoji avatar, title, mono cwd and tags.
- * Secondary actions live behind a trailing ⋯ menu (and long press) so a row stays two to
- * three text lines tall; sorting mode swaps the menu for ↑ ↓ arrows.
+ * Secondary actions live behind a trailing ⋯ menu (and long press) so a row stays a few
+ * text lines tall; sorting mode swaps the menu for ↑ ↓ arrows.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -662,6 +662,7 @@ private fun SessionRow(
     val subagent = row.summary.role == "subagent" || row.summary.parentSessionId != null
     val accentColor = parseHexColor(row.meta.color) ?: MaterialTheme.colorScheme.primary
     val emojiText = row.meta.emoji.takeIf { it.isNotBlank() } ?: if (subagent) "🤖" else "💬"
+    val remoteUrl = row.summary.git?.remoteUrl?.trim().orEmpty()
     var actions by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
 
@@ -727,6 +728,15 @@ private fun SessionRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (remoteUrl.isNotEmpty()) {
+                Text(
+                    remoteUrl,
+                    style = PiType.monoMicro,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             MetaLine(
                 listOfNotNull(
                     row.summary.claim.state.takeIf { it == "claimed" }?.let { "已接管" },
@@ -796,6 +806,7 @@ private fun SessionActionsSheet(
     val scheme = MaterialTheme.colorScheme
     val copyText = rememberCopyText()
     val sessionPath = row.summary.canonicalCwd?.takeIf { it.isNotBlank() } ?: row.summary.cwd
+    val remoteUrl = row.summary.git?.remoteUrl?.trim().orEmpty()
     Column(Modifier.fillMaxWidth().padding(bottom = Spacing.lg)) {
         Column(Modifier.padding(horizontal = Spacing.lg)) {
             Text(
@@ -820,6 +831,9 @@ private fun SessionActionsSheet(
         SheetAction(Icons.Filled.Edit, "改名 / 装扮", enabled = !busy) { onDismiss(); onRename() }
         SheetAction(Icons.Filled.Share, "复制会话路径", enabled = sessionPath.isNotBlank()) {
             onDismiss(); copyText(sessionPath)
+        }
+        SheetAction(Icons.Filled.Share, "复制仓库远程 URL", enabled = remoteUrl.isNotEmpty()) {
+            onDismiss(); copyText(remoteUrl)
         }
         SheetAction(Icons.AutoMirrored.Filled.List, "移动到分组", enabled = groupEnabled && !busy) { onDismiss(); onGroup() }
         if (sortingMode) {
