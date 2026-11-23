@@ -13,6 +13,8 @@ const expandHome = (p: string | undefined): string | undefined => p === '~' ? os
 
 /** Max bytes /api/file-read will return as text (matches frontend TEXT_PREVIEW_LIMIT). */
 const TEXT_READ_LIMIT = 50 * 1024 * 1024
+/** Binary previews (PDF pages) are loaded into the phone; keep the same bounded contract. */
+const BINARY_READ_LIMIT = 32 * 1024 * 1024
 
 export function registerFileRoutes(deps: RouteDeps): void {
   const { app, versionStore, recentWrites, createVersion } = deps
@@ -111,13 +113,26 @@ export function registerFileRoutes(deps: RouteDeps): void {
     res.json({ entries: out })
   })
 
-  // File read — supports ?tail=<bytes> to return only the last N bytes
-  // (useful for huge append-only logs like sub-agent transcripts).
+  // File read — supports ?tail=<bytes> for log tails and ?raw=1 for PDF bytes
+  // used by the native in-app viewer. Raw reads are deliberately PDF-only.
   app.get('/api/file-read', async (req: Request, res: Response) => {
     const filePath = expandHome(req.query.path as string)
     if (!filePath) return res.status(400).json({ error: 'path required' })
     const tail = req.query.tail ? parseInt(req.query.tail as string, 10) : 0
+    const raw = req.query.raw === '1'
     try {
+      if (raw) {
+        if (extname(filePath).toLowerCase() !== '.pdf') return res.status(400).json({ error: 'raw preview is only available for PDF files' })
+        const st = await stat(filePath)
+        if (st.size > BINARY_READ_LIMIT) {
+          res.set('X-File-Size', String(st.size))
+          return res.status(413).json({ error: `file too large to preview (${st.size} bytes > ${BINARY_READ_LIMIT}); download instead`, size: st.size })
+        }
+        const content = await readFile(filePath)
+        res.set('X-File-Size', String(st.size))
+        res.type(extname(filePath).toLowerCase() === '.pdf' ? 'application/pdf' : 'application/octet-stream')
+        return res.send(content)
+      }
       if (tail > 0) {
         const st = await stat(filePath)
         const size = st.size

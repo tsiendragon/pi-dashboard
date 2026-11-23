@@ -75,6 +75,7 @@ import com.sam.pidash.data.remote.projectLiveActivities
 import com.sam.pidash.data.remote.projectLiveTimeline
 import com.sam.pidash.domain.model.AppQuote
 import com.sam.pidash.domain.model.AppReviewItem
+import com.sam.pidash.domain.model.FileLinkPath
 import com.sam.pidash.domain.model.composeOutgoing
 import com.sam.pidash.data.remote.backgroundSnapshot
 import com.sam.pidash.data.remote.activeBackgroundTasks
@@ -116,6 +117,13 @@ private data class LiveScrollObservation(
     val lastEnd: Int,
     val viewportEnd: Int,
 )
+
+private sealed interface LivePreviewState {
+    val path: String
+    data class Loading(override val path: String) : LivePreviewState
+    data class Text(override val path: String, val content: String) : LivePreviewState
+    data class Pdf(override val path: String, val bytes: ByteArray) : LivePreviewState
+}
 
 private val liveQuickPrompts = listOf(
     "交接存档" to "帮我把目前的进展更新到交接文档中，写一份 session-handoff 摘要",
@@ -176,9 +184,10 @@ fun LiveSessionScreen(
     var showProofJobs by remember(sessionKey) { mutableStateOf(false) }
     var showSubagentWorkflow by remember(sessionKey) { mutableStateOf(false) }
     var backgroundSelected by remember(sessionKey) { mutableStateOf<String?>(null) }
-    // Read-only file preview: path plus loaded text (null while fetching).
-    var preview by remember(sessionKey) { mutableStateOf<Pair<String, String?>?>(null) }
+    // Read-only file preview: text (Markdown/plain) or rendered PDF pages.
+    var preview by remember(sessionKey) { mutableStateOf<LivePreviewState?>(null) }
     var previewError by remember(sessionKey) { mutableStateOf<String?>(null) }
+    var previewRequest by remember(sessionKey) { mutableIntStateOf(0) }
     var busy by remember(sessionKey) { mutableStateOf(false) }
     var aborting by remember(sessionKey) { mutableStateOf(false) }
     var notice by remember(sessionKey) { mutableStateOf<String?>(null) }
@@ -547,13 +556,38 @@ fun LiveSessionScreen(
         }.onFailure { notice = "无法打开链接：${it.message}" }
     }
 
+    fun closePreview() {
+        previewRequest++
+        preview = null
+    }
+
     fun openPathPreview(path: String) {
         previewError = null
-        preview = path to null
+        val cwd = summary?.canonicalCwd?.takeIf { it.isNotBlank() } ?: summary?.cwd
+        val resolved = FileLinkPath.resolve(path, cwd)
+        if (resolved == null) {
+            previewError = "无法识别文件路径：$path"
+            return
+        }
+        val request = ++previewRequest
+        val pdf = FileLinkPath.isPdf(resolved)
+        preview = LivePreviewState.Loading(resolved)
         scope.launch {
-            repo.live.readFile(sessionKey.backendId, path).fold(
-                onSuccess = { text -> preview = path to text },
-                onFailure = { error -> preview = null; previewError = error.message ?: "无法读取文件" },
+            val loaded = if (pdf) {
+                repo.live.readFileBytes(sessionKey.backendId, resolved).map { LivePreviewState.Pdf(resolved, it) as LivePreviewState }
+            } else {
+                repo.live.readFile(sessionKey.backendId, resolved).map { LivePreviewState.Text(resolved, it) as LivePreviewState }
+            }
+            if (request != previewRequest) return@launch
+            loaded.fold(
+                onSuccess = { preview = it },
+                onFailure = { error ->
+                    preview = null
+                    val reason = error.message ?: "无法读取文件"
+                    previewError = if (pdf && reason.contains("HTTP 404")) {
+                        "服务器不支持 PDF 预览；请更新并重启 Dashboard 后再试"
+                    } else reason
+                },
             )
         }
     }
@@ -1679,33 +1713,40 @@ fun LiveSessionScreen(
             AlertDialog(shape = Radii.sheet, onDismissRequest = { previewError = null }, title = { Text("预览失败", style = PiType.pageTitle) },
                 text = { Text(message) }, confirmButton = { TextButton(onClick = { previewError = null }) { Text("知道了") } })
         }
-        preview?.let { (path, content) ->
-            Dialog(onDismissRequest = { preview = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-                Surface(Modifier.fillMaxSize()) {
-                    Column(Modifier.fillMaxSize().padding(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            SelectionContainer { Text(path, Modifier.weight(1f), style = PiType.action, maxLines = 2) }
-                            TextButton(onClick = { preview = null }) { Text("关闭") }
-                        }
-                        HorizontalDivider()
-                        if (content == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("读取中…") }
-                        else if (path.endsWith(".md", true) || path.endsWith(".markdown", true)) {
-                            SelectionContainer {
-                                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                                    MarkdownBody(content, onOpenPath = ::openPathPreview, onOpenUrl = ::openExternalUrl)
+        preview?.let { current ->
+            when (current) {
+                is LivePreviewState.Pdf -> PdfPreviewDialog(current.path, current.bytes, ::closePreview)
+                is LivePreviewState.Loading, is LivePreviewState.Text -> {
+                    val path = current.path
+                    val content = (current as? LivePreviewState.Text)?.content
+                    Dialog(onDismissRequest = ::closePreview, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+                        Surface(Modifier.fillMaxSize()) {
+                            Column(Modifier.fillMaxSize().padding(8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    SelectionContainer { Text(path, Modifier.weight(1f), style = PiType.action, maxLines = 2) }
+                                    TextButton(onClick = ::closePreview) { Text("关闭") }
                                 }
-                            }
-                        } else {
-                            // Plain files are shown verbatim: monospace, no markdown guessing.
-                            SelectionContainer {
-                                Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                                    Text(
-                                        content.ifBlank { "（空文件）" },
-                                        style = PiType.subhead.copy(
-                                            fontFamily = PiType.codeFamily,
-                                            fontFeatureSettings = PiType.codeFeatureSettings,
-                                        ),
-                                    )
+                                HorizontalDivider()
+                                if (content == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("读取中…") }
+                                else if (FileLinkPath.isMarkdown(path)) {
+                                    SelectionContainer {
+                                        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                            MarkdownBody(content, onOpenPath = ::openPathPreview, onOpenUrl = ::openExternalUrl)
+                                        }
+                                    }
+                                } else {
+                                    // Plain files are shown verbatim: monospace, no markdown guessing.
+                                    SelectionContainer {
+                                        Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                            Text(
+                                                content.ifBlank { "（空文件）" },
+                                                style = PiType.subhead.copy(
+                                                    fontFamily = PiType.codeFamily,
+                                                    fontFeatureSettings = PiType.codeFeatureSettings,
+                                                ),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

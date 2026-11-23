@@ -85,11 +85,22 @@ class LiveSessionClient(
         }
     }
 
+    private fun filePathValid(path: String): Boolean =
+        path.length <= 4096 && path.isNotBlank() && !path.contains('\u0000') &&
+            (path.startsWith('/') || path.startsWith("~/"))
+
     /** Plain-text file preview (`/api/file-read` answers text/plain, not JSON). */
     suspend fun readTextFile(path: String, limit: Int = 512 * 1024): String = withContext(Dispatchers.IO) {
-        require(path.startsWith('/') && !path.contains('\u0000') && path.length <= 4096) { "无效文件路径" }
+        require(filePathValid(path)) { "无效文件路径" }
         val query = java.net.URLEncoder.encode(path, "UTF-8")
         executeText(request("/api/file-read?path=" + query + "&tail=" + limit))
+    }
+
+    /** Raw bytes for the native PDF renderer; the server sends them only for `raw=1`. */
+    suspend fun readBinaryFile(path: String, maxBytes: Int = 32 * 1024 * 1024): ByteArray = withContext(Dispatchers.IO) {
+        require(filePathValid(path)) { "无效文件路径" }
+        val query = java.net.URLEncoder.encode(path, "UTF-8")
+        executeBytes(request("/api/file-read?raw=1&path=" + query), maxBytes)
     }
     private fun executeText(request: Request): String {
         http.newCall(request).execute().use { response ->
@@ -98,9 +109,36 @@ class LiveSessionClient(
                 when (response.code) {
                     404 -> "文件不存在或已被删除"
                     403 -> "服务器拒绝读取该文件"
+                    413 -> "文件过大，无法在 App 内预览"
                     else -> "读取文件失败：HTTP ${response.code}"
                 })
             return text
+        }
+    }
+    private fun executeBytes(request: Request, limit: Int): ByteArray {
+        http.newCall(request).execute().use { response ->
+            val body = response.body
+            val declared = body?.contentLength() ?: 0L
+            if (!response.isSuccessful) {
+                val text = responseText(response)
+                val code = runCatching { pidashJson.parseToJsonElement(text).jsonObject["error"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+                    ?: "file_read_failed"
+                throw LiveApiException(response.code, code, when (response.code) {
+                    404 -> "文件不存在或已被删除"
+                    403 -> "服务器拒绝读取该文件"
+                    413 -> "文件过大，无法在 App 内预览"
+                    else -> "读取文件失败：HTTP ${response.code}"
+                })
+            }
+            if (body == null) throw IOException("服务器没有返回文件内容")
+            if (declared > limit) throw IOException("文件过大，无法在 App 内预览")
+            val contentType = response.header("Content-Type").orEmpty()
+            if (contentType.startsWith("text/", ignoreCase = true) || contentType.contains("json", ignoreCase = true)) {
+                throw IOException("服务器没有返回 PDF 原始数据；请更新并重启 Dashboard")
+            }
+            val bytes = body.bytes()
+            if (bytes.size > limit) throw IOException("文件过大，无法在 App 内预览")
+            return bytes
         }
     }
 

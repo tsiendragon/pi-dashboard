@@ -100,6 +100,16 @@ class LiveSessionClientTest {
         assertTrue(calls.single().body.contains("UEsDBAo="))
     }
 
+    @Test fun pdfPreviewDownloadsRawBytesFromTheFileEndpoint() = runBlocking {
+        handler = {
+            assertTrue(it.requestURI.query.contains("raw=1"))
+            replyBytes(it, "%PDF-1.7".toByteArray(), "application/pdf")
+        }
+        val bytes = client.readBinaryFile("/tmp/知识库/report.pdf")
+        assertEquals("%PDF-1.7", bytes.toString(Charsets.UTF_8))
+        assertEquals("/api/file-read", calls.single().path)
+    }
+
     @Test fun organizationAndGroupEditsUseExistingProtectedEndpointsWithoutClaiming() = runBlocking {
         cookies.save(backend, cookie)
         handler = { if (it.requestURI.path == "/api/live-session-order") reply(it, """{"order":["session-fixture"],"sectionOrder":["work"]}""")
@@ -670,8 +680,11 @@ class LiveSessionClientTest {
     }
 
     private fun reply(exchange: FixtureExchange, body: String, status: Int = 200) {
-        val bytes = body.toByteArray()
-        exchange.responseHeaders.set("Content-Type", "application/json")
+        replyBytes(exchange, body.toByteArray(), "application/json", status)
+    }
+
+    private fun replyBytes(exchange: FixtureExchange, bytes: ByteArray, contentType: String, status: Int = 200) {
+        exchange.responseHeaders.set("Content-Type", contentType)
         exchange.sendResponseHeaders(status, bytes.size.toLong())
         exchange.responseBody.use { it.write(bytes) }
     }

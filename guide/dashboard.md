@@ -462,6 +462,8 @@ Android 5.58（build 89）在 Live Pi 顶部工作状态中显示 PiMatrix 证�
 
 Android 5.59（build 90）在 Live Pi 会话菜单和会话列表操作表中加入「清空会话（保留旧记录）」。它发送扩展注册的 `/clear`，切换到新的空会话；旧对话文件保留，不关闭 Pi 进程，也不删除服务器记录。只有摘要的 `capabilities` 含 `session_clear` 时菜单项才可用；扩展未加载或版本过旧时禁用，避免把 `/clear` 当普通提示词发给模型。会话正在执行时会等这一轮结束后再切换。活动视图中的执行步骤和思考过程改为固定高度（约 10 行）的内部滚动窗口：步骤点击后在弹窗查看完整命令、其他参数和输出，思考按片段一行一条，点击查看完整内容。模型隐藏推理正文但保留空 thinking 块时，每个空块显示一个 🤔；没有 thinking 事件则不补。完整记录页仍保持原有内联展开。只改 Android App，服务器已有 `session_clear` 能力时覆盖安装即可；旧扩展需更新并 `/reload`，不需要重启 Dashboard。
 
+Android 5.70（build 101）让 Live 记录里的本地 PDF/Markdown 路径可以直接在 App 内打开。点击正文里的路径时，App 会先把相对路径按会话 `cwd` 补全，也接受 `file://`、`sandbox:`、URL 编码和 `文件.md:行号` 形式；Markdown 继续用原生渲染，PDF 则通过 `GET /api/file-read?raw=1` 取原始字节，在 App 内用 `PdfRenderer` 逐页滚动显示，不跳转外部 PDF 阅读器。PDF 原始读取上限 32 MB，只允许 `.pdf`，避免把任意二进制文件通过预览接口暴露；服务器没有该参数时会提示更新并重启，而不是把二进制按文本解析。仍只支持本地文件；HTTP/HTTPS 链接仍按原规则交给浏览器。更新并重启 Dashboard 后再覆盖安装 App 才能预览 PDF，不需要 `/reload`。
+
 Android 5.69（build 100）在 Live 会话列表的每一行显示该会话工作目录对应的 Git 仓库远程 URL。服务端在会话快照时读取 `git config` 的 `origin`（没有 origin 时取第一个 remote），30 秒缓存，并把 HTTPS URL 里的用户名、密码和 token 类查询参数去掉后再发给客户端；SSH/SCP 形式保持不变，非 Git 目录或没有 remote 的会话不显示这一行。Web 侧同样显示，会话操作表还提供“复制仓库远程 URL”。这是服务端新增字段，必须更新并重启 Dashboard 后 APK 才能看到；覆盖安装 App 即可，不需要 `/reload`。
 
 Android 5.68（build 99）修复文字选择高亮几乎看不见：此前依赖 MaterialTheme 的默认选区色，选中 Markdown 正文时可能只剩蓝色手柄、文字背景几乎不变。现在主题显式设置 `LocalTextSelectionColors`，选区背景使用主题主色的 45% 半透明底、手柄同主色，浅色和深色页面都适用；只改变选区绘制，不改文字颜色、链接短按、代码块或复制行为。覆盖安装即可。

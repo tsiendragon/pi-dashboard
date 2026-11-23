@@ -703,6 +703,8 @@ class LivePiRepository(
     }
     /** Read-only preview of a file the transcript already references. */
     suspend fun readFile(id: String, path: String): Result<String> = result { client(id).readTextFile(path) }
+    /** Raw PDF bytes for the in-app page renderer. */
+    suspend fun readFileBytes(id: String, path: String): Result<ByteArray> = result { client(id).readBinaryFile(path) }
     /** Upload phone-side Word documents to the host; the prompt then references their paths. */
     suspend fun uploadFiles(id: String, files: List<FileAttachments.UploadRequest>): Result<List<String>> =
         result { client(id).uploadFiles(files) }

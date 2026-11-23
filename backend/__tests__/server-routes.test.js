@@ -13,7 +13,7 @@ import { EventEmitter } from 'events'
 // ── Mocks must be declared before the module under test is imported ──────────
 
 // child_process – prevent PiProcess from spawning anything
-vi.mock('child_process', () => ({ spawn: vi.fn(), execSync: vi.fn(() => ''), exec: vi.fn((cmd, opts, cb) => { if (typeof opts === 'function') { cb = opts } cb(null, { stdout: '', stderr: '' }) }) }))
+vi.mock('child_process', () => ({ spawn: vi.fn(), execFile: vi.fn(), execSync: vi.fn(() => ''), exec: vi.fn((cmd, opts, cb) => { if (typeof opts === 'function') { cb = opts } cb(null, { stdout: '', stderr: '' }) }) }))
 
 // node-pty – pty-manager imports this; stub it out entirely
 vi.mock('node-pty', () => ({
@@ -788,6 +788,28 @@ describe('GET /api/file-read', () => {
     const res = await get(port, '/api/file-read?path=' + encodeURIComponent('/tmp/huge.html'))
     expect(res.status).toBe(413)
     expect(await res.json()).toMatchObject({ size: 51 * 1024 * 1024 })
+  })
+
+  it('serves raw PDF bytes for the native in-app viewer', async () => {
+    fsPromises.stat.mockResolvedValueOnce({ size: 8 })
+    fsPromises.readFile.mockResolvedValueOnce(Buffer.from('%PDF-1.7'))
+    const res = await get(port, '/api/file-read?raw=1&path=' + encodeURIComponent('/tmp/report.pdf'))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('application/pdf')
+    expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('%PDF-1.7')
+    expect(fsPromises.readFile).toHaveBeenCalledWith('/tmp/report.pdf')
+  })
+
+  it('does not expose arbitrary binary files through raw previews', async () => {
+    const res = await get(port, '/api/file-read?raw=1&path=' + encodeURIComponent('/tmp/private.key'))
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects raw previews above the binary limit', async () => {
+    fsPromises.stat.mockResolvedValueOnce({ size: 33 * 1024 * 1024 })
+    const res = await get(port, '/api/file-read?raw=1&path=' + encodeURIComponent('/tmp/huge.pdf'))
+    expect(res.status).toBe(413)
+    expect(await res.json()).toMatchObject({ size: 33 * 1024 * 1024 })
   })
 
   it('returns 400 when path query param is missing', async () => {
