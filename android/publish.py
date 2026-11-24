@@ -136,7 +136,7 @@ def publish(apk, metadata, notes):
     if existing.returncode == 0:
         if not json.loads(existing.stdout)["isDraft"]:
             raise RuntimeError("此版本已发布，不覆盖公开 APK；新版本必须递增版本号/build")
-    elif not re.search(r"release not found|HTTP 404", existing.stderr, re.I):
+    elif not re.search(r"release not found|HTTP 404", f"{existing.stderr}\n{existing.stdout}", re.I):
         raise RuntimeError("无法确认 Release 状态，停止而不是盲目创建")
     local_tag = run("git", "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}", check=False)
     if local_tag.returncode == 0:
