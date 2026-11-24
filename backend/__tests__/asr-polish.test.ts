@@ -26,25 +26,69 @@ describe('ASR polish', () => {
         { role: 'user', text: 'x'.repeat(2_000) },
       ],
     })
-    expect(messages[0].content).toContain('不是助手')
-    expect(messages[1].content).toContain('会话标题：修复登录')
-    expect(messages[1].content).toContain('工作目录：/work/app')
-    expect(messages[1].content).toContain('当前输入草稿')
-    expect(messages[1].content).toContain('待润色的语音转写')
-    expect(messages[1].content).not.toContain('x'.repeat(1_000))
+    expect(messages.system).toContain('不是助手')
+    expect(messages.user).toContain('会话标题：修复登录')
+    expect(messages.user).toContain('工作目录：/work/app')
+    expect(messages.user).toContain('当前输入草稿')
+    expect(messages.user).toContain('待润色的语音转写')
+    expect(messages.user).not.toContain('x'.repeat(1_000))
   })
 
-  it('calls the OpenAI-compatible endpoint with a small token budget and returns cleaned text', async () => {
+  it('uses DeepSeek V4.1 Flash with high thinking as the primary model', async () => {
     vi.stubEnv('DASHSCOPE_API_KEY', 'test-key')
-    vi.stubEnv('DASHSCOPE_ASR_POLISH_MODEL', 'qwen-small-test')
+    vi.stubEnv('DASHSCOPE_ASR_POLISH_MODEL', 'deepseek-v4.1-flash-1017')
     const fetchImpl = vi.fn(async () => reply({
       choices: [{ message: { content: '润色后：帮我检查这个 API。' } }],
     })) as unknown as typeof fetch
     const result = await polishTranscript({ text: '帮我 check 这个 a p i' }, fetchImpl)
-    expect(result).toMatchObject({ text: '帮我检查这个 API。', polished: true, model: 'qwen-small-test' })
+    expect(result).toMatchObject({
+      text: '帮我检查这个 API。',
+      polished: true,
+      model: 'deepseek-v4.1-flash-1017',
+      fallback: false,
+    })
     const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
     expect(url).toContain('/compatible-mode/v1/chat/completions')
-    expect(JSON.parse(String(init.body))).toMatchObject({ model: 'qwen-small-test', max_tokens: 512 })
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      model: 'deepseek-v4.1-flash-1017',
+      max_tokens: 1_024,
+      enable_thinking: true,
+      reasoning_effort: 'high',
+    })
+  })
+
+  it('falls back to Claude Haiku at medium thinking when DeepSeek fails', async () => {
+    vi.stubEnv('DASHSCOPE_API_KEY', 'test-key')
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).includes('dashscope')) return reply({ error: { message: 'down' } }, 503)
+      return reply({ content: [{ type: 'thinking', thinking: 'hidden' }, { type: 'text', text: '帮我检查这个 API。' }] })
+    }) as unknown as typeof fetch
+    const result = await polishTranscript({ text: '帮我 check 这个 a p i' }, fetchImpl, { opencodeKey: 'opencode-test-key' })
+    expect(result).toMatchObject({ text: '帮我检查这个 API。', model: 'claude-haiku-5-5', fallback: true })
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<[string, RequestInit]>
+    expect(calls[1][0]).toBe('https://opencode.ai/inference/go/v1/messages')
+    expect(JSON.parse(String(calls[1][1].body))).toMatchObject({
+      model: 'claude-haiku-5-5',
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'medium' },
+    })
+  })
+
+  it('falls back to GPT-6 Luna at medium thinking when both earlier models fail', async () => {
+    vi.stubEnv('DASHSCOPE_API_KEY', 'test-key')
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).includes('dashscope')) return reply({ error: { message: 'down' } }, 503)
+      if (String(url).endsWith('/v1/messages')) return reply({ error: { message: 'down' } }, 503)
+      return reply({ output: [{ type: 'message', content: [{ type: 'output_text', text: '帮我检查这个 API。' }] }] })
+    }) as unknown as typeof fetch
+    const result = await polishTranscript({ text: '帮我 check 这个 a p i' }, fetchImpl, { opencodeKey: 'opencode-test-key' })
+    expect(result).toMatchObject({ text: '帮我检查这个 API。', model: 'gpt-6-luna', fallback: true })
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<[string, RequestInit]>
+    expect(calls[2][0]).toBe('https://opencode.ai/inference/go/v1/responses')
+    expect(JSON.parse(String(calls[2][1].body))).toMatchObject({
+      model: 'gpt-6-luna',
+      reasoning: { effort: 'medium' },
+    })
   })
 
   it('keeps slash commands byte-for-byte and never calls the model', async () => {
@@ -62,11 +106,12 @@ describe('ASR polish', () => {
 
   it('reports a missing key and provider errors without leaking the payload', async () => {
     vi.stubEnv('DASHSCOPE_API_KEY', '')
-    await expect(polishTranscript({ text: 'hello' })).rejects.toMatchObject({ code: 'asr_polish_api_key_missing' })
+    vi.stubEnv('PI_CODING_AGENT_DIR', '/nonexistent-pi-agent')
+    await expect(polishTranscript({ text: 'hello' })).rejects.toMatchObject({ code: 'asr_polish_unavailable' })
     vi.stubEnv('DASHSCOPE_API_KEY', 'test-key')
     const fetchImpl = vi.fn(async () => reply({ error: { message: 'rate limited' } }, 429)) as unknown as typeof fetch
     await expect(polishTranscript({ text: 'hello' }, fetchImpl)).rejects.toMatchObject({
-      code: 'asr_polish_provider_error',
+      code: 'asr_polish_all_failed',
       status: 502,
     })
   })

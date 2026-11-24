@@ -154,7 +154,8 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `PI_MEMORY_AGENTS_FILE` / `PI_MEMORY_SKILL_DIR` | 发布记忆时写入的 `AGENTS.md` 与 skills 目录 | `<agent dir>/AGENTS.md` / `<agent dir>/skills` |
 | `DASHSCOPE_API_KEY` / `ANTHROPIC_API_KEY` 等 | 模型 provider 凭证 | 无 |
 | `DASHSCOPE_BASE_URL` / `DASHSCOPE_TTS_BASE_URL` | DashScope 端点覆盖（ASR/TTS） | 官方端点 |
-| `DASHSCOPE_ASR_POLISH_MODEL` | 语音识别后润色使用的小模型（走 OpenAI 兼容接口） | `qwen3.8-flash` |
+| `DASHSCOPE_ASR_POLISH_MODEL` | 语音识别后润色主模型（DeepSeek V4.1 Flash，thinking high） | `deepseek-v4.1-flash-1017` |
+| `OPENCODE_API_KEY` | 可选；OpenCode Go 的 Claude Haiku / GPT-6 Luna 语音润色 fallback 凭据；未设时读 `auth.json` | 未设置 |
 | `DASHSCOPE_IMAGE_ENDPOINT` | 表情包图片生成/编辑的完整 HTTPS 地址，不复用语音端点 | `https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` |
 | `DASHSCOPE_IMAGE_MODEL` / `DASHSCOPE_IMAGE_EDIT_MODEL` | 表情包无参考图/有参考图模型；使用 `DASHSCOPE_API_KEY` | `qwen-image-3.0` / `qwen-image-3.0` |
 | `AZURE_OPENAI_IMAGE_API_KEY` / `AZURE_OPENAI_IMAGE_ENDPOINT` | Azure 图片服务密钥与 HTTPS 基础地址，不带 deployment 路径 | 无；均配置后启用 |
@@ -166,7 +167,7 @@ dashboard 不是自己跑 agent，而是为每个会话 slot 起一个 `pi --mod
 | `MEME_OUTPUT_DIR` | 表情包工坊的生成图片与历史索引保存目录；支持 `~/` 前缀，不存在时自动创建 | `~/.pi/dashboard/memes` |
 | `PI_BEDROCK_PROFILE` / `AWS_PROFILE` | Bedrock profile（未设 `AWS_PROFILE` 时回退） | 无 |
 
-> 语音输入使用 `DASHSCOPE_API_KEY` 和上述 DashScope 端点：Web 与 Android 客户端都通过同源 WebSocket 将 16 kHz 音频流交给 dashboard 后端，再调用 `qwen3-asr-flash-realtime`；录音停止后接收最终文本。Android 只在服务端 `/api/asr/config` 返回可用时显示麦克风按钮，音频不写入会话或缓存。批量识别接口 `/api/asr/transcribe` 仍保留给非实时调用方。Android 可选在识别后调用 `/api/asr/polish`，用 `DASHSCOPE_ASR_POLISH_MODEL` 修正同音字、标点和断句；请求只带少量最近对话片段、当前草稿、会话标题和 cwd（设置页可关闭上下文或整个润色），不发送录音、工具输出或完整历史；润色失败/超时会保留原始识别。模型调用会产生额外的 DashScope 请求。
+> 语音输入使用 `DASHSCOPE_API_KEY` 和上述 DashScope 端点：Web 与 Android 客户端都通过同源 WebSocket 将 16 kHz 音频流交给 dashboard 后端，再调用 `qwen3-asr-flash-realtime`；录音停止后接收最终文本。Android 只在服务端 `/api/asr/config` 返回可用时显示麦克风按钮，音频不写入会话或缓存。批量识别接口 `/api/asr/transcribe` 仍保留给非实时调用方。Android 可选在识别后调用 `/api/asr/polish`：先用 DeepSeek V4.1 Flash（thinking high）修正同音字、标点和断句；失败时按 Claude Haiku 5.5（thinking medium）→ GPT-6 Luna（thinking medium）依次 fallback。两个 fallback 使用 `opencode-go` 凭据（`OPENCODE_API_KEY` 或 pi 的 `auth.json`）。请求只带少量最近对话片段、当前草稿、会话标题和 cwd（设置页可关闭上下文或整个润色），不发送录音、工具输出或完整历史；全部失败/超时会保留原始识别。模型调用会产生额外的 DashScope/OpenCode 请求。
 
 > Token Cost 的额度卡片可选读取本机 Codex / Claude Code 账户：Codex CLI 需可从 dashboard 进程的 `PATH` 启动；Claude Code 使用 `${CLAUDE_CONFIG_DIR:-~/.claude}/.credentials.json` 中的 OAuth 凭证。凭证只在后端读取，不会返回给浏览器。该查询只显示账户接口实际提供的百分比与重置时间；Claude Code 目前只支持 OAuth 订阅用量，API key、Bedrock/Vertex、仅 keychain 存储等情况可能没有数据。没有对应 CLI 登录时页面会显示未提供，不影响 Token Cost 原有统计。
 >

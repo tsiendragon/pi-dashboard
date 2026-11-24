@@ -593,7 +593,7 @@ Write a file in a skill directory.
 
 #### `POST /api/asr/polish`
 
-Optional post-ASR cleanup. The Android client sends a final transcript and a deliberately small context window; the server calls the configured DashScope small chat model (`DASHSCOPE_ASR_POLISH_MODEL`) and returns cleaned text. Requests with slash commands bypass the model. Secrets, audio, full history and tool output are not accepted.
+Optional post-ASR cleanup. The Android client sends a final transcript and a deliberately small context window; the server tries DeepSeek V4.1 Flash, then Claude Haiku 5.5, then GPT-6 Luna, and returns cleaned text. Requests with slash commands bypass the model. Secrets, audio, full history and tool output are not accepted.
 
 **Request body:**
 ```json
@@ -608,7 +608,7 @@ Optional post-ASR cleanup. The Android client sends a final transcript and a del
 }
 ```
 
-**Response:** `{ "text": "帮我检查这个 API", "polished": true, "model": "qwen3.8-flash" }`
+**Response:** `{ "text": "帮我检查这个 API", "polished": true, "model": "deepseek-v4.1-flash-1017", "fallback": false }`
 
 **Response:** `{ "ok": true }`
 

@@ -89,4 +89,5 @@ export interface AsrPolishResult {
   text: string
   polished: boolean
   model: string
+  fallback?: boolean
 }

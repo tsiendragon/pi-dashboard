@@ -36,7 +36,7 @@ private const val SAMPLE_RATE = 16_000
 private const val CHUNK_MILLIS = 100
 private const val MAX_PENDING_BYTES = 64 * 1024
 private const val TRANSCRIBE_TIMEOUT_MS = 15_000L
-private const val POLISH_TIMEOUT_MS = 12_000L
+private const val POLISH_TIMEOUT_MS = 35_000L
 
 /** One parsed frame from the dashboard's ASR bridge. Unknown fields are deliberately ignored. */
 internal sealed interface AsrEvent {

@@ -231,7 +231,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                         )
                     }
                     Text(
-                        "识别文本和可选上下文会发送给 DashScope 做润色；录音本身仍不写入本机或服务器。",
+                        "识别文本和可选上下文会发送给已配置的润色模型服务（DashScope / OpenCode Go）；录音本身仍不写入本机或服务器。",
                         modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm),
                         style = PiType.caption,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
