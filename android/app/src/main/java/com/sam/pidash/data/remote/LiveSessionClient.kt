@@ -212,6 +212,24 @@ class LiveSessionClient(
     /** Whether this server has a DashScope key for voice input; the key itself never leaves it. */
     suspend fun asrConfig(): AsrConfig = pidashJson.decodeFromJsonElement(
         AsrConfig.serializer(), get("/api/asr/config"))
+
+    /** Clean up a final ASR transcript with the server's small model. */
+    suspend fun polishVoice(text: String, context: VoicePolishContext?): VoicePolishResult = withContext(Dispatchers.IO) {
+        val body = buildJsonObject {
+            put("text", text)
+            if (context != null) put("context", buildJsonObject {
+                context.title?.takeIf { it.isNotBlank() }?.let { put("title", it) }
+                context.cwd?.takeIf { it.isNotBlank() }?.let { put("cwd", it) }
+                context.draft?.takeIf { it.isNotBlank() }?.let { put("draft", it) }
+                if (context.recent.isNotEmpty()) putJsonArray("recent") {
+                    context.recent.forEach { message ->
+                        add(buildJsonObject { put("role", message.role); put("text", message.text) })
+                    }
+                }
+            })
+        }
+        pidashJson.decodeFromJsonElement(VoicePolishResult.serializer(), post("/api/asr/polish", body))
+    }
     suspend fun detail(id: String): LiveDetail = pidashJson.decodeFromJsonElement(LiveDetail.serializer(), get(path(id)))
     suspend fun meta(): Map<String, LiveMeta> = pidashJson.decodeFromJsonElement(
         MapSerializer(String.serializer(), LiveMeta.serializer()), get("/api/live-session-meta")["meta"] ?: buildJsonObject {})

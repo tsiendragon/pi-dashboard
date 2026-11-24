@@ -72,4 +72,21 @@ export interface AsrConfigResponse {
   defaultModel: string
   maxAudioBytes: number
   languages: AsrLanguageOption[]
+  /** Optional post-ASR cleanup; false means the client should keep the raw transcript. */
+  polishAvailable?: boolean
+  polishModel?: string
+}
+
+/** Optional small context sent with a transcript for post-ASR cleanup. */
+export interface AsrPolishContext {
+  title?: string
+  cwd?: string
+  draft?: string
+  recent?: { role: 'user' | 'assistant'; text: string }[]
+}
+
+export interface AsrPolishResult {
+  text: string
+  polished: boolean
+  model: string
 }

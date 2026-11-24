@@ -554,7 +554,9 @@ Get available models (cached for 5 minutes). Queries a running pi process via RP
 
 #### `GET /api/skills`
 
-List installed pi skills from `~/.pi/agent/skills/`.
+List installed pi skills. Without `cwd` this reads only `~/.pi/agent/skills/`; with `?cwd=/absolute/project` it uses pi's loader to include project `.pi/skills` and `.agents/skills` as well.
+
+**Query params:** `cwd` — optional absolute working directory.
 
 **Response:**
 ```json
@@ -588,6 +590,25 @@ Write a file in a skill directory.
 ```json
 { "path": "SKILL.md", "content": "# My Skill\n..." }
 ```
+
+#### `POST /api/asr/polish`
+
+Optional post-ASR cleanup. The Android client sends a final transcript and a deliberately small context window; the server calls the configured DashScope small chat model (`DASHSCOPE_ASR_POLISH_MODEL`) and returns cleaned text. Requests with slash commands bypass the model. Secrets, audio, full history and tool output are not accepted.
+
+**Request body:**
+```json
+{
+  "text": "帮我 check 这个 a p i",
+  "context": {
+    "title": "修复登录",
+    "cwd": "/work/app",
+    "draft": "先看 README",
+    "recent": [{ "role": "user", "text": "登录在哪里？" }]
+  }
+}
+```
+
+**Response:** `{ "text": "帮我检查这个 API", "polished": true, "model": "qwen3.8-flash" }`
 
 **Response:** `{ "ok": true }`
 

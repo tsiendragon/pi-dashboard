@@ -9,6 +9,28 @@ data class AsrConfig(
     val reason: String? = null,
     val defaultModel: String = "",
     val maxAudioBytes: Long = 0,
+    /** Older servers omit this; the app still tries polish and falls back to raw on failure. */
+    val polishAvailable: Boolean? = null,
+    val polishModel: String? = null,
+)
+
+/** Optional, deliberately tiny context for post-ASR cleanup. */
+@Serializable
+data class VoicePolishContext(
+    val title: String? = null,
+    val cwd: String? = null,
+    val draft: String? = null,
+    val recent: List<VoicePolishMessage> = emptyList(),
+)
+
+@Serializable
+data class VoicePolishMessage(val role: String, val text: String)
+
+@Serializable
+data class VoicePolishResult(
+    val text: String,
+    val polished: Boolean = false,
+    val model: String? = null,
 )
 
 /**

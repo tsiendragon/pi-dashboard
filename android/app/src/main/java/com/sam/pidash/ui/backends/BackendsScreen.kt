@@ -93,6 +93,8 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     val theme by displayPrefs.theme.collectAsState()
     val codeScale by settingsPrefs.codeScale.collectAsState()
     val collapseKeyboard by settingsPrefs.collapseKeyboard.collectAsState()
+    val voicePolish by settingsPrefs.voicePolish.collectAsState()
+    val voicePolishContext by settingsPrefs.voicePolishContext.collectAsState()
     var editing by remember { mutableStateOf<Backend?>(null) }
     var deleting by remember { mutableStateOf<Backend?>(null) }
     var alertsEnabled by remember { mutableStateOf(notifier.prefs.enabled) }
@@ -192,6 +194,48 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                         }
                         Switch(checked = collapseKeyboard, onCheckedChange = settingsPrefs::setCollapseKeyboard)
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+                            Text("识别后润色", style = PiType.callout, maxLines = 1)
+                            Text(
+                                "用服务器配置的小模型修正同音字、断句和标点；失败或超时会保留原始识别。",
+                                style = PiType.caption,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = voicePolish, onCheckedChange = settingsPrefs::setVoicePolish)
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+                            Text("润色参考最近对话", style = PiType.callout, maxLines = 1)
+                            Text(
+                                "只发送最近几条消息的片段、当前草稿和会话目录；关闭后仍润色，但不带上下文。",
+                                style = PiType.caption,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = voicePolishContext && voicePolish,
+                            enabled = voicePolish,
+                            onCheckedChange = settingsPrefs::setVoicePolishContext,
+                        )
+                    }
+                    Text(
+                        "识别文本和可选上下文会发送给 DashScope 做润色；录音本身仍不写入本机或服务器。",
+                        modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                        style = PiType.caption,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             item { SectionLabel("新会话默认") }

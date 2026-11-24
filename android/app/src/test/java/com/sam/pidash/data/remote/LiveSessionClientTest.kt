@@ -10,6 +10,8 @@ import com.sam.pidash.data.repo.LivePiRepository
 import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.LiveDetail
 import com.sam.pidash.domain.model.SessionKey
+import com.sam.pidash.domain.model.VoicePolishContext
+import com.sam.pidash.domain.model.VoicePolishMessage
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -121,6 +123,26 @@ class LiveSessionClientTest {
         assertEquals("/api/skills", calls.single().path)
         assertTrue(query.contains("cwd=") && query.contains("work") && query.contains("project"))
         assertTrue(calls.single().body.isEmpty())
+    }
+
+    @Test fun voicePolishPostsTheSmallContextAndDecodesTheCleanup() = runBlocking {
+        handler = { reply(it, """{"text":"帮我检查这个 API。","polished":true,"model":"qwen-small"}""") }
+        val result = client.polishVoice(
+            "帮我 check 这个 a p i",
+            VoicePolishContext(
+                title = "修复登录",
+                cwd = "/work/app",
+                draft = "先看 README",
+                recent = listOf(VoicePolishMessage("user", "登录在哪里？")),
+            ),
+        )
+        assertEquals("帮我检查这个 API。", result.text)
+        assertEquals(true, result.polished)
+        assertEquals("POST", calls.single().method)
+        assertEquals("/api/asr/polish", calls.single().path)
+        assertTrue(calls.single().body.contains("/work/app"))
+        assertTrue(calls.single().body.contains("登录在哪里？"))
+        assertTrue(calls.single().body.contains("帮我 check"))
     }
 
     @Test fun organizationAndGroupEditsUseExistingProtectedEndpointsWithoutClaiming() = runBlocking {

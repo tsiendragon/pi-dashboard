@@ -573,6 +573,10 @@ class LivePiRepository(
     /** Voice input availability for one backend; a missing key is a normal false, not a page error. */
     suspend fun asrConfig(backendId: String): Result<AsrConfig> = result { client(backendId).asrConfig() }
 
+    /** Optional post-ASR cleanup; callers must fall back to the raw transcript on failure. */
+    suspend fun polishVoice(backendId: String, text: String, context: VoicePolishContext?): Result<VoicePolishResult> =
+        result { client(backendId).polishVoice(text, context) }
+
     /** Audio/text frames for one voice utterance; the caller owns the socket lifetime. */
     fun openAsrSocket(backendId: String, listener: WebSocketListener): WebSocket =
         client(backendId).openAsrSocket(listener)

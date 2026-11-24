@@ -105,6 +105,7 @@ import com.sam.pidash.domain.model.runningOperationStatus
 import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.domain.model.VoiceInputPhase
 import com.sam.pidash.domain.model.appendVoiceTranscript
+import com.sam.pidash.domain.model.voicePolishContext
 import com.sam.pidash.ui.theme.Radii
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
@@ -197,12 +198,34 @@ fun LiveSessionScreen(
     val notifier = remember { (context.applicationContext as PiDashApp).notifier }
     val settingsPrefs = remember { (context.applicationContext as PiDashApp).settingsPrefs }
     val keyboard = LocalSoftwareKeyboardController.current
+    val voicePolish by settingsPrefs.voicePolish.collectAsState()
+    val voicePolishUseContext by settingsPrefs.voicePolishContext.collectAsState()
+    val latestSummary by rememberUpdatedState(summary)
+    val latestTimeline by rememberUpdatedState(timeline)
+    val latestDraft by rememberUpdatedState(draft)
+    val latestVoicePolish by rememberUpdatedState(voicePolish)
+    val latestVoicePolishContext by rememberUpdatedState(voicePolishUseContext)
     // Voice text is appended on the main thread by the controller; audio itself never
     // leaves this controller's memory except as PCM frames on the ASR WebSocket.
     val voice = remember(sessionKey) {
         VoiceInputController(
             openSocket = { listener -> live.openAsrSocket(sessionKey.backendId, listener) },
             onTranscript = { text -> draft = appendVoiceTranscript(draft, text) },
+            polish = { raw ->
+                if (!latestVoicePolish) raw
+                else {
+                    val context = voicePolishContext(
+                        latestSummary,
+                        latestTimeline,
+                        latestDraft,
+                        includeContext = latestVoicePolishContext,
+                    )
+                    // Cleanup is optional: keep the recognized words if the small model is
+                    // unavailable, slow, rate-limited, or the dashboard predates this endpoint.
+                    live.polishVoice(sessionKey.backendId, raw, context).getOrNull()?.text
+                        ?.takeIf { it.isNotBlank() } ?: raw
+                }
+            },
         )
     }
     val voiceState by voice.state.collectAsState()

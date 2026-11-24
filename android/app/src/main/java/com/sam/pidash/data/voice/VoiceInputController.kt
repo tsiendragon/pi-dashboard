@@ -10,6 +10,7 @@ import android.util.Base64
 import com.sam.pidash.data.remote.pidashJson
 import com.sam.pidash.domain.model.VoiceInputPhase
 import com.sam.pidash.domain.model.VoiceInputState
+import com.sam.pidash.domain.model.appendVoiceTranscript
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,6 +19,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +36,7 @@ private const val SAMPLE_RATE = 16_000
 private const val CHUNK_MILLIS = 100
 private const val MAX_PENDING_BYTES = 64 * 1024
 private const val TRANSCRIBE_TIMEOUT_MS = 15_000L
+private const val POLISH_TIMEOUT_MS = 12_000L
 
 /** One parsed frame from the dashboard's ASR bridge. Unknown fields are deliberately ignored. */
 internal sealed interface AsrEvent {
@@ -71,6 +74,8 @@ internal fun parseAsrEvent(text: String): AsrEvent? {
 class VoiceInputController(
     private val openSocket: (WebSocketListener) -> WebSocket,
     private val onTranscript: (String) -> Unit,
+    /** Optional post-ASR cleanup; failures/timeouts must fall back to the raw transcript. */
+    private val polish: suspend (String) -> String = { it },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = Handler(Looper.getMainLooper())
@@ -87,7 +92,7 @@ class VoiceInputController(
     @Volatile private var capturing = false
     @Volatile private var closed = false
     @Volatile private var finished = false
-    private var hasTranscript = false
+    private var finalText = ""
 
     fun toggle() {
         when (_state.value.phase) {
@@ -163,7 +168,7 @@ class VoiceInputController(
         finished = false
         ready = false
         capturing = true
-        hasTranscript = false
+        finalText = ""
         synchronized(audioLock) {
             pending.clear()
             pendingBytes = 0
@@ -182,11 +187,10 @@ class VoiceInputController(
                 }
                 is AsrEvent.Interim -> if (!closed) _state.update { it.copy(interim = event.text) }
                 is AsrEvent.Final -> if (!closed && event.text.isNotBlank()) {
-                    hasTranscript = true
+                    finalText = appendVoiceTranscript(finalText, event.text)
                     _state.update { it.copy(interim = "") }
-                    main.post { onTranscript(event.text) }
                 }
-                AsrEvent.Finished -> complete()
+                AsrEvent.Finished -> finishWithPolish()
                 is AsrEvent.Failed -> fail(event.message)
                 null -> Unit
             }
@@ -240,25 +244,45 @@ class VoiceInputController(
         if (!sent) fail("语音数据发送失败，请重试")
     }
 
-    private fun complete() {
+    private fun finishWithPolish() {
+        if (closed || finished) return
+        finished = true
+        timeout?.cancel()
+        val raw = finalText.trim()
+        cleanup()
+        if (raw.isEmpty()) {
+            finish("没有识别到语音内容，请靠近麦克风再说一次。")
+            return
+        }
+        _state.update { it.copy(phase = VoiceInputPhase.Transcribing, interim = "") }
+        scope.launch {
+            val polished = runCatching { withTimeout(POLISH_TIMEOUT_MS) { polish(raw) } }
+                .getOrNull()?.trim().orEmpty().ifBlank { raw }
+            main.post {
+                if (!closed) {
+                    onTranscript(polished)
+                    finish()
+                }
+            }
+        }
+    }
+
+    private fun finish(error: String? = null) {
         if (closed) return
         closed = true
         finished = true
         timeout?.cancel()
         cleanup()
-        _state.value = VoiceInputState(
-            phase = VoiceInputPhase.Idle,
-            error = if (hasTranscript) null else "没有识别到语音内容，请靠近麦克风再说一次。",
-        )
+        _state.value = VoiceInputState(phase = VoiceInputPhase.Idle, error = error)
     }
 
     private fun fail(message: String) {
         if (closed) return
-        closed = true
-        finished = true
-        timeout?.cancel()
-        cleanup()
-        _state.value = VoiceInputState(phase = VoiceInputPhase.Idle, error = message)
+        // A final segment may already have arrived before the socket failed. Keep that
+        // recognized text rather than discarding it solely because polish was interrupted.
+        val fallback = finalText.trim()
+        if (fallback.isNotEmpty() && !finished) main.post { onTranscript(fallback) }
+        finish(message)
     }
 
     private fun cleanup() {

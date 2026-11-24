@@ -17,6 +17,7 @@ import {
 } from '../../shared/src/asr.js'
 import { resolveDashscopeBaseUrl } from '../dashscope.js'
 import { AsrError, asrAvailability, transcribeAudio } from '../asr.js'
+import { AsrPolishError, asrPolishAvailability, asrPolishModel, polishTranscript } from '../asr-polish.js'
 import { TtsError, synthesizeSpeech, ttsAvailability } from '../tts.js'
 
 export interface VoiceRouteOptions {
@@ -85,8 +86,42 @@ export function registerVoiceRoutes({ app }: VoiceRouteOptions): void {
       defaultModel: ASR_REALTIME_MODEL,
       maxAudioBytes: ASR_MAX_AUDIO_BYTES,
       languages: ASR_LANGUAGES,
+      polishAvailable: asrPolishAvailability().available,
+      polishModel: asrPolishModel(),
     }
     res.json(body)
+  })
+
+  app.post('/api/asr/polish', async (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const rawContext = body.context && typeof body.context === 'object' && !Array.isArray(body.context)
+      ? body.context as Record<string, unknown>
+      : undefined
+    const context = rawContext ? {
+      title: typeof rawContext.title === 'string' ? rawContext.title : undefined,
+      cwd: typeof rawContext.cwd === 'string' ? rawContext.cwd : undefined,
+      draft: typeof rawContext.draft === 'string' ? rawContext.draft : undefined,
+      recent: Array.isArray(rawContext.recent)
+        ? rawContext.recent.flatMap(item => {
+            if (!item || typeof item !== 'object') return []
+            const record = item as Record<string, unknown>
+            const role: 'user' | 'assistant' | undefined = record.role === 'user' || record.role === 'assistant' ? record.role : undefined
+            return role && typeof record.text === 'string' ? [{ role, text: record.text }] : []
+          })
+        : undefined,
+    } : undefined
+    try {
+      const result = await polishTranscript({
+        text: typeof body.text === 'string' ? body.text : '',
+        context,
+      })
+      res.setHeader('Cache-Control', 'no-store')
+      res.json(result)
+    } catch (error) {
+      const polishError = error instanceof AsrPolishError ? error : new AsrPolishError('asr_polish_failed', '语音润色失败，请使用原始识别结果。', 502)
+      console.error(`[asr-polish] failed (${polishError.code}):`, polishError.message)
+      res.status(polishError.status).json({ error: polishError.code, message: polishError.message })
+    }
   })
 
   app.post('/api/asr/transcribe', async (req: Request, res: Response) => {
