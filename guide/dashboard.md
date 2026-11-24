@@ -462,6 +462,8 @@ Android 5.58（build 89）在 Live Pi 顶部工作状态中显示 PiMatrix 证�
 
 Android 5.59（build 90）在 Live Pi 会话菜单和会话列表操作表中加入「清空会话（保留旧记录）」。它发送扩展注册的 `/clear`，切换到新的空会话；旧对话文件保留，不关闭 Pi 进程，也不删除服务器记录。只有摘要的 `capabilities` 含 `session_clear` 时菜单项才可用；扩展未加载或版本过旧时禁用，避免把 `/clear` 当普通提示词发给模型。会话正在执行时会等这一轮结束后再切换。活动视图中的执行步骤和思考过程改为固定高度（约 10 行）的内部滚动窗口：步骤点击后在弹窗查看完整命令、其他参数和输出，思考按片段一行一条，点击查看完整内容。模型隐藏推理正文但保留空 thinking 块时，每个空块显示一个 🤔；没有 thinking 事件则不补。完整记录页仍保持原有内联展开。只改 Android App，服务器已有 `session_clear` 能力时覆盖安装即可；旧扩展需更新并 `/reload`，不需要重启 Dashboard。
 
+Android 5.74（build 105）移除 OpenCode Go 语音润色 fallback。主模型仍为 DeepSeek V4.1 Flash（thinking high）；Claude Haiku 5.5（thinking medium）仅在配置 `ANTHROPIC_API_KEY` 时启用，Claude 消费级订阅不能直接当 Anthropic API 使用；GPT-6 Luna（thinking medium）使用 pi 现有的 OpenAI Codex 订阅登录（`auth.json` 的 `openai-codex`）。模型按顺序尝试，缺少凭据的 fallback 会跳过，全部失败或超时保留原始识别。仍然只发送最近 3 条用户/助手正文、当前草稿、会话标题和 cwd；需要更新并重启 Dashboard 后生效。
+
 Android 5.73（build 104）把语音润色主模型切换为 DeepSeek V4.1 Flash，thinking high；失败时按 Claude Haiku 5.5（thinking medium）→ GPT-6 Luna（thinking medium）依次 fallback。主模型走现有 DashScope key，两个 fallback 使用 `OPENCODE_API_KEY` 或 pi 的 `auth.json` 中 `opencode-go` 凭据。每次润色仍然只带最近 3 条用户/助手正文、当前草稿、会话标题和 cwd，最多等待约 35 秒；三路都失败时保留原始识别。需要更新并重启 Dashboard 后生效，设置页仍可关闭润色或关闭上下文。
 
 Android 5.72（build 103）在语音识别结束后加入可选的小模型润色：最终转写会附带少量最近对话、当前草稿、会话标题和 cwd，交给 `POST /api/asr/polish` 修正同音字、标点和断句，再追加到输入框。只发送简短上下文，不发送录音、工具输出或完整历史；设置页可关闭润色或关闭上下文，润色失败、超时或旧后端不支持时自动保留原始识别。润色使用 `DASHSCOPE_API_KEY` 和可配置的 `DASHSCOPE_ASR_POLISH_MODEL`（默认 `qwen3.8-flash`），需要更新并重启 Dashboard 后生效。

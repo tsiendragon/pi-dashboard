@@ -8,11 +8,12 @@
  *
  * Provider order:
  *   1. DeepSeek V4.1 Flash through DashScope (thinking: high)
- *   2. Claude Haiku 5.5 through OpenCode Go (thinking: medium)
- *   3. GPT-6 Luna through OpenCode Go (thinking: medium)
+ *   2. Claude Haiku 5.5 through the Anthropic API (thinking: medium), when ANTHROPIC_API_KEY is set
+ *   3. GPT-6 Luna through OpenAI Codex subscription auth in <agent dir>/auth.json (thinking: medium)
  *
- * The fallbacks reuse pi's OpenCode Go credential from <agent dir>/auth.json. No
- * transcript, context, token or provider error body is logged.
+ * No transcript, context, token or provider error body is logged. Claude consumer
+ * subscriptions are not an API credential; this adapter deliberately does not use
+ * Claude Code OAuth for third-party calls.
  */
 import { randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
@@ -25,7 +26,8 @@ export const ASR_POLISH_MAX_TEXT_CHARS = 4_000
 const ASR_POLISH_TIMEOUT_MS = 10_000
 const MAX_RECENT_MESSAGES = 3
 const MAX_CONTEXT_CHARS = 600
-const OPENCODE_GO_BASE = 'https://opencode.ai/inference/go'
+const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages'
+const OPENAI_CODEX_URL = 'https://chatgpt.com/backend-api/codex/responses'
 const CLAUDE_FALLBACK_MODEL = 'claude-haiku-5-5'
 const GPT_FALLBACK_MODEL = 'gpt-6-luna'
 
@@ -71,24 +73,37 @@ function agentDir(): string {
   return process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || join(homedir(), '.pi', 'agent')
 }
 
-/** OpenCode Go key: env override first, then pi's own auth.json. Never returned to callers. */
-export function opencodeGoKey(): string | undefined {
-  const fromEnv = process.env.OPENCODE_API_KEY?.trim()
-  if (fromEnv) return fromEnv
+export interface CodexAuth {
+  access: string
+  accountId: string
+  expires?: number
+}
+
+/** OpenAI Codex subscription credential already maintained by pi. */
+export function codexAuth(): CodexAuth | undefined {
   try {
     const auth = JSON.parse(readFileSync(join(agentDir(), 'auth.json'), 'utf-8')) as Record<string, unknown>
-    const provider = auth['opencode-go']
+    const provider = auth['openai-codex']
     if (!provider || typeof provider !== 'object') return undefined
-    const key = (provider as Record<string, unknown>).key
-    return typeof key === 'string' && key.trim() ? key.trim() : undefined
+    const record = provider as Record<string, unknown>
+    const access = typeof record.access === 'string' ? record.access.trim() : ''
+    const accountId = typeof record.accountId === 'string' ? record.accountId.trim() : ''
+    const expires = typeof record.expires === 'number' ? record.expires : undefined
+    if (!access || !accountId) return undefined
+    if (expires != null && expires <= Date.now()) return undefined
+    return { access, accountId, ...(expires != null ? { expires } : {}) }
   } catch {
     return undefined
   }
 }
 
+function anthropicKey(): string | undefined {
+  return process.env.ANTHROPIC_API_KEY?.trim() || undefined
+}
+
 export function asrPolishAvailability(): { available: boolean; reason?: string } {
-  if (dashscopeApiKey() || opencodeGoKey()) return { available: true }
-  return { available: false, reason: '语音润色没有可用模型：需要 DASHSCOPE_API_KEY 或 pi 的 OpenCode Go 凭据。' }
+  if (dashscopeApiKey() || anthropicKey() || codexAuth()) return { available: true }
+  return { available: false, reason: '语音润色没有可用模型：需要 DASHSCOPE_API_KEY、ANTHROPIC_API_KEY 或有效的 OpenAI Codex 订阅登录。' }
 }
 
 function clipped(value: unknown, max: number): string | undefined {
@@ -226,11 +241,10 @@ async function callClaude(
   fetchImpl: typeof fetch,
 ): Promise<string> {
   const prompt = buildPolishMessages(text, context)
-  const response = await fetchImpl(`${OPENCODE_GO_BASE}/v1/messages`, {
+  const response = await fetchImpl(ANTHROPIC_MESSAGES_URL, {
     method: 'POST',
     headers: {
       'x-api-key': key,
-      'x-opencode-session': randomUUID(),
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
     },
@@ -251,41 +265,62 @@ async function callClaude(
   return raw
 }
 
+/** Codex subscription endpoint is SSE-only; collect the final response text. */
+function codexSseText(body: string): string | undefined {
+  let accumulated = ''
+  for (const block of body.split(/\r?\n\r?\n/)) {
+    const data = block.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n')
+    if (!data || data === '[DONE]') continue
+    const event = asRecord((() => { try { return JSON.parse(data) } catch { return undefined } })())
+    if (!event) continue
+    if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') accumulated += event.delta
+    if (event.type === 'response.completed') {
+      const final = outputText(event.response, 'openai-responses')
+      if (final !== undefined) return final
+    }
+  }
+  return accumulated || undefined
+}
+
 async function callGptLuna(
   text: string,
   context: AsrPolishContext | undefined,
-  key: string,
+  auth: CodexAuth,
   fetchImpl: typeof fetch,
 ): Promise<string> {
   const prompt = buildPolishMessages(text, context)
-  const response = await fetchImpl(`${OPENCODE_GO_BASE}/v1/responses`, {
+  const response = await fetchImpl(OPENAI_CODEX_URL, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${key}`,
-      'x-opencode-session': randomUUID(),
+      Authorization: `Bearer ${auth.access}`,
+      'chatgpt-account-id': auth.accountId,
+      originator: 'pi',
+      'OpenAI-Beta': 'responses=experimental',
+      accept: 'text/event-stream',
       'content-type': 'application/json',
     },
     body: JSON.stringify({
       model: GPT_FALLBACK_MODEL,
-      stream: false,
+      store: false,
+      stream: true,
       instructions: prompt.system,
-      input: prompt.user,
+      input: [{ role: 'user', content: [{ type: 'input_text', text: prompt.user }] }],
+      text: { verbosity: 'low' },
       reasoning: { effort: 'medium' },
-      max_output_tokens: 1_024,
+      include: ['reasoning.encrypted_content'],
     }),
     signal: AbortSignal.timeout(ASR_POLISH_TIMEOUT_MS),
   })
-  const payload = await responseJson(response)
   if (!response.ok) throw new AsrPolishError('asr_polish_provider_error', `GPT-6 Luna 润色失败（HTTP ${response.status}）。`)
-  const raw = outputText(payload, 'openai-responses')
-  if (raw === undefined) throw new AsrPolishError('asr_polish_empty_result', 'GPT-6 Luna 没有返回文字。')
+  const raw = codexSseText(await response.text())
+  if (!raw) throw new AsrPolishError('asr_polish_empty_result', 'GPT-6 Luna 没有返回文字。')
   return raw
 }
 
 export async function polishTranscript(
   request: AsrPolishRequest,
   fetchImpl: typeof fetch = fetch,
-  options: { opencodeKey?: string } = {},
+  options: { claudeKey?: string; codex?: CodexAuth } = {},
 ): Promise<AsrPolishResult> {
   const text = request.text?.trim() ?? ''
   if (!text) throw new AsrPolishError('asr_polish_text_required', '没有可润色的识别文本。', 400)
@@ -303,10 +338,13 @@ export async function polishTranscript(
   if (dashscopeApiKey()) {
     attempts.push({ model, fallback: false, run: () => callDeepSeek(text, request.context, model, fetchImpl) })
   }
-  const opencodeKey = options.opencodeKey?.trim() || opencodeGoKey()
-  if (opencodeKey) {
-    attempts.push({ model: CLAUDE_FALLBACK_MODEL, fallback: true, run: () => callClaude(text, request.context, opencodeKey, fetchImpl) })
-    attempts.push({ model: GPT_FALLBACK_MODEL, fallback: true, run: () => callGptLuna(text, request.context, opencodeKey, fetchImpl) })
+  const claudeKey = options.claudeKey?.trim() || anthropicKey()
+  if (claudeKey) {
+    attempts.push({ model: CLAUDE_FALLBACK_MODEL, fallback: true, run: () => callClaude(text, request.context, claudeKey, fetchImpl) })
+  }
+  const codex = options.codex ?? codexAuth()
+  if (codex) {
+    attempts.push({ model: GPT_FALLBACK_MODEL, fallback: true, run: () => callGptLuna(text, request.context, codex, fetchImpl) })
   }
   if (attempts.length === 0) {
     throw new AsrPolishError('asr_polish_unavailable', '没有可用的语音润色模型；请保留原始识别。', 503)

@@ -593,7 +593,7 @@ Write a file in a skill directory.
 
 #### `POST /api/asr/polish`
 
-Optional post-ASR cleanup. The Android client sends a final transcript and a deliberately small context window; the server tries DeepSeek V4.1 Flash, then Claude Haiku 5.5, then GPT-6 Luna, and returns cleaned text. Requests with slash commands bypass the model. Secrets, audio, full history and tool output are not accepted.
+Optional post-ASR cleanup. The Android client sends a final transcript and a deliberately small context window; the server tries DeepSeek V4.1 Flash, then Claude Haiku 5.5 (when `ANTHROPIC_API_KEY` is configured), then GPT-6 Luna through the OpenAI Codex subscription login, and returns cleaned text. Requests with slash commands bypass the model. Secrets, audio, full history and tool output are not accepted.
 
 **Request body:**
 ```json

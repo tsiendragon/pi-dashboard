@@ -57,16 +57,16 @@ describe('ASR polish', () => {
     })
   })
 
-  it('falls back to Claude Haiku at medium thinking when DeepSeek fails', async () => {
+  it('falls back to Claude Haiku through the Anthropic API at medium thinking', async () => {
     vi.stubEnv('DASHSCOPE_API_KEY', 'test-key')
     const fetchImpl = vi.fn(async (url: string | URL | Request) => {
       if (String(url).includes('dashscope')) return reply({ error: { message: 'down' } }, 503)
       return reply({ content: [{ type: 'thinking', thinking: 'hidden' }, { type: 'text', text: '帮我检查这个 API。' }] })
     }) as unknown as typeof fetch
-    const result = await polishTranscript({ text: '帮我 check 这个 a p i' }, fetchImpl, { opencodeKey: 'opencode-test-key' })
+    const result = await polishTranscript({ text: '帮我 check 这个 a p i' }, fetchImpl, { claudeKey: 'anthropic-test-key' })
     expect(result).toMatchObject({ text: '帮我检查这个 API。', model: 'claude-haiku-5-5', fallback: true })
     const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<[string, RequestInit]>
-    expect(calls[1][0]).toBe('https://opencode.ai/inference/go/v1/messages')
+    expect(calls[1][0]).toBe('https://api.anthropic.com/v1/messages')
     expect(JSON.parse(String(calls[1][1].body))).toMatchObject({
       model: 'claude-haiku-5-5',
       thinking: { type: 'adaptive' },
@@ -74,19 +74,27 @@ describe('ASR polish', () => {
     })
   })
 
-  it('falls back to GPT-6 Luna at medium thinking when both earlier models fail', async () => {
+  it('falls back to GPT-6 Luna through Codex subscription auth at medium thinking', async () => {
     vi.stubEnv('DASHSCOPE_API_KEY', 'test-key')
     const fetchImpl = vi.fn(async (url: string | URL | Request) => {
       if (String(url).includes('dashscope')) return reply({ error: { message: 'down' } }, 503)
       if (String(url).endsWith('/v1/messages')) return reply({ error: { message: 'down' } }, 503)
-      return reply({ output: [{ type: 'message', content: [{ type: 'output_text', text: '帮我检查这个 API。' }] }] })
+      const event = JSON.stringify({
+        type: 'response.completed',
+        response: { output: [{ type: 'message', content: [{ type: 'output_text', text: '帮我检查这个 API。' }] }] },
+      })
+      return new Response(`event: response.completed\ndata: ${event}\n\n`, { status: 200 })
     }) as unknown as typeof fetch
-    const result = await polishTranscript({ text: '帮我 check 这个 a p i' }, fetchImpl, { opencodeKey: 'opencode-test-key' })
+    const result = await polishTranscript({ text: '帮我 check 这个 a p i' }, fetchImpl, {
+      claudeKey: 'anthropic-test-key',
+      codex: { access: 'codex-access-test', accountId: 'account-test', expires: Date.now() + 60_000 },
+    })
     expect(result).toMatchObject({ text: '帮我检查这个 API。', model: 'gpt-6-luna', fallback: true })
     const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<[string, RequestInit]>
-    expect(calls[2][0]).toBe('https://opencode.ai/inference/go/v1/responses')
+    expect(calls[2][0]).toBe('https://chatgpt.com/backend-api/codex/responses')
     expect(JSON.parse(String(calls[2][1].body))).toMatchObject({
       model: 'gpt-6-luna',
+      stream: true,
       reasoning: { effort: 'medium' },
     })
   })
@@ -106,6 +114,7 @@ describe('ASR polish', () => {
 
   it('reports a missing key and provider errors without leaking the payload', async () => {
     vi.stubEnv('DASHSCOPE_API_KEY', '')
+    vi.stubEnv('ANTHROPIC_API_KEY', '')
     vi.stubEnv('PI_CODING_AGENT_DIR', '/nonexistent-pi-agent')
     await expect(polishTranscript({ text: 'hello' })).rejects.toMatchObject({ code: 'asr_polish_unavailable' })
     vi.stubEnv('DASHSCOPE_API_KEY', 'test-key')
