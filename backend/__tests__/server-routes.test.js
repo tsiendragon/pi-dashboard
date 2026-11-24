@@ -178,6 +178,18 @@ describe('GET /api/status', () => {
   })
 })
 
+describe('GET /api/skills', () => {
+  let srv, port
+  beforeAll(async () => ({ srv, port } = await startServer()))
+  afterAll(() => stopServer(srv))
+
+  it('keeps the global list for callers without a session cwd', async () => {
+    const res = await get(port, '/api/skills')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([])
+  })
+})
+
 describe('GET /api/chat/slots', () => {
   let srv, port
   beforeAll(async () => ({ srv, port } = await startServer()))

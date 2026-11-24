@@ -705,6 +705,8 @@ class LivePiRepository(
     suspend fun readFile(id: String, path: String): Result<String> = result { client(id).readTextFile(path) }
     /** Raw PDF bytes for the in-app page renderer. */
     suspend fun readFileBytes(id: String, path: String): Result<ByteArray> = result { client(id).readBinaryFile(path) }
+    /** Skills for the session cwd; read-only and safe without a lease. */
+    suspend fun skills(id: String, cwd: String?): Result<List<LiveSkill>> = result { client(id).skills(cwd) }
     /** Upload phone-side Word documents to the host; the prompt then references their paths. */
     suspend fun uploadFiles(id: String, files: List<FileAttachments.UploadRequest>): Result<List<String>> =
         result { client(id).uploadFiles(files) }

@@ -160,6 +160,7 @@ fun LiveSessionScreen(
     var draft by rememberSaveable(sessionKey.backendId, sessionKey.slotKey) { mutableStateOf("") }
     var composerFocused by remember(sessionKey) { mutableStateOf(false) }
     var promptsOpen by remember(sessionKey) { mutableStateOf(false) }
+    var skillPickerOpen by remember(sessionKey) { mutableStateOf(false) }
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val showComposerTools = (composerFocused && imeVisible) || promptsOpen
     val composerMaxHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.35f).coerceIn(96.dp, 220.dp)
@@ -1192,6 +1193,12 @@ fun LiveSessionScreen(
                             ContextUsageSummary(summary?.contextUsage, cachedSnapshot != null,
                                 backendStates[sessionKey.backendId]?.connected == true && summary?.status != "reconnecting")
                             HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("技能…（筛选并插入）") },
+                                enabled = !busy && summary != null,
+                                onClick = { addMenu = false; skillPickerOpen = true },
+                            )
+                            HorizontalDivider()
                             if (addMenuShowTools) {
                                 DropdownMenuItem(
                                     text = { Text("模型：${summary?.model?.id ?: "选择模型"}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -1708,6 +1715,24 @@ fun LiveSessionScreen(
                 text = { Text("已支持实时对话与会话控制。文件浏览/上传、PTY 终端、完整工作流图谱和复杂编辑仍请使用 WebUI；此处不宣称完整功能对齐。") },
                 confirmButton = { TextButton(onClick = { dismiss() }) { Text("知道了") } })
         }
+
+        if (skillPickerOpen) LiveSkillPickerSheet(
+            repo = live,
+            backendId = sessionKey.backendId,
+            cwd = summary?.canonicalCwd?.takeIf { it.isNotBlank() } ?: summary?.cwd,
+            draft = draft,
+            onDismiss = { skillPickerOpen = false },
+            onApply = { name ->
+                val next = insertSkillDraft(draft, name)
+                if (next == null) {
+                    notice = "技能名包含不支持的字符，未插入"
+                } else {
+                    draft = next
+                    skillPickerOpen = false
+                    notice = "已插入技能：$name"
+                }
+            },
+        )
 
         previewError?.let { message ->
             AlertDialog(shape = Radii.sheet, onDismissRequest = { previewError = null }, title = { Text("预览失败", style = PiType.pageTitle) },

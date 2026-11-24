@@ -98,6 +98,10 @@ data class LiveQueue(val items: List<LiveQueueItem> = emptyList(), val active: L
 data class LiveMeta(val tags: List<String> = emptyList(), val pinned: Boolean = false, val tmux: String? = null, val emoji: String = "", val color: String = "")
 @Serializable
 data class LiveRepoCandidate(val name: String, val path: String, val git: Boolean = false)
+
+/** One skill advertised by the dashboard host; names are inserted as `/skill:<name>`. */
+@Serializable
+data class LiveSkill(val name: String, val description: String = "")
 @Serializable
 data class LiveStartOptions(val roots: List<String> = emptyList())
 @Serializable

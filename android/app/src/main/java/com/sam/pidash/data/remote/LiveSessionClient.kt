@@ -56,7 +56,7 @@ class LiveSessionClient(
         return source.readUtf8()
     }
 
-    private fun execute(request: Request, acceptCookie: Boolean = false): JsonElement {
+    private fun executeElement(request: Request, acceptCookie: Boolean = false): JsonElement {
         http.newCall(request).execute().use { response ->
             val text = responseText(response)
             val parsed = runCatching { pidashJson.parseToJsonElement(text) }.getOrNull()
@@ -73,7 +73,7 @@ class LiveSessionClient(
                     }
                 throw LiveApiException(response.code, code, message)
             }
-            if (parsed !is JsonObject) throw IOException("服务器未返回 Live JSON；可能仍是旧版后端")
+            if (parsed == null) throw IOException("服务器返回了无效 JSON；可能仍是旧版后端")
             if (acceptCookie) {
                 val cookie = response.headers.values("Set-Cookie").mapNotNull { Cookie.parse(request.url, it) }
                     .singleOrNull { it.name == "pi_live_session" && it.value.matches(Regex("[a-f0-9]{64}")) &&
@@ -83,6 +83,12 @@ class LiveSessionClient(
             }
             return parsed
         }
+    }
+
+    private fun execute(request: Request, acceptCookie: Boolean = false): JsonObject {
+        val parsed = executeElement(request, acceptCookie)
+        if (parsed !is JsonObject) throw IOException("服务器未返回 Live JSON；可能仍是旧版后端")
+        return parsed
     }
 
     private fun filePathValid(path: String): Boolean =
@@ -144,6 +150,15 @@ class LiveSessionClient(
 
     suspend fun get(path: String): JsonObject = withContext(Dispatchers.IO) {
         execute(request(path)).jsonObject
+    }
+
+    /** Skills available to this session's cwd; includes project skills when the server supports cwd. */
+    suspend fun skills(cwd: String?): List<LiveSkill> = withContext(Dispatchers.IO) {
+        val suffix = cwd?.trim()?.takeIf { it.isNotBlank() }?.let {
+            "?cwd=" + java.net.URLEncoder.encode(it, "UTF-8")
+        }.orEmpty()
+        val element = executeElement(request("/api/skills" + suffix))
+        pidashJson.decodeFromJsonElement(ListSerializer(LiveSkill.serializer()), element)
     }
 
     /** Upload whole documents to the Dashboard host; the returned paths go into the prompt. */

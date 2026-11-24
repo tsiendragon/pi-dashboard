@@ -110,6 +110,19 @@ class LiveSessionClientTest {
         assertEquals("/api/file-read", calls.single().path)
     }
 
+    @Test fun skillsPassTheSessionCwdAndDecodeTheList() = runBlocking {
+        var query = ""
+        handler = {
+            query = it.requestURI.query.orEmpty()
+            reply(it, """[{"name":"pdf-tools","description":"PDF"},{"name":"review","description":"Code"}]""")
+        }
+        val skills = client.skills("/work/project")
+        assertEquals(listOf("pdf-tools", "review"), skills.map { it.name })
+        assertEquals("/api/skills", calls.single().path)
+        assertTrue(query.contains("cwd=") && query.contains("work") && query.contains("project"))
+        assertTrue(calls.single().body.isEmpty())
+    }
+
     @Test fun organizationAndGroupEditsUseExistingProtectedEndpointsWithoutClaiming() = runBlocking {
         cookies.save(backend, cookie)
         handler = { if (it.requestURI.path == "/api/live-session-order") reply(it, """{"order":["session-fixture"],"sectionOrder":["work"]}""")

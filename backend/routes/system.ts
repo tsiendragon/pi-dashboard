@@ -3,7 +3,7 @@
  */
 import { Request, Response } from 'express'
 import { settingsStore } from '../settings-store.js'
-import { readdirSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { readdirSync, statSync, readFileSync, writeFileSync, mkdirSync, realpathSync } from 'fs'
 import { join, dirname } from 'path'
 import { execSync } from 'child_process'
 import { promisify } from 'util'
@@ -26,6 +26,31 @@ const DASHBOARD_TOKEN_PATH = join(os.homedir(), '.pi', 'dashboard-token')
 
 function getDashboardToken(): string {
   try { return readFileSync(DASHBOARD_TOKEN_PATH, 'utf-8').trim() } catch { return '' }
+}
+
+/**
+ * `piEnv.getSkills()` only sees `~/.pi/agent/skills`. A session also loads project
+ * `.pi/skills` and `.agents/skills`, so the mobile picker asks for its cwd and pi's
+ * own loader resolves the same set the agent sees.
+ */
+async function skillsForCwd(cwd: string): Promise<{ name: string; description: string }[]> {
+  try {
+    const piPkg = process.env.PI_PKG_PATH?.trim() || (() => {
+      try { return dirname(dirname(realpathSync(resolvePiScript()))) } catch { return '' }
+    })()
+    if (!piPkg) throw new Error('pi package path unavailable')
+    const { loadSkills } = await import(join(piPkg, 'dist/core/skills.js'))
+    const { skills } = loadSkills({ cwd, agentDir: PI_AGENT_DIR, skillPaths: [], includeDefaults: true })
+    const unique = new Map<string, { name: string; description: string }>()
+    for (const skill of skills as Array<{ name?: unknown; description?: unknown }>) {
+      const name = typeof skill.name === 'string' ? skill.name.trim() : ''
+      if (!name) continue
+      unique.set(name, { name, description: typeof skill.description === 'string' ? skill.description : '' })
+    }
+    return [...unique.values()].sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    return piEnv.getSkills()
+  }
 }
 
 export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserAuth): void {
@@ -167,8 +192,16 @@ export function registerSystemRoutes(deps: RouteDeps, auth?: LiveSessionBrowserA
     })
   })
 
-  // Skills
-  app.get('/api/skills', (_req: Request, res: Response) => res.json(piEnv.getSkills()))
+  // Skills. `?cwd=` resolves project skills as well as the global directory; absent
+  // keeps the old global-only response for existing dashboard callers.
+  app.get('/api/skills', async (req: Request, res: Response) => {
+    const rawCwd = typeof req.query.cwd === 'string' ? req.query.cwd.trim() : ''
+    if (!rawCwd) return res.json(piEnv.getSkills())
+    const cwd = rawCwd === '~' ? os.homedir() : rawCwd.startsWith('~/') ? join(os.homedir(), rawCwd.slice(2)) : rawCwd
+    if (!cwd.startsWith('/')) return res.json(piEnv.getSkills())
+    res.set('Cache-Control', 'no-store')
+    res.json(await skillsForCwd(cwd))
+  })
 
   app.get('/api/skills/:name/files', (req: Request, res: Response) => {
     const skillDir = join(os.homedir(), '.pi', 'agent', 'skills', req.params.name as string)
