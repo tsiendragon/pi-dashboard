@@ -209,6 +209,41 @@ class LiveSessionClient(
     suspend fun machineLoad(): MachineLoad = pidashJson.decodeFromJsonElement(
         MachineLoad.serializer(), get("/api/system/load"))
 
+    /** Providers/models from pi's models.json, with secrets omitted by the server. */
+    suspend fun modelProviders(): List<ModelProvider> = withContext(Dispatchers.IO) {
+        val response = get("/api/model-config/providers")
+        pidashJson.decodeFromJsonElement(
+            ListSerializer(ModelProvider.serializer()),
+            response["providers"] ?: JsonArray(emptyList()),
+        )
+    }
+
+    /** Save one provider (including its model list) through the protected config route. */
+    suspend fun saveModelProvider(id: String, request: ModelProviderRequest): ModelProviderSaveResult = withContext(Dispatchers.IO) {
+        require(id.matches(Regex("[a-z0-9][a-z0-9._-]{0,63}"))) { "无效的服务商标识" }
+        val body = buildJsonObject {
+            put("api", request.api)
+            put("baseUrl", request.baseUrl)
+            request.apiKey?.takeIf { it.isNotBlank() }?.let { put("apiKey", it) }
+            putJsonArray("models") {
+                request.models.forEach { model ->
+                    add(buildJsonObject {
+                        put("id", model.id)
+                        model.name?.takeIf { it.isNotBlank() }?.let { put("name", it) }
+                        if (model.contextWindow > 0) put("contextWindow", model.contextWindow)
+                        if (model.maxTokens > 0) put("maxTokens", model.maxTokens)
+                        put("reasoning", model.reasoning)
+                        putJsonArray("input") { model.input.forEach { add(JsonPrimitive(it)) } }
+                    })
+                }
+            }
+        }
+        pidashJson.decodeFromJsonElement(
+            ModelProviderSaveResult.serializer(),
+            execute(request("/api/model-config/providers/" + id, "PUT", body)).jsonObject,
+        )
+    }
+
     /** Whether this server has a DashScope key for voice input; the key itself never leaves it. */
     suspend fun asrConfig(): AsrConfig = pidashJson.decodeFromJsonElement(
         AsrConfig.serializer(), get("/api/asr/config"))

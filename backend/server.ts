@@ -56,6 +56,7 @@ import { SupervisorService } from './supervisor/service.js'
 import { SupervisorRuntime } from './supervisor/runtime.js'
 import { registerSupervisorRoutes, protectSupervisorFiles } from './routes/supervisor.js'
 import { registerRepoRoutes } from './routes/repos.js'
+import { registerModelConfigRoutes } from './routes/model-config.js'
 import { RepoStore, sanitizeEntries } from './repos/store.js'
 import { JiraStatusStore } from './jira/status.js'
 import { TaskService } from './tasks/service.js'
@@ -981,6 +982,7 @@ registerChatRoutes(routeDeps)
 app.use(protectSupervisorFiles(supervisorRoot, liveSessionAuth))
 registerFileRoutes(routeDeps)
 registerSystemRoutes(routeDeps, liveSessionAuth)
+registerModelConfigRoutes({ app, auth: liveSessionAuth })
 registerSessionRoutes(routeDeps)
 registerJobsRoutes(routeDeps)
 registerIntegrationRoutes(routeDeps)

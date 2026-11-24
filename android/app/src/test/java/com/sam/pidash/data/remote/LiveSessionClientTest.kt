@@ -10,6 +10,8 @@ import com.sam.pidash.data.repo.LivePiRepository
 import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.LiveDetail
 import com.sam.pidash.domain.model.SessionKey
+import com.sam.pidash.domain.model.ModelDefinition
+import com.sam.pidash.domain.model.ModelProviderRequest
 import com.sam.pidash.domain.model.VoicePolishContext
 import com.sam.pidash.domain.model.VoicePolishMessage
 import kotlinx.coroutines.*
@@ -123,6 +125,28 @@ class LiveSessionClientTest {
         assertEquals("/api/skills", calls.single().path)
         assertTrue(query.contains("cwd=") && query.contains("work") && query.contains("project"))
         assertTrue(calls.single().body.isEmpty())
+    }
+
+    @Test fun modelProviderListIsReadAndSavedWithoutEchoingTheKey() = runBlocking {
+        handler = { reply(it, """{"providers":[{"id":"custom","api":"openai-completions","baseUrl":"https://llm.example/v1","hasKey":true,"keySource":"stored","models":[{"id":"my-model","contextWindow":32000,"maxTokens":4096}]}]}""") }
+        val providers = client.modelProviders()
+        assertEquals("custom", providers.single().id)
+        assertEquals("my-model", providers.single().models.single().id)
+
+        handler = { reply(it, """{"provider":{"id":"custom","api":"openai-completions","baseUrl":"https://llm.example/v1","hasKey":true,"models":[{"id":"my-model"}]},"allowlistChanged":true,"requiresSessionRestart":true}""") }
+        val saved = client.saveModelProvider(
+            "custom",
+            ModelProviderRequest(
+                api = "openai-completions",
+                baseUrl = "https://llm.example/v1",
+                apiKey = "synthetic-key",
+                models = listOf(ModelDefinition("my-model", contextWindow = 32000, maxTokens = 4096)),
+            ),
+        )
+        assertTrue(saved.allowlistChanged)
+        assertEquals("PUT", calls.last().method)
+        assertEquals("/api/model-config/providers/custom", calls.last().path)
+        assertTrue(calls.last().body.contains("synthetic-key"))
     }
 
     @Test fun voicePolishPostsTheSmallContextAndDecodesTheCleanup() = runBlocking {

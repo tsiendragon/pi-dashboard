@@ -550,6 +550,28 @@ Get available models (cached for 5 minutes). Queries a running pi process via RP
 
 ---
 
+### Providers & models
+
+#### `GET /api/model-config/providers`
+
+Lists providers from `<agent dir>/models.json`, their model definitions, whether a key/auth is configured, and never returns the key itself. Providers that exist only in pi's `auth.json` are shown read-only with `piAuth: true`.
+
+#### `PUT /api/model-config/providers/:id`
+
+Create or update one provider and its model list. Requires Live browser auth. API Key is optional on update; leaving it blank preserves the existing key. Writes are backed up and atomic; new model names are appended to a non-empty `enabledModels` allowlist. Response: `{ provider, allowlistChanged, requiresSessionRestart }`.
+
+**Body:**
+```json
+{
+  "api": "openai-completions",
+  "baseUrl": "https://api.example.com/v1",
+  "apiKey": "sk-…",
+  "models": [{ "id": "my-model", "name": "My Model", "contextWindow": 32000, "maxTokens": 4096, "reasoning": true, "input": ["text", "image"] }]
+}
+```
+
+Credentials written by this route live in `models.json` (mode 0600); subscription/OAuth credentials are never edited here.
+
 ### Skills
 
 #### `GET /api/skills`

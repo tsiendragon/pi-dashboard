@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -98,6 +99,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     var editing by remember { mutableStateOf<Backend?>(null) }
     var deleting by remember { mutableStateOf<Backend?>(null) }
     var alertsEnabled by remember { mutableStateOf(notifier.prefs.enabled) }
+    var showModelProviders by remember { mutableStateOf(false) }
     var alertsNeedsPermission by remember { mutableStateOf(false) }
     // Android 13+: ask once, after saying why. The system dialog is a one-shot; a user who
     // says no can still turn it on from system settings, so we link there instead of
@@ -107,6 +109,16 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         alertsNeedsPermission = !granted
         if (granted) { notifier.prefs.enabled = true; alertsEnabled = true }
+    }
+
+    if (showModelProviders) {
+        ModelProvidersScreen(
+            repo = repo,
+            backends = backends,
+            initialBackendId = backends.firstOrNull()?.id.orEmpty(),
+            onBack = { showModelProviders = false },
+        )
+        return
     }
 
     Scaffold(
@@ -240,6 +252,26 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
             }
             item { SectionLabel("新会话默认") }
             item { SessionDefaultsCard(settingsPrefs) }
+            item { SectionLabel("模型与服务商") }
+            item {
+                GroupedCard {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        Text("服务商、API Key 与自定义模型", style = PiType.callout, maxLines = 1)
+                        Text(
+                            "在 App 内添加 OpenAI、Anthropic、DashScope、OpenRouter、OpenCode Go、DeepSeek、MiniMax、Gemini、Kimi、GLM 或自定义模型。Key 只写入 Dashboard 主机；订阅登录仍由 pi 管理。",
+                            style = PiType.caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(
+                            onClick = { showModelProviders = true },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) { Text("打开模型与服务商") }
+                    }
+                }
+            }
             item { SectionLabel("本地缓存") }
             item { CacheCard(settingsPrefs, cache) }
             item { SectionLabel("服务器") }

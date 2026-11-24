@@ -709,6 +709,12 @@ class LivePiRepository(
     suspend fun readFile(id: String, path: String): Result<String> = result { client(id).readTextFile(path) }
     /** Raw PDF bytes for the in-app page renderer. */
     suspend fun readFileBytes(id: String, path: String): Result<ByteArray> = result { client(id).readBinaryFile(path) }
+    /** Read/write model provider metadata on the Dashboard host. */
+    suspend fun modelProviders(id: String): Result<List<ModelProvider>> = result { client(id).modelProviders() }
+
+    suspend fun saveModelProvider(id: String, providerId: String, request: ModelProviderRequest): Result<ModelProviderSaveResult> =
+        result { client(id).saveModelProvider(providerId, request) }
+
     /** Skills for the session cwd; read-only and safe without a lease. */
     suspend fun skills(id: String, cwd: String?): Result<List<LiveSkill>> = result { client(id).skills(cwd) }
     /** Upload phone-side Word documents to the host; the prompt then references their paths. */
