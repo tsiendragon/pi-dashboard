@@ -71,7 +71,7 @@ internal fun ComposerPill(
 ) {
     val voicePlaceholder = when (voicePhase) {
         VoiceInputPhase.Connecting -> "正在连接语音识别…"
-        VoiceInputPhase.Listening -> voiceInterim.ifBlank { "正在听，请说话…" }
+        VoiceInputPhase.Listening -> voiceInterim.ifBlank { "正在录音；说完点停止…" }
         VoiceInputPhase.Transcribing -> "正在整理语音文字…"
         VoiceInputPhase.Idle -> placeholder
     }

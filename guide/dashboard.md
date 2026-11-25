@@ -462,6 +462,8 @@ Android 5.58（build 89）在 Live Pi 顶部工作状态中显示 PiMatrix 证�
 
 Android 5.59（build 90）在 Live Pi 会话菜单和会话列表操作表中加入「清空会话（保留旧记录）」。它发送扩展注册的 `/clear`，切换到新的空会话；旧对话文件保留，不关闭 Pi 进程，也不删除服务器记录。只有摘要的 `capabilities` 含 `session_clear` 时菜单项才可用；扩展未加载或版本过旧时禁用，避免把 `/clear` 当普通提示词发给模型。会话正在执行时会等这一轮结束后再切换。活动视图中的执行步骤和思考过程改为固定高度（约 10 行）的内部滚动窗口：步骤点击后在弹窗查看完整命令、其他参数和输出，思考按片段一行一条，点击查看完整内容。模型隐藏推理正文但保留空 thinking 块时，每个空块显示一个 🤔；没有 thinking 事件则不补。完整记录页仍保持原有内联展开。只改 Android App，服务器已有 `session_clear` 能力时覆盖安装即可；旧扩展需更新并 `/reload`，不需要重启 Dashboard。
 
+Android 5.77（build 108）修复语音输入看起来停在「正在听，请说话」的问题：实时 ASR 已经返回最终段落后，输入框原先会把这段文字从提示区清空，等用户停止录音和润色完成才一次性写入草稿，因此看起来像没有识别。现在最终识别文字会先留在输入框提示区作为预览，点停止后再润色并写入草稿；没有最终文字时提示改为「正在录音；说完点停止」，不改变手动停止的交互。仅改 Android App，覆盖安装即可，不需要重启 Dashboard。
+
 Android 5.76（build 107）修复模型与服务商编辑订阅型 Provider 时的 API 类型默认值：从列表直接打开 `openai-codex` 等 auth-only Provider 时，会自动带入预设的 API 类型和 Base URL，而不是默认成 OpenAI Chat Completions；错误的类型可能让 Codex 的 SSE/JSON 被当成正文显示。已有错误配置需要重新打开该 Provider 保存一次，并新建或重启 Pi 会话。API Key/自定义模型功能仍按 5.75 的范围；订阅 OAuth 登录仍不在 App 内完成。
 
 Android 5.75（build 106）在 App 的「设置 → 模型与服务商」加入服务商与自定义模型管理。内置 OpenAI、Anthropic、DashScope、OpenRouter、OpenCode Go、DeepSeek、MiniMax、Gemini、Kimi、GLM、OpenAI Codex（订阅）和自定义 OpenAI 兼容预设；可填写 Base URL、API 类型、API Key、模型 ID/名称/上下文/最大输出/思考/图片能力。API Key 只写入 Dashboard 主机的 `models.json`（0600），读取接口只返回是否已配置和来源，不回显密钥；保存会备份并原子写入，同时把新模型加入非空的模型允许列表。订阅/OAuth 登录仍由 pi 管理，本页只显示状态，不在 App 保存订阅令牌；Claude 消费级订阅仍不能当作 Anthropic API。保存后需新建或重启 Pi 会话才会加载新模型。

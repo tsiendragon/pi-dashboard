@@ -188,7 +188,10 @@ class VoiceInputController(
                 is AsrEvent.Interim -> if (!closed) _state.update { it.copy(interim = event.text) }
                 is AsrEvent.Final -> if (!closed && event.text.isNotBlank()) {
                     finalText = appendVoiceTranscript(finalText, event.text)
-                    _state.update { it.copy(interim = "") }
+                    // Keep the finalized segment visible while the user is still recording.
+                    // The polished text is appended to the draft only when recording stops,
+                    // but clearing this preview made the composer look stuck on "请说话".
+                    _state.update { it.copy(interim = finalText) }
                 }
                 AsrEvent.Finished -> finishWithPolish()
                 is AsrEvent.Failed -> fail(event.message)
