@@ -247,9 +247,14 @@ private fun ModelProviderEditorSheet(
     onSaved: (String) -> Unit,
 ) {
     val isNew = existing == null
+    val presetDefaults = modelProviderPreset(initial.id)
     var providerId by remember(initial.id) { mutableStateOf(initial.id) }
-    var api by remember(initial.id) { mutableStateOf(initial.api.ifBlank { "openai-completions" }) }
-    var baseUrl by remember(initial.id) { mutableStateOf(initial.baseUrl) }
+    var api by remember(initial.id) {
+        mutableStateOf(initial.api.ifBlank { presetDefaults?.api ?: "openai-completions" })
+    }
+    var baseUrl by remember(initial.id) {
+        mutableStateOf(initial.baseUrl.ifBlank { presetDefaults?.baseUrl.orEmpty() })
+    }
     var apiKey by remember(initial.id) { mutableStateOf("") }
     var models by remember(initial.id) { mutableStateOf(initial.models) }
     var apiMenu by remember { mutableStateOf(false) }
