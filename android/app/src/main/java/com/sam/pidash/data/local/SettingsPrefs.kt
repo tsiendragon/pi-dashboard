@@ -65,6 +65,9 @@ class SettingsPrefs(context: Context) {
     private val _voicePolishContext = MutableStateFlow(prefs.getBoolean(KEY_VOICE_POLISH_CONTEXT, true))
     val voicePolishContext: StateFlow<Boolean> = _voicePolishContext.asStateFlow()
 
+    private val _voiceAsrContext = MutableStateFlow(prefs.getBoolean(KEY_VOICE_ASR_CONTEXT, true))
+    val voiceAsrContext: StateFlow<Boolean> = _voiceAsrContext.asStateFlow()
+
     private val _cacheRetention = MutableStateFlow(
         CacheRetention.fromDays(prefs.getInt(KEY_CACHE_DAYS, CacheRetention.STANDARD.days)),
     )
@@ -127,6 +130,12 @@ class SettingsPrefs(context: Context) {
         _voicePolishContext.value = value
     }
 
+    fun setVoiceAsrContext(value: Boolean) {
+        if (_voiceAsrContext.value == value) return
+        prefs.edit().putBoolean(KEY_VOICE_ASR_CONTEXT, value).apply()
+        _voiceAsrContext.value = value
+    }
+
     private companion object {
         const val KEY_CODE_SCALE = "code_scale"
         const val KEY_COLLAPSE_KEYBOARD = "collapse_keyboard"
@@ -137,5 +146,6 @@ class SettingsPrefs(context: Context) {
         const val KEY_CACHE_DAYS = "cache_days"
         const val KEY_VOICE_POLISH = "voice_polish"
         const val KEY_VOICE_POLISH_CONTEXT = "voice_polish_context"
+        const val KEY_VOICE_ASR_CONTEXT = "voice_asr_context"
     }
 }

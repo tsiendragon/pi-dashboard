@@ -96,6 +96,7 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     val collapseKeyboard by settingsPrefs.collapseKeyboard.collectAsState()
     val voicePolish by settingsPrefs.voicePolish.collectAsState()
     val voicePolishContext by settingsPrefs.voicePolishContext.collectAsState()
+    val voiceAsrContextEnabled by settingsPrefs.voiceAsrContext.collectAsState()
     var editing by remember { mutableStateOf<Backend?>(null) }
     var deleting by remember { mutableStateOf<Backend?>(null) }
     var alertsEnabled by remember { mutableStateOf(notifier.prefs.enabled) }
@@ -242,8 +243,24 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                             onCheckedChange = settingsPrefs::setVoicePolishContext,
                         )
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = Tints.Hairline))
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+                            Text("语音识别参考技术上下文", style = PiType.callout, maxLines = 1)
+                            Text(
+                                "把少量会话术语、当前草稿和最近几条对话随音频发给识别模型，帮助区分 API、session、路径等技术词；关闭后只发送音频。",
+                                style = PiType.caption,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = voiceAsrContextEnabled, onCheckedChange = settingsPrefs::setVoiceAsrContext)
+                    }
                     Text(
-                        "识别文本和可选上下文会发送给已配置的润色模型服务（DashScope / Anthropic API / OpenAI Codex 订阅）；录音本身仍不写入本机或服务器。",
+                        "识别音频会发送给语音识别服务；可选的技术上下文只用于提高识别准确率。识别后的润色文本和可选上下文会发送给已配置的润色模型服务（DashScope / Anthropic API / OpenAI Codex 订阅）；录音本身仍不写入本机或服务器。",
                         modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm),
                         style = PiType.caption,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

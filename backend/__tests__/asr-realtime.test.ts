@@ -40,6 +40,9 @@ describe('DashScope realtime ASR', () => {
     expect(asrRealtimeSessionUpdate('zh').session).toMatchObject({
       input_audio_transcription: { language: 'zh' },
     })
+    expect(asrRealtimeSessionUpdate('zh', 'API、session、Pi Dashboard 等技术词')).toMatchObject({
+      session: { input_audio_transcription: { language: 'zh', corpus: { text: 'API、session、Pi Dashboard 等技术词' } } },
+    })
   })
 
   it('keeps the API key server-side and bridges audio and transcript events', () => {
@@ -75,6 +78,22 @@ describe('DashScope realtime ASR', () => {
     expect(messages(upstream).at(-1)).toMatchObject({ type: 'session.finish' })
     upstream.emit('message', Buffer.from(JSON.stringify({ type: 'session.finished' })), false)
     expect(messages(client).at(-1)).toEqual({ type: 'finished' })
+  })
+
+  it('passes a client context frame to Qwen without putting it in the URL', () => {
+    const client = new FakeSocket()
+    const upstream = new FakeSocket()
+    const createUpstream = vi.fn((_url: string, _apiKey: string) => upstream as unknown as WebSocket)
+    handleAsrRealtimeConnection(client as unknown as WebSocket, 'zh', {
+      apiKey: 'test-key',
+      createUpstream,
+    })
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'context', text: 'API session 路径' })), false)
+    upstream.emit('open')
+    expect(messages(upstream)[0]).toMatchObject({
+      type: 'session.update',
+      session: { input_audio_transcription: { language: 'zh', corpus: { text: 'API session 路径' } } },
+    })
   })
 
   it('rejects the client cleanly when the backend has no API key', () => {

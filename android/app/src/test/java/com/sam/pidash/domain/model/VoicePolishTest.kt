@@ -33,6 +33,28 @@ class VoicePolishTest {
         assertTrue(context.recent.all { it.role == "assistant" || it.role == "user" })
     }
 
+    @Test fun asrContextIncludesTechnicalTermsAndRecentProseButNotTools() {
+        val context = voiceAsrContext(
+            summary(),
+            listOf(
+                message("tool", "tool", "not sent"),
+                message("u1", "user", "检查 WebSocket 的 session"),
+                message("a1", "assistant", "看 API 和 canonicalCwd"),
+            ),
+            "继续检查 sudo 路径",
+        )!!
+        assertTrue(context.contains("技术词"))
+        assertTrue(context.contains("WebSocket"))
+        assertTrue(context.contains("canonicalCwd"))
+        assertTrue(context.contains("检查 WebSocket 的 session"))
+        assertTrue(context.contains("继续检查 sudo 路径"))
+        assertTrue(!context.contains("not sent"))
+    }
+
+    @Test fun asrContextCanBeDisabled() {
+        assertNull(voiceAsrContext(summary(), emptyList(), "draft", includeContext = false))
+    }
+
     @Test fun optOutSendsNoContextAndEmptySessionsReturnNull() {
         assertNull(voicePolishContext(summary(), emptyList(), "draft", includeContext = false))
         assertNull(voicePolishContext(null, emptyList(), ""))

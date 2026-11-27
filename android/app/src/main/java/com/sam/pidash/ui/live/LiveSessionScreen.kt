@@ -105,6 +105,7 @@ import com.sam.pidash.domain.model.runningOperationStatus
 import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.domain.model.VoiceInputPhase
 import com.sam.pidash.domain.model.appendVoiceTranscript
+import com.sam.pidash.domain.model.voiceAsrContext
 import com.sam.pidash.domain.model.voicePolishContext
 import com.sam.pidash.ui.theme.Radii
 import kotlinx.coroutines.launch
@@ -200,11 +201,13 @@ fun LiveSessionScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val voicePolish by settingsPrefs.voicePolish.collectAsState()
     val voicePolishUseContext by settingsPrefs.voicePolishContext.collectAsState()
+    val voiceAsrUseContext by settingsPrefs.voiceAsrContext.collectAsState()
     val latestSummary by rememberUpdatedState(summary)
     val latestTimeline by rememberUpdatedState(timeline)
     val latestDraft by rememberUpdatedState(draft)
     val latestVoicePolish by rememberUpdatedState(voicePolish)
     val latestVoicePolishContext by rememberUpdatedState(voicePolishUseContext)
+    val latestVoiceAsrContext by rememberUpdatedState(voiceAsrUseContext)
     // Voice text is appended on the main thread by the controller; audio itself never
     // leaves this controller's memory except as PCM frames on the ASR WebSocket.
     val voice = remember(sessionKey) {
@@ -225,6 +228,14 @@ fun LiveSessionScreen(
                     live.polishVoice(sessionKey.backendId, raw, context).getOrNull()?.text
                         ?.takeIf { it.isNotBlank() } ?: raw
                 }
+            },
+            context = {
+                voiceAsrContext(
+                    latestSummary,
+                    latestTimeline,
+                    latestDraft,
+                    includeContext = latestVoiceAsrContext,
+                )
             },
         )
     }

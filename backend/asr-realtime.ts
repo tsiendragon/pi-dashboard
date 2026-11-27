@@ -6,6 +6,7 @@ import { dashscopeApiKey, resolveDashscopeBaseUrl } from './dashscope.js'
 export const ASR_REALTIME_PATH = '/api/asr/realtime'
 const AUDIO_CHUNK_BASE64_LIMIT = 48 * 1024
 const UPSTREAM_HANDSHAKE_TIMEOUT_MS = 15_000
+const MAX_CONTEXT_CHARS = 4_000
 
 export function asrRealtimeUrl(baseUrl: string): string {
   const url = new URL(baseUrl)
@@ -20,15 +21,26 @@ export function asrRealtimeUrl(baseUrl: string): string {
   return url.toString()
 }
 
-export function asrRealtimeSessionUpdate(language?: string): Record<string, unknown> {
+/** Qwen contextual biasing is plain text under `input_audio_transcription.corpus.text`. */
+function normalizeContext(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const text = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim()
+  return text ? text.slice(0, MAX_CONTEXT_CHARS) : undefined
+}
+
+export function asrRealtimeSessionUpdate(language?: string, context?: string): Record<string, unknown> {
   const normalizedLanguage = normalizeAsrLanguage(language)
+  const transcription: Record<string, unknown> = {}
+  if (normalizedLanguage) transcription.language = normalizedLanguage
+  const bias = normalizeContext(context)
+  if (bias) transcription.corpus = { text: bias }
   return {
     type: 'session.update',
     event_id: randomUUID(),
     session: {
       input_audio_format: 'pcm',
       sample_rate: 16_000,
-      input_audio_transcription: normalizedLanguage ? { language: normalizedLanguage } : {},
+      input_audio_transcription: transcription,
       turn_detection: { type: 'server_vad', threshold: 0, silence_duration_ms: 500 },
     },
   }
@@ -38,6 +50,8 @@ export interface AsrRealtimeBridgeOptions {
   apiKey?: string
   baseUrl?: string
   createUpstream?: (url: string, apiKey: string) => WebSocket
+  /** Initial contextual-biasing text; the client may also send it as a `context` frame. */
+  context?: string
 }
 
 function rawDataText(data: RawData): string {
@@ -86,6 +100,7 @@ export function handleAsrRealtimeConnection(
   let ready = false
   let finishSent = false
   let closed = false
+  let pendingContext = normalizeContext(options.context)
 
   const sendClient = (message: unknown): void => {
     if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(message))
@@ -100,7 +115,7 @@ export function handleAsrRealtimeConnection(
   }
 
   upstream.on('open', () => {
-    upstream.send(JSON.stringify(asrRealtimeSessionUpdate(language ?? undefined)))
+    upstream.send(JSON.stringify(asrRealtimeSessionUpdate(language ?? undefined, pendingContext)))
   })
   upstream.on('message', (data: RawData) => {
     let message: Record<string, unknown> | undefined
@@ -160,6 +175,21 @@ export function handleAsrRealtimeConnection(
     }
     if (!message || typeof message.type !== 'string') {
       fail('实时语音消息格式无效。')
+      return
+    }
+    if (message.type === 'context') {
+      const text = message.text
+      if (typeof text !== 'string') {
+        fail('语音上下文格式无效。')
+        return
+      }
+      pendingContext = normalizeContext(text)
+      // The context frame can race the upstream handshake. Re-send the session
+      // configuration when needed rather than putting potentially sensitive
+      // conversation text in the WebSocket URL/access logs.
+      if (upstream.readyState === WebSocket.OPEN) {
+        upstream.send(JSON.stringify(asrRealtimeSessionUpdate(language ?? undefined, pendingContext)))
+      }
       return
     }
     if (message.type === 'audio') {

@@ -76,6 +76,8 @@ class VoiceInputController(
     private val onTranscript: (String) -> Unit,
     /** Optional post-ASR cleanup; failures/timeouts must fall back to the raw transcript. */
     private val polish: suspend (String) -> String = { it },
+    /** Tiny technical/context corpus sent before audio; null/blank disables biasing. */
+    private val context: () -> String? = { null },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = Handler(Looper.getMainLooper())
@@ -115,6 +117,17 @@ class VoiceInputController(
             return
         }
         if (closed) return
+        // Send contextual-biasing text before the first audio chunk. It travels over
+        // the existing authenticated socket, not a URL/query, so it is not put in
+        // access logs. The server passes it to Qwen as input_audio_transcription.corpus.
+        runCatching {
+            context()?.trim()?.takeIf { it.isNotEmpty() }?.let { text ->
+                socket?.send(buildJsonObject {
+                    put("type", "context")
+                    put("text", text.take(3_500))
+                }.toString())
+            }
+        }
         try {
             recorder = PcmRecorder(
                 scope = scope,

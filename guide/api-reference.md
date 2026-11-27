@@ -550,6 +550,16 @@ Get available models (cached for 5 minutes). Queries a running pi process via RP
 
 ---
 
+### ASR context
+
+The Android voice client may send a text frame before audio:
+
+```json
+{ "type": "context", "text": "技术词：API, session, WebSocket; 最近对话…" }
+```
+
+The bridge stores it only for the current WebSocket session and sends it to Qwen as `session.input_audio_transcription.corpus.text`; it is not part of the URL. Maximum retained context is 4,000 characters. The frame is optional and ignored by older bridges.
+
 ### Providers & models
 
 #### `GET /api/model-config/providers`

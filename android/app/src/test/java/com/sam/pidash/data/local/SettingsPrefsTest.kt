@@ -31,6 +31,7 @@ class SettingsPrefsTest {
         assertEquals(CacheRetention.STANDARD, prefs.cacheRetention.value)
         assertTrue(prefs.voicePolish.value)
         assertTrue(prefs.voicePolishContext.value)
+        assertTrue(prefs.voiceAsrContext.value)
     }
 
     @Test fun everyChoiceSurvivesANewInstance() {
@@ -44,6 +45,7 @@ class SettingsPrefsTest {
             setCacheRetention(CacheRetention.LONG)
             setVoicePolish(false)
             setVoicePolishContext(false)
+            setVoiceAsrContext(false)
         }
         val reopened = SettingsPrefs(context)
         assertEquals(CodeFontScale.XLARGE, reopened.codeScale.value)
@@ -55,6 +57,7 @@ class SettingsPrefsTest {
         assertEquals(CacheRetention.LONG, reopened.cacheRetention.value)
         assertFalse(reopened.voicePolish.value)
         assertFalse(reopened.voicePolishContext.value)
+        assertFalse(reopened.voiceAsrContext.value)
         assertEquals(30 * 24L * 60 * 60 * 1000, reopened.cacheRetention.value.millis)
     }
 
