@@ -51,6 +51,13 @@ function compactMessage(message: JsonRecord): void {
   if (nextContent.some(part => object(part)?.piArgsOmitted === true)) omit(message, 'args')
 }
 
+function compactTurnEndEvent(entry: JsonRecord): void {
+  const data = object(entry.data)
+  if (!data || !('context' in data)) return
+  const { context: _omitted, ...rest } = data
+  entry.data = rest
+}
+
 function compactToolEvent(entry: JsonRecord): void {
   const data = object(entry.data)
   if (!data) return
@@ -84,6 +91,7 @@ export function compactEntry(raw: unknown): unknown {
     if (object(message.piOmitted)?.output) omit(entry, 'output')
   }
   if (type.startsWith('tool_execution_')) compactToolEvent(entry)
+  if (type === 'turn_end') compactTurnEndEvent(entry)
   return entry
 }
 
@@ -101,6 +109,7 @@ export function compactEvent(raw: unknown): unknown {
     }
   }
   if (type.startsWith('tool_execution_')) compactToolEvent(event)
+  if (type === 'turn_end') compactTurnEndEvent(event)
   return event
 }
 

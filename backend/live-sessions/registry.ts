@@ -312,9 +312,10 @@ export class LiveSessionRegistry extends EventEmitter {
     entry.summary.eventSequence = message.sequence
     entry.summary.lastActivityAt = this.now()
     this.projectEvent(entry, message)
-    this.appendTimelineEvent(entry, message.event)
+    const event = this.slimEvent(message.event)
+    this.appendTimelineEvent(entry, event)
     if (entry.entries.length > this.maxTimelineEntries) entry.entries.splice(0, entry.entries.length - this.maxTimelineEntries)
-    this.emit('event', message)
+    this.emit('event', event === message.event ? message : { ...message, event })
     return true
   }
 
@@ -708,6 +709,19 @@ export class LiveSessionRegistry extends EventEmitter {
     if (event.type.startsWith('message_') && typeof message?.role === 'string') return `message:${message.role}`
     if (event.type.startsWith('tool_execution_') && typeof data?.toolName === 'string') return `tool:${data.toolName}`
     return undefined
+  }
+
+  /**
+   * Drop pi's per-turn copy of the full context prefix while retaining turn_end
+   * as an activity boundary (including turnIndex, message and toolResults).
+   * Copy the event/data objects because the original may still be published elsewhere.
+   */
+  private slimEvent(event: LiveSessionEventMessage['event']): LiveSessionEventMessage['event'] {
+    if (event.type !== 'turn_end') return event
+    const data = resultRecord(event.data)
+    if (!data || !('context' in data)) return event
+    const { context: _omitted, ...rest } = data
+    return { ...event, data: rest }
   }
 
   private appendTimelineEvent(entry: Entry, event: LiveSessionEventMessage['event']): void {
