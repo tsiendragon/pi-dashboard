@@ -5,6 +5,15 @@ set -euo pipefail
 # For restarts, use: ./restart.sh or sudo systemctl restart pi-dashboard
 cd "$(dirname "$0")"
 
+# Make user-local tools (gh, pimatrix, pi, ...) visible to this server and to
+# every pi session / bash tool it spawns. The launch context is often a
+# restricted PATH (e.g. /usr/local/bin:/usr/bin:/bin), which would otherwise
+# hide $HOME/.local/bin.
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
+
 # Type-check first: fail fast in seconds, instead of after the slower Vite build.
 # The backend runs through tsx, which strips types without checking them, so the
 # backend needs this gate here just as much as the frontend does.
@@ -23,6 +32,15 @@ echo "[pi-dashboard] Frontend build complete"
 # no_terminal / non_sse dumps fire at default log level (no debug needed).
 export BEDROCK_MANTLE_LOG_FILE="${BEDROCK_MANTLE_LOG_FILE:-$HOME/.pi/logs/bedrock-mantle.log}"
 export BEDROCK_MANTLE_EMPTY_DUMP_DIR="${BEDROCK_MANTLE_EMPTY_DUMP_DIR:-$HOME/.pi/logs/empty-dumps}"
+
+# pi trajectory recorder (pitrace): 全量 payload 体积大，优先落到 HDD。
+# 仅当 HDD 真正挂载时才指向它——/run/media 未挂载时根目录是 tmpfs，写进去会吃内存。
+# 未挂载则不设置，recorder 回退到默认 SSD 路径 ~/.pi/agent/pi-traces。
+# 旧 trace 由 ~/.local/bin/pi-trace-clean.py (cron) 按保留期 + 容量上限清理。
+PI_TRACE_HDD_ROOT="/run/media/tsien/Back"
+if mountpoint -q "$PI_TRACE_HDD_ROOT"; then
+  export PI_TRACE_DIR="${PI_TRACE_DIR:-$PI_TRACE_HDD_ROOT/pi-traces}"
+fi
 
 # --- Lark (Feishu) gateway -------------------------------------------------
 # Background companion to the server: bridges Lark chats to live-sessions
