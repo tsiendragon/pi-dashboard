@@ -60,7 +60,7 @@ repositories:
 
 | Layer | What it is | Where it comes from | Why a complete install needs it |
 |---|---|---|---|
-| ① pi host | the `pi` executable that actually runs the agent | `github.com/tsiendragon/pi`, GitHub Release tag **`v0.85.1-tsien.1`** (10 npm tarballs) | the upstream `@earendil-works/pi-coding-agent` lacks `executeTool` / `extension_ui` / `aboveStatus`, which breaks `run_code`, live sessions and full-screen subagents |
+| ① pi host | the `pi` executable that actually runs the agent | `github.com/tsiendragon/pitsien`, GitHub Release tag **`v1.6.1-tsien.1`** (11 npm tarballs) | the upstream `@earendil-works/pi-coding-agent` lacks `executeTool` / `extension_ui` / `aboveStatus`, which breaks `run_code`, live sessions and full-screen subagents |
 | ② extensions | `pi-tsien-extension` (26 packages / 25 extension entries) | `github.com/tsiendragon/pi-tsien-extension` | live session bridge, subagent workbench, Code Mode, long-term memory, RTK tool-result filtering, schedule, … |
 | ③ dashboard | this repo: Express + WebSocket server, web frontend, iOS app | `github.com/tsiendragon/pi-dashboard` | the UI, and one `pi` child process per chat slot |
 
@@ -119,7 +119,7 @@ Step-by-step manual equivalent, prerequisites, service setup, and troubleshootin
 ### Requirements
 
 - Node.js 22+
-- A `pi` executable. Use the fork build (`v0.85.1-tsien.1`) — see [`guide/pi-runtime.md`](guide/pi-runtime.md).
+- A `pi` executable. Use the fork build (`v1.6.1-tsien.1`) — see [`guide/pi-runtime.md`](guide/pi-runtime.md).
   The upstream package still chats, but `run_code`, live sessions and full-screen subagents degrade.
 - For the full feature set, the companion extensions in [`guide/extensions.md`](guide/extensions.md);
   `scripts/install-standalone.sh` installs them together with this dashboard.

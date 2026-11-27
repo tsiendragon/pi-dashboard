@@ -5,7 +5,7 @@
 
 | 模块文档 | 讲什么 |
 |---|---|
-| [pi-runtime.md](pi-runtime.md) | ① pi 宿主 CLI（**我们用 tsiendragon/pi 的 fork**） |
+| [pi-runtime.md](pi-runtime.md) | ① pi 宿主 CLI（**我们用 tsiendragon/pitsien 的 fork**） |
 | [extensions.md](extensions.md) | ② pi-tsien-extension 扩展集合（npm / git / 本地三种装法） |
 | [dashboard.md](dashboard.md) | ③ pi-dashboard Web 服务（端口、环境变量、远程访问） |
 | [cloudflare-mobile-gateway.md](cloudflare-mobile-gateway.md) | 多机器移动端接入的公开实施状态（**尚未可公网部署**） |
@@ -30,7 +30,7 @@
 
 | 层 | 是什么 | 参考位置（示例） | 默认来源 |
 |---|---|---|---|
-| **① pi 宿主** | 真正跑 agent 的 `pi` 可执行文件 | `<pi-fork-prefix>/bin/pi` | `github.com/tsiendragon/pi` 的 GitHub Release（10 个 tgz） |
+| **① pi 宿主** | 真正跑 agent 的 `pi` 可执行文件 | `<pi-fork-prefix>/bin/pi` | `github.com/tsiendragon/pitsien` 的 GitHub Release（11 个 tgz） |
 | **② 扩展** | `pi-tsien-extension` 仓库（26 个包 / 25 个扩展入口） | `<extension-checkout>` | `github.com/tsiendragon/pi-tsien-extension` |
 | **③ dashboard** | Web + iOS 前端 + 后端 | 当前仓库 | `github.com/tsiendragon/pi-dashboard` |
 
@@ -70,7 +70,7 @@ bash scripts/install-standalone.sh -y --service  # 装成 systemd 服务（需 s
 bash scripts/install-standalone.sh --dry-run     # 只打印将执行的动作
 bash scripts/install-standalone.sh --dir ~/tools --port 8899
 bash scripts/install-standalone.sh --ext-dir ~/src/pi-tsien-extension   # 复用已有扩展 checkout
-bash scripts/install-standalone.sh --pi-release tsiendragon/pi@v0.85.1-tsien.1
+bash scripts/install-standalone.sh --pi-release tsiendragon/pitsien@v1.6.1-tsien.1
 bash scripts/install-standalone.sh --official-pi # 改装官方版（功能会降级）
 bash scripts/install-standalone.sh --skip-pi --pi-prefix ~/pi/bin       # 自备 pi
 ```

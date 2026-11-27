@@ -5,9 +5,9 @@
 
 ---
 
-## 1. 为什么用 tsiendragon/pi 的 fork，而不是上游官方版
+## 1. 为什么用 tsiendragon/pitsien 的 fork，而不是上游官方版
 
-我们依赖一组**上游尚不存在的扩展 API**。官方 `@earendil-works/pi-coding-agent`（截至 `0.87.1`）
+我们依赖一组**上游尚不存在的扩展 API**。官方 `@earendil-works/pi-coding-agent`（截至 `1.6.1`）
 缺少这些 API，会导致：
 
 | 缺失 API | 影响 |
@@ -20,7 +20,7 @@
 
 ```bash
 PI_PREFIX="${PI_PREFIX:-$HOME/pi-fork}"
-ls "$PI_PREFIX/lib/node_modules/@earendil-works/"       # 应有 10 个包
+ls "$PI_PREFIX/lib/node_modules/@earendil-works/"       # 应有 11 个包
 "$PI_PREFIX/bin/pi" --version                           # 版本以实际安装为准
 grep -rl "executeTool" "$PI_PREFIX/lib/node_modules/@earendil-works/pi-coding-agent/dist/" | head -1
 grep -rl "respondExtensionUi" "$PI_PREFIX/lib/node_modules/@earendil-works/pi-coding-agent/dist/" | head -1
@@ -34,11 +34,12 @@ grep -rl "respondExtensionUi" "$PI_PREFIX/lib/node_modules/@earendil-works/pi-co
 
 ## 2. 安装来源与结构
 
-- 仓库：`github.com/tsiendragon/pi`
-- 构建产物：GitHub Release，默认 tag **`v0.85.1-tsien.1`**，含 **10 个平台 tarball**
-- 10 个包：`chord`、`pi-ai`、`pi-agent-core`、`pi-client`、`pi-coding-agent`、`pi-protocol`、
-  `pi-server`、`pi-session-backend-sqlite-node`、`pi-telemetry`、`pi-tui`
-  （资产名形如 `earendil-works-pi-coding-agent-0.85.1-tsien.1.tgz`）
+- 仓库：`github.com/tsiendragon/pitsien`
+- 构建产物：GitHub Release，默认 tag **`v1.6.1-tsien.1`**，含 **11 个 npm tarball**
+- 11 个包：`chord`、`pi-agent-core`、`pi-ai`、`pi-codemode`、`pi-coding-agent`、`pi-durable`、
+  `pi-env`、`pi-mcp`、`pi-schema`、`pi-telemetry`、`pi-tui`
+  （资产名**带构建 hash**，如 `earendil-works-pi-coding-agent-1.6.1-tsien.1-b93ff5fb7614.tgz`，
+  所以只能枚举资产，不能按「包名 + 版本」拼 URL）
 
 **安装路径只有 Release tag，没有"从源码分支构建"这一条。** `scripts/install-standalone.sh` 的
 `--pi-release <repo@tag>` 只从 Release 下 tgz，不 clone 仓库、不跑构建；本文档也不提供源码构建
@@ -52,12 +53,12 @@ grep -rl "respondExtensionUi" "$PI_PREFIX/lib/node_modules/@earendil-works/pi-co
 
 ### 3.1 一键脚本（推荐）
 
-`scripts/install-standalone.sh` 默认就从 Release 装 fork 构建（**不需要查 Release API，命名可预测**），
+`scripts/install-standalone.sh` 默认就从 Release 装 fork 构建（**先枚举 Release 资产：资产名带构建 hash，拼不出可预测 URL**），
 装到 `<安装根>/pi` 并把 `PI_SCRIPT` 写进 `<agent dir>/dashboard.env`。
 
 ```bash
 bash scripts/install-standalone.sh -y            # 默认 fork 构建
-bash scripts/install-standalone.sh --pi-release tsiendragon/pi@v0.85.1-tsien.1   # 指定构建
+bash scripts/install-standalone.sh --pi-release tsiendragon/pitsien@v1.6.1-tsien.1   # 指定构建
 bash scripts/install-standalone.sh --official-pi # 改装官方 npm 版（功能降级，不推荐）
 bash scripts/install-standalone.sh --skip-pi --pi-prefix ~/pi/bin                # 自备 pi，不装
 ```
@@ -65,15 +66,16 @@ bash scripts/install-standalone.sh --skip-pi --pi-prefix ~/pi/bin               
 ### 3.2 手动安装（等价命令）
 
 ```bash
-REPO=tsiendragon/pi; TAG=v0.85.1-tsien.1; VER=${TAG#v}
-mkdir -p ~/pi-stack/pi ~/pi-stack/pi-tgz
-for n in chord pi-ai pi-agent-core pi-client pi-coding-agent pi-protocol pi-server \
-         pi-session-backend-sqlite-node pi-telemetry pi-tui; do
-  curl -fsSL -o ~/pi-stack/pi-tgz/earendil-works-$n-$VER.tgz \
-    "https://github.com/$REPO/releases/download/$TAG/earendil-works-$n-$VER.tgz"
-done
+REPO=tsiendragon/pitsien; TAG=v1.6.1-tsien.1
+mkdir -p ~/pi-stack/pi ~/pi-stack/pi-tgz && cd ~/pi-stack/pi-tgz
+# 资产名带构建 hash（earendil-works-<pkg>-<ver>-<hash>.tgz），只能枚举后下载：
+gh release download "$TAG" -R "$REPO" --pattern '*.tgz'
+# 没有 gh 时用匿名 API 取 URL（每天 60 次限额）：
+#   curl -fsSL "https://api.github.com/repos/$REPO/releases/tags/$TAG" \
+#     | grep -o 'https://[^"]*\.tgz' | xargs -n1 curl -fsSLO
 npm install -g --prefix ~/pi-stack/pi ~/pi-stack/pi-tgz/*.tgz --no-audit --no-fund
-~/pi-stack/pi/bin/pi --version        # 期望 0.85.1-tsien.1
+~/pi-stack/pi/bin/pi --version        # 期望 1.6.1-tsien.1
+ls ~/pi-stack/pi/lib/node_modules/@earendil-works/ | wc -l   # 期望 11
 mkdir -p ~/.pi/agent && printf 'PI_SCRIPT=%s\n' ~/pi-stack/pi/bin/pi >> ~/.pi/agent/dashboard.env
 ```
 
@@ -112,16 +114,21 @@ live session 走的是另一条链：`~/.pi/dashboard.json` 的 `liveSessions.la
 
 `backend` 自己也有 npm 依赖（`SessionManager` / SDK 路径）：`package.json` 里的
 `@earendil-works/pi-coding-agent` 和它同级的 `chord`、`pi-agent-core`、`pi-ai`、`pi-telemetry`、`pi-tui`
-直接锁同一个 Release 的 tgz，**必须和宿主的 fork 版本同步升级**。上游 npm 的同号版本（如 `0.85.1`）
+直接锁同一个 Release 的 tgz，**必须和宿主的 fork 版本同步升级**。上游 npm 的同号版本（如 `1.6.1`）
 缺少 fork 增补的导出（例如 `pi-ai` 的 `retryDelayMs`），混装会让 backend 在导入时直接报
 `does not provide an export named ...`。`npm install` / `npm ci` 需要能访问 GitHub Release 资产。
+
+> **现状（尚未同步）**：宿主 Release 已到 `v1.6.1-tsien.1`，但仓库 `package.json` 里那 6 个 tgz 仍钉在
+> `v0.85.1-tsien.1`。要跟上 1.6.1，除了把 URL 换成带资产 hash 的新名，还得补 3 个新的内部依赖
+> （`pi-schema`、`pi-codemode`、`pi-mcp`：`chord` / `pi-ai` / `pi-coding-agent` 用精确版本引用它们），
+> 然后跑 `npm install` + `npm run typecheck` + `npm test` 验收——不能只改 `PI_RELEASE_TAG`。
 
 ---
 
 ## 6. 验证
 
 1. `<prefix>/bin/pi --version` 能输出
-2. `@earendil-works/` 下有 10 个包
+2. `@earendil-works/` 下有 11 个包
 3. `executeTool` 与 `respondExtensionUi` 能在 dist 里搜到
 4. dashboard 发消息能流式返回；`run_code` 不报 `executeTool` 错误
 5. 终端 `pi` 能启动

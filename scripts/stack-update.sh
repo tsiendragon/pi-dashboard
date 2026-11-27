@@ -82,7 +82,7 @@ cfg() {
 cfg_or() { local v; v="$(cfg "$1")"; printf '%s' "${v:-$2}"; }
 
 ROOT="$(expand_path "$(cfg_or root "${HOME}/pi-stack")")"
-PI_REPO="$(cfg_or pi.repo "tsiendragon/pi")"
+PI_REPO="$(cfg_or pi.repo "tsiendragon/pitsien")"
 PI_POLICY="$(cfg_or pi.policy "latest-tag")"
 PI_REF="$(cfg pi.ref)"
 PI_PREFIX="$(expand_path "$(cfg_or pi.prefix "${ROOT}/pi")")"
@@ -108,7 +108,7 @@ LAST_DASH="$(cfg lastApplied.dashboard)"
 layer_enabled() { [[ -z "${ONLY}" || "${ONLY}" == "$1" ]]; }
 
 # ── 版本解析 ─────────────────────────────────────────────────────────────────
-# 远端最新 tag（形如 v1.2.3 / v0.85.1-tsien.1），sort -V 排序取最大。
+# 远端最新 tag（形如 v1.2.3 / v1.6.1-tsien.1），sort -V 排序取最大。
 latest_tag() {
   local repo="$1" tags
   tags="$(git ls-remote --tags --refs "${repo}" 2>/dev/null | awk -F/ '{print $NF}' | grep -E '^v[0-9]' || true)"

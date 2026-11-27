@@ -3,7 +3,7 @@
   "machine": "",
   "root": "~/pi-stack",
   "pi": {
-    "repo": "tsiendragon/pi",
+    "repo": "tsiendragon/pitsien",
     "policy": "latest-tag",
     "ref": "",
     "prefix": "~/pi-stack/pi"

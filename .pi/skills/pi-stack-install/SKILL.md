@@ -9,7 +9,7 @@ description: 在新机器上从零装齐 pi 工作台三层（fork 版 pi 宿主
 
 | 层 | 是什么 | 从哪来 | 为什么必须装它 |
 |---|---|---|---|
-| ① pi 宿主 | 真正跑 agent 的 `pi` 可执行文件 | `github.com/tsiendragon/pi` 的 GitHub Release（默认 tag `v0.85.1-tsien.1`，10 个 npm 包） | 上游官方版缺 `executeTool` / `extension_ui` / `aboveStatus`，`run_code`、live session、全屏子 Agent 会报错或降级 |
+| ① pi 宿主 | 真正跑 agent 的 `pi` 可执行文件 | `github.com/tsiendragon/pitsien` 的 GitHub Release（默认 tag `v1.6.1-tsien.1`，11 个 npm 包） | 上游官方版缺 `executeTool` / `extension_ui` / `aboveStatus`，`run_code`、live session、全屏子 Agent 会报错或降级 |
 | ② 扩展 | `pi-tsien-extension`（26 包 / 25 扩展入口） | `github.com/tsiendragon/pi-tsien-extension` | live session 桥、子 Agent 工作台、Code Mode、长期记忆、任务结果过滤都在这里 |
 | ③ dashboard | 本仓库：Express + WebSocket 服务、网页与 iOS 前端 | 当前仓库 | 界面本体；每个会话 slot 起一个 `pi --mode rpc` 子进程 |
 
@@ -61,7 +61,7 @@ lsof -i :7777 -sTCP:LISTEN -n -P 2>/dev/null || ss -ltnp 2>/dev/null | grep ':77
 |---|---|---|
 | **A 全新联网安装**（默认） | 机器干净、npm 与 GitHub 都通 | `bash scripts/install-standalone.sh --dry-run` 看步骤，确认后加 `-y` 重跑 |
 | **B 补齐缺的那层** | 已有 pi 或已有扩展，只补 dashboard / 只补扩展 | `--skip-pi` 只装 dashboard（注意：此时脚本**不会**写 `PI_SCRIPT`，要自己把 `PI_SCRIPT=<你的 pi 路径>` 写进 `<agent dir>/dashboard.env`，否则 dashboard 按「仓库内 `node_modules/.bin/pi` → `which pi`」找）；`--skip-extension-sync` 不动扩展清单；`--ext-dir <已有扩展 checkout>` 复用现成扩展；`--pi-prefix <目录>` 配合 `--pi-release` 指定装到哪 |
-| **C 手上只有官方 pi** | 暂时拿不到 fork 构建 | 先用官方版把 dashboard 跑起来，同时明确告知：`run_code`、live session、全屏子 Agent 会降级；装到 fork 版后用 `--pi-release tsiendragon/pi@v0.85.1-tsien.1` 补上 |
+| **C 手上只有官方 pi** | 暂时拿不到 fork 构建 | 先用官方版把 dashboard 跑起来，同时明确告知：`run_code`、live session、全屏子 Agent 会降级；装到 fork 版后用 `--pi-release tsiendragon/pitsien@v1.6.1-tsien.1` 补上 |
 | **D 目标机没有网络** | npm 或 GitHub 不通 | 本仓库不附带离线包。不要硬装：先确认能否拿到离线包（三层的依赖产物 + 校验值 + 安装脚本），拿到再装；拿不到就把阻塞如实报出来 |
 | **E 升级已有安装** | 三层都装好了，只想升某一层 | pi：重跑 `--pi-release <repo@tag>`；扩展：在扩展目录 `git fetch --tags && git checkout <tag>` 后跑同步器；dashboard：本仓库 `git pull` + `npm install` + `npm run build-frontend` |
 
@@ -74,7 +74,7 @@ bash scripts/install-standalone.sh -y --service         # 装 systemd（需要 s
 bash scripts/install-standalone.sh --dir ~/tools --port 8899
 bash scripts/install-standalone.sh --ext-dir ~/src/pi-tsien-extension
 bash scripts/install-standalone.sh --skip-pi        # 自备 pi，只装 dashboard 与扩展
-bash scripts/install-standalone.sh --pi-release tsiendragon/pi@v0.85.1-tsien.1 --pi-prefix ~/pi-stack/pi
+bash scripts/install-standalone.sh --pi-release tsiendragon/pitsien@v1.6.1-tsien.1 --pi-prefix ~/pi-stack/pi
 ```
 
 ---
@@ -96,8 +96,8 @@ PREFIX=${PI_PREFIX:-$HOME/pi-stack/pi}          # 换过 --dir/--pi-prefix 就�
 EXT_DIR=${EXT_DIR:-$HOME/pi-stack/pi-tsien-extension}
 
 node -v                                                                    # 1) 要 22+
-"$PREFIX/bin/pi" --version                                                 # 2) 要 0.85.1-tsien.1
-ls "$PREFIX/lib/node_modules/@earendil-works/" | wc -l                     # 3) 要 10
+"$PREFIX/bin/pi" --version                                                 # 2) 要 1.6.1-tsien.1
+ls "$PREFIX/lib/node_modules/@earendil-works/" | wc -l                     # 3) 要 11
 grep -rl executeTool "$PREFIX/lib/node_modules/@earendil-works/pi-coding-agent/dist/" | head -1        # 4)
 grep -rl respondExtensionUi "$PREFIX/lib/node_modules/@earendil-works/pi-coding-agent/dist/" | head -1 # 4)
 node "$EXT_DIR/scripts/pi-extension-sync.mjs" --agent-dir "$AGENT_DIR" \
@@ -106,8 +106,9 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:7777/           # 6) 
 ```
 
 1. `node -v` 是 22 或更高。
-2. `pi --version` 输出 `0.85.1-tsien.1`。
-3. `@earendil-works/` 下正好 10 个包。
+2. `pi --version` 输出 `1.6.1-tsien.1`。
+3. `@earendil-works/` 下正好 11 个包（chord、pi-agent-core、pi-ai、pi-codemode、
+   pi-coding-agent、pi-durable、pi-env、pi-mcp、pi-schema、pi-telemetry、pi-tui）。
 4. 上面两条 `grep` 各自至少命中一个文件（说明是 fork 构建，不是官方版）。
 5. 同步器输出 `Pi extensions already match the ordered user config.`
 6. 首页返回 200；返回 `401/403` 反而正常（浏览器认证没走），说明服务活着。

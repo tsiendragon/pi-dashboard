@@ -29,7 +29,7 @@
 
 | 层 | 源仓库 | 分发通道 |
 |---|---|---|
-| ① pi 宿主 | `github.com/tsiendragon/pi` | GitHub Release 的 10 个 tgz，tag 形如 `v0.85.1-tsien.1` |
+| ① pi 宿主 | `github.com/tsiendragon/pitsien` | GitHub Release 的 11 个 tgz（资产名带构建 hash），tag 形如 `v1.6.1-tsien.1` |
 | ② 扩展 | `github.com/tsiendragon/pi-tsien-extension` | git 伞形包（装齐）或 npm 单包 |
 | ③ dashboard | `github.com/tsiendragon/pi-dashboard` | git checkout + 本地构建前端 |
 
@@ -107,7 +107,7 @@ bash scripts/stack-update.sh --check --config /path/to/stack.json
 `--check` 输出示例：
 
 ```
-[stack] pi          local=v0.85.1-tsien.1    target=v0.85.1-tsien.2    UPDATE
+[stack] pi          local=v0.85.1-tsien.1    target=v1.6.1-tsien.1     UPDATE
 [stack] extensions  local=v0.1.0             target=v0.1.0             OK
 [stack] dashboard   local=v1.1.3             target=v1.1.3             OK
 ```

@@ -11,7 +11,7 @@
 
 | 组件 | 作用 | 来源 |
 |---|---|---|
-| **pi CLI（补丁构建）** | agent 运行时，负责模型调用、会话、工具；dashboard 的 live session / `run_code` / 子 Agent 原生全屏依赖本 fork 的扩展 API | `github.com/tsiendragon/pi` 的 GitHub Release 资产（10 个 tgz，默认 `v0.85.1-tsien.1`） |
+| **pi CLI（补丁构建）** | agent 运行时，负责模型调用、会话、工具；dashboard 的 live session / `run_code` / 子 Agent 原生全屏依赖本 fork 的扩展 API | `github.com/tsiendragon/pitsien` 的 GitHub Release 资产（11 个 tgz，默认 `v1.6.1-tsien.1`；资产名带构建 hash） |
 | **pi-dashboard** | Web/iOS 前端 + 后端，管理多会话、文件、终端 | `github.com/tsiendragon/pi-dashboard` |
 | **pi-tsien-extension** | 一批配套 Pi 扩展（sidebar / schedule / subagent / live session / 后台命令 / goal / memory / git-graph …） | `github.com/tsiendragon/pi-tsien-extension` |
 | **pi-web-tools** | 网页抓取工具扩展，已 vendored 在 pi-tsien-extension 内 | 同上 `vendor/pi-web-tools` |
@@ -71,7 +71,7 @@ bash scripts/install-standalone.sh -y --service        # 装成 systemd 服务�
 bash scripts/install-standalone.sh --dry-run           # 只打印将要执行的动作
 bash scripts/install-standalone.sh --dir ~/tools --port 8899
 bash scripts/install-standalone.sh --ext-dir ~/src/pi-tsien-extension   # 复用已有 checkout
-bash scripts/install-standalone.sh --pi-release tsiendragon/pi@v0.85.1-tsien.1   # 指定 fork 构建
+bash scripts/install-standalone.sh --pi-release tsiendragon/pitsien@v1.6.1-tsien.1   # 指定 fork 构建
 bash scripts/install-standalone.sh --official-pi        # 改装官方 npm 版（功能会降级）
 bash scripts/install-standalone.sh --skip-pi --pi-prefix ~/pi/bin   # 自备 pi
 bash scripts/install-standalone.sh --data-dir /data/pi  # trace/计时/用量/表情包放数据盘
@@ -86,7 +86,8 @@ bash scripts/install-standalone.sh --data-dir /data/pi  # trace/计时/用量/�
 3. `npm install` 扩展依赖
 4. 备份 `~/.pi/agent/extensions.config.json` → 写入 standalone 配置 → 先 dry-run 预览，再 `--apply` 同步到 Pi 设置
 5. `npm install` dashboard 依赖，构建前端（`npm run build-frontend`）
-6. 装 pi：默认从 `tsiendragon/pi` 的 Release 下载 10 个 tgz，一起装到 `<安装根>/pi`，
+6. 装 pi：默认从 `tsiendragon/pitsien` 的 Release 枚举并下载 11 个 tgz（资产名带构建 hash，
+   不能按包名拼 URL），一起装到 `<安装根>/pi`，
    并把 `PI_SCRIPT=<安装根>/pi/bin/pi` 写进 `<agent dir>/dashboard.env`（dashboard 启动时自动加载，
    并传给每个 pi 子进程；见 [config.md](config.md) §2）
 7. 数据目录（trace / 计时 / 用量 / 表情包）：装到 `$HOME` 下时保持默认 `<agent dir>/...`，
@@ -124,16 +125,15 @@ cd ~/pi-stack/pi-dashboard            # 或你 clone pi-dashboard 的位置
 npm install --no-audit --no-fund
 npm run build-frontend
 
-# 装补丁版 pi（等价于脚本第 6 步；命名可预测，因此不必查 Release API）
-REPO=tsiendragon/pi; TAG=v0.85.1-tsien.1; VER=${TAG#v}
-mkdir -p ~/pi-stack/pi ~/pi-stack/pi-tgz
-for n in chord pi-ai pi-agent-core pi-client pi-coding-agent pi-protocol pi-server \
-         pi-session-backend-sqlite-node pi-telemetry pi-tui; do
-  curl -fsSL -o ~/pi-stack/pi-tgz/earendil-works-$n-$VER.tgz \
-    "https://github.com/$REPO/releases/download/$TAG/earendil-works-$n-$VER.tgz"
-done
+# 装补丁版 pi（等价于脚本第 6 步；资产名带构建 hash，必须枚举 Release 资产）
+REPO=tsiendragon/pitsien; TAG=v1.6.1-tsien.1
+mkdir -p ~/pi-stack/pi ~/pi-stack/pi-tgz && cd ~/pi-stack/pi-tgz
+gh release download "$TAG" -R "$REPO" --pattern '*.tgz'
+# 没有 gh 时：curl -fsSL "https://api.github.com/repos/$REPO/releases/tags/$TAG" \
+#             | grep -o 'https://[^"]*\.tgz' | xargs -n1 curl -fsSLO
 npm install -g --prefix ~/pi-stack/pi ~/pi-stack/pi-tgz/*.tgz --no-audit --no-fund
-~/pi-stack/pi/bin/pi --version        # 期望 0.85.1-tsien.1
+~/pi-stack/pi/bin/pi --version        # 期望 1.6.1-tsien.1
+ls ~/pi-stack/pi/lib/node_modules/@earendil-works/ | wc -l   # 期望 11
 mkdir -p ~/.pi/agent && printf 'PI_SCRIPT=%s\n' ~/pi-stack/pi/bin/pi >> ~/.pi/agent/dashboard.env
 ```
 

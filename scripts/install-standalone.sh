@@ -9,7 +9,7 @@
 #   bash scripts/install-standalone.sh                 # 交互式，默认装到 ~/pi-stack
 #   bash scripts/install-standalone.sh -y              # 不确认，直接执行
 #   bash scripts/install-standalone.sh --start         # 装完顺手后台启动
-#   bash scripts/install-standalone.sh --service       # 装成 systemd 服务（需 sudo）
+#   bash scripts/install-standalone.sh --service       # 装成 systemd 服务（需 sudo；默认只绑 127.0.0.1）
 #   bash scripts/install-standalone.sh --dry-run       # 只打印将要执行的步骤
 #   bash scripts/install-standalone.sh --official-pi   # 改装官方 npm 版 pi（默认装 fork Release 构建）
 #   bash scripts/install-standalone.sh --data-dir /data/pi  # 数据（trace/计时/用量）放数据盘
@@ -32,8 +32,8 @@ PORT="${PI_DASH_PORT:-7777}"
 INSTALL_PI=""
 INSTALL_PI_VERSION=""
 PI_SOURCE="release"
-PI_RELEASE_REPO="${PI_RELEASE_REPO:-tsiendragon/pi}"
-PI_RELEASE_TAG="${PI_RELEASE_TAG:-v0.85.1-tsien.1}"
+PI_RELEASE_REPO="${PI_RELEASE_REPO:-tsiendragon/pitsien}"
+PI_RELEASE_TAG="${PI_RELEASE_TAG:-v1.6.1-tsien.1}"
 PI_PREFIX=""
 ASSUME_YES=0
 DRY_RUN=0
@@ -90,11 +90,13 @@ usage() {
   --install-pi [version]  等同 --official-pi：全局安装官方 npm 版 pi
   --official-pi [version] 安装官方 npm 版 pi（默认不装；不带版本用 latest）
   --pi-release <repo@tag> 从 GitHub Release 装 fork 构建的 pi
-                          （默认 tsiendragon/pi@v0.85.1-tsien.1，含 dashboard 需要的扩展 API）
+                          （默认 tsiendragon/pitsien@v1.6.1-tsien.1，含 dashboard 需要的扩展 API）
   --pi-prefix <path>      fork 版 pi 的安装前缀（默认 <安装根>/pi）
   --skip-pi               完全不安装 pi（自己已有可用的 pi 时）
   --skip-extension-sync   只装 dashboard，不动 Pi 的扩展配置
-  --service               安装 systemd 服务（需要 sudo）
+  --service               安装 systemd 服务（需要 sudo）。unit 里写
+                          PI_DASH_HOST=127.0.0.1（可用同名环境变量覆盖），只监听本机；
+                          对外访问走 Tailscale / SSH 隧道 / nginx 反代（见 guide/remote-access-deployment.md）
   --start                 装完后后台启动 dashboard
   -y, --yes               不交互确认
   --dry-run               只打印步骤
@@ -187,9 +189,10 @@ if [[ "${SKIP_SYNC}" == "0" ]]; then
   CONFIG_SRC="${EXT_CONFIG:-${EXT_DIR}/config/extensions.standalone.json}"
   [[ -f "${CONFIG_SRC}" ]] || die "找不到 Pi 扩展装载清单：${CONFIG_SRC}（模板见 ${EXT_DIR}/config/examples/extensions.config.example.json）"
   if [[ -f "${EXISTING_CONFIG}" ]]; then
-    # 通用判断：已有配置与 standalone 集合不同即提示（不依赖具体包名）
-    if ! configs_match "${EXISTING_CONFIG}" "${CONFIG_SRC}" \
-       && ! grep -q 'standalone' "${EXISTING_CONFIG}"; then
+    # 通用判断：已有配置与 standalone 集合不同即提示（不依赖具体包名）。
+    # 不能再用 `grep standalone` 当豁免条件：模板自带的 note 字段就含 standalone，
+    # 以往那样写等于永不提示，会把本机加过的包（context-slim / heartbeat / pi-matrix 等）默默 prune 掉。
+    if ! configs_match "${EXISTING_CONFIG}" "${CONFIG_SRC}"; then
       warn "已有配置与 standalone 集合不同：${EXISTING_CONFIG}"
       warn "应用 standalone 配置会把 Pi 设置里的 package/extension 严格收敛为通用集合（其余会被移除）。"
       confirm "确认继续？" || die "已取消（未修改任何 Pi 配置）"
@@ -236,19 +239,25 @@ if [[ "${PI_SOURCE}" == "release" ]]; then
     TMP_TGZ="$(mktemp -d)"
     trap 'rm -rf "${TMP_TGZ}"' EXIT
 
-    # 资产清单来自 Release API；API 不可用时回退到已知的 10 个包名
-    ASSET_URLS="$(PI_RELEASE_REPO="${PI_RELEASE_REPO}" PI_RELEASE_TAG="${PI_RELEASE_TAG}" node -e '
-      const repo = process.env.PI_RELEASE_REPO
-      const tag = process.env.PI_RELEASE_TAG
-      const version = tag.replace(/^v/, "")
-      const names = ["chord","pi-ai","pi-agent-core","pi-client","pi-coding-agent","pi-protocol","pi-server","pi-session-backend-sqlite-node","pi-telemetry","pi-tui"]
-      const fallback = names.map((n) => `https://github.com/${repo}/releases/download/${tag}/earendil-works-${n}-${version}.tgz`)
-      fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers: { "user-agent": "pi-standalone-installer" } })
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-        .then((j) => console.log(j.assets.map((a) => a.browser_download_url).join("\n")))
-        .catch(() => console.log(fallback.join("\n")))
-    ')"
-    [[ -n "${ASSET_URLS}" ]] || die "无法获取 ${PI_RELEASE_REPO}@${PI_RELEASE_TAG} 的资产列表"
+    # 资产名带构建 hash（如 earendil-works-pi-coding-agent-1.6.1-tsien.1-b93ff5fb7614.tgz），
+    # 拼不出可预测 URL，只能枚举 Release 资产：先走匿名 API，失败再走已登录的 gh CLI。
+    fetch_asset_urls() {
+      PI_RELEASE_REPO="$1" PI_RELEASE_TAG="$2" node -e '
+        const repo = process.env.PI_RELEASE_REPO
+        const tag = process.env.PI_RELEASE_TAG
+        fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers: { "user-agent": "pi-standalone-installer" } })
+          .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+          .then((j) => console.log(j.assets.map((a) => a.browser_download_url).filter((u) => u.endsWith(".tgz")).join("\n")))
+          .catch(() => process.exit(1))
+      ' 2>/dev/null || true
+    }
+
+    ASSET_URLS="$(fetch_asset_urls "${PI_RELEASE_REPO}" "${PI_RELEASE_TAG}")"
+    if [[ -z "${ASSET_URLS}" ]] && command -v gh >/dev/null 2>&1; then
+      warn "Release API 不可用，改用 gh CLI 取资产列表"
+      ASSET_URLS="$(gh release view "${PI_RELEASE_TAG}" -R "${PI_RELEASE_REPO}" --json assets -q '.assets[].url' 2>/dev/null | grep -E '\.tgz$' || true)"
+    fi
+    [[ -n "${ASSET_URLS}" ]] || die "无法获取 ${PI_RELEASE_REPO}@${PI_RELEASE_TAG} 的资产列表（需要能访问 GitHub API，或本机已登录 gh）"
 
     while IFS= read -r url; do
       [[ -n "${url}" ]] || continue
@@ -256,7 +265,8 @@ if [[ "${PI_SOURCE}" == "release" ]]; then
       curl -fsSL -o "${TMP_TGZ}/$(basename "${url}")" "${url}" || die "下载失败: ${url}"
     done <<< "${ASSET_URLS}"
 
-    log "npm install -g --prefix ${PI_PREFIX}（10 个 tgz 一起装）"
+    ASSET_COUNT="$(printf '%s\n' "${ASSET_URLS}" | grep -c . || true)"
+    log "npm install -g --prefix ${PI_PREFIX}（${ASSET_COUNT} 个 tgz 一起装）"
     mkdir -p "${PI_PREFIX}"
     npm install -g --prefix "${PI_PREFIX}" "${TMP_TGZ}"/*.tgz --no-audit --no-fund \
       || die "安装 fork 版 pi 失败（检查 node/npm 版本与网络）"
@@ -266,6 +276,10 @@ if [[ "${PI_SOURCE}" == "release" ]]; then
   if [[ "${DRY_RUN}" != "1" ]]; then
     if [[ -x "${PI_BIN}" ]]; then
       log "pi 版本：$("${PI_BIN}" --version 2>/dev/null || echo unknown) （${PI_BIN}）"
+      # fork 补丁 API 不在这个构建里时，run_code / live session 会直接坏，早报比后查好
+      if ! grep -rq "executeTool" "${PI_PREFIX}/lib/node_modules/@earendil-works/pi-coding-agent/dist" 2>/dev/null; then
+        warn "${PI_PREFIX} 的 pi-coding-agent 里没找到 executeTool：这不是 fork 构建，run_code / live session 会不可用"
+      fi
     else
       warn "未找到 ${PI_BIN}，dashboard 会退回仓库内自带的 pi"
       PI_BIN=""
@@ -278,7 +292,7 @@ elif [[ "${PI_SOURCE}" == "official" ]]; then
     warn "全局安装失败（可能需要 sudo 或配置 npm prefix）；dashboard 会用仓库内的 node_modules/.bin/pi"
   warn "官方版缺少 executeTool / extension_ui 等扩展 API：run_code、live session、子 Agent 全屏会降级或不可用"
 else
-  log "按 --skip-pi 跳过 pi 安装（请自备 0.85.1-tsien.1 或更新版本）"
+  log "按 --skip-pi 跳过 pi 安装（请自备 1.6.1-tsien.1 或更新版本）"
 fi
 
 # 让 dashboard 启动的每个 pi 进程都用这个 pi，并把数据目录定在合适的位置：
@@ -362,6 +376,7 @@ WorkingDirectory=${DASHBOARD_DIR}
 Environment=HOME=${HOME}
 Environment=PATH=$(dirname "${NODE_BIN}"):/usr/local/bin:/usr/bin:/bin
 Environment=PI_DASH_PORT=${PORT}
+Environment=PI_DASH_HOST=${PI_DASH_HOST:-127.0.0.1}
 Environment=PI_CODING_AGENT_DIR=${AGENT_DIR}
 ExecStart=${NODE_BIN} --no-wasm-tier-up --liftoff-only --wasm-lazy-compilation --import tsx backend/server.ts
 Restart=always
