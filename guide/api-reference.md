@@ -552,6 +552,10 @@ Get available models (cached for 5 minutes). Queries a running pi process via RP
 
 ### ASR context
 
+### Compact Live detail
+
+`GET /api/live-sessions/:processInstanceId?compact=1` and the Android WebSocket `/api/live-sessions/ws?compact=1` omit thinking prose and full tool arguments/outputs, while retaining final prose, tool identity/status and `piOmitted` markers. Request the same endpoints without `compact` to switch to full data. This is a session-level on-demand switch; Web clients continue to use full data.
+
 The Android voice client may send a text frame before audio:
 
 ```json

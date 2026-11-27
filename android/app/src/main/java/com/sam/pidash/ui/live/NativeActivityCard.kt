@@ -71,14 +71,25 @@ private const val CARD_REPLY_LINES = 16
 private const val CARD_REPLY_CHARS = 1400
 
 /** One line in the thinking window; a blank text is a provider-hidden thinking step. */
-internal data class ActivityThinkingLine(val id: String, val text: String)
+internal data class ActivityThinkingLine(
+    val id: String,
+    val text: String,
+    /** Compact sync omitted the prose; tapping needs a full-record load. */
+    val omitted: Boolean = false,
+)
 
 /** Keep block order and duplicates, but do not invent a row when no thinking block exists. */
 internal fun activityThinkingLines(items: List<LiveTimelineItem>): List<ActivityThinkingLine> =
     items.flatMap { item ->
         val blocks = if (item.thinkingBlocks.isNotEmpty()) item.thinkingBlocks
         else listOfNotNull(item.thinking?.takeIf { it.isNotBlank() })
-        blocks.mapIndexed { index, text -> ActivityThinkingLine("${item.id}:$index", text) }
+        blocks.mapIndexed { index, text ->
+            ActivityThinkingLine(
+                id = "${item.id}:$index",
+                text = if (item.thinkingOmitted) "思考内容按需加载；点顶部「加载完整记录」" else text,
+                omitted = item.thinkingOmitted,
+            )
+        }
     }
 
 /** Zebra bands aid scanning; failure/running states win over the neutral stripe. */
@@ -106,6 +117,8 @@ internal fun NativeActivityCard(
     onOpen: () -> Unit,
     onOpenPath: (String) -> Unit = {},
     onOpenUrl: (String) -> Unit = {},
+    /** Compact sync: expanding steps/thinking asks the screen for the full record. */
+    onRequestFullDetail: () -> Unit = {},
 ) {
     val scheme = MaterialTheme.colorScheme
     val status = activityStatus(activity)
@@ -238,7 +251,10 @@ internal fun NativeActivityCard(
                         counts = "${tools.size} 步" + if (states.isEmpty()) " · 全部完成" else "",
                         states = states,
                         expanded = stepsExpanded,
-                        onToggle = { stepsExpanded = !stepsExpanded },
+                        onToggle = {
+                            if (!stepsExpanded) onRequestFullDetail()
+                            stepsExpanded = !stepsExpanded
+                        },
                     ) {
                         // A fixed window, not an ever-growing card: long turns stay
                         // skimmable and the full command moves to a dialog on tap.
@@ -273,7 +289,10 @@ internal fun NativeActivityCard(
                         accent = scheme.primary,
                         summary = if (thinkingText.isBlank()) "🤔" else null,
                         expanded = thinkingExpanded,
-                        onToggle = { thinkingExpanded = !thinkingExpanded },
+                        onToggle = {
+                            if (!thinkingExpanded) onRequestFullDetail()
+                            thinkingExpanded = !thinkingExpanded
+                        },
                     ) {
                         Column(
                             Modifier.fillMaxWidth()

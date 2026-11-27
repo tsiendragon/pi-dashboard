@@ -9,6 +9,7 @@ import { LiveSessionMetaStore } from '../live-sessions/meta.js'
 import { LiveSessionOrderStore } from '../live-sessions/order.js'
 import { LivePiLauncher } from '../live-sessions/launcher.js'
 import { LiveSessionProtocolError } from '../live-sessions/protocol.js'
+import { compactBrowserMessage, compactDetail } from '../live-sessions/compact.js'
 import { LiveSessionRestarter, LiveSessionRestartError } from '../live-sessions/session-restart.js'
 import { LiveSessionRegistry, LiveSessionRegistryError } from '../live-sessions/registry.js'
 import { LiveSessionCloseError, closeLiveSession } from '../live-sessions/session-close.js'
@@ -107,6 +108,7 @@ export class LiveSessionRoutes {
   private readonly registeredRepos: () => readonly { id: string; path: string }[]
   private readonly wss = new WebSocketServer({ noServer: true })
   private readonly clients = new Map<WebSocket, LiveSessionBrowserIdentity>()
+  private readonly compactClients = new WeakSet<WebSocket>()
   private readonly releaseTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly listeners = new Map<string, (...args: any[]) => void>()
   /** Last pi `sessionId` seen per process, so an in-process session switch can be told apart from a plain refresh. */
@@ -181,7 +183,8 @@ export class LiveSessionRoutes {
       this.rejectUpgrade(socket, 401, 'Unauthorized')
       return true
     }
-    this.wss.handleUpgrade(request, socket, head, ws => this.acceptWebSocket(ws, identity))
+    const compact = url.searchParams.get('compact') === '1'
+    this.wss.handleUpgrade(request, socket, head, ws => this.acceptWebSocket(ws, identity, compact))
     return true
   }
 
@@ -522,7 +525,9 @@ export class LiveSessionRoutes {
     this.app.get('/api/live-sessions/:processInstanceId', requireAuth, (req: Request, res: Response) => {
       const detail = this.registry.get(req.params.processInstanceId as string)
       if (!detail) return res.status(404).json({ error: 'live_session_not_found' })
-      res.json(detail)
+      // Android asks for the compact projection by default and switches this query
+      // off only when the user explicitly opens the full record.
+      res.json(req.query.compact === '1' ? compactDetail(detail) : detail)
     })
 
     // Session-family graph (read-only). The focused file plus every session
@@ -713,13 +718,14 @@ export class LiveSessionRoutes {
     this.releaseTimers.delete(browserClientId)
   }
 
-  private acceptWebSocket(ws: WebSocket, identity: LiveSessionBrowserIdentity): void {
+  private acceptWebSocket(ws: WebSocket, identity: LiveSessionBrowserIdentity, compact = false): void {
     this.markBrowserActive(identity.browserClientId)
     this.clients.set(ws, identity)
+    if (compact) this.compactClients.add(ws)
     this.send(ws, { type: 'live_session_attached', data: { sessions: this.registry.list() } })
     for (const summary of this.registry.list()) {
       const detail = this.registry.get(summary.processInstanceId)
-      if (detail) this.send(ws, { type: 'live_session_snapshot', data: detail })
+      if (detail) this.send(ws, compact ? { type: 'live_session_snapshot', data: compactDetail(detail) } : { type: 'live_session_snapshot', data: detail })
     }
     ws.on('close', () => this.onWebSocketClose(ws, identity.browserClientId))
     ws.on('error', () => {})
@@ -737,7 +743,9 @@ export class LiveSessionRoutes {
   }
 
   private broadcast(message: LiveSessionBrowserEvent): void {
-    for (const client of this.clients.keys()) this.send(client, message)
+    for (const client of this.clients.keys()) {
+      this.send(client, this.compactClients.has(client) ? compactBrowserMessage(message) as LiveSessionBrowserEvent : message)
+    }
   }
 
   private send(ws: WebSocket, message: LiveSessionBrowserEvent): void {

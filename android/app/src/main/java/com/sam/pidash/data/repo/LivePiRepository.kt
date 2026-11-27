@@ -48,6 +48,8 @@ class LivePiRepository(
     private val mutationLocks = mutableMapOf<SessionKey, Mutex>()
     private val cacheWriteLocks = mutableMapOf<SessionKey, Mutex>()
     private val starting = mutableSetOf<String>()
+    /** Backends where the user explicitly requested full thinking/tool detail. */
+    private val fullModeBackends = mutableSetOf<String>()
     private val organizationFetchedAt = mutableMapOf<String, Long>()
     private val _organization = MutableStateFlow<Map<String, LiveOrganization>>(emptyMap())
     val organization: StateFlow<Map<String, LiveOrganization>> = _organization
@@ -154,6 +156,7 @@ class LivePiRepository(
         }
     }
     private fun clearBackend(id: String) {
+        synchronized(lock) { fullModeBackends.remove(id) }
         rows.update { it - id }; metadata.update { it - id }
         _organization.update { it - id }; organizationFetchedAt.remove(id)
         synchronized(detailStateLock) {
@@ -374,6 +377,7 @@ class LivePiRepository(
         }
     }
     private suspend fun socketSession(id: String, api: LiveSessionClient) = coroutineScope {
+        val compact = !synchronized(lock) { id in fullModeBackends }
         val closed = CompletableDeferred<Unit>()
         val queue = Channel<JsonObject>(256)
         val seenSnapshots = mutableSetOf<String>()
@@ -393,7 +397,7 @@ class LivePiRepository(
                 closed.completeExceptionally(IOException("Live 实时连接断开；正在重新连接"))
             }
         }
-        val socket = api.openSocket(listener)
+        val socket = api.openSocket(listener, compact = compact)
         val reconcile = launch {
             while (isActive) {
                 delay(5000)
@@ -691,7 +695,31 @@ class LivePiRepository(
         if (!isCurrentClient(key.backendId, api)) throw IOException("机器配置已更改，请先核对原机器的操作结果")
         _organization.update { it + (key.backendId to (it[key.backendId] ?: org).copy(groups = groups, loaded = true, error = null)) }
     }
-    suspend fun refresh(key: SessionKey): Result<Unit> = result(key) { acceptDetail(key.backendId, client(key.backendId).detail(key.slotKey)) }
+    suspend fun refresh(key: SessionKey): Result<Unit> = result(key) {
+        val full = synchronized(lock) { key.backendId in fullModeBackends }
+        acceptDetail(key.backendId, client(key.backendId).detail(key.slotKey, compact = !full))
+    }
+    /**
+     * Opt this backend into full thinking/tool details after an explicit user action.
+     * The compact WebSocket is replaced once so later snapshots cannot overwrite the
+     * full detail with redacted entries.
+     */
+    suspend fun loadFullDetail(key: SessionKey): Result<Unit> = result(key) {
+        val id = key.backendId
+        synchronized(lock) { fullModeBackends.add(id); jobs.remove(id)?.cancel() }
+        var loaded = false
+        try {
+            val full = client(id).detail(key.slotKey, compact = false)
+            acceptDetail(id, full, reset = true)
+            loaded = true
+        } finally {
+            // A failed full fetch falls back to compact sync rather than leaving the
+            // session on a full-mode socket with no usable detail.
+            if (!loaded) synchronized(lock) { fullModeBackends.remove(id) }
+            if (foreground) startLoop(id)
+        }
+    }
+
     suspend fun connect(id: String, token: String): Result<Unit> = result {
         client(id).authenticate(token)
         // A new cookie identity must never make a prior session's snapshots readable.

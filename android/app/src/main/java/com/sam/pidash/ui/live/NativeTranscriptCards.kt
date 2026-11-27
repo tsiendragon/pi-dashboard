@@ -99,6 +99,7 @@ internal fun toolArgumentPreview(item: LiveTimelineItem): String {
     }
     val primary = listOf("command", "path", "file_path", "filePath", "pattern", "url", "prompt", "description")
         .firstNotNullOfOrNull { key -> (parsed?.get(key) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } }
+    if (item.toolArgsOmitted) return "参数按需加载"
     val text = primary ?: parsed?.entries?.joinToString(" ") { (key, value) ->
         val shown: String = (value as? JsonPrimitive)?.contentOrNull ?: value.toString()
         "$key=$shown"
@@ -107,7 +108,8 @@ internal fun toolArgumentPreview(item: LiveTimelineItem): String {
 }
 
 private fun toolOutput(item: LiveTimelineItem): String =
-    item.text.trim().takeIf { it.isNotEmpty() && it != "已完成" && it != "执行中…" }.orEmpty()
+    if (item.toolOutputOmitted) "输出按需加载；点顶部「加载完整记录」"
+    else item.text.trim().takeIf { it.isNotEmpty() && it != "已完成" && it != "执行中…" }.orEmpty()
 
 private fun isRunCode(item: LiveTimelineItem) =
     item.toolName?.lowercase()?.let { "run" in it && "code" in it } == true
@@ -222,8 +224,8 @@ internal fun NativeStepCard(
                             (precedingThinking.mapNotNull { it.thinking } + listOfNotNull(item.thinking))
                                 .filter { it.isNotEmpty() }.joinToString("\n\n").ifEmpty { null })), "复制整条")
                         if (thinkingText.isNotEmpty()) CopyTextAction(thinkingText, "复制思考")
-                        if (hasCopyableArgs) CopyTextAction(item.toolArgs.orEmpty(), "复制参数")
-                        if (output.isNotEmpty()) CopyTextAction(item.text, "复制输出")
+                        if (hasCopyableArgs && !item.toolArgsOmitted) CopyTextAction(item.toolArgs.orEmpty(), "复制参数")
+                        if (output.isNotEmpty() && !item.toolOutputOmitted) CopyTextAction(item.text, "复制输出")
                     }
                     precedingThinking.forEachIndexed { index, thought ->
                         Text(if (precedingThinking.size == 1) "执行前思考" else "执行前思考 ${index + 1}",
@@ -365,7 +367,8 @@ internal fun NativeMessageCard(
     }
 
     if (compactAssistant) {
-        val hasThinking = !item.thinking.isNullOrBlank()
+        val hasThinking = item.thinkingOmitted || !item.thinking.isNullOrBlank()
+        val thinkingText = item.thinking ?: if (item.thinkingOmitted) "思考内容按需加载；点顶部「加载完整记录」" else null
         val hasContent = item.text.isNotBlank() || item.images.isNotEmpty() || item.isError
         var menuOpen by remember(item.id) { mutableStateOf(false) }
         Column(Modifier.fillMaxWidth().animateContentSize(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
@@ -391,7 +394,7 @@ internal fun NativeMessageCard(
                             if (item.text.isNotBlank()) DropdownMenuItem(
                                 text = { Text("复制正文") }, onClick = { menuOpen = false; copy(item.text) },
                             )
-                            if (hasThinking) DropdownMenuItem(
+                            if (hasThinking && !item.thinkingOmitted) DropdownMenuItem(
                                 text = { Text("复制思考") }, onClick = { menuOpen = false; copy(item.thinking.orEmpty()) },
                             )
                             if (long) DropdownMenuItem(
@@ -420,19 +423,21 @@ internal fun NativeMessageCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(if (showThinking) "收起思考" else "思考", style = PiType.caption, color = scheme.onSurfaceVariant)
-                    Text(item.thinking.orEmpty().lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(160).orEmpty(),
+                    Text(
+                        (thinkingText ?: "").lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(160).orEmpty(),
                         modifier = Modifier.weight(1f).padding(horizontal = Spacing.sm), style = PiType.footnote,
-                        color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                     Icon(if (showThinking) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                         contentDescription = null, modifier = Modifier.size(16.dp), tint = scheme.onSurfaceVariant)
                 }
             }
-            Collapsible(visible = showThinking && item.thinking != null) { item.thinking?.let {
+            Collapsible(visible = showThinking && thinkingText != null) { thinkingText?.let {
                 SelectionContainer {
                     Column {
                         Text(it, style = PiType.monoMicro, color = scheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = Spacing.sm))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        if (!item.thinkingOmitted) FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                             if (!hasContent) CopyTextAction(whole, "复制整条消息")
                             CopyTextAction(it, "复制思考")
                         }
@@ -457,7 +462,7 @@ internal fun NativeMessageCard(
         if (item.isError && item.text.isBlank()) Text("出错了", style = PiType.meta, color = scheme.error)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
             if (whole.isNotEmpty()) CopyTextAction(whole, "复制整条消息")
-            if (!item.thinking.isNullOrBlank()) {
+            if (item.thinkingOmitted || !item.thinking.isNullOrBlank()) {
                 MetaAction(if (showThinking) "收起思考" else "思考", { showThinking = !showThinking })
             }
             if (item.text.isNotBlank()) {
@@ -466,12 +471,13 @@ internal fun NativeMessageCard(
                 if (onAnnotate != null) MetaAction("批注", { onAnnotate(item) }, enabled)
             }
         }
-        Collapsible(visible = showThinking && item.thinking != null) { item.thinking?.let {
+        val thinkingText = item.thinking ?: if (item.thinkingOmitted) "思考内容按需加载；点顶部「加载完整记录」" else null
+        Collapsible(visible = showThinking && thinkingText != null) { thinkingText?.let {
             SelectionContainer {
                 Column {
                     Text(it, style = PiType.monoMicro, color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = Spacing.sm))
-                    CopyTextAction(it, "复制思考")
+                    if (!item.thinkingOmitted) CopyTextAction(it, "复制思考")
                 }
             }
         } }

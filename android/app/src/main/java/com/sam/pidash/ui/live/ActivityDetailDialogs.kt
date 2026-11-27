@@ -108,7 +108,9 @@ internal fun StepDetailDialog(
             )
         }
         if (description != null) DetailSection("说明", description, code = false)
-        if (command != null) DetailSection("命令", command) else if (rawArgs.isNotBlank()) {
+        if (item.toolArgsOmitted) {
+            Text("完整命令/参数尚未加载；请先点会话顶部的「加载完整记录」。", style = PiType.footnote, color = scheme.onSurfaceVariant)
+        } else if (command != null) DetailSection("命令", command) else if (rawArgs.isNotBlank()) {
             DetailSection("参数", rawArgs)
         }
         if (otherArgs != null) DetailSection("其他参数", otherArgs)
@@ -120,9 +122,9 @@ internal fun StepDetailDialog(
             Modifier.fillMaxWidth().padding(top = Spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
         ) {
-            if (command != null) CopyTextAction(command, "复制命令")
-            if (rawArgs.isNotBlank()) CopyTextAction(rawArgs, "复制参数")
-            if (output.isNotBlank()) CopyTextAction(output, "复制输出")
+            if (command != null && !item.toolArgsOmitted) CopyTextAction(command, "复制命令")
+            if (rawArgs.isNotBlank() && !item.toolArgsOmitted) CopyTextAction(rawArgs, "复制参数")
+            if (output.isNotBlank() && !item.toolOutputOmitted) CopyTextAction(output, "复制输出")
         }
     }
 }

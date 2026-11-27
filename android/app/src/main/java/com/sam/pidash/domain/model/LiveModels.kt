@@ -67,6 +67,8 @@ data class LiveDetail(
     val entries: List<JsonElement> = emptyList(),
     val pendingUi: List<LiveUiRequest> = emptyList(),
     val goal: JsonElement? = null,
+    /** Server sent the compact projection; full thinking/tool detail is optional. */
+    val compact: Boolean = false,
 )
 /** One decision recorded by the dashboard: who settled what, and when. */
 @Serializable
@@ -271,6 +273,12 @@ data class LiveTimelineItem(
     val toolCallId: String? = null,
     /** Raw arguments of that call; rendered as one collapsed line, never as prose. */
     val toolArgs: String? = null,
+    /** Compact sync omitted this message's thinking prose; load full record on demand. */
+    val thinkingOmitted: Boolean = false,
+    /** Compact sync omitted tool arguments; load full record on demand. */
+    val toolArgsOmitted: Boolean = false,
+    /** Compact sync omitted tool output; load full record on demand. */
+    val toolOutputOmitted: Boolean = false,
 )
 
 data class LiveActivity(val id: String, val title: String, val state: String, val items: List<LiveTimelineItem>)

@@ -6,6 +6,9 @@ import java.time.Instant
 
 private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
+private fun JsonObject.bool(key: String): Boolean = (this[key] as? JsonPrimitive)?.booleanOrNull == true
+private fun omitted(entry: JsonObject, message: JsonObject?, key: String): Boolean =
+    entry.obj("piOmitted")?.bool(key) == true || message?.obj("piOmitted")?.bool(key) == true
 private fun eventIdentity(event: JsonObject): String? {
     val data = event.obj("data") ?: return null
     val message = data.obj("message")
@@ -184,6 +187,9 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
             thinkingBlocks = if (item.thinkingBlocks.isNotEmpty()) item.thinkingBlocks else previous.thinkingBlocks,
             images = if (item.images.isEmpty()) previous.images else item.images,
             forkable = item.forkable || previous.forkable,
+            thinkingOmitted = item.thinkingOmitted || previous.thinkingOmitted,
+            toolArgsOmitted = item.toolArgsOmitted || previous.toolArgsOmitted,
+            toolOutputOmitted = item.toolOutputOmitted || previous.toolOutputOmitted,
         )
     }
     visible.forEachIndexed { index, raw ->
@@ -208,6 +214,9 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
             val errorMessage = message.str("errorMessage")?.takeIf { it.isNotBlank() }
                 ?: if (message.str("stopReason") == "error") "模型请求失败，服务端未提供详细原因。" else null
             val toolFailed = (message["isError"] as? JsonPrimitive)?.booleanOrNull == true
+            val thinkingOmitted = omitted(entry, message, "thinking")
+            val argsOmitted = omitted(entry, message, "args")
+            val outputOmitted = omitted(entry, message, "output")
             val entryId = (if (type == "message") entry.str("id") else data.str("entryId"))?.takeIf { it.isNotBlank() }
             val images = imageParts(content)
             val channel = data.str("channel") ?: message.str("channel") ?: entry.str("channel")
@@ -229,6 +238,9 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                         status = if (toolFailed || errorMessage != null) "error" else "done",
                         toolCallId = toolCallId,
                         toolArgs = callArgs[toolCallId],
+                        thinkingOmitted = thinkingOmitted,
+                        toolArgsOmitted = argsOmitted,
+                        toolOutputOmitted = outputOmitted,
                     )
                 )
                 return@forEachIndexed
@@ -255,6 +267,9 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                         status = if (errorMessage != null || toolFailed) "error" else if (type == "message_update") "running" else "done",
                         intermediate = hasToolCallPart || text.isBlank(),
                         images = images,
+                        thinkingOmitted = thinkingOmitted,
+                        toolArgsOmitted = argsOmitted,
+                        toolOutputOmitted = outputOmitted,
                     )
                 )
             }
@@ -274,6 +289,7 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                         status = if (id in completedTools) "done" else "running",
                         toolCallId = id,
                         toolArgs = callArgs[id],
+                        toolArgsOmitted = argsOmitted,
                     )
                 )
             }
@@ -295,6 +311,8 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                     status = if (failed) "error" else if (type == "tool_execution_end") "done" else "running",
                     toolCallId = toolCallId,
                     toolArgs = data["args"]?.let(::argumentText) ?: toolCallId?.let { callArgs[it] },
+                    toolArgsOmitted = omitted(entry, null, "args"),
+                    toolOutputOmitted = omitted(entry, null, "output"),
                 )
             )
         } else if (type == "error") {

@@ -385,6 +385,8 @@ export type LiveSessionServerMessage =
 export interface LiveSessionDetail {
   summary: LiveSessionSummary
   entries: unknown[]
+  /** Android compact-sync projection; thinking/tool details are loaded on demand. */
+  compact?: boolean
   /**
    * Parsed goal anchor, cached server-side so it survives long sessions whose
    * `goal-state` entry has already scrolled out of `entries`. Absent = the

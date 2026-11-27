@@ -265,7 +265,10 @@ class LiveSessionClient(
         }
         pidashJson.decodeFromJsonElement(VoicePolishResult.serializer(), post("/api/asr/polish", body))
     }
-    suspend fun detail(id: String): LiveDetail = pidashJson.decodeFromJsonElement(LiveDetail.serializer(), get(path(id)))
+    suspend fun detail(id: String, compact: Boolean = true): LiveDetail = pidashJson.decodeFromJsonElement(
+        LiveDetail.serializer(),
+        get(path(id) + if (compact) "?compact=1" else ""),
+    )
     suspend fun meta(): Map<String, LiveMeta> = pidashJson.decodeFromJsonElement(
         MapSerializer(String.serializer(), LiveMeta.serializer()), get("/api/live-session-meta")["meta"] ?: buildJsonObject {})
     suspend fun candidates(): List<LiveRepoCandidate> = pidashJson.decodeFromJsonElement(
@@ -361,7 +364,8 @@ class LiveSessionClient(
         Unit
     }
 
-    fun openSocket(listener: WebSocketListener): WebSocket = openSocketAt("/api/live-sessions/ws", listener)
+    fun openSocket(listener: WebSocketListener, compact: Boolean = true): WebSocket =
+        openSocketAt("/api/live-sessions/ws" + if (compact) "?compact=1" else "", listener)
 
     /** The server bridges this stream to DashScope; the app sends only PCM audio frames. */
     fun openAsrSocket(listener: WebSocketListener): WebSocket = openSocketAt("/api/asr/realtime", listener)

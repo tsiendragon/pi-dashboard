@@ -191,6 +191,8 @@ fun LiveSessionScreen(
     var preview by remember(sessionKey) { mutableStateOf<LivePreviewState?>(null) }
     var previewError by remember(sessionKey) { mutableStateOf<String?>(null) }
     var previewRequest by remember(sessionKey) { mutableIntStateOf(0) }
+    var fullDetailLoading by remember(sessionKey) { mutableStateOf(false) }
+    var fullDetailError by remember(sessionKey) { mutableStateOf<String?>(null) }
     var busy by remember(sessionKey) { mutableStateOf(false) }
     var aborting by remember(sessionKey) { mutableStateOf(false) }
     var notice by remember(sessionKey) { mutableStateOf<String?>(null) }
@@ -596,6 +598,19 @@ fun LiveSessionScreen(
         preview = null
     }
 
+    fun loadFullDetail() {
+        if (fullDetailLoading || detail?.compact != true) return
+        fullDetailLoading = true
+        fullDetailError = null
+        scope.launch {
+            live.loadFullDetail(sessionKey).fold(
+                onSuccess = { fullDetailError = null },
+                onFailure = { fullDetailError = it.message ?: "完整记录加载失败" },
+            )
+            fullDetailLoading = false
+        }
+    }
+
     fun openPathPreview(path: String) {
         previewError = null
         val cwd = summary?.canonicalCwd?.takeIf { it.isNotBlank() } ?: summary?.cwd
@@ -732,7 +747,10 @@ fun LiveSessionScreen(
                     SegmentedTabs(
                         options = listOf("activity" to "活动", "full" to "完整"),
                         selected = viewMode,
-                        onSelect = { viewMode = it },
+                        onSelect = {
+                            viewMode = it
+                            if (it == "full") loadFullDetail()
+                        },
                     )
                     Box {
                         IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
@@ -1314,6 +1332,24 @@ fun LiveSessionScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (detail?.compact == true) {
+                Row(
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        Text("精简同步：思考与命令输出按需加载", style = PiType.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        fullDetailError?.let { Text(it, style = PiType.micro, color = MaterialTheme.colorScheme.error) }
+                    }
+                    if (fullDetailLoading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else TextButton(
+                        enabled = !fullDetailLoading,
+                        onClick = ::loadFullDetail,
+                    ) { Text("加载完整记录") }
+                }
+            }
             val backend = backendStates[sessionKey.backendId]
             if (backend?.connected != true || backend.message != null) {
                 Text(backend?.message ?: if (backend?.needsToken == true) "需要重新输入访问令牌" else "连接中断或正在连接；下方可能是缓存内容。",
@@ -1363,6 +1399,7 @@ fun LiveSessionScreen(
                             onOpen = { openActivityId = activity.id },
                             onOpenPath = ::openPathPreview,
                             onOpenUrl = ::openExternalUrl,
+                            onRequestFullDetail = ::loadFullDetail,
                         )
                     }
                 } else if (timeline.isEmpty()) {

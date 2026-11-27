@@ -91,6 +91,24 @@ class LiveProtocolTest {
         assertEquals("high", state.summary.thinkingLevel)
         assertEquals("New name", state.summary.title)
     }
+    @Test fun compactSyncCarriesRedactionMarkersWithoutLeakingSecretProse() {
+        val detail = LiveDetail(
+            LiveSummary("p", "s", cwd = "/allowed"),
+            listOf(
+                obj("""{"type":"message","id":"m1","piOmitted":{"thinking":true,"args":true},"message":{"role":"assistant","content":[{"type":"thinking","thinking":""},{"type":"toolCall","id":"c1","name":"bash","piArgsOmitted":true},{"type":"text","text":"final"}]}}"""),
+                obj("""{"type":"message","id":"r1","piOmitted":{"output":true},"message":{"role":"toolResult","toolCallId":"c1","toolName":"bash","content":[]}}"""),
+                obj("""{"type":"tool_execution_end","piOmitted":{"args":true,"output":true},"data":{"toolCallId":"c1","toolName":"bash","isError":false}}"""),
+            ),
+        )
+        val items = projectLiveTimeline(detail)
+        val message = items.first { it.id == "m1" }
+        assertTrue(message.thinkingOmitted)
+        assertTrue(message.toolArgsOmitted)
+        assertEquals("final", message.text)
+        assertTrue(items.any { it.toolCallId == "c1" && it.toolOutputOmitted })
+        assertTrue(items.any { it.toolCallId == "c1" && it.toolArgsOmitted })
+    }
+
     @Test fun summaryKeepsTheServerScrubbedGitRemote() {
         val summary = pidashJson.decodeFromString<LiveSummary>(
             """{"processInstanceId":"p","sessionId":"s","cwd":"/work","canonicalCwd":"/work","git":{"root":"/work","branch":"main","remoteUrl":"https://github.com/acme/app.git"}}"""
