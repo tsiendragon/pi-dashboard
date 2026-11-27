@@ -39,6 +39,15 @@ class LiveProtocolTest {
         assertEquals(1, items[1].images.size)
         assertEquals("", items[1].text)
     }
+    @Test fun omittedImagesProjectAsLoadablePlaceholders() {
+        val items = projectLiveTimeline(detail(
+            """{"type":"message","id":"u","piOmitted":{"images":true},"message":{"role":"user","piOmitted":{"images":true},"content":[{"type":"image","mimeType":"image/png","piImageOmitted":true}]}}""",
+        ))
+        assertEquals(1, items.single().images.size)
+        assertEquals("image/png", items.single().images.single().mimeType)
+        assertEquals("", items.single().images.single().data)
+        assertTrue(items.single().imagesOmitted)
+    }
     @Test fun hiddenThinkingBlocksStayAsThinkingSteps() {
         val items = projectLiveTimeline(detail(
             """{"type":"message","id":"a","message":{"role":"assistant","content":[

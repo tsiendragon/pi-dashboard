@@ -49,6 +49,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -122,6 +124,7 @@ internal fun NativeStepCard(
     onOpenUrl: (String) -> Unit,
     showArguments: Boolean = false,
     precedingThinking: List<LiveTimelineItem> = emptyList(),
+    onLoadImages: (() -> Unit)? = null,
     /**
      * Activity view passes this to keep the card compact: a tap opens the full
      * command/output in a dialog instead of expanding an unbounded inline block.
@@ -244,7 +247,7 @@ internal fun NativeStepCard(
                         if (arguments != null || thinkingCount > 0) Text("输出", style = PiType.caption, color = scheme.onSurfaceVariant)
                         MarkdownBody(output, onOpenPath = onOpenPath, onOpenUrl = onOpenUrl, style = codeTextStyle(PiType.mono))
                     }
-                    if (showArguments) item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+                    if (showArguments) TimelineImages(item, onLoadImages)
                 }
             }
         }
@@ -264,6 +267,7 @@ internal fun NativeMessageCard(
     compactUser: Boolean = false,
     compactAssistant: Boolean = false,
     expandedByDefault: Boolean = false,
+    onLoadImages: (() -> Unit)? = null,
 ) {
     val copy = rememberCopyText()
     val whole = remember(item) { wholeMessageText(item) }
@@ -290,7 +294,7 @@ internal fun NativeMessageCard(
                     Modifier.weight(1f, fill = false).padding(vertical = 7.dp),
                     verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                 ) {
-                    item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+                    TimelineImages(item, onLoadImages)
                     if (item.text.isNotBlank()) SelectionContainer {
                         Text(visible + if (long && !expanded) "…" else "",
                             style = PiType.userMessage, color = scheme.onPrimaryContainer)
@@ -342,7 +346,7 @@ internal fun NativeMessageCard(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(Spacing.xs),
             ) {
-                item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+                TimelineImages(item, onLoadImages)
                 if (item.text.isNotBlank()) SelectionContainer {
                     Text(visible, style = PiType.userMessage, color = scheme.onPrimary)
                 }
@@ -375,7 +379,7 @@ internal fun NativeMessageCard(
             if (hasContent) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                        item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+                        TimelineImages(item, onLoadImages)
                         if (item.text.isNotBlank()) MarkdownBody(
                             visible + if (long && !expanded) "…" else "",
                             onOpenPath = onOpenPath,
@@ -449,7 +453,7 @@ internal fun NativeMessageCard(
     }
 
     Column(Modifier.fillMaxWidth().animateContentSize(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-        item.images.forEachIndexed { index, image -> AttachmentImage(image.data, index) }
+        TimelineImages(item, onLoadImages)
         if (item.text.isNotBlank()) {
             MarkdownBody(
                 visible,
@@ -485,6 +489,33 @@ internal fun NativeMessageCard(
 }
 
 @Composable
+private fun TimelineImages(item: LiveTimelineItem, onLoadImages: (() -> Unit)?) {
+    item.images.forEachIndexed { index, image ->
+        if (item.imagesOmitted || image.data.isEmpty()) OmittedImage(index, onLoadImages)
+        else AttachmentImage(image.data, index)
+    }
+}
+
+@Composable
+private fun OmittedImage(index: Int, onLoadImages: (() -> Unit)?) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        Modifier.size(160.dp).clip(RoundedCornerShape(10.dp))
+            .background(scheme.surfaceVariant.copy(alpha = Tints.Block))
+            .clickable(enabled = onLoadImages != null) { onLoadImages?.invoke() }
+            .padding(Spacing.sm),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "图片已省略，点按加载",
+            style = PiType.caption,
+            color = if (onLoadImages != null) scheme.primary else scheme.onSurfaceVariant,
+            modifier = Modifier.semantics { contentDescription = "附件 ${index + 1}，图片已省略，点按加载" },
+        )
+    }
+}
+
+@Composable
 private fun AttachmentImage(data: String, index: Int) {
     val bitmap = rememberAttachmentBitmap(data)
     var open by remember(data) { mutableStateOf(false) }
@@ -513,6 +544,7 @@ internal fun NativeStepGroup(
     group: TranscriptRow.Steps,
     onOpenPath: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
+    onLoadImages: (() -> Unit)? = null,
 ) {
     var open by remember(group.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
@@ -558,7 +590,7 @@ internal fun NativeStepGroup(
         if (open) Column(Modifier.fillMaxWidth().padding(start = Spacing.md)) {
             group.items.forEachIndexed { index, item ->
                 if (index > 0) InsetSeparator(inset = 0.dp)
-                NativeStepCard(item, onOpenPath, onOpenUrl)
+                NativeStepCard(item, onOpenPath, onOpenUrl, onLoadImages = onLoadImages)
             }
         }
     }
@@ -582,13 +614,14 @@ internal fun NativeTimelineRow(
     compactUser: Boolean = false,
     compactAssistant: Boolean = false,
     expandedByDefault: Boolean = false,
+    onLoadImages: (() -> Unit)? = null,
 ) {
     when (row) {
         is TranscriptRow.Single -> {
             val item = row.item
-            if (isToolItem(item)) NativeStepCard(item, onOpenPath, onOpenUrl)
-            else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate, compactUser, compactAssistant, expandedByDefault)
+            if (isToolItem(item)) NativeStepCard(item, onOpenPath, onOpenUrl, onLoadImages = onLoadImages)
+            else NativeMessageCard(item, onOpenPath, onOpenUrl, onFork, enabled, onQuote, onAnnotate, compactUser, compactAssistant, expandedByDefault, onLoadImages)
         }
-        is TranscriptRow.Steps -> NativeStepGroup(row, onOpenPath, onOpenUrl)
+        is TranscriptRow.Steps -> NativeStepGroup(row, onOpenPath, onOpenUrl, onLoadImages)
     }
 }

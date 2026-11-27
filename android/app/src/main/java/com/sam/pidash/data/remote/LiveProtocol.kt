@@ -129,6 +129,7 @@ private fun imageParts(content: JsonElement?): List<LiveImage> = (content as? Js
     val obj = part as? JsonObject ?: return@mapNotNull null
     if (obj.str("type") != "image") return@mapNotNull null
     val mime = obj.str("mimeType")?.takeIf { it.startsWith("image/") } ?: return@mapNotNull null
+    if (obj.bool("piImageOmitted")) return@mapNotNull LiveImage(mime, "")
     val data = obj.str("data")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
     LiveImage(mime, data)
 }
@@ -190,6 +191,7 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
             thinkingOmitted = item.thinkingOmitted || previous.thinkingOmitted,
             toolArgsOmitted = item.toolArgsOmitted || previous.toolArgsOmitted,
             toolOutputOmitted = item.toolOutputOmitted || previous.toolOutputOmitted,
+            imagesOmitted = item.imagesOmitted || previous.imagesOmitted,
         )
     }
     visible.forEachIndexed { index, raw ->
@@ -217,6 +219,7 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
             val thinkingOmitted = omitted(entry, message, "thinking")
             val argsOmitted = omitted(entry, message, "args")
             val outputOmitted = omitted(entry, message, "output")
+            val imagesOmitted = omitted(entry, message, "images")
             val entryId = (if (type == "message") entry.str("id") else data.str("entryId"))?.takeIf { it.isNotBlank() }
             val images = imageParts(content)
             val channel = data.str("channel") ?: message.str("channel") ?: entry.str("channel")
@@ -238,9 +241,11 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                         status = if (toolFailed || errorMessage != null) "error" else "done",
                         toolCallId = toolCallId,
                         toolArgs = callArgs[toolCallId],
+                        images = images,
                         thinkingOmitted = thinkingOmitted,
                         toolArgsOmitted = argsOmitted,
                         toolOutputOmitted = outputOmitted,
+                        imagesOmitted = imagesOmitted,
                     )
                 )
                 return@forEachIndexed
@@ -270,6 +275,7 @@ fun projectLiveTimeline(detail: LiveDetail): List<LiveTimelineItem> {
                         thinkingOmitted = thinkingOmitted,
                         toolArgsOmitted = argsOmitted,
                         toolOutputOmitted = outputOmitted,
+                        imagesOmitted = imagesOmitted,
                     )
                 )
             }

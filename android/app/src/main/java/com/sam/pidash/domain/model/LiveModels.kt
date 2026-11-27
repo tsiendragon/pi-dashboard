@@ -279,6 +279,8 @@ data class LiveTimelineItem(
     val toolArgsOmitted: Boolean = false,
     /** Compact sync omitted tool output; load full record on demand. */
     val toolOutputOmitted: Boolean = false,
+    /** Compact sync omitted inline images; load full record on demand. */
+    val imagesOmitted: Boolean = false,
 )
 
 data class LiveActivity(val id: String, val title: String, val state: String, val items: List<LiveTimelineItem>)

@@ -1321,6 +1321,7 @@ fun LiveSessionScreen(
                     annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
                 },
                 onFork = { entryId -> openActivityId = null; forkEntry = entryId; dialog = "fork" },
+                onLoadImages = ::loadFullDetail,
             )
         }
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -1340,7 +1341,7 @@ fun LiveSessionScreen(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                        Text("精简同步：思考与命令输出按需加载", style = PiType.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("精简同步：图片、思考与命令输出按需加载", style = PiType.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         fullDetailError?.let { Text(it, style = PiType.micro, color = MaterialTheme.colorScheme.error) }
                     }
                     if (fullDetailLoading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -1448,6 +1449,7 @@ fun LiveSessionScreen(
                                     onOpenPath = ::openPathPreview,
                                     onOpenUrl = ::openExternalUrl,
                                     showArguments = false,
+                                    onLoadImages = ::loadFullDetail,
                                 )
                             }
                             is ActivityDetailRow.Message -> NativeTimelineRow(
@@ -1468,6 +1470,7 @@ fun LiveSessionScreen(
                                     val quoted = normalizeQuote(item.text).orEmpty()
                                     annotating = AppReviewItem("c${item.id}", selectionLabel(item.role), quoted.ifBlank { null }, "")
                                 },
+                                onLoadImages = ::loadFullDetail,
                             )
                         }
                     }

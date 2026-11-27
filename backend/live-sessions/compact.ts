@@ -12,25 +12,37 @@ function object(value: unknown): JsonRecord | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : undefined
 }
 
-function omit(entry: JsonRecord, key: 'thinking' | 'args' | 'output'): void {
+function omit(entry: JsonRecord, key: 'thinking' | 'args' | 'output' | 'images'): void {
   const current = object(entry.piOmitted) ?? {}
   entry.piOmitted = { ...current, [key]: true }
 }
 
 function compactMessage(message: JsonRecord): void {
   const role = typeof message.role === 'string' ? message.role : ''
+  const content = Array.isArray(message.content) ? message.content : undefined
   if (role === 'toolResult') {
     if (message.content !== undefined) {
-      message.content = []
+      // Tool output stays redacted, but image placeholders let Android offer
+      // the same on-demand full-detail path as user/assistant image parts.
+      const nextContent = content?.map(part => {
+        const record = object(part)
+        return record?.type === 'image'
+          ? { type: 'image', mimeType: record.mimeType, piImageOmitted: true }
+          : part
+      }).filter(part => object(part)?.type === 'image') ?? []
+      message.content = nextContent
       omit(message, 'output')
+      if (nextContent.length > 0) omit(message, 'images')
     }
     return
   }
-  if (!Array.isArray(message.content)) return
-  const content: unknown[] = message.content
+  if (!content) return
   const nextContent = content.map(part => {
     const record = object(part)
     if (!record) return part
+    if (record.type === 'image') {
+      return { type: 'image', mimeType: record.mimeType, piImageOmitted: true }
+    }
     if (record.type === 'thinking') {
       // Keep the slot so the activity view still knows a reasoning block existed;
       // blank text plus piOmitted.thinking means "load on demand", not "hidden model".
@@ -49,6 +61,7 @@ function compactMessage(message: JsonRecord): void {
   message.content = nextContent
   if (nextContent.some(part => object(part)?.type === 'thinking')) omit(message, 'thinking')
   if (nextContent.some(part => object(part)?.piArgsOmitted === true)) omit(message, 'args')
+  if (nextContent.some(part => object(part)?.piImageOmitted === true)) omit(message, 'images')
 }
 
 function compactTurnEndEvent(entry: JsonRecord): void {
@@ -89,6 +102,7 @@ export function compactEntry(raw: unknown): unknown {
     if (object(message.piOmitted)?.thinking) omit(entry, 'thinking')
     if (object(message.piOmitted)?.args) omit(entry, 'args')
     if (object(message.piOmitted)?.output) omit(entry, 'output')
+    if (object(message.piOmitted)?.images) omit(entry, 'images')
   }
   if (type.startsWith('tool_execution_')) compactToolEvent(entry)
   if (type === 'turn_end') compactTurnEndEvent(entry)
@@ -106,6 +120,7 @@ export function compactEvent(raw: unknown): unknown {
       compactMessage(message)
       if (object(message.piOmitted)?.thinking) omit(event, 'thinking')
       if (object(message.piOmitted)?.args) omit(event, 'args')
+      if (object(message.piOmitted)?.images) omit(event, 'images')
     }
   }
   if (type.startsWith('tool_execution_')) compactToolEvent(event)

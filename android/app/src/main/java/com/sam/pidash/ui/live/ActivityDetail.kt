@@ -61,6 +61,7 @@ internal fun ActivityDetailDialog(
     onQuote: (LiveTimelineItem) -> Unit,
     onAnnotate: (LiveTimelineItem) -> Unit,
     onFork: (String) -> Unit,
+    onLoadImages: (() -> Unit)? = null,
 ) {
     val status = activityStatus(activity)
     val rows = remember(activity.items) { groupActivityDetail(activity.items) }
@@ -128,6 +129,7 @@ internal fun ActivityDetailDialog(
                                 NativeTimelineRow(
                                     TranscriptRow.Single(row.item), onOpenPath, onOpenUrl, onFork, enabled,
                                     onQuote, onAnnotate, compactUser = true, compactAssistant = true, expandedByDefault = true,
+                                    onLoadImages = onLoadImages,
                                 )
                             }
                             is ActivityDetailRow.Trace -> item(key = row.id) {
@@ -137,6 +139,7 @@ internal fun ActivityDetailDialog(
                                     onToggle = { toggle(row) },
                                     onOpenPath = onOpenPath,
                                     onOpenUrl = onOpenUrl,
+                                    onLoadImages = onLoadImages,
                                 )
                             }
                         }
@@ -160,6 +163,7 @@ internal fun DetailTraceBlock(
     onOpenUrl: (String) -> Unit,
     /** The focus page shows raw arguments; the full transcript keeps the same line compact. */
     showArguments: Boolean = true,
+    onLoadImages: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val counts = listOfNotNull(
@@ -194,8 +198,8 @@ internal fun DetailTraceBlock(
                 key(entry.item.id) {
                     if (index > 0) HorizontalDivider(color = scheme.outline.copy(alpha = Tints.Hairline))
                     if (isDetailTool(entry.item)) NativeStepCard(entry.item, onOpenPath, onOpenUrl,
-                        showArguments = showArguments, precedingThinking = entry.precedingThinking)
-                    else NativeMessageCard(entry.item, onOpenPath, onOpenUrl, compactAssistant = true)
+                        showArguments = showArguments, precedingThinking = entry.precedingThinking, onLoadImages = onLoadImages)
+                    else NativeMessageCard(entry.item, onOpenPath, onOpenUrl, compactAssistant = true, onLoadImages = onLoadImages)
                 }
             }
         }
