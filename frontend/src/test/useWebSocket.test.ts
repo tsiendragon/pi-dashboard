@@ -536,6 +536,39 @@ describe('useWebSocket', () => {
       expect(fileCb).toHaveBeenCalledWith({ path: '/test.ts', content: 'hello', version: 1 })
     })
 
+    it('calls fileChange callback with oversized flag and no content for file_changed_oversized messages', () => {
+      const { result } = renderWebSocketHook()
+      act(() => latestWS().simulateOpen())
+
+      const fileCb = vi.fn()
+      act(() => result.current.subscribeFileChange(fileCb))
+
+      act(() => latestWS().simulateMessage({
+        type: 'file_changed_oversized',
+        data: { path: '/large.md' },
+      }))
+
+      expect(fileCb).toHaveBeenCalledTimes(1)
+      expect(fileCb).toHaveBeenCalledWith({ path: '/large.md', oversized: true })
+      expect(fileCb.mock.calls[0][0].content).toBeUndefined()
+    })
+
+    it('keeps regular file_changed payloads distinct from oversized updates', () => {
+      const { result } = renderWebSocketHook()
+      act(() => latestWS().simulateOpen())
+
+      const fileCb = vi.fn()
+      act(() => result.current.subscribeFileChange(fileCb))
+
+      act(() => latestWS().simulateMessage({
+        type: 'file_changed',
+        data: { path: '/small.md', content: 'small file', version: 2 },
+      }))
+
+      expect(fileCb).toHaveBeenCalledWith({ path: '/small.md', content: 'small file', version: 2 })
+      expect(fileCb.mock.calls[0][0].oversized).toBeUndefined()
+    })
+
     it('calls fileChange callback with deleted flag for file_deleted messages', () => {
       const { result } = renderWebSocketHook()
       act(() => latestWS().simulateOpen())

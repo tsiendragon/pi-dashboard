@@ -9,7 +9,7 @@ import { featureAttached, featureSnapshot, featureDetached, fetchIntegrations } 
 import type { StatusData, ChatSlot, Notification } from '../types'
 
 type LogCallback = ((data: { level: string; msg: string }) => void) | null
-export type FileChangeCallback = ((data: { path: string; content?: string; version?: number; deleted?: boolean }) => void) | null
+export type FileChangeCallback = ((data: { path: string; content?: string; version?: number; deleted?: boolean; oversized?: boolean }) => void) | null
 
 /** Single multiplexed WebSocket replacing all SSE + polling connections. */
 export function useWebSocket() {
@@ -228,6 +228,9 @@ export function useWebSocket() {
             break
           case 'file_changed':
             fileChangeCbRef.current?.(data as any)
+            break
+          case 'file_changed_oversized':
+            fileChangeCbRef.current?.({ ...(data as any), oversized: true })
             break
           case 'file_deleted':
             fileChangeCbRef.current?.({ ...(data as any), deleted: true })

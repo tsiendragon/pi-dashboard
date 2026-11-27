@@ -10,6 +10,7 @@ import { LiveSessionOrderStore } from '../live-sessions/order.js'
 import { LivePiLauncher } from '../live-sessions/launcher.js'
 import { LiveSessionProtocolError } from '../live-sessions/protocol.js'
 import { compactBrowserMessage, compactDetail } from '../live-sessions/compact.js'
+import { SERVER_FRAME_BUDGET_BYTES, trimDetailToBudget } from '../live-sessions/frame-budget.js'
 import { LiveSessionRestarter, LiveSessionRestartError } from '../live-sessions/session-restart.js'
 import { LiveSessionRegistry, LiveSessionRegistryError } from '../live-sessions/registry.js'
 import { LiveSessionCloseError, closeLiveSession } from '../live-sessions/session-close.js'
@@ -725,7 +726,16 @@ export class LiveSessionRoutes {
     this.send(ws, { type: 'live_session_attached', data: { sessions: this.registry.list() } })
     for (const summary of this.registry.list()) {
       const detail = this.registry.get(summary.processInstanceId)
-      if (detail) this.send(ws, compact ? { type: 'live_session_snapshot', data: compactDetail(detail) } : { type: 'live_session_snapshot', data: detail })
+      if (!detail) continue
+      // Bound the snapshot before it hits the wire: a long session can serialize
+      // past the client's frame limit, and the client OOMs while reading the frame
+      // (before any size check of its own can run). See frame-budget.ts.
+      const projection = compact ? compactDetail(detail) : detail
+      const trimmed = trimDetailToBudget(projection)
+      if (trimmed.overBudget) {
+        console.warn(`[live-sessions] snapshot for ${summary.processInstanceId} exceeds the ${SERVER_FRAME_BUDGET_BYTES}-byte frame budget even after trimming`)
+      }
+      this.send(ws, { type: 'live_session_snapshot', data: trimmed.value } as LiveSessionBrowserEvent)
     }
     ws.on('close', () => this.onWebSocketClose(ws, identity.browserClientId))
     ws.on('error', () => {})
@@ -749,7 +759,16 @@ export class LiveSessionRoutes {
   }
 
   private send(ws: WebSocket, message: LiveSessionBrowserEvent): void {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message))
+    if (ws.readyState !== WebSocket.OPEN) return
+    const serialized = JSON.stringify(message)
+    // Never hand the client a frame it cannot parse. Snapshots are trimmed up
+    // front; this is the last line of defence for an oversized event frame.
+    const serializedBytes = Buffer.byteLength(serialized, 'utf8')
+    if (serializedBytes > SERVER_FRAME_BUDGET_BYTES) {
+      console.warn(`[live-sessions] dropping oversized ${message.type} frame (${serializedBytes} bytes)`)
+      return
+    }
+    ws.send(serialized)
   }
 
   private rejectUpgrade(socket: Duplex, status: number, message: string): void {

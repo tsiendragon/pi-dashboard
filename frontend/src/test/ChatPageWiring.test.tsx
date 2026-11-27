@@ -23,6 +23,20 @@ function useChatPageWiring(panel: ReturnType<typeof usePanelState>, wsCtx: {
     subscribeFileChange((data) => {
       if (!data || data.path !== panel.filePath) return
       if (data.deleted) return // handled in future step
+      if (data.oversized) {
+        void fetch('/api/file-read?path=' + encodeURIComponent(data.path))
+          .then(async res => {
+            if (!res.ok) return null
+            return res.text()
+          })
+          .then(content => {
+            if (content === null) return
+            if (panel.dirty) panel.setConflictContent(content)
+            else panel.setContent(content)
+          })
+          .catch(() => {})
+        return
+      }
       if (!panel.dirty) {
         panel.setContent(data.content ?? '')
         // fetch versions handled separately
@@ -65,6 +79,11 @@ describe('ChatPage wiring — watch/unwatch + live updates + conflict', () => {
     subscribeFileChange = vi.fn((cb: FileChangeCallback) => { registeredCb = cb })
     mockWs = createMockWs()
     wsRef = { current: mockWs }
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   function renderWiring() {
@@ -108,6 +127,21 @@ describe('ChatPage wiring — watch/unwatch + live updates + conflict', () => {
   })
 
   // AC4: Conflict Detection (Dirty) — via content change (production path)
+  it('refetches an oversized changed file over REST and updates content', async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockResolvedValue({ ok: true, text: async () => 'large file content' } as Response)
+    const { result } = renderWiring()
+    act(() => result.current.panel.openPanel('/tmp/large.md', 'old'))
+
+    await act(async () => {
+      registeredCb?.({ path: '/tmp/large.md', oversized: true })
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/file-read?path=%2Ftmp%2Flarge.md')
+    expect(result.current.panel.content).toBe('large file content')
+    expect(result.current.panel.conflictContent).toBeNull()
+  })
+
   it('sets conflictContent when file_changed arrives and user has edited (dirty via handleContentChange)', () => {
     const { result } = renderWiring()
     act(() => result.current.panel.openPanel('/tmp/a.md', 'old'))

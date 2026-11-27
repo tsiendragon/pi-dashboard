@@ -352,6 +352,20 @@ export default function ChatPage() {
     subscribeFileChange((data) => {
       if (!data || data.deleted) return
       if (data.path !== panel.filePath) return
+      if (data.oversized) {
+        void fetch('/api/file-read?path=' + encodeURIComponent(data.path))
+          .then(async res => {
+            if (!res.ok) return null
+            return res.text()
+          })
+          .then(content => {
+            if (content === null) return
+            if (panel.dirty) panel.setConflictContent(content)
+            else panel.setContent(content)
+          })
+          .catch(() => {})
+        return
+      }
       if (!panel.dirty) {
         panel.setContent(data.content ?? '')
         // Refresh version list on live update

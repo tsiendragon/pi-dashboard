@@ -16,6 +16,7 @@ import { readFile } from 'fs/promises'
 import os from 'os'
 import { Duplex } from 'stream'
 import { PiManager } from './pi-manager.js'
+import { SERVER_FRAME_BUDGET_BYTES } from './live-sessions/frame-budget.js'
 import type { PiSession } from './pi-session.js'
 import { deriveStatsFrames } from './pi-session.js'
 import { saveSlotState, saveSlotStateSync, loadSlotState, parseSessionMessages, ChatMessage } from './session-store.js'
@@ -322,15 +323,53 @@ app.use('/api', (req: Request, res: Response, next: NextFunction) => {
   next()
 })
 
+// ─── WebSocket frame guard ──────────────────────────────────
+// Every frame goes through JSON.stringify here, so this is the one place that can
+// stop an oversized frame from reaching a client. It matters because the Android
+// client parses frames with okio `Buffer.readUtf8`, which allocates the whole
+// message BEFORE `WebSocketListener.onMessage` runs — a check inside onMessage is
+// too late, and a 105 MB frame already crashed the app with OutOfMemoryError on a
+// 256 MB heap. See live-sessions/frame-budget.ts for the snapshot-specific trim.
+const MAX_WS_FRAME_BYTES = SERVER_FRAME_BUDGET_BYTES
+
+/** Serialize and size-check one frame; returns undefined when it must not be sent. */
+function frameFor(type: string, data: unknown): string | undefined {
+  let serialized: string
+  try {
+    serialized = JSON.stringify({ type, data })
+  } catch (error: any) {
+    console.error(`ws frame serialize failed (${type}):`, error?.message)
+    return undefined
+  }
+  const serializedBytes = Buffer.byteLength(serialized, 'utf8')
+  if (serializedBytes <= MAX_WS_FRAME_BYTES) return serialized
+  console.warn(`[ws] dropping oversized ${type} frame (${serializedBytes} bytes > ${MAX_WS_FRAME_BYTES})`)
+  // file_changed is the only frame that carries a whole file; tell the client to
+  // refetch over REST instead of dropping the update silently.
+  if (type === 'file_changed') {
+    const path = (data as any)?.path
+    if (typeof path === 'string') {
+      try {
+        return JSON.stringify({ type: 'file_changed_oversized', data: { path } })
+      } catch { /* fall through to drop */ }
+    }
+  }
+  return undefined
+}
+
+function sendFrame(ws: any, type: string, data: unknown): void {
+  if (!ws || ws.readyState !== 1) return
+  const frame = frameFor(type, data)
+  if (frame === undefined) return
+  try { ws.send(frame) } catch { /* client went away mid-send */ }
+}
+
 // ─── Broadcast to all WS clients ────────────────────────────
 function broadcast(type: string, data: any): void {
-  try {
-    const msg = JSON.stringify({ type, data })
-    for (const ws of wsClients) {
-      try { if (ws.readyState === 1) ws.send(msg) } catch {}
-    }
-  } catch (e: any) {
-    console.error('broadcast error:', e.message)
+  const msg = frameFor(type, data)
+  if (msg === undefined) return
+  for (const ws of wsClients) {
+    try { if (ws.readyState === 1) ws.send(msg) } catch {}
   }
 }
 
@@ -366,8 +405,7 @@ function startWatching(filePath: string, ws: WebSocket): void {
     if (eventType === 'rename') {
       const e = fileWatchers.get(filePath)
       if (e) {
-        const msg = JSON.stringify({ type: 'file_deleted', data: { path: filePath } })
-        for (const c of e.clients) { if (c.readyState === 1) c.send(msg) }
+        for (const c of e.clients) sendFrame(c, 'file_deleted', { path: filePath })
         stopWatchingAll(filePath)
       }
       return
@@ -383,8 +421,7 @@ function startWatching(filePath: string, ws: WebSocket): void {
         if (!isSelfWrite) {
           const e = fileWatchers.get(filePath)
           if (e) {
-            const msg = JSON.stringify({ type: 'file_changed', data: { path: filePath, content, version } })
-            for (const c of e.clients) { if (c.readyState === 1) c.send(msg) }
+            for (const c of e.clients) sendFrame(c, 'file_changed', { path: filePath, content, version })
           }
         }
       } catch {}
@@ -846,7 +883,7 @@ function _wireSlotEvents(pi: PiSession, slotKey: string): void {
   pi.on('log', (data: any) => {
     for (const ws of wsClients) {
       if ((ws as any)._subscribedLogs && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'log', data }))
+        sendFrame(ws, 'log', data)
       }
     }
   })
@@ -856,7 +893,7 @@ function _wireSlotEvents(pi: PiSession, slotKey: string): void {
     console.warn(`[pi-manager] Extension error in slot ${slotKey}: ${event.event} — ${event.error}`)
     for (const ws of wsClients) {
       if ((ws as any)._subscribedLogs && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'log', data: { level: 'error', msg } }))
+        sendFrame(ws, 'log', { level: 'error', msg })
       }
     }
   })
@@ -1109,11 +1146,11 @@ wss.on('connection', (ws: WebSocket) => {
   (ws as any)._id = ++_wsIdCounter
   wsClients.add(ws)
   console.log(`[ws] Client #${(ws as any)._id} connected (total: ${wsClients.size})`)
-  ws.send(JSON.stringify({ type: 'dashboard', data: manager.status() }))
-  ws.send(JSON.stringify({ type: 'slots', data: manager.listSlots() }))
+  sendFrame(ws, 'dashboard', manager.status())
+  sendFrame(ws, 'slots', manager.listSlots())
   for (const slot of manager.listSlots()) {
     for (const snapshot of extensionBridgeRegistry.list(slot.key)) {
-      ws.send(JSON.stringify({ type: 'extension_feature_snapshot', data: snapshot }))
+      sendFrame(ws, 'extension_feature_snapshot', snapshot)
     }
   }
 
