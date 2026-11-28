@@ -1,6 +1,7 @@
 package com.sam.pidash.domain.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class UsageFormatTest {
@@ -39,5 +40,81 @@ class UsageFormatTest {
         assertEquals("2026-07", shiftMonth("2026-08", -1))
         assertEquals(null, shiftMonth("2026-8", 0))
         assertEquals(null, shiftMonth("bogus", 1))
+    }
+
+    private fun utcNow(value: String): Long = java.time.Instant.parse(value).toEpochMilli()
+
+    private fun marchReport() = LiveUsageReport(
+        month = "2026-03",
+        timezone = "UTC",
+        daily = listOf(
+            LiveUsageDay(date = "2026-03-01", costUsd = 10.0),
+            LiveUsageDay(date = "2026-03-02", costUsd = 20.0),
+            LiveUsageDay(date = "2026-03-03", costUsd = 1000.0),
+            LiveUsageDay(date = "2026-03-31", costUsd = 500.0),
+        ),
+    )
+
+    @Test fun dailyProjectionUsesCompletedDaysForLinearForecast() {
+        val projection = dailyProjection(marchReport(), utcNow("2026-03-03T23:59:00Z"))!!
+        assertEquals(30.0, projection.spentUsd, 0.0001)
+        assertEquals(465.0, projection.projectedUsd, 0.0001)
+        assertEquals(2, projection.elapsedDays)
+        assertEquals(31, projection.totalDays)
+        assertEquals(28, projection.remainingDays)
+    }
+
+    @Test fun dailyProjectionExcludesTodayAndIgnoresTotalDoubleCounting() {
+        val report = marchReport().copy(total = LiveUsageTotals(costUsd = 9999.0))
+        val projection = dailyProjection(report, utcNow("2026-03-03T12:00:00Z"))!!
+        assertEquals(30.0, projection.spentUsd, 0.0001)
+        assertEquals(465.0, projection.projectedUsd, 0.0001)
+    }
+
+    @Test fun dailyProjectionIsUnavailableOnFirstDay() {
+        assertNull(dailyProjection(marchReport(), utcNow("2026-03-01T23:00:00Z")))
+    }
+
+    @Test fun dailyProjectionIsUnavailableForHistoricalMonth() {
+        assertNull(dailyProjection(marchReport(), utcNow("2026-04-03T12:00:00Z")))
+    }
+
+    @Test fun dailyProjectionUsesReportTimezoneForToday() {
+        val report = marchReport().copy(timezone = "America/Los_Angeles")
+        val projection = dailyProjection(report, utcNow("2026-03-03T07:00:00Z"))!!
+        assertEquals(10.0, projection.spentUsd, 0.0001)
+        assertEquals(1, projection.elapsedDays)
+    }
+
+    @Test fun sessionCacheHitUsesAllPromptTokenKinds() {
+        val session = LiveUsageSession("s", inputTokens = 100, cacheReadTokens = 800, cacheWriteTokens = 100)
+        assertEquals(80, cacheHitPercent(session))
+        assertEquals(0, cacheHitPercent(LiveUsageSession("empty")))
+    }
+
+    @Test fun modelDailySeriesMatchesModelAndAggregatesDailyRows() {
+        val report = marchReport().copy(daily = listOf(
+            LiveUsageDay(date = "2026-03-02", models = listOf(
+                LiveUsageModel(key = "a", costUsd = 2.0, totalTokens = 20),
+                LiveUsageModel(key = "b", costUsd = 99.0, totalTokens = 99),
+                LiveUsageModel(key = "a", costUsd = 3.0, totalTokens = 30),
+            )),
+            LiveUsageDay(date = "2026-03-01", models = listOf(
+                LiveUsageModel(key = "a", costUsd = 1.0, totalTokens = 10),
+            )),
+        ))
+        val result = modelDailySeries(report, "a")
+        assertEquals(listOf("2026-03-01", "2026-03-02"), result.map { it.date })
+        assertEquals(listOf(1.0, 5.0), result.map { it.model.costUsd })
+        assertEquals(listOf(10L, 50L), result.map { it.model.totalTokens })
+    }
+
+    @Test fun dailySeriesKeepsZeroCostDaysAndDropsInvalidDates() {
+        val report = marchReport().copy(daily = listOf(
+            LiveUsageDay(date = "2026-03-02", costUsd = 2.0),
+            LiveUsageDay(date = "not-a-date", costUsd = 100.0),
+            LiveUsageDay(date = "2026-03-01", costUsd = 0.0),
+        ))
+        assertEquals(listOf("2026-03-01", "2026-03-02"), dailySeries(report).map { it.date })
     }
 }

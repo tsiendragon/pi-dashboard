@@ -86,12 +86,7 @@ import com.sam.pidash.data.remote.liveGoalAnchor
 import com.sam.pidash.domain.model.LiveSessionTree
 import com.sam.pidash.domain.model.goalSummary
 import com.sam.pidash.domain.model.LiveUsageReport
-import com.sam.pidash.domain.model.cacheHitPercent
-import com.sam.pidash.domain.model.humanTokens
-import com.sam.pidash.domain.model.humanUsd
 import com.sam.pidash.domain.model.shiftMonth
-import com.sam.pidash.domain.model.topModels
-import com.sam.pidash.domain.model.topSessions
 import com.sam.pidash.domain.model.ActivityDetailRow
 import com.sam.pidash.domain.model.groupActivityDetail
 import com.sam.pidash.domain.model.sessionTreeLabel
@@ -577,6 +572,7 @@ fun LiveSessionScreen(
 
     fun loadUsage(month: String?) {
         usageBusy = true
+        usageError = null
         scope.launch {
             repo.live.usage(sessionKey.backendId, month).fold(
                 onSuccess = { report -> usage = report; usageMonth = report.month; usageBusy = false },
@@ -1517,65 +1513,14 @@ fun LiveSessionScreen(
             )
         }
         if (usage != null || usageError != null || usageBusy) {
-            Dialog(onDismissRequest = { usage = null; usageError = null; usageBusy = false }) {
-                Surface(shape = RoundedCornerShape(12.dp)) {
-                    Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("用量统计", style = PiType.callout, modifier = Modifier.weight(1f))
-                            TextButton(enabled = !usageBusy, onClick = {
-                                shiftMonth(usageMonth ?: usage?.month.orEmpty(), -1)?.let { loadUsage(it) }
-                            }) { Text("◀") }
-                            Text(usageMonth?.takeIf { it.isNotBlank() } ?: "本月", style = PiType.action)
-                            TextButton(enabled = !usageBusy, onClick = {
-                                shiftMonth(usageMonth ?: usage?.month.orEmpty(), 1)?.let { loadUsage(it) }
-                            }) { Text("▶") }
-                        }
-                        if (usageBusy) Text("读取中…", style = PiType.action)
-                        usageError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PiType.subhead) }
-                        usage?.let { report ->
-                            Text(
-                                "${humanTokens(report.total.totalTokens)} tokens · ${report.currency} ${humanUsd(report.total.costUsd)}" +
-                                    " · 缓存命中 ${cacheHitPercent(report.total)}% · ${report.recordCount} 条记录",
-                                style = PiType.subhead,
-                            )
-                            Text(
-                                "输入 ${humanTokens(report.total.inputTokens)} · 输出 ${humanTokens(report.total.outputTokens)}" +
-                                    " · 缓存读 ${humanTokens(report.total.cacheReadTokens)}",
-                                style = PiType.action,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            if (report.timezone.isNotBlank()) Text("时区 ${report.timezone}",
-                                style = PiType.action, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(8.dp))
-                            val models = remember(report) { topModels(report) }
-                            if (models.isNotEmpty()) {
-                                Text("按模型", style = PiType.action)
-                                models.forEach { model ->
-                                    Text(
-                                        "· ${model.key}  ${humanTokens(model.totalTokens)}  ${humanUsd(model.costUsd)}",
-                                        style = PiType.subhead,
-                                    )
-                                }
-                            }
-                            val sessions = remember(report) { topSessions(report) }
-                            if (sessions.isNotEmpty()) {
-                                Spacer(Modifier.height(8.dp))
-                                Text("按会话", style = PiType.action)
-                                sessions.forEach { item ->
-                                    Text(
-                                        "· ${item.label.ifBlank { item.key.take(8) }}  ${humanTokens(item.totalTokens)}  ${humanUsd(item.costUsd)}",
-                                        style = PiType.subhead,
-                                        maxLines = 1,
-                                    )
-                                }
-                            }
-                        }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { usage = null; usageError = null; usageBusy = false }) { Text("关闭") }
-                        }
-                    }
-                }
-            }
+            UsageDialog(
+                report = usage,
+                month = usageMonth,
+                busy = usageBusy,
+                error = usageError,
+                onMonthChange = { shiftMonth(usageMonth ?: usage?.month.orEmpty(), it)?.let(::loadUsage) },
+                onDismiss = { usage = null; usageError = null; usageBusy = false },
+            )
         }
         if (showBackground && background != null) {
             BackgroundCommandsDialog(

@@ -150,6 +150,10 @@ data class LiveUsageTotals(
     val cacheWriteTokens: Long = 0,
     val totalTokens: Long = 0,
     val costUsd: Double = 0.0,
+    val inputCostUsd: Double = 0.0,
+    val outputCostUsd: Double = 0.0,
+    val cacheReadCostUsd: Double = 0.0,
+    val cacheWriteCostUsd: Double = 0.0,
 )
 
 @Serializable
@@ -161,6 +165,28 @@ data class LiveUsageModel(
     val cacheWriteTokens: Long = 0,
     val totalTokens: Long = 0,
     val costUsd: Double = 0.0,
+    val inputCostUsd: Double = 0.0,
+    val outputCostUsd: Double = 0.0,
+    val cacheReadCostUsd: Double = 0.0,
+    val cacheWriteCostUsd: Double = 0.0,
+    val effectiveUsdPerMillionTokens: Double = 0.0,
+    val efforts: List<LiveUsageEffort> = emptyList(),
+)
+
+/** Same shape as a model aggregate, without recursively nested effort rows. */
+@Serializable
+data class LiveUsageEffort(
+    val key: String,
+    val inputTokens: Long = 0,
+    val outputTokens: Long = 0,
+    val cacheReadTokens: Long = 0,
+    val cacheWriteTokens: Long = 0,
+    val totalTokens: Long = 0,
+    val costUsd: Double = 0.0,
+    val inputCostUsd: Double = 0.0,
+    val outputCostUsd: Double = 0.0,
+    val cacheReadCostUsd: Double = 0.0,
+    val cacheWriteCostUsd: Double = 0.0,
     val effectiveUsdPerMillionTokens: Double = 0.0,
 )
 
@@ -171,15 +197,32 @@ data class LiveUsageSession(
     val sessionId: String? = null,
     val sessionFile: String? = null,
     val cwd: String? = null,
+    val inputTokens: Long = 0,
+    val outputTokens: Long = 0,
+    val cacheReadTokens: Long = 0,
+    val cacheWriteTokens: Long = 0,
     val totalTokens: Long = 0,
     val costUsd: Double = 0.0,
+    val inputCostUsd: Double = 0.0,
+    val outputCostUsd: Double = 0.0,
+    val cacheReadCostUsd: Double = 0.0,
+    val cacheWriteCostUsd: Double = 0.0,
 )
 
 @Serializable
 data class LiveUsageDay(
     val date: String,
+    val inputTokens: Long = 0,
+    val outputTokens: Long = 0,
+    val cacheReadTokens: Long = 0,
+    val cacheWriteTokens: Long = 0,
     val totalTokens: Long = 0,
     val costUsd: Double = 0.0,
+    val inputCostUsd: Double = 0.0,
+    val outputCostUsd: Double = 0.0,
+    val cacheReadCostUsd: Double = 0.0,
+    val cacheWriteCostUsd: Double = 0.0,
+    val models: List<LiveUsageModel> = emptyList(),
 )
 
 @Serializable

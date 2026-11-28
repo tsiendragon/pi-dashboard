@@ -1,5 +1,11 @@
 package com.sam.pidash.domain.model
 
+import java.time.DateTimeException
+import java.time.Instant
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
+
 /**
  * Usage numbers as a phone dialog can show them. The `/api/usage` report is a
  * month of token and cost totals per model and per session; the pure helpers
@@ -19,10 +25,22 @@ fun humanUsd(amount: Double): String = when {
 }
 
 /** Cache reads are the cheap path; the ratio explains why a big month stayed affordable. */
-fun cacheHitPercent(total: LiveUsageTotals): Int {
-    val prompt = total.inputTokens + total.cacheReadTokens + total.cacheWriteTokens
+fun cacheHitPercent(total: LiveUsageTotals): Int = cacheHitPercent(
+    total.inputTokens, total.cacheReadTokens, total.cacheWriteTokens,
+)
+
+fun cacheHitPercent(session: LiveUsageSession): Int = cacheHitPercent(
+    session.inputTokens, session.cacheReadTokens, session.cacheWriteTokens,
+)
+
+fun cacheHitPercent(model: LiveUsageModel): Int = cacheHitPercent(
+    model.inputTokens, model.cacheReadTokens, model.cacheWriteTokens,
+)
+
+private fun cacheHitPercent(input: Long, read: Long, write: Long): Int {
+    val prompt = input + read + write
     if (prompt <= 0) return 0
-    return ((total.cacheReadTokens * 100.0) / prompt).toInt().coerceIn(0, 100)
+    return ((read * 100.0) / prompt).toInt().coerceIn(0, 100)
 }
 
 fun topModels(report: LiveUsageReport, limit: Int = 5): List<LiveUsageModel> =
@@ -30,6 +48,77 @@ fun topModels(report: LiveUsageReport, limit: Int = 5): List<LiveUsageModel> =
 
 fun topSessions(report: LiveUsageReport, limit: Int = 5): List<LiveUsageSession> =
     report.sessions.sortedByDescending { it.costUsd }.take(limit)
+
+data class UsageProjection(
+    val spentUsd: Double,
+    val projectedUsd: Double,
+    val elapsedDays: Int,
+    val totalDays: Int,
+    val remainingDays: Int,
+)
+
+/**
+ * Linear forecast for the current month. Today is incomplete, so neither its
+ * cost nor its day is included. Invalid reports and future/history months do
+ * not produce a forecast. The report timezone defines the ledger's day boundary.
+ */
+fun dailyProjection(report: LiveUsageReport, now: Long): UsageProjection? {
+    val month = runCatching { YearMonth.parse(report.month) }.getOrNull() ?: return null
+    val zone = runCatching {
+        if (report.timezone.isBlank()) ZoneId.systemDefault() else ZoneId.of(report.timezone)
+    }.getOrNull() ?: return null
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    if (YearMonth.from(today) != month) return null
+    val elapsedDays = today.dayOfMonth - 1
+    if (elapsedDays <= 0) return null
+    val firstDay = month.atDay(1)
+    val spentUsd = report.daily.sumOf { day ->
+        val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
+        if (date != null && date >= firstDay && date < today) day.costUsd else 0.0
+    }
+    val totalDays = month.lengthOfMonth()
+    return UsageProjection(
+        spentUsd = spentUsd,
+        projectedUsd = spentUsd / elapsedDays * totalDays,
+        elapsedDays = elapsedDays,
+        totalDays = totalDays,
+        remainingDays = totalDays - today.dayOfMonth,
+    )
+}
+
+/** Keep every day so gaps are visible instead of making a sparse trend misleading. */
+fun dailySeries(report: LiveUsageReport): List<LiveUsageDay> =
+    report.daily.filter { runCatching { LocalDate.parse(it.date) }.isSuccess }.sortedBy { it.date }
+
+/** Aggregate one model across days by stable key, preserving chronological order. */
+data class UsageModelDay(val date: String, val model: LiveUsageModel)
+
+fun modelDailySeries(report: LiveUsageReport, modelKey: String): List<UsageModelDay> =
+    dailySeries(report).mapNotNull { day ->
+        day.models.filter { it.key == modelKey }
+            .takeIf { it.isNotEmpty() }
+            ?.let { matches ->
+                UsageModelDay(
+                    date = day.date,
+                    model = matches.reduce { total, model ->
+                        total.copy(
+                            inputTokens = total.inputTokens + model.inputTokens,
+                            outputTokens = total.outputTokens + model.outputTokens,
+                            cacheReadTokens = total.cacheReadTokens + model.cacheReadTokens,
+                            cacheWriteTokens = total.cacheWriteTokens + model.cacheWriteTokens,
+                            totalTokens = total.totalTokens + model.totalTokens,
+                            costUsd = total.costUsd + model.costUsd,
+                            inputCostUsd = total.inputCostUsd + model.inputCostUsd,
+                            outputCostUsd = total.outputCostUsd + model.outputCostUsd,
+                            cacheReadCostUsd = total.cacheReadCostUsd + model.cacheReadCostUsd,
+                            cacheWriteCostUsd = total.cacheWriteCostUsd + model.cacheWriteCostUsd,
+                            effectiveUsdPerMillionTokens = 0.0,
+                            efforts = emptyList(),
+                        )
+                    },
+                )
+            }
+    }
 
 /** `2026-08` → `2026-07`; keeps the month inside the ledger's format. */
 fun shiftMonth(month: String, delta: Int): String? {
