@@ -372,6 +372,44 @@ class LiveSessionClientTest {
         assertEquals(1, calls.size)
     }
 
+    @Test fun startWithAGroupSendsTheMembershipCallAfterTheStartAndLeavesDefaultStartAlone() = runBlocking {
+        val repo = repository()
+        handler = { when {
+            it.requestURI.path == "/api/live-sessions/start" -> reply(it, """{"ok":true,"result":{"processInstanceId":"$process"}}""")
+            it.requestURI.path == "/api/live-sessions" -> reply(it, """{"sessions":[{"processInstanceId":"$process","sessionId":"session-fixture","cwd":"/allowed"}]}""")
+            it.requestURI.path == "/api/live-session-meta" -> reply(it, """{"meta":{}}""")
+            it.requestURI.path == "/api/live-session-order" -> reply(it, """{"order":[],"sectionOrder":[]}""")
+            else -> reply(it, """{"groups":[{"id":"work","name":"Work","sessionIds":["session-fixture"]}]}""")
+        } }
+        assertEquals(SessionKey(backend.id, process), repo.start(backend.id, "/allowed/project", groupId = "work").getOrThrow())
+        val membership = calls.single { it.path == "/api/live-session-groups/work/members" }
+        assertEquals("POST", membership.method)
+        assertTrue(membership.body.contains("\"processInstanceId\":\"$process\""))
+        assertTrue(calls.none { it.path.endsWith("/claim") || it.path.contains("/commands") })
+        assertEquals(listOf("work"), repo.organization.value[backend.id]!!.groups.map { it.id })
+        calls.clear()
+        // No group selected: exactly the previous single start call, no membership write.
+        assertEquals(SessionKey(backend.id, process), repo.start(backend.id, "/allowed/project").getOrThrow())
+        assertEquals(1, calls.count { it.path == "/api/live-sessions/start" })
+        assertTrue(calls.none { it.path.contains("/members") })
+    }
+
+    @Test fun groupFailureAfterStartIsReportedWithoutRepeatingTheStart() = runBlocking {
+        val repo = repository()
+        handler = { when {
+            it.requestURI.path == "/api/live-sessions/start" -> reply(it, """{"ok":true,"result":{"processInstanceId":"$process"}}""")
+            it.requestURI.path == "/api/live-sessions" -> reply(it, """{"sessions":[{"processInstanceId":"$process","sessionId":"session-fixture","cwd":"/allowed"}]}""")
+            it.requestURI.path == "/api/live-session-meta" -> reply(it, """{"meta":{}}""")
+            it.requestURI.path == "/api/live-session-order" -> reply(it, """{"order":[],"sectionOrder":[]}""")
+            it.requestURI.path.contains("/members") -> reply(it, """{"error":"group_not_found"}""", 404)
+            else -> reply(it, """{"groups":[]}""")
+        } }
+        val result = repo.start(backend.id, "/allowed/project", groupId = "work")
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("加入分组失败"))
+        assertEquals(1, calls.count { it.path == "/api/live-sessions/start" })
+    }
+
     @Test fun groupMovesAreScopedToTheMachineAndExpiredAuthPurgesOrganization() = runBlocking {
         val repo = repository()
         handler = { when (it.requestURI.path) {
