@@ -100,6 +100,8 @@ export function handleAsrRealtimeConnection(
   let ready = false
   let finishSent = false
   let closed = false
+  /** Exactly one `session.update` may reach upstream: a second one mid-audio resets the session. */
+  let sessionUpdateSent = false
   let pendingContext = normalizeContext(options.context)
 
   const sendClient = (message: unknown): void => {
@@ -114,9 +116,13 @@ export function handleAsrRealtimeConnection(
     else if (upstream.readyState === WebSocket.CONNECTING) upstream.terminate()
   }
 
-  upstream.on('open', () => {
+  const sendSessionUpdate = (): void => {
+    if (sessionUpdateSent || upstream.readyState !== WebSocket.OPEN) return
+    sessionUpdateSent = true
     upstream.send(JSON.stringify(asrRealtimeSessionUpdate(language ?? undefined, pendingContext)))
-  })
+  }
+
+  upstream.on('open', () => sendSessionUpdate())
   upstream.on('message', (data: RawData) => {
     let message: Record<string, unknown> | undefined
     try {
@@ -183,13 +189,11 @@ export function handleAsrRealtimeConnection(
         fail('语音上下文格式无效。')
         return
       }
-      pendingContext = normalizeContext(text)
-      // The context frame can race the upstream handshake. Re-send the session
-      // configuration when needed rather than putting potentially sensitive
-      // conversation text in the WebSocket URL/access logs.
-      if (upstream.readyState === WebSocket.OPEN) {
-        upstream.send(JSON.stringify(asrRealtimeSessionUpdate(language ?? undefined, pendingContext)))
-      }
+      // The context frame can race the upstream handshake. Only the first
+      // `session.update` may carry it: re-sending after upstream is open (or after the
+      // initial update went out) would reset the provider session mid-audio, so a late
+      // context is accepted and ignored instead of failing the recognition.
+      if (!sessionUpdateSent) pendingContext = normalizeContext(text)
       return
     }
     if (message.type === 'audio') {

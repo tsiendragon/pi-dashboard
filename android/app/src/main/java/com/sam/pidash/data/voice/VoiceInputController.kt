@@ -35,8 +35,18 @@ import okhttp3.WebSocketListener
 private const val SAMPLE_RATE = 16_000
 private const val CHUNK_MILLIS = 100
 private const val MAX_PENDING_BYTES = 64 * 1024
-private const val TRANSCRIBE_TIMEOUT_MS = 15_000L
-private const val POLISH_TIMEOUT_MS = 35_000L
+
+/**
+ * Deadlines of one controller. [connect] covers `Connecting` until the provider's `ready`;
+ * [transcribe] waits for `finished` after [VoiceInputController.stop]; [polish] bounds cleanup.
+ * Internal so timeout tests can shrink them: Robolectric's main-looper clock does not advance
+ * coroutines on Dispatchers.IO, so tests poll real time instead of faking it.
+ */
+internal data class VoiceTimeouts(
+    val connect: Long = 15_000L,
+    val transcribe: Long = 15_000L,
+    val polish: Long = 35_000L,
+)
 
 /** One parsed frame from the dashboard's ASR bridge. Unknown fields are deliberately ignored. */
 internal sealed interface AsrEvent {
@@ -70,31 +80,51 @@ internal fun parseAsrEvent(text: String): AsrEvent? {
  * The server owns the DashScope key; this class only sees text frames. Audio bytes live in
  * memory for the length of one utterance and are never written to disk. The caller is
  * responsible for holding RECORD_AUDIO before calling [start].
+ *
+ * Every [start] opens a new session generation and installs its own [WebSocketListener], so a
+ * late `onMessage`/`onFailure`/`onClosed`, timeout or polish callback from an earlier attempt can
+ * never change the state of the current one. The provider ends a session only on
+ * `session.finish`; a VAD pause does not, so there is deliberately no reconnect/retry here —
+ * a broken session surfaces as an error and the user decides whether to start again.
  */
-class VoiceInputController(
+class VoiceInputController internal constructor(
     private val openSocket: (WebSocketListener) -> WebSocket,
     private val onTranscript: (String) -> Unit,
     /** Optional post-ASR cleanup; failures/timeouts must fall back to the raw transcript. */
     private val polish: suspend (String) -> String = { it },
     /** Tiny technical/context corpus sent before audio; null/blank disables biasing. */
     private val context: () -> String? = { null },
+    private val timeouts: VoiceTimeouts = VoiceTimeouts(),
 ) {
+    /** Mutable state owned by exactly one [start] attempt; discarded with that generation. */
+    private class Session(val generation: Long) {
+        var socket: WebSocket? = null
+        var recorder: PcmRecorder? = null
+        /** Connection deadline, cancelled by `ready`, finish or cancel. */
+        var connectionTimeout: Job? = null
+        var timeout: Job? = null
+        var polishJob: Job? = null
+        val pending = ArrayDeque<ByteArray>()
+        var pendingBytes = 0
+        @Volatile var ready = false
+        @Volatile var capturing = true
+        @Volatile var closed = false
+        /** Set when the user cancels: no queued callback of this attempt may touch the draft. */
+        @Volatile var discarded = false
+        @Volatile var finished = false
+        /** Written by the socket thread and read by stop/cancel; keep it visible across threads. */
+        @Volatile var finalText = ""
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = Handler(Looper.getMainLooper())
     private val _state = MutableStateFlow(VoiceInputState())
     val state: StateFlow<VoiceInputState> = _state.asStateFlow()
 
-    @Volatile private var socket: WebSocket? = null
-    private var recorder: PcmRecorder? = null
-    private var timeout: Job? = null
     private val audioLock = Any()
-    private val pending = ArrayDeque<ByteArray>()
-    private var pendingBytes = 0
-    @Volatile private var ready = false
-    @Volatile private var capturing = false
-    @Volatile private var closed = false
-    @Volatile private var finished = false
-    private var finalText = ""
+    /** Bumped on every [start]; stale callbacks are recognised by a smaller generation. */
+    @Volatile private var generation = 0L
+    @Volatile private var active: Session? = null
 
     fun toggle() {
         when (_state.value.phase) {
@@ -108,50 +138,81 @@ class VoiceInputController(
     @SuppressLint("MissingPermission")
     fun start() {
         if (_state.value.phase != VoiceInputPhase.Idle) return
-        reset()
+        val session = Session(++generation)
+        active = session
         _state.value = VoiceInputState(phase = VoiceInputPhase.Connecting)
+        // Arm the deadline before opening: a socket that never reports `ready` (unreachable
+        // server, stalled upstream handshake) must not leave the composer stuck in Connecting.
+        session.connectionTimeout = scope.launch {
+            delay(timeouts.connect)
+            if (isLive(session) && !session.ready) fail(session, "连接语音识别服务超时，请重试")
+        }
         try {
-            socket = openSocket(listener)
+            session.socket = openSocket(listenerFor(session))
         } catch (error: Exception) {
-            fail(error.message ?: "无法连接语音识别服务")
+            fail(session, error.message ?: "无法连接语音识别服务")
             return
         }
-        if (closed) return
+        if (!isLive(session)) return
         // Send contextual-biasing text before the first audio chunk. It travels over
         // the existing authenticated socket, not a URL/query, so it is not put in
         // access logs. The server passes it to Qwen as input_audio_transcription.corpus.
         runCatching {
             context()?.trim()?.takeIf { it.isNotEmpty() }?.let { text ->
-                socket?.send(buildJsonObject {
+                session.socket?.send(buildJsonObject {
                     put("type", "context")
                     put("text", text.take(3_500))
                 }.toString())
             }
         }
         try {
-            recorder = PcmRecorder(
+            session.recorder = PcmRecorder(
                 scope = scope,
-                onChunk = ::onAudio,
-                onFailure = { message -> if (capturing) fail(message) },
+                onChunk = { bytes -> onAudio(session, bytes) },
+                onFailure = { message -> if (session.capturing) fail(session, message) },
             ).also { it.start() }
         } catch (error: Exception) {
-            fail(error.message ?: "无法开始录音")
+            fail(session, error.message ?: "无法开始录音")
         }
     }
 
     /** Stop capturing and ask the provider for its final transcript. */
     fun stop() {
-        if (_state.value.phase != VoiceInputPhase.Listening) return
-        capturing = false
-        recorder?.stop()
-        recorder = null
-        _state.update { it.copy(phase = VoiceInputPhase.Transcribing, interim = "") }
-        synchronized(audioLock) {
-            socket?.send(buildJsonObject { put("type", "finish") }.toString())
+        val session = active ?: return
+        if (_state.value.phase != VoiceInputPhase.Listening || session.closed) return
+        // Claim the capture slot only while the round is live. A socket callback may close the
+        // session while we are in here; after that stop must not write any state again.
+        val stopping = synchronized(audioLock) {
+            if (!isLive(session)) {
+                false
+            } else {
+                session.capturing = false
+                true
+            }
         }
-        timeout = scope.launch {
-            delay(TRANSCRIBE_TIMEOUT_MS)
-            if (!closed) fail("语音识别超时，请重试")
+        if (!stopping) return
+        session.recorder?.stop()
+        session.recorder = null
+        val socket = session.socket
+        val sent = socket != null && runCatching {
+            socket.send(buildJsonObject { put("type", "finish") }.toString())
+        }.getOrDefault(false)
+        if (!sent || !isLive(session)) {
+            // The socket already went away: close the utterance with what was recognised
+            // instead of waiting for a `finished` frame that can no longer arrive.
+            finishWithPolish(session)
+            return
+        }
+        // `finish`/`fail` may already have returned the round to Idle (possibly from inside the
+        // send above). Only a still-live session enters Transcribing, so the UI can never be
+        // left there waiting for a `finished` frame that was already consumed.
+        _state.update {
+            if (isLive(session)) it.copy(phase = VoiceInputPhase.Transcribing, interim = "") else it
+        }
+        if (!isLive(session)) return
+        session.timeout = scope.launch {
+            delay(timeouts.transcribe)
+            if (isLive(session)) fail(session, "语音识别超时，请重试")
         }
     }
 
@@ -161,157 +222,179 @@ class VoiceInputController(
 
     /** Cancel without replacing the draft; used when the screen leaves the foreground. */
     fun cancel() {
-        if (closed) return
-        closed = true
-        finished = true
-        timeout?.cancel()
-        cleanup()
-        main.removeCallbacksAndMessages(null)
+        val session = active ?: return
+        if (session.generation != generation || session.closed) return
+        session.discarded = true
+        session.closed = true
+        session.finished = true
+        session.timeout?.cancel()
+        session.connectionTimeout?.cancel()
+        session.connectionTimeout = null
+        session.polishJob?.cancel()
+        cleanup(session)
+        active = null
         _state.value = VoiceInputState()
     }
 
     fun close() {
         cancel()
         scope.cancel()
-        main.removeCallbacksAndMessages(null)
     }
 
-    private fun reset() {
-        closed = false
-        finished = false
-        ready = false
-        capturing = true
-        finalText = ""
-        synchronized(audioLock) {
-            pending.clear()
-            pendingBytes = 0
-        }
-    }
+    private fun isLive(session: Session): Boolean =
+        session.generation == generation && active === session && !session.closed
 
-    @SuppressLint("MissingPermission")
-    private val listener = object : WebSocketListener() {
+    private fun listenerFor(session: Session) = object : WebSocketListener() {
         override fun onMessage(webSocket: WebSocket, text: String) {
-            if (closed) return
+            if (!isLive(session)) return
             when (val event = parseAsrEvent(text)) {
                 AsrEvent.Ready -> {
-                    ready = true
-                    flushPending()
-                    if (!closed) _state.update { it.copy(phase = VoiceInputPhase.Listening, error = null) }
+                    session.ready = true
+                    // Ready is the one event that ends the connection deadline for this session.
+                    session.connectionTimeout?.cancel()
+                    session.connectionTimeout = null
+                    flushPending(session)
+                    if (isLive(session)) _state.update { it.copy(phase = VoiceInputPhase.Listening, error = null) }
                 }
-                is AsrEvent.Interim -> if (!closed) _state.update { it.copy(interim = event.text) }
-                is AsrEvent.Final -> if (!closed && event.text.isNotBlank()) {
-                    finalText = appendVoiceTranscript(finalText, event.text)
+                is AsrEvent.Interim -> if (isLive(session)) _state.update { it.copy(interim = event.text) }
+                is AsrEvent.Final -> if (isLive(session) && event.text.isNotBlank()) {
+                    session.finalText = appendVoiceTranscript(session.finalText, event.text)
                     // Keep the finalized segment visible while the user is still recording.
                     // The polished text is appended to the draft only when recording stops,
                     // but clearing this preview made the composer look stuck on "请说话".
-                    _state.update { it.copy(interim = finalText) }
+                    _state.update { it.copy(interim = session.finalText) }
                 }
-                AsrEvent.Finished -> finishWithPolish()
-                is AsrEvent.Failed -> fail(event.message)
+                AsrEvent.Finished -> finishWithPolish(session)
+                is AsrEvent.Failed -> fail(session, event.message)
                 null -> Unit
             }
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            if (closed) return
+            if (!isLive(session)) return
             val message = when (response?.code) {
                 401, 403 -> "没有权限访问语音识别；请检查服务器配置"
                 404 -> "服务器还没有语音识别接口；请更新 Dashboard"
                 else -> t.message ?: "与语音识别服务的连接中断"
             }
-            fail(message)
+            fail(session, message)
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            if (!closed && !finished) fail("语音识别连接已断开，请重试")
+            if (isLive(session) && !session.finished) fail(session, "语音识别连接已断开，请重试")
         }
     }
 
-    private fun onAudio(bytes: ByteArray) {
-        if (!capturing || closed || bytes.isEmpty()) return
+    private fun onAudio(session: Session, bytes: ByteArray) {
+        if (!session.capturing || bytes.isEmpty() || !isLive(session)) return
         synchronized(audioLock) {
-            if (!capturing || closed) return
-            if (!ready) {
-                pending.addLast(bytes)
-                pendingBytes += bytes.size
-                while (pendingBytes > MAX_PENDING_BYTES && pending.isNotEmpty()) {
-                    pendingBytes -= pending.removeFirst().size
+            if (!session.capturing || !isLive(session)) return
+            if (!session.ready) {
+                session.pending.addLast(bytes)
+                session.pendingBytes += bytes.size
+                while (session.pendingBytes > MAX_PENDING_BYTES && session.pending.isNotEmpty()) {
+                    session.pendingBytes -= session.pending.removeFirst().size
                 }
                 return
             }
-            sendAudio(bytes)
+            sendAudio(session, bytes)
         }
     }
 
-    private fun flushPending() {
+    private fun flushPending(session: Session) {
         synchronized(audioLock) {
-            if (!capturing || closed) return
-            while (pending.isNotEmpty()) sendAudio(pending.removeFirst())
-            pendingBytes = 0
+            if (!session.capturing || !isLive(session)) return
+            while (session.pending.isNotEmpty()) sendAudio(session, session.pending.removeFirst())
+            session.pendingBytes = 0
         }
     }
 
-    private fun sendAudio(bytes: ByteArray) {
+    private fun sendAudio(session: Session, bytes: ByteArray) {
         val audio = Base64.encodeToString(bytes, Base64.NO_WRAP)
-        val sent = socket?.send(buildJsonObject {
+        val sent = session.socket?.send(buildJsonObject {
             put("type", "audio")
             put("audio", audio)
         }.toString()) ?: false
-        if (!sent) fail("语音数据发送失败，请重试")
+        if (!sent) fail(session, "语音数据发送失败，请重试")
     }
 
-    private fun finishWithPolish() {
-        if (closed || finished) return
-        finished = true
-        timeout?.cancel()
-        val raw = finalText.trim()
-        cleanup()
+    /**
+     * Claims the single finish transition of [session]. Returns false when another path
+     * (this attempt's `finished`, stop, cancel, or a newer generation) already closed it, so a
+     * duplicate `finished` frame can never polish twice or clear a newer round.
+     */
+    private fun claimFinish(session: Session): Boolean = synchronized(audioLock) {
+        if (!isLive(session) || session.finished) {
+            false
+        } else {
+            session.finished = true
+            session.timeout?.cancel()
+            true
+        }
+    }
+
+    private fun finishWithPolish(session: Session) {
+        if (!claimFinish(session)) return
+        val raw = session.finalText.trim()
+        cleanup(session)
         if (raw.isEmpty()) {
-            finish("没有识别到语音内容，请靠近麦克风再说一次。")
+            finish(session, "没有识别到语音内容，请靠近麦克风再说一次。")
             return
         }
         _state.update { it.copy(phase = VoiceInputPhase.Transcribing, interim = "") }
-        scope.launch {
-            val polished = runCatching { withTimeout(POLISH_TIMEOUT_MS) { polish(raw) } }
+        session.polishJob = scope.launch {
+            val polished = runCatching { withTimeout(timeouts.polish) { polish(raw) } }
                 .getOrNull()?.trim().orEmpty().ifBlank { raw }
             main.post {
-                if (!closed) {
+                if (session.generation == generation && !session.discarded) {
                     onTranscript(polished)
-                    finish()
+                    finish(session)
                 }
             }
         }
     }
 
-    private fun finish(error: String? = null) {
-        if (closed) return
-        closed = true
-        finished = true
-        timeout?.cancel()
-        cleanup()
+    private fun finish(session: Session, error: String? = null) {
+        if (session.generation != generation) return
+        session.closed = true
+        session.finished = true
+        session.timeout?.cancel()
+        session.connectionTimeout?.cancel()
+        session.connectionTimeout = null
+        cleanup(session)
+        active = null
         _state.value = VoiceInputState(phase = VoiceInputPhase.Idle, error = error)
     }
 
-    private fun fail(message: String) {
-        if (closed) return
+    private fun fail(session: Session, message: String) {
+        if (!isLive(session)) return
         // A final segment may already have arrived before the socket failed. Keep that
         // recognized text rather than discarding it solely because polish was interrupted.
-        val fallback = finalText.trim()
-        if (fallback.isNotEmpty() && !finished) main.post { onTranscript(fallback) }
-        finish(message)
+        val fallback = session.finalText.trim()
+        if (fallback.isNotEmpty() && !session.finished) {
+            // Mark the round finished before handing off the text: a concurrent stop() then sees
+            // a closed session (claimFinish returns false) instead of polishing the same text
+            // twice. The post itself cannot be interrupted, so the text is not lost either.
+            session.finished = true
+            main.post {
+                if (session.generation == generation && !session.discarded) onTranscript(fallback)
+            }
+        }
+        finish(session, message)
     }
 
-    private fun cleanup() {
-        capturing = false
-        ready = false
+    /** Releases resources of [session] only; never touches state owned by a newer attempt. */
+    private fun cleanup(session: Session) {
+        session.capturing = false
+        session.ready = false
         synchronized(audioLock) {
-            pending.clear()
-            pendingBytes = 0
+            session.pending.clear()
+            session.pendingBytes = 0
         }
-        recorder?.stop()
-        recorder = null
-        socket?.close(1000, "voice input closed")
-        socket = null
+        session.recorder?.stop()
+        session.recorder = null
+        session.socket?.close(1000, "voice input closed")
+        session.socket = null
     }
 }
 

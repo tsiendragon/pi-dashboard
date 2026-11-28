@@ -14,8 +14,8 @@ android {
         applicationId = "com.sam.pidash"
         minSdk = 26
         targetSdk = 35
-        versionCode = 114
-        versionName = "5.83"
+        versionCode = 115
+        versionName = "5.84"
     }
 
     buildTypes {
@@ -45,6 +45,12 @@ android {
     testOptions {
         // Compose screenshot tests need real resources and a themed context.
         unitTests.isIncludeAndroidResources = true
+        // Each test class gets its own JVM: Robolectric sandboxes of different tests then
+        // cannot share (or exhaust) one heap, and a slow teardown cannot stall the next class.
+        unitTests.all { test ->
+            test.maxHeapSize = "2g"
+            test.forkEvery = 1
+        }
     }
 }
 

@@ -96,6 +96,31 @@ describe('DashScope realtime ASR', () => {
     })
   })
 
+  it('never sends a second session.update when context arrives after upstream opened', () => {
+    const client = new FakeSocket()
+    const upstream = new FakeSocket()
+    const createUpstream = vi.fn((_url: string, _apiKey: string) => upstream as unknown as WebSocket)
+    handleAsrRealtimeConnection(client as unknown as WebSocket, 'zh', {
+      apiKey: 'test-key',
+      createUpstream,
+    })
+    upstream.emit('open')
+    upstream.emit('message', Buffer.from(JSON.stringify({ type: 'session.updated' })), false)
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'audio', audio: 'AA==' })), false)
+
+    // A late context frame is legal: it must not reset the running session with another
+    // session.update, and it must not fail the recognition either.
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'context', text: 'API session 路径' })), false)
+    expect(messages(upstream).filter(message => message.type === 'session.update')).toHaveLength(1)
+    expect(messages(client).some(message => message.type === 'error')).toBe(false)
+
+    // Audio keeps flowing on the already-configured session.
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'audio', audio: 'BB==' })), false)
+    const appends = messages(upstream).filter(message => message.type === 'input_audio_buffer.append')
+    expect(appends.map(message => message.audio)).toEqual(['AA==', 'BB=='])
+    expect(messages(upstream).filter(message => message.type === 'session.update')).toHaveLength(1)
+  })
+
   it('rejects the client cleanly when the backend has no API key', () => {
     const client = new FakeSocket()
     const createUpstream = vi.fn()
