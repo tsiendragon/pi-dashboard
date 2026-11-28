@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -60,6 +61,8 @@ import com.sam.pidash.domain.model.AppFontScale
 import com.sam.pidash.domain.model.AppTheme
 import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.ConnectionState
+import com.sam.pidash.domain.model.LiveUsageReport
+import com.sam.pidash.domain.model.shiftMonth
 import com.sam.pidash.ui.common.AppVersionLabel
 import com.sam.pidash.ui.common.CompactPageHeader
 import com.sam.pidash.ui.common.PiTextField
@@ -71,6 +74,7 @@ import com.sam.pidash.ui.common.SectionLabel
 import com.sam.pidash.ui.common.StatusDot
 import com.sam.pidash.ui.common.backendOriginLabel
 import com.sam.pidash.ui.common.liveConnectionLabel
+import com.sam.pidash.ui.live.UsageDialog
 import com.sam.pidash.ui.theme.PiType
 import com.sam.pidash.ui.theme.Tints
 import com.sam.pidash.ui.theme.Spacing
@@ -102,6 +106,34 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
     var alertsEnabled by remember { mutableStateOf(notifier.prefs.enabled) }
     var showModelProviders by remember { mutableStateOf(false) }
     var alertsNeedsPermission by remember { mutableStateOf(false) }
+    var usageTarget by remember { mutableStateOf<Backend?>(null) }
+    var usageReport by remember { mutableStateOf<LiveUsageReport?>(null) }
+    var usageMonth by remember { mutableStateOf<String?>(null) }
+    var usageBusy by remember { mutableStateOf(false) }
+    var usageError by remember { mutableStateOf<String?>(null) }
+
+    fun loadUsage(month: String?) {
+        val target = usageTarget ?: return
+        usageBusy = true
+        usageError = null
+        scope.launch {
+            repo.live.usage(target.id, month).fold(
+                onSuccess = { report ->
+                    // A second server tapped while this was in flight must not receive
+                    // the first one's numbers.
+                    if (usageTarget?.id != target.id) return@fold
+                    usageReport = report
+                    usageMonth = report.month
+                    usageBusy = false
+                },
+                onFailure = { error ->
+                    if (usageTarget?.id != target.id) return@fold
+                    usageError = error.message ?: "无法读取用量"
+                    usageBusy = false
+                },
+            )
+        }
+    }
     // Android 13+: ask once, after saying why. The system dialog is a one-shot; a user who
     // says no can still turn it on from system settings, so we link there instead of
     // re-prompting in a loop.
@@ -350,6 +382,16 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                             }
                             MetaText(liveConnectionLabel(liveStates[backend.id]), maxLines = 1)
                         }
+                        // A word, not an icon: material-icons-core has no chart glyph, and a
+                        // generic list icon next to Delete reads as another row action.
+                        TextButton(
+                            onClick = {
+                                usageTarget = backend
+                                usageReport = null
+                                usageMonth = null
+                                loadUsage(null)
+                            },
+                        ) { Text("用量", style = PiType.action) }
                         IconButton(onClick = { deleting = backend }) {
                             Icon(
                                 Icons.Filled.Delete,
@@ -439,6 +481,26 @@ fun BackendsScreen(repo: PiDashRepository, onBack: () -> Unit) {
                 }) { Text("继续") }
             },
             dismissButton = { TextButton(onClick = { alertsRationale = false }) { Text("暂不") } },
+        )
+    }
+
+    usageTarget?.let { backend ->
+        UsageDialog(
+            report = usageReport,
+            month = usageMonth,
+            busy = usageBusy,
+            error = usageError,
+            onMonthChange = { delta ->
+                shiftMonth(usageMonth ?: usageReport?.month.orEmpty(), delta)?.let(::loadUsage)
+            },
+            onDismiss = {
+                usageTarget = null
+                usageReport = null
+                usageMonth = null
+                usageError = null
+                usageBusy = false
+            },
+            title = "${backend.name} · 用量统计",
         )
     }
 

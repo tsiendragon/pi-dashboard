@@ -41,6 +41,7 @@ internal fun UsageDialog(
     error: String?,
     onMonthChange: (Int) -> Unit,
     onDismiss: () -> Unit,
+    title: String = "用量统计",
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -52,7 +53,7 @@ internal fun UsageDialog(
         ) {
             Column(Modifier.padding(Spacing.md).verticalScroll(rememberScrollState())) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("用量统计", style = PiType.callout, modifier = Modifier.weight(1f))
+                    Text(title, style = PiType.callout, modifier = Modifier.weight(1f))
                     TextButton(enabled = !busy, onClick = { onMonthChange(-1) }) { Text("◀") }
                     Text(month?.takeIf { it.isNotBlank() } ?: "本月", style = PiType.action)
                     TextButton(enabled = !busy, onClick = { onMonthChange(1) }) { Text("▶") }
