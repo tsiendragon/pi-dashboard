@@ -2,6 +2,7 @@ package com.sam.pidash.domain.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UsageFormatTest {
@@ -107,6 +108,46 @@ class UsageFormatTest {
         assertEquals(listOf("2026-03-01", "2026-03-02"), result.map { it.date })
         assertEquals(listOf(1.0, 5.0), result.map { it.model.costUsd })
         assertEquals(listOf(10L, 50L), result.map { it.model.totalTokens })
+    }
+
+    @Test fun sqrtScaleHandlesBoundariesAndClampsToUnitRange() {
+        assertEquals(0f, sqrtScale(0.0, 100.0))
+        assertEquals(1f, sqrtScale(100.0, 100.0))
+        assertEquals(1f, sqrtScale(400.0, 100.0))
+        assertEquals(0f, sqrtScale(100.0, 0.0))
+    }
+
+    @Test fun sqrtScaleIsMonotonic() {
+        val small = sqrtScale(0.02, 40.78)
+        val medium = sqrtScale(0.60, 40.78)
+        val large = sqrtScale(40.78, 40.78)
+        assertTrue(small < medium)
+        assertTrue(medium < large)
+    }
+
+    @Test fun dailySummaryIdentifiesPeakAndActiveDays() {
+        val summary = dailySummary(marchReport(), utcNow("2026-03-03T12:00:00Z"))!!
+        assertEquals("2026-03-03", summary.peakDate)
+        assertEquals(1000.0, summary.peakCost, 0.0001)
+        assertEquals(4, summary.activeDays)
+        assertEquals(31, summary.totalDays)
+    }
+
+    @Test fun dailySummaryUsesElapsedDaysNowAndFullMonthForHistory() {
+        val current = dailySummary(marchReport(), utcNow("2026-03-03T12:00:00Z"))!!
+        val historical = dailySummary(marchReport(), utcNow("2026-04-03T12:00:00Z"))!!
+        assertEquals(1530.0 / 3, current.averageCost, 0.0001)
+        assertEquals(1530.0 / 31, historical.averageCost, 0.0001)
+        assertEquals(31, current.totalDays)
+        assertEquals(31, historical.totalDays)
+    }
+
+    @Test fun dailySummaryReturnsNullWhenEveryDayIsZero() {
+        val report = marchReport().copy(daily = listOf(
+            LiveUsageDay(date = "2026-03-01", costUsd = 0.0),
+            LiveUsageDay(date = "2026-03-02", costUsd = 0.0),
+        ))
+        assertNull(dailySummary(report, utcNow("2026-03-03T12:00:00Z")))
     }
 
     @Test fun dailySeriesKeepsZeroCostDaysAndDropsInvalidDates() {

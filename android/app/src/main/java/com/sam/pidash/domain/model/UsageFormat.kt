@@ -5,6 +5,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import kotlin.math.sqrt
 
 /**
  * Usage numbers as a phone dialog can show them. The `/api/usage` report is a
@@ -35,6 +36,10 @@ fun cacheHitPercent(session: LiveUsageSession): Int = cacheHitPercent(
 
 fun cacheHitPercent(model: LiveUsageModel): Int = cacheHitPercent(
     model.inputTokens, model.cacheReadTokens, model.cacheWriteTokens,
+)
+
+fun cacheHitPercent(day: LiveUsageDay): Int = cacheHitPercent(
+    day.inputTokens, day.cacheReadTokens, day.cacheWriteTokens,
 )
 
 private fun cacheHitPercent(input: Long, read: Long, write: Long): Int {
@@ -83,6 +88,40 @@ fun dailyProjection(report: LiveUsageReport, now: Long): UsageProjection? {
         elapsedDays = elapsedDays,
         totalDays = totalDays,
         remainingDays = totalDays - today.dayOfMonth,
+    )
+}
+
+/** Compress extreme daily costs while preserving zero and clamping invalid ranges. */
+fun sqrtScale(costUsd: Double, maxCost: Double): Float {
+    if (costUsd <= 0.0 || maxCost <= 0.0) return 0f
+    return (sqrt(costUsd) / sqrt(maxCost)).toFloat().coerceIn(0f, 1f)
+}
+
+data class UsageDailySummary(
+    val peakDate: String,
+    val peakCost: Double,
+    val averageCost: Double,
+    val activeDays: Int,
+    val totalDays: Int,
+)
+
+/** Current months average over elapsed days; other months use their full length. */
+fun dailySummary(report: LiveUsageReport, now: Long): UsageDailySummary? {
+    val month = runCatching { YearMonth.parse(report.month) }.getOrNull() ?: return null
+    val zone = runCatching {
+        if (report.timezone.isBlank()) ZoneId.systemDefault() else ZoneId.of(report.timezone)
+    }.getOrNull() ?: return null
+    val days = dailySeries(report)
+    val peak = days.maxByOrNull { it.costUsd }?.takeIf { it.costUsd > 0.0 } ?: return null
+    val totalDays = month.lengthOfMonth()
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    val divisor = if (YearMonth.from(today) == month) today.dayOfMonth else totalDays
+    return UsageDailySummary(
+        peakDate = peak.date,
+        peakCost = peak.costUsd,
+        averageCost = days.sumOf { it.costUsd } / divisor,
+        activeDays = days.count { it.costUsd > 0.0 },
+        totalDays = totalDays,
     )
 }
 
