@@ -750,11 +750,42 @@ class LivePiRepository(
         result { client(id).uploadFiles(files) }
     suspend fun candidates(id: String): Result<List<LiveRepoCandidate>> = result { client(id).candidates() }
     suspend fun startOptions(id: String): Result<LiveStartOptions> = result { client(id).startOptions() }
-    suspend fun start(id: String, cwd: String, title: String = "", model: String = "", thinkingLevel: String = ""): Result<SessionKey?> {
+    /**
+     * Starts a new Live Pi.
+     *
+     * [groupId] is optional: blank keeps the previous behaviour (the new session stays
+     * ungrouped). A non-blank id is applied with the same membership endpoint the WebUI
+     * uses, after the process exists — the start endpoint itself has no group parameter,
+     * so the two writes stay separate and a grouping failure is reported as such instead
+     * of being mistaken for a failed start.
+     */
+    suspend fun start(
+        id: String,
+        cwd: String,
+        title: String = "",
+        model: String = "",
+        thinkingLevel: String = "",
+        groupId: String = "",
+    ): Result<SessionKey?> {
         if (!synchronized(lock) { starting.add(id) }) return Result.failure(IOException("已有启动请求，先刷新确认结果"))
         return try { mutation {
-            val process = client(id).start(cwd, title, model, thinkingLevel)
+            val api = client(id)
+            val process = api.start(cwd, title, model, thinkingLevel)
+            val target = groupId.trim()
+            val groups = if (process != null && target.isNotEmpty()) try {
+                api.moveGroup(process, target)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                // Not an IOException: `mutation` would relabel it as "结果未确认" and the user
+                // would think the Pi never started. The session exists; only the group write failed.
+                throw IllegalStateException("Pi 已启动，但加入分组失败：${error.message ?: "请刷新后手动移动到分组"}", error)
+            } else null
             reconcile(id)
+            groups?.let { saved ->
+                if (isCurrentClient(id, api)) {
+                    _organization.update { it + (id to (it[id] ?: LiveOrganization()).copy(groups = saved, loaded = true, error = null)) }
+                }
+            }
             process?.let { SessionKey(id, it) }
         } } finally { synchronized(lock) { starting.remove(id) } }
     }

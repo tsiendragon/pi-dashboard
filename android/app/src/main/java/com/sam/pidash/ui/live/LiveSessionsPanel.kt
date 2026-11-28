@@ -65,6 +65,7 @@ import com.sam.pidash.ui.common.liveConnectionLabel
 import com.sam.pidash.domain.model.Backend
 import com.sam.pidash.domain.model.LiveRepoCandidate
 import com.sam.pidash.domain.model.liveDirectoryOptions
+import com.sam.pidash.domain.model.newSessionGroupChoices
 import com.sam.pidash.domain.model.SessionKey
 import com.sam.pidash.domain.model.SessionMove
 import kotlinx.coroutines.launch
@@ -533,6 +534,15 @@ fun NewLiveSessionDialog(
     var optionsError by remember(backendId) { mutableStateOf<String?>(null) }
     var backendMenu by remember { mutableStateOf(false) }
     var cwdMenu by remember(backendId) { mutableStateOf(false) }
+    var groupId by remember(backendId) { mutableStateOf("") }
+    var groupMenu by remember { mutableStateOf(false) }
+    val organizations by repo.live.organization.collectAsState()
+    val selectableGroups = remember(organizations, backendId) {
+        newSessionGroupChoices(organizations[backendId] ?: LiveOrganization())
+    }
+    // A group can disappear from the machine while the sheet is open; then show the id we
+    // would still send instead of pretending the default ("不加入分组") is selected.
+    val groupLabel = selectableGroups.firstOrNull { it.id == groupId }?.name ?: groupId.ifBlank { "不加入分组" }
     val directoryOptions = remember(candidates, roots) { liveDirectoryOptions(candidates, roots) }
 
     LaunchedEffect(backendId) {
@@ -542,6 +552,9 @@ fun NewLiveSessionDialog(
         roots = options.getOrNull()?.roots.orEmpty()
         val repos = repo.live.candidates(backendId)
         candidates = repos.getOrNull().orEmpty()
+        // The group choices come from the machine's own groups; load them when the caller
+        // has not refreshed this machine yet, so the picker is not silently empty.
+        if (organizations[backendId]?.loaded != true) repo.live.refreshMachine(backendId)
         optionsError = listOfNotNull(options.exceptionOrNull()?.message, repos.exceptionOrNull()?.message)
             .joinToString("\n").takeIf { it.isNotBlank() }
         loading = false
@@ -596,6 +609,20 @@ fun NewLiveSessionDialog(
                 }
                 OutlinedTextField(value = thinking, onValueChange = { thinking = it }, label = { Text("思考等级（可选）") },
                     modifier = Modifier.fillMaxWidth(), enabled = !busy && !waiting)
+                // Optional group for the new session; the default choice keeps the old behaviour
+                // (an ungrouped session created by the same start call as before).
+                Box {
+                    OutlinedButton(enabled = !busy && !waiting, onClick = { groupMenu = true }) {
+                        Text(groupLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    DropdownMenu(expanded = groupMenu, onDismissRequest = { groupMenu = false }) {
+                        DropdownMenuItem(text = { Text("不加入分组") }, onClick = { groupId = ""; groupMenu = false })
+                        selectableGroups.forEach { group -> DropdownMenuItem(
+                            text = { Text(group.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            onClick = { groupId = group.id; groupMenu = false },
+                        ) }
+                    }
+                }
                 Text("启动失败不会创建普通 Chat，也不会自动重试。", style = PiType.subhead)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -609,7 +636,7 @@ fun NewLiveSessionDialog(
             TextButton(enabled = !busy && !waiting && backendId.isNotBlank() && cwd.trim().startsWith("/"), onClick = {
                 busy = true; error = null
                 scope.launch {
-                    val result = repo.live.start(backendId, cwd.trim(), title.trim(), model.trim(), thinking.trim())
+                    val result = repo.live.start(backendId, cwd.trim(), title.trim(), model.trim(), thinking.trim(), groupId)
                     busy = false
                     result.fold(onSuccess = { key ->
                         repo.live.refreshAll()
